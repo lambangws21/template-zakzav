@@ -59,6 +59,7 @@ const MAX_SCALE = 12;
 const STORY_STORAGE_KEY = "xray_workspace_story_v1";
 const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
 const DEFAULT_TEMPLATE_LAYER_OPACITY = 0.55;
+const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -250,6 +251,93 @@ function getLayerDisplaySize(layer) {
     width: layer.displayWidth || layer.sourceWidth,
     height: layer.displayHeight || layer.sourceHeight,
   };
+}
+
+function getImageContentBounds(image) {
+  if (typeof document === "undefined" || !image) return null;
+
+  const rawWidth = image.naturalWidth || image.width || 0;
+  const rawHeight = image.naturalHeight || image.height || 0;
+  if (!rawWidth || !rawHeight) return null;
+
+  const maxScanSize = 900;
+  const scanScale = Math.min(maxScanSize / rawWidth, maxScanSize / rawHeight, 1);
+  const scanWidth = Math.max(1, Math.round(rawWidth * scanScale));
+  const scanHeight = Math.max(1, Math.round(rawHeight * scanScale));
+  const canvas = document.createElement("canvas");
+  canvas.width = scanWidth;
+  canvas.height = scanHeight;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+
+  try {
+    ctx.drawImage(image, 0, 0, scanWidth, scanHeight);
+    const pixels = ctx.getImageData(0, 0, scanWidth, scanHeight).data;
+    const cornerIndexes = [
+      0,
+      (scanWidth - 1) * 4,
+      ((scanHeight - 1) * scanWidth) * 4,
+      ((scanHeight - 1) * scanWidth + scanWidth - 1) * 4,
+    ];
+    const background = cornerIndexes.reduce(
+      (sum, index) => ({
+        r: sum.r + pixels[index],
+        g: sum.g + pixels[index + 1],
+        b: sum.b + pixels[index + 2],
+        a: sum.a + pixels[index + 3],
+      }),
+      { r: 0, g: 0, b: 0, a: 0 },
+    );
+    background.r /= cornerIndexes.length;
+    background.g /= cornerIndexes.length;
+    background.b /= cornerIndexes.length;
+    background.a /= cornerIndexes.length;
+
+    let minX = scanWidth;
+    let minY = scanHeight;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let y = 0; y < scanHeight; y += 1) {
+      for (let x = 0; x < scanWidth; x += 1) {
+        const index = (y * scanWidth + x) * 4;
+        const alpha = pixels[index + 3];
+        if (alpha <= 18) continue;
+
+        const distance =
+          Math.abs(pixels[index] - background.r) +
+          Math.abs(pixels[index + 1] - background.g) +
+          Math.abs(pixels[index + 2] - background.b) +
+          Math.abs(alpha - background.a) * 0.35;
+        if (distance <= 34) continue;
+
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+
+    if (maxX < minX || maxY < minY) return null;
+
+    const pad = Math.max(2, Math.round(Math.min(scanWidth, scanHeight) * 0.015));
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(scanWidth - 1, maxX + pad);
+    maxY = Math.min(scanHeight - 1, maxY + pad);
+
+    const x = Math.floor(minX / scanScale);
+    const y = Math.floor(minY / scanScale);
+    const width = Math.min(rawWidth - x, Math.ceil((maxX - minX + 1) / scanScale));
+    const height = Math.min(rawHeight - y, Math.ceil((maxY - minY + 1) / scanScale));
+    const coversAlmostAll = width >= rawWidth * 0.96 && height >= rawHeight * 0.96;
+    if (coversAlmostAll || width < 8 || height < 8) return null;
+
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
 }
 
 function getLayerCorners(layer) {
@@ -531,7 +619,7 @@ export default function XrayCalibrationWorkspace() {
   const [actualMmInput, setActualMmInput] = useState("13");
   const [actualUnit, setActualUnit] = useState("cm");
   const [templateRealSizeInput, setTemplateRealSizeInput] = useState("");
-  const [templateRealSizeUnit, setTemplateRealSizeUnit] = useState("mm");
+  const [templateRealSizeUnit, setTemplateRealSizeUnit] = useState("cm");
   const [templateRealSizeAxis, setTemplateRealSizeAxis] = useState("height");
   const [measurementUnit, setMeasurementUnit] = useState("cm");
   const [linePreset, setLinePreset] = useState("normal");
@@ -1195,7 +1283,7 @@ export default function XrayCalibrationWorkspace() {
         setActualMmInput(payload.actualMmInput || "13");
         setActualUnit(payload.actualUnit || "cm");
         setTemplateRealSizeInput(payload.templateRealSizeInput || "");
-        setTemplateRealSizeUnit(payload.templateRealSizeUnit || "mm");
+        setTemplateRealSizeUnit(payload.templateRealSizeUnit || "cm");
         setTemplateRealSizeAxis(payload.templateRealSizeAxis || "height");
         setMeasurementUnit(payload.measurementUnit || "cm");
         setLinePreset(payload.linePreset || "normal");
@@ -2538,6 +2626,9 @@ export default function XrayCalibrationWorkspace() {
       setCropRect({ x: 0, y: 0, width, height });
       setActualMmInput("13");
       setActualUnit("cm");
+      setTemplateRealSizeInput("");
+      setTemplateRealSizeUnit("cm");
+      setTemplateRealSizeAxis("height");
       setMeasurementUnit("cm");
       setLinePreset("normal");
       setPlanNote("");
@@ -2568,31 +2659,41 @@ export default function XrayCalibrationWorkspace() {
         return false;
       }
 
-      const srcW = layerImage?.naturalWidth || layerImage?.width || 0;
-      const srcH = layerImage?.naturalHeight || layerImage?.height || 0;
-      if (!srcW || !srcH) {
+      const rawW = layerImage?.naturalWidth || layerImage?.width || 0;
+      const rawH = layerImage?.naturalHeight || layerImage?.height || 0;
+      if (!rawW || !rawH) {
         setNotice("Layer gagal diproses. Dimensi file tidak valid.");
         return false;
       }
 
       const shouldMatchBase = sizeMode === "match-base";
+      const contentBounds = shouldMatchBase ? null : getImageContentBounds(layerImage);
+      const srcX = contentBounds?.x || 0;
+      const srcY = contentBounds?.y || 0;
+      const srcW = contentBounds?.width || rawW;
+      const srcH = contentBounds?.height || rawH;
       const templateSizeSource =
         sizeMode === "inherit-template"
           ? selectedCutLayer?.kind === "upload"
             ? selectedCutLayer
             : [...cutLayers].reverse().find((layer) => layer.kind === "upload") || null
           : null;
-      const inheritedTemplateSize = templateSizeSource
-        ? getLayerDisplaySize(templateSizeSource)
-        : null;
+      const rawInheritedTemplateSize = templateSizeSource ? getLayerDisplaySize(templateSizeSource) : null;
+      const inheritedLooksLikeBackground =
+        rawInheritedTemplateSize &&
+        rawInheritedTemplateSize.width >= modelWidth * 0.86 &&
+        rawInheritedTemplateSize.height >= modelHeight * 0.86;
+      const inheritedTemplateSize = inheritedLooksLikeBackground ? null : rawInheritedTemplateSize;
       const sameCanvasSize =
-        Math.abs(srcW - modelWidth) <= 2 && Math.abs(srcH - modelHeight) <= 2;
-      const targetMax = Math.min(modelWidth, modelHeight) * 0.45;
+        !contentBounds && Math.abs(rawW - modelWidth) <= 2 && Math.abs(rawH - modelHeight) <= 2;
+      const targetMax = Math.min(modelWidth, modelHeight) * TEMPLATE_INITIAL_MAX_FRACTION;
+      const targetMaxWidth = modelWidth * 0.42;
+      const targetMaxHeight = modelHeight * 0.42;
       const scale = shouldMatchBase
         ? 1
         : sameCanvasSize
         ? Math.min(modelWidth / srcW, modelHeight / srcH)
-        : Math.min(targetMax / srcW, targetMax / srcH, 1);
+        : Math.min(targetMax / srcW, targetMax / srcH, targetMaxWidth / srcW, targetMaxHeight / srcH, 1);
       const displayWidth = inheritedTemplateSize
         ? Math.max(18, inheritedTemplateSize.width)
         : shouldMatchBase || sameCanvasSize
@@ -2610,8 +2711,8 @@ export default function XrayCalibrationWorkspace() {
         image: layerImage,
         imageSrc,
         name: name || `Layer ${nextCutLayerIdRef.current}`,
-        sourceX: 0,
-        sourceY: 0,
+        sourceX: srcX,
+        sourceY: srcY,
         sourceWidth: srcW,
         sourceHeight: srcH,
         displayWidth,
@@ -2634,7 +2735,8 @@ export default function XrayCalibrationWorkspace() {
       setSelectedHkaId(null);
       setTool("draw");
       setMobileControlsOpen(true);
-      setNotice(noticeText || `Layer "${nextLayer.name}" ditambahkan di atas layer bawah.`);
+      const trimText = contentBounds ? " Margin kosong template otomatis di-trim." : "";
+      setNotice((noticeText || `Layer "${nextLayer.name}" ditambahkan di atas layer bawah.`) + trimText);
       return true;
     },
     [cutLayers, image, modelHeight, modelWidth, selectedCutLayer],
@@ -2655,8 +2757,8 @@ export default function XrayCalibrationWorkspace() {
             layerImage: loaded.image,
             imageSrc: loaded.src,
             name: imageItem.name || "sheet-drive-layer",
-            sizeMode: "match-base",
-            noticeText: `Layer "${imageItem.name || "Google Sheet Image"}" ditambahkan dan ukurannya mengikuti layer bawah.`,
+            sizeMode: "template",
+            noticeText: `Layer "${imageItem.name || "Google Sheet Image"}" ditambahkan sebagai template. Gunakan Scale Pakai Garis Real untuk ukuran presisi.`,
           });
           return;
         }
@@ -2704,8 +2806,8 @@ export default function XrayCalibrationWorkspace() {
             layerImage,
             imageSrc: dataUrl,
             name: file.name,
-            sizeMode: "match-base",
-            noticeText: `Upload kedua "${file.name}" ditambahkan sebagai layer baru dengan ukuran mengikuti layer bawah.`,
+            sizeMode: "template",
+            noticeText: `Upload kedua "${file.name}" ditambahkan sebagai template layer. Gunakan Scale Pakai Garis Real untuk ukuran presisi.`,
           });
         } catch {
           setNotice("Gagal membaca file sebagai layer baru.");
@@ -3613,16 +3715,24 @@ export default function XrayCalibrationWorkspace() {
     const targetMm = templateRealSizeUnit === "cm" ? inputValue * 10 : inputValue;
     const targetPixels = targetMm / mmPerPixel;
     const currentSize = getLayerDisplaySize(selectedCutLayer);
-    const sourceAxisLength =
-      templateRealSizeAxis === "width" ? currentSize.width : currentSize.height;
-    if (!Number.isFinite(sourceAxisLength) || sourceAxisLength <= 0) {
+    if (
+      !Number.isFinite(currentSize.width) ||
+      !Number.isFinite(currentSize.height) ||
+      currentSize.width <= 0 ||
+      currentSize.height <= 0
+    ) {
       setNotice("Ukuran template saat ini tidak valid.");
       return;
     }
 
-    const scale = targetPixels / sourceAxisLength;
-    const nextWidth = clamp(currentSize.width * scale, 16, Math.max(16, modelWidth * 3));
-    const nextHeight = clamp(currentSize.height * scale, 16, Math.max(16, modelHeight * 3));
+    const nextWidth =
+      templateRealSizeAxis === "width"
+        ? clamp(targetPixels, 16, Math.max(16, modelWidth * 3))
+        : currentSize.width;
+    const nextHeight =
+      templateRealSizeAxis === "height"
+        ? clamp(targetPixels, 16, Math.max(16, modelHeight * 3))
+        : currentSize.height;
 
     setCutLayers((prev) =>
       prev.map((layer) =>
@@ -3631,8 +3741,16 @@ export default function XrayCalibrationWorkspace() {
           : layer,
       ),
     );
+    const unitHint =
+      templateRealSizeUnit === "mm" && inputValue <= 30
+        ? " Jika hasil terlalu kecil dan maksudnya sentimeter, ganti unit ke cm."
+        : "";
+    const lockedAxisHint =
+      templateRealSizeAxis === "width"
+        ? " Tinggi tetap memakai ukuran layer sebelumnya."
+        : " Lebar tetap memakai ukuran layer sebelumnya.";
     setNotice(
-      `Template #${selectedCutLayer.id} di-scale dari ${templateRealSizeAxis === "width" ? "lebar" : "tinggi"} real ${inputValue} ${templateRealSizeUnit}.`,
+      `Template #${selectedCutLayer.id} di-scale dari ${templateRealSizeAxis === "width" ? "lebar" : "tinggi"} real ${inputValue} ${templateRealSizeUnit}.${lockedAxisHint}${unitHint}`,
     );
   }, [
     mmPerPixel,
@@ -3643,6 +3761,81 @@ export default function XrayCalibrationWorkspace() {
     templateRealSizeInput,
     templateRealSizeUnit,
   ]);
+
+  const trimSelectedTemplateLayer = useCallback(() => {
+    if (!selectedCutLayer) {
+      setNotice("Pilih template layer dulu untuk trim margin.");
+      return;
+    }
+    if (selectedCutLayer.kind !== "upload" || !selectedCutLayer.image) {
+      setNotice("Trim margin hanya untuk template/upload layer.");
+      return;
+    }
+    if (selectedCutLayer.lockScale) {
+      setNotice("Scale template terkunci. Buka Lock Scale dulu sebelum trim margin.");
+      return;
+    }
+
+    const bounds = getImageContentBounds(selectedCutLayer.image);
+    if (!bounds) {
+      setNotice("Tidak ada margin kosong yang bisa di-trim pada template ini.");
+      return;
+    }
+
+    const oldSourceX = Number(selectedCutLayer.sourceX || 0);
+    const oldSourceY = Number(selectedCutLayer.sourceY || 0);
+    const oldSourceWidth = Math.max(1, Number(selectedCutLayer.sourceWidth || bounds.width));
+    const oldSourceHeight = Math.max(1, Number(selectedCutLayer.sourceHeight || bounds.height));
+    const isSameBounds =
+      Math.abs(bounds.x - oldSourceX) <= 2 &&
+      Math.abs(bounds.y - oldSourceY) <= 2 &&
+      Math.abs(bounds.width - oldSourceWidth) <= 2 &&
+      Math.abs(bounds.height - oldSourceHeight) <= 2;
+    if (isSameBounds) {
+      setNotice("Template sudah memakai bounding box konten.");
+      return;
+    }
+
+    const currentSize = getLayerDisplaySize(selectedCutLayer);
+    const nextDisplayWidth = clamp(
+      currentSize.width * (bounds.width / oldSourceWidth),
+      16,
+      Math.max(16, modelWidth * 3),
+    );
+    const nextDisplayHeight = clamp(
+      currentSize.height * (bounds.height / oldSourceHeight),
+      16,
+      Math.max(16, modelHeight * 3),
+    );
+    const localOffsetX =
+      ((bounds.x + bounds.width / 2 - (oldSourceX + oldSourceWidth / 2)) / oldSourceWidth) *
+      currentSize.width *
+      (selectedCutLayer.flipX ? -1 : 1);
+    const localOffsetY =
+      ((bounds.y + bounds.height / 2 - (oldSourceY + oldSourceHeight / 2)) / oldSourceHeight) *
+      currentSize.height *
+      (selectedCutLayer.flipY ? -1 : 1);
+    const rotatedOffset = rotateVector(localOffsetX, localOffsetY, selectedCutLayer.rotation || 0);
+
+    setCutLayers((prev) =>
+      prev.map((layer) =>
+        layer.id === selectedCutLayer.id
+          ? {
+              ...layer,
+              sourceX: bounds.x,
+              sourceY: bounds.y,
+              sourceWidth: bounds.width,
+              sourceHeight: bounds.height,
+              displayWidth: nextDisplayWidth,
+              displayHeight: nextDisplayHeight,
+              centerX: layer.centerX + rotatedOffset.x,
+              centerY: layer.centerY + rotatedOffset.y,
+            }
+          : layer,
+      ),
+    );
+    setNotice("Margin kosong template di-trim. Scale real sekarang memakai bounding box konten.");
+  }, [modelHeight, modelWidth, selectedCutLayer]);
 
   const rotateLeft = useCallback(() => {
     setRotation((prev) => (prev + 270) % 360);
@@ -4708,6 +4901,8 @@ export default function XrayCalibrationWorkspace() {
                   };
                   const canApplyTemplateRealSize =
                     layer.kind === "upload" && mmPerPixel !== null && !layer.lockScale;
+                  const canTrimTemplateLayer =
+                    layer.kind === "upload" && Boolean(layer.image) && !layer.lockScale;
 
                   return (
                     <div
@@ -4878,14 +5073,24 @@ export default function XrayCalibrationWorkspace() {
                                   <option value="cm">cm</option>
                                 </select>
                               </div>
-                              <button
-                                type="button"
-                                onClick={applyTemplateRealSize}
-                                disabled={!canApplyTemplateRealSize}
-                                className="mt-1.5 w-full rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
-                              >
-                                Scale Pakai Garis Real
-                              </button>
+                              <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={trimSelectedTemplateLayer}
+                                  disabled={!canTrimTemplateLayer}
+                                  className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                  Trim Margin
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={applyTemplateRealSize}
+                                  disabled={!canApplyTemplateRealSize}
+                                  className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                  Scale Real
+                                </button>
+                              </div>
                             </div>
                           ) : null}
 
@@ -5563,6 +5768,9 @@ export default function XrayCalibrationWorkspace() {
                   setMmPerPixelAt100Input("0.63");
                   setActualMmInput("13");
                   setActualUnit("cm");
+                  setTemplateRealSizeInput("");
+                  setTemplateRealSizeUnit("cm");
+                  setTemplateRealSizeAxis("height");
                   setContrast(100);
                   setLevel(100);
                   setRotation(0);
@@ -6061,6 +6269,9 @@ export default function XrayCalibrationWorkspace() {
                     setMmPerPixelAt100Input("0.63");
                     setActualMmInput("13");
                     setActualUnit("cm");
+                    setTemplateRealSizeInput("");
+                    setTemplateRealSizeUnit("cm");
+                    setTemplateRealSizeAxis("height");
                     setContrast(100);
                     setLevel(100);
                     setRotation(0);
