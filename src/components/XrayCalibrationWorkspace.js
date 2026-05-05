@@ -97,6 +97,7 @@ const DEFAULT_LINE_LABEL_OFFSET_Y = -20;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
+const MOBILE_IDLE_TOOL = "pan";
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -1041,6 +1042,9 @@ export default function XrayCalibrationWorkspace() {
   const [flipY, setFlipY] = useState(false);
   const [cropRect, setCropRect] = useState(null);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(true);
+  const [mobilePanelMode, setMobilePanelMode] = useState("workspace");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
     LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -1095,6 +1099,40 @@ export default function XrayCalibrationWorkspace() {
   const orientedSize = useMemo(
     () => getOrientedSize(modelWidth, modelHeight, rotation),
     [modelHeight, modelWidth, rotation],
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const viewportQuery = window.matchMedia("(max-width: 1023px)");
+    const coarseQuery = window.matchMedia("(pointer: coarse)");
+    const updateMobileState = () => {
+      setIsMobileViewport(viewportQuery.matches);
+      setIsCoarsePointer(coarseQuery.matches);
+    };
+
+    updateMobileState();
+    viewportQuery.addEventListener("change", updateMobileState);
+    coarseQuery.addEventListener("change", updateMobileState);
+    window.addEventListener("resize", updateMobileState);
+    return () => {
+      viewportQuery.removeEventListener("change", updateMobileState);
+      coarseQuery.removeEventListener("change", updateMobileState);
+      window.removeEventListener("resize", updateMobileState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) return;
+    setMobileControlsOpen(false);
+    setMobilePanelMode("workspace");
+    setTool((prev) => (prev === "draw" ? MOBILE_IDLE_TOOL : prev));
+  }, [isMobileViewport]);
+
+  const shouldUseMobileOneShotTool = isMobileViewport && isCoarsePointer;
+
+  const getIdleTool = useCallback(
+    () => (shouldUseMobileOneShotTool ? MOBILE_IDLE_TOOL : "draw"),
+    [shouldUseMobileOneShotTool],
   );
   const sheetMainImageEndpointHost = useMemo(() => {
     const url = String(sheetMainImageEndpoint || "").trim();
@@ -1210,10 +1248,17 @@ export default function XrayCalibrationWorkspace() {
     ? lockedLineIds.has(selectedLine.id)
     : false;
 
-  const focusLayerSettings = useCallback((layerId) => {
-    setSelectedCutLayerId(layerId);
-    setActiveRightPanel("tool");
-  }, []);
+  const focusLayerSettings = useCallback(
+    (layerId) => {
+      setSelectedCutLayerId(layerId);
+      setMobilePanelMode("workspace");
+      if (isMobileViewport) {
+        setMobileControlsOpen(true);
+      }
+      setActiveRightPanel("tool");
+    },
+    [isMobileViewport],
+  );
 
   const updateLayerById = useCallback((layerId, updater) => {
     setCutLayers((prev) =>
@@ -1695,8 +1740,9 @@ export default function XrayCalibrationWorkspace() {
     ) => {
       setShowStartupCalibrationAlert(false);
       setMobileControlsOpen(true);
+      setMobilePanelMode("setup");
       setCalibrationMode("line");
-      setTool("draw");
+      setTool(getIdleTool());
       setNotice(message);
       setHighlightCalibrationPanel(true);
       setTimeout(() => {
@@ -1713,15 +1759,16 @@ export default function XrayCalibrationWorkspace() {
         }
       }, 90);
     },
-    [],
+    [getIdleTool],
   );
 
   const focusMeasureStep = useCallback(() => {
     setMobileControlsOpen(true);
+    setMobilePanelMode("workspace");
     setActiveRightPanel("measure");
-    setTool("draw");
+    setTool(getIdleTool());
     scrollToPanel(measurePanelRef);
-  }, [scrollToPanel]);
+  }, [getIdleTool, scrollToPanel]);
 
   const focusExportStep = useCallback(() => {
     if (!hasCalibration) {
@@ -1729,6 +1776,7 @@ export default function XrayCalibrationWorkspace() {
       return;
     }
     setMobileControlsOpen(true);
+    setMobilePanelMode("setup");
     scrollToPanel(exportPanelRef);
   }, [focusCalibrationStep, hasCalibration, scrollToPanel]);
 
@@ -1742,10 +1790,14 @@ export default function XrayCalibrationWorkspace() {
         );
         return;
       }
+      setMobilePanelMode("workspace");
       setActiveRightPanel("tool");
       setTool(nextTool);
+      if (isMobileViewport) {
+        setMobileControlsOpen(false);
+      }
     },
-    [focusCalibrationStep, hasCalibration],
+    [focusCalibrationStep, hasCalibration, isMobileViewport],
   );
 
   const handleLinePresetChange = useCallback(
@@ -1766,11 +1818,15 @@ export default function XrayCalibrationWorkspace() {
       ) {
         setMeasureAnatomyTab("hip");
       }
+      setMobilePanelMode("workspace");
       setActiveRightPanel("measure");
       setLinePreset(nextPreset);
       setTool("draw");
+      if (isMobileViewport) {
+        setMobileControlsOpen(false);
+      }
     },
-    [focusCalibrationStep, hasCalibration],
+    [focusCalibrationStep, hasCalibration, isMobileViewport],
   );
 
   useEffect(() => {
@@ -3896,7 +3952,8 @@ export default function XrayCalibrationWorkspace() {
       setPlanningGuideLabelOffsetX(DEFAULT_GUIDE_LABEL_OFFSET_X);
       setPlanningGuideLabelOffsetY(DEFAULT_GUIDE_LABEL_OFFSET_Y);
       setPlanningGuideLabelOpacity(DEFAULT_LABEL_OPACITY);
-      setTool("draw");
+      setTool(getIdleTool());
+      setMobilePanelMode("workspace");
       setMobileControlsOpen(false);
       resetHistoryStacks();
       setNotice(
@@ -3905,7 +3962,7 @@ export default function XrayCalibrationWorkspace() {
       );
       return true;
     },
-    [resetHistoryStacks],
+    [getIdleTool, resetHistoryStacks],
   );
 
   const addImageAsWorkspaceLayer = useCallback(
@@ -4016,8 +4073,8 @@ export default function XrayCalibrationWorkspace() {
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
-      setTool("draw");
-      setMobileControlsOpen(true);
+      setTool(getIdleTool());
+      setMobileControlsOpen(!isMobileViewport);
       const trimText = contentBounds
         ? " Margin kosong template otomatis di-trim."
         : "";
@@ -4031,7 +4088,9 @@ export default function XrayCalibrationWorkspace() {
     [
       cutLayers,
       focusLayerSettings,
+      getIdleTool,
       image,
+      isMobileViewport,
       modelHeight,
       modelWidth,
       selectedCutLayer,
@@ -4358,6 +4417,10 @@ export default function XrayCalibrationWorkspace() {
           setAngles((items) => [...items, nextAngle]);
           setSelectedAngleId(nextAngle.id);
           setNotice("Angle measurement dibuat.");
+          if (shouldUseMobileOneShotTool) {
+            setTool(MOBILE_IDLE_TOOL);
+            setMobileControlsOpen(false);
+          }
           return [];
         });
         return;
@@ -4457,6 +4520,10 @@ export default function XrayCalibrationWorkspace() {
           setHkaSets((items) => [...items, nextHka]);
           setSelectedHkaId(nextHka.id);
           setNotice("Auto HKA dibuat dari landmarks.");
+          if (shouldUseMobileOneShotTool) {
+            setTool(MOBILE_IDLE_TOOL);
+            setMobileControlsOpen(false);
+          }
           return [];
         });
         return;
@@ -4584,6 +4651,7 @@ export default function XrayCalibrationWorkspace() {
       selectedCutLayerId,
       setHistoryPaused,
       screenToImagePoint,
+      shouldUseMobileOneShotTool,
       tool,
       view.panX,
       view.panY,
@@ -4976,6 +5044,10 @@ export default function XrayCalibrationWorkspace() {
         setSelectedLineId(nextLine.id);
       }
       setDraftLine(null);
+      if (shouldUseMobileOneShotTool) {
+        setTool(MOBILE_IDLE_TOOL);
+        setMobileControlsOpen(false);
+      }
     }
 
     if (
@@ -5003,6 +5075,10 @@ export default function XrayCalibrationWorkspace() {
         setNotice("Diameter terlalu kecil. Ulangi circle.");
       }
       setDraftCirclePoints([]);
+      if (shouldUseMobileOneShotTool) {
+        setTool(MOBILE_IDLE_TOOL);
+        setMobileControlsOpen(false);
+      }
     }
 
     if (interactionRef.current.mode === "cut" && draftCut) {
@@ -5038,12 +5114,23 @@ export default function XrayCalibrationWorkspace() {
         );
       }
       setDraftCut(null);
-      setTool("draw");
+      if (shouldUseMobileOneShotTool) {
+        setTool(MOBILE_IDLE_TOOL);
+        setMobileControlsOpen(false);
+      } else {
+        setTool("draw");
+      }
     }
 
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     setHistoryPaused(false);
-  }, [draftCirclePoints, draftCut, draftLine, focusLayerSettings]);
+  }, [
+    draftCirclePoints,
+    draftCut,
+    draftLine,
+    focusLayerSettings,
+    shouldUseMobileOneShotTool,
+  ]);
 
   const handleWheel = useCallback(
     (event) => {
@@ -5672,10 +5759,11 @@ export default function XrayCalibrationWorkspace() {
       setPlanningGuideLabelOffsetX(DEFAULT_GUIDE_LABEL_OFFSET_X);
       setPlanningGuideLabelOffsetY(DEFAULT_GUIDE_LABEL_OFFSET_Y);
       setPlanningGuideLabelOpacity(DEFAULT_LABEL_OPACITY);
-      setTool("draw");
+      setTool(getIdleTool());
       setView({ scale: 1, panX: 0, panY: 0 });
       setActiveRightPanel("tool");
-      setMobileControlsOpen(true);
+      setMobilePanelMode("workspace");
+      setMobileControlsOpen(!isMobileViewport);
 
       if (clearImage) {
         setImage(null);
@@ -5698,7 +5786,13 @@ export default function XrayCalibrationWorkspace() {
           : "Semua pengaturan di-reset.",
       );
     },
-    [imageHeight, imageWidth, resetHistoryStacks],
+    [
+      getIdleTool,
+      imageHeight,
+      imageWidth,
+      isMobileViewport,
+      resetHistoryStacks,
+    ],
   );
 
   const handleLayerUpload = useCallback(
@@ -6170,6 +6264,10 @@ export default function XrayCalibrationWorkspace() {
   function selectPlanningGuideForEdit(guideId) {
     setSelectedPlanningGuideId(guideId);
     setMeasureAnatomyTab("knee");
+    setMobilePanelMode("workspace");
+    if (isMobileViewport) {
+      setMobileControlsOpen(true);
+    }
     setActiveRightPanel("measure");
     setNotice(
       "Planning guide dipilih. Parameter bisa diubah lalu update lagi.",
@@ -6742,6 +6840,16 @@ export default function XrayCalibrationWorkspace() {
   const isLeftSidebarNarrow = leftSidebarWidth <= 220;
   const isRightSidebarCompact = rightSidebarWidth <= 170;
   const isRightSidebarNarrow = rightSidebarWidth <= 220;
+  const mobileSetupPanelVisible =
+    isMobileViewport &&
+    mobileControlsOpen &&
+    showLeftSidebar &&
+    mobilePanelMode === "setup";
+  const mobileWorkspacePanelVisible =
+    isMobileViewport &&
+    mobileControlsOpen &&
+    showRightSidebar &&
+    mobilePanelMode === "workspace";
 
   return (
     <div className="flex min-h-screen w-screen max-w-none flex-col gap-2 px-1 py-2 sm:px-2 lg:px-3">
@@ -6898,11 +7006,41 @@ export default function XrayCalibrationWorkspace() {
           initial={false}
           transition={PANEL_SPRING}
           className={`order-2 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
-            mobileControlsOpen && showLeftSidebar
-              ? "flex max-h-[56vh] overflow-y-auto"
+            mobileSetupPanelVisible
+              ? "fixed inset-x-2 bottom-2 z-40 flex max-h-[44vh] overflow-y-auto rounded-2xl shadow-2xl"
               : "hidden"
-          } ${showLeftSidebar ? "lg:order-1 lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto" : "lg:hidden"}`}
+          } ${showLeftSidebar ? "lg:order-1 lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto lg:rounded-xl lg:shadow-none" : "lg:hidden"}`}
         >
+          <div className="mb-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 lg:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                setMobilePanelMode("setup");
+                setMobileControlsOpen(true);
+              }}
+              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+                mobilePanelMode === "setup"
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-700"
+              }`}
+            >
+              Setup
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobilePanelMode("workspace");
+                setMobileControlsOpen(true);
+              }}
+              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+                mobilePanelMode === "workspace"
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-700"
+              }`}
+            >
+              Panel
+            </button>
+          </div>
           <div className="order-2 flex flex-col gap-2" style={{ order: 2 }}>
             <div className="flex items-center gap-1.5">
               <Icon name="upload" className="h-4 w-4 text-slate-600" />
@@ -8598,11 +8736,41 @@ export default function XrayCalibrationWorkspace() {
           initial={false}
           transition={PANEL_SPRING}
           className={`order-3 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
-            mobileControlsOpen && showRightSidebar
-              ? "flex max-h-[56vh] overflow-y-auto"
+            mobileWorkspacePanelVisible
+              ? "fixed inset-x-2 bottom-2 z-40 flex max-h-[44vh] overflow-y-auto rounded-2xl shadow-2xl"
               : "hidden"
-          } ${showRightSidebar ? "lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto" : "lg:hidden"}`}
+          } ${showRightSidebar ? "lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto lg:rounded-xl lg:shadow-none" : "lg:hidden"}`}
         >
+          <div className="mb-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 lg:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                setMobilePanelMode("setup");
+                setMobileControlsOpen(true);
+              }}
+              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+                mobilePanelMode === "setup"
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-700"
+              }`}
+            >
+              Setup
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobilePanelMode("workspace");
+                setMobileControlsOpen(true);
+              }}
+              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+                mobilePanelMode === "workspace"
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-700"
+              }`}
+            >
+              Panel
+            </button>
+          </div>
           <div
             className={`${SIDEBAR_TAB_GRID_CLASS} rounded-lg border border-slate-200 bg-slate-50 p-1`}
           >
@@ -10412,7 +10580,35 @@ export default function XrayCalibrationWorkspace() {
               ref={containerRef}
               className="relative h-[58vh] min-h-[340px] w-full overflow-hidden rounded-lg border border-slate-300 bg-slate-950/95 sm:h-[70vh] sm:min-h-[420px] lg:h-[calc(100vh-156px)]"
             >
-              <div className="absolute top-2 left-2 z-20 flex items-center gap-1 rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur lg:hidden">
+              <div className="absolute top-2 left-2 z-20 flex items-center gap-1 overflow-x-auto rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobilePanelMode("setup");
+                    setMobileControlsOpen(true);
+                  }}
+                  className={`inline-flex h-8 items-center justify-center rounded-md px-2 text-[10px] font-semibold transition ${
+                    mobileSetupPanelVisible
+                      ? "bg-white text-slate-900"
+                      : "bg-slate-800/80 text-slate-100"
+                  }`}
+                >
+                  Setup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobilePanelMode("workspace");
+                    setMobileControlsOpen(true);
+                  }}
+                  className={`inline-flex h-8 items-center justify-center rounded-md px-2 text-[10px] font-semibold transition ${
+                    mobileWorkspacePanelVisible
+                      ? "bg-white text-slate-900"
+                      : "bg-slate-800/80 text-slate-100"
+                  }`}
+                >
+                  Panel
+                </button>
                 <ToolIconButton
                   icon="draw"
                   label="Draw Line (L)"
@@ -10437,7 +10633,10 @@ export default function XrayCalibrationWorkspace() {
                 <IconButton
                   icon={mobileControlsOpen ? "close" : "menu"}
                   label={mobileControlsOpen ? "Tutup Kontrol" : "Buka Kontrol"}
-                  onClick={() => setMobileControlsOpen((prev) => !prev)}
+                  onClick={() => {
+                    setMobilePanelMode("workspace");
+                    setMobileControlsOpen((prev) => !prev);
+                  }}
                   active={mobileControlsOpen}
                   className="h-8 w-8 border-slate-500"
                 />
