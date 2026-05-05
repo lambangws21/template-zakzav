@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { CheckCircle2, Image as ImageIcon, Layers, Plus, RefreshCw, Trash2 } from "lucide-react";
 import DriveImageWithFallback from "./DriveImageWithFallback";
 
@@ -14,15 +15,16 @@ export default function TemplateStoragePicker({
   refreshDisabled,
   syncing,
   sourceLabel,
+  compact = false,
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+    <motion.div layout className="flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
       <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
         <span>Library: {templates.length}</span>
-        <span>Source: {sourceLabel}</span>
+        {!compact ? <span className="truncate">Source: {sourceLabel}</span> : null}
       </div>
 
-      <div className="flex gap-1.5">
+      <div className={`grid gap-1.5 ${compact ? "grid-cols-1" : "grid-cols-2"}`}>
         <button
           type="button"
           onClick={onRefreshTemplates}
@@ -31,7 +33,7 @@ export default function TemplateStoragePicker({
           title="Sync template dari Appwrite"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-          Sync
+          {compact ? "Sync" : "Sync"}
         </button>
         <button
           type="button"
@@ -41,7 +43,7 @@ export default function TemplateStoragePicker({
           title="Gunakan template terpilih ke canvas"
         >
           <Layers className="h-3.5 w-3.5" />
-          Gunakan
+          {compact ? "Pakai" : "Gunakan"}
         </button>
       </div>
 
@@ -83,16 +85,18 @@ export default function TemplateStoragePicker({
                     <div className="truncate text-[11px] font-medium text-slate-700">
                       {template.name || "Untitled Template"}
                     </div>
-                    <div className="text-[10px] text-slate-500">
+                    {!compact ? (
+                      <div className="text-[10px] text-slate-500">
                       {template.sourceWidth && template.sourceHeight
                         ? `${template.sourceWidth}x${template.sourceHeight}`
                         : "size: auto"}
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
                   {isSelected ? <CheckCircle2 className="h-4 w-4 text-cyan-600" /> : null}
                 </button>
 
-                <div className="mt-1 flex gap-1">
+                <div className={`mt-1 grid gap-1 ${compact ? "grid-cols-1" : "grid-cols-2"}`}>
                   <button
                     type="button"
                     onClick={() => onUseTemplate(template)}
@@ -100,7 +104,7 @@ export default function TemplateStoragePicker({
                     title="Tambahkan template ini ke canvas"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Layer
+                    {compact ? "Pakai" : "Layer"}
                   </button>
                   <button
                     type="button"
@@ -109,7 +113,7 @@ export default function TemplateStoragePicker({
                     title="Hapus template dari library lokal"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    Hapus
+                    {compact ? "Hapus" : "Hapus"}
                   </button>
                 </div>
               </div>
@@ -117,6 +121,6 @@ export default function TemplateStoragePicker({
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

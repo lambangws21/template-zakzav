@@ -59,6 +59,7 @@ function buildDriveImageCandidates(raw, fallbackDriveId = "") {
   if (value.startsWith("data:")) return [value];
   if (value.startsWith("blob:")) return [value];
   if (value.startsWith("//")) return [`https:${value}`];
+  if (value.startsWith("/")) return [value];
   if (/^https?:\/\//i.test(value)) return [value];
   return [];
 }
