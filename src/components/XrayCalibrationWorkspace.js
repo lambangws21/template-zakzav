@@ -1344,6 +1344,8 @@ export default function XrayCalibrationWorkspace() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
+  const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
+    useState(null);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
     LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -1593,6 +1595,17 @@ export default function XrayCalibrationWorkspace() {
     setMobileHandleAssist({ lineId, handleKey });
   }, []);
 
+  const clearMobilePlanningGuideHandleAssist = useCallback(() => {
+    setMobilePlanningGuideHandleAssist(null);
+  }, []);
+
+  const activateMobilePlanningGuideHandleAssist = useCallback(
+    (guideId, handleKey) => {
+      setMobilePlanningGuideHandleAssist({ guideId, handleKey });
+    },
+    [],
+  );
+
   const resetMobileLineTapTarget = useCallback(() => {
     mobileLineTapRef.current = {
       targetType: null,
@@ -1808,6 +1821,23 @@ export default function XrayCalibrationWorkspace() {
       setMobileHandleAssist(null);
     }
   }, [lines, mobileHandleAssist, selectedLineId]);
+
+  useEffect(() => {
+    if (!mobilePlanningGuideHandleAssist) return;
+    const stillExists = planningGuides.some(
+      (guide) => guide.id === mobilePlanningGuideHandleAssist.guideId,
+    );
+    if (
+      !stillExists ||
+      selectedPlanningGuideId !== mobilePlanningGuideHandleAssist.guideId
+    ) {
+      setMobilePlanningGuideHandleAssist(null);
+    }
+  }, [
+    mobilePlanningGuideHandleAssist,
+    planningGuides,
+    selectedPlanningGuideId,
+  ]);
 
   const getLineLabelText = useCallback(
     (line) => {
@@ -2136,6 +2166,73 @@ export default function XrayCalibrationWorkspace() {
     [getMobileHandleAssistGeometry, isCoarsePointer, lines, mobileHandleAssist],
   );
 
+  const getMobilePlanningGuideHandleAssistGeometry = useCallback(
+    (guide, handleKey) => {
+      if (!guide) return null;
+      const handleImagePoint =
+        handleKey === "start" ? guide.anchorStart : guide.anchorEnd;
+      const otherImagePoint =
+        handleKey === "start" ? guide.anchorEnd : guide.anchorStart;
+      const handleScreenPoint = imageToScreenPoint(
+        handleImagePoint.x,
+        handleImagePoint.y,
+      );
+      const otherScreenPoint = imageToScreenPoint(
+        otherImagePoint.x,
+        otherImagePoint.y,
+      );
+      const dx = handleScreenPoint.x - otherScreenPoint.x;
+      const dy = handleScreenPoint.y - otherScreenPoint.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const unitX = dx / length;
+      const unitY = dy / length;
+      const offset = MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN * 0.62;
+
+      return {
+        handleImagePoint,
+        handleScreenPoint,
+        centerX: handleScreenPoint.x + unitX * offset,
+        centerY: handleScreenPoint.y + unitY * offset,
+      };
+    },
+    [imageToScreenPoint],
+  );
+
+  const findMobilePlanningGuideHandleAssistHit = useCallback(
+    (screenPoint) => {
+      if (!isCoarsePointer || !mobilePlanningGuideHandleAssist) return null;
+      const targetGuide =
+        planningGuides.find(
+          (guide) => guide.id === mobilePlanningGuideHandleAssist.guideId,
+        ) || null;
+      if (!targetGuide) return null;
+      const geometry = getMobilePlanningGuideHandleAssistGeometry(
+        targetGuide,
+        mobilePlanningGuideHandleAssist.handleKey,
+      );
+      if (!geometry) return null;
+      const distance = Math.hypot(
+        screenPoint.x - geometry.centerX,
+        screenPoint.y - geometry.centerY,
+      );
+
+      if (distance > MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN) {
+        return null;
+      }
+
+      return {
+        guideId: targetGuide.id,
+        handleKey: mobilePlanningGuideHandleAssist.handleKey,
+      };
+    },
+    [
+      getMobilePlanningGuideHandleAssistGeometry,
+      isCoarsePointer,
+      mobilePlanningGuideHandleAssist,
+      planningGuides,
+    ],
+  );
+
   const clampToImageBounds = useCallback(
     (point) => {
       if (!modelWidth || !modelHeight) return point;
@@ -2245,6 +2342,7 @@ export default function XrayCalibrationWorkspace() {
       setActiveRightPanel("tool");
       resetMobileLineTapTarget();
       clearMobileHandleAssist();
+      clearMobilePlanningGuideHandleAssist();
       if (nextTool !== "cut") {
         setDraftCut(null);
         setHistoryPaused(false);
@@ -2256,6 +2354,7 @@ export default function XrayCalibrationWorkspace() {
     },
     [
       clearMobileHandleAssist,
+      clearMobilePlanningGuideHandleAssist,
       focusCalibrationStep,
       hasCalibration,
       isMobileViewport,
@@ -2337,6 +2436,7 @@ export default function XrayCalibrationWorkspace() {
       setActiveRightPanel("measure");
       resetMobileLineTapTarget();
       clearMobileHandleAssist();
+      clearMobilePlanningGuideHandleAssist();
       setLinePreset(nextPreset);
       setTool("draw");
       if (isMobileViewport) {
@@ -2345,6 +2445,7 @@ export default function XrayCalibrationWorkspace() {
     },
     [
       clearMobileHandleAssist,
+      clearMobilePlanningGuideHandleAssist,
       focusCalibrationStep,
       hasCalibration,
       isMobileViewport,
@@ -4173,6 +4274,37 @@ export default function XrayCalibrationWorkspace() {
         Math.PI * 2,
       );
       overlayCtx.fill();
+      const assistGeometry =
+        mobilePlanningGuideHandleAssist?.guideId === guide.id
+          ? getMobilePlanningGuideHandleAssistGeometry(
+              guide,
+              mobilePlanningGuideHandleAssist.handleKey,
+            )
+          : null;
+      if (assistGeometry) {
+        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistGeometry.centerX,
+          assistGeometry.centerY,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistGeometry.centerX,
+          assistGeometry.centerY,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.stroke();
+        overlayCtx.fillStyle = color;
+      }
       overlayCtx.restore();
 
       drawTag(
@@ -4467,11 +4599,13 @@ export default function XrayCalibrationWorkspace() {
     cutLayers,
     getLineLabelText,
     getMobileHandleAssistGeometry,
+    getMobilePlanningGuideHandleAssistGeometry,
     getPlanningGuideLabelText,
     isLineLocked,
     measurementUnit,
     mmPerPixel,
     mobileHandleAssist,
+    mobilePlanningGuideHandleAssist,
     modelHeight,
     modelWidth,
     orientedSize.height,
@@ -5188,7 +5322,12 @@ export default function XrayCalibrationWorkspace() {
           (guide) => guide.id === hitPlanningGuideLabelId,
         );
         if (!targetGuide) return;
-        selectPlanningGuideForEdit(targetGuide.id);
+        if (isTouchLikePointer) {
+          focusPlanningGuideCanvas(targetGuide.id);
+          clearMobileHandleAssist();
+        } else {
+          selectPlanningGuideForEdit(targetGuide.id);
+        }
         setSelectedLineId(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
@@ -5210,12 +5349,63 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
+      const assistPlanningGuideHandleHit =
+        findMobilePlanningGuideHandleAssistHit(point);
+      if (assistPlanningGuideHandleHit) {
+        const targetGuide = planningGuides.find(
+          (guide) => guide.id === assistPlanningGuideHandleHit.guideId,
+        );
+        if (!targetGuide) return;
+        focusPlanningGuideCanvas(targetGuide.id);
+        clearMobileHandleAssist();
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        const assistGeometry = getMobilePlanningGuideHandleAssistGeometry(
+          targetGuide,
+          assistPlanningGuideHandleHit.handleKey,
+        );
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-planning-guide-handle",
+          guideId: targetGuide.id,
+          handleKey: assistPlanningGuideHandleHit.handleKey,
+          pointerOffsetX: assistGeometry
+            ? assistGeometry.handleImagePoint.x - boundedPoint.x
+            : 0,
+          pointerOffsetY: assistGeometry
+            ? assistGeometry.handleImagePoint.y - boundedPoint.y
+            : 0,
+        };
+        setNotice(
+          "Adjust planning guide aktif. Geser dari area bundaran, titik handle tetap terlihat.",
+        );
+        return;
+      }
+
       const hitPlanningGuideHandle = findClosestPlanningGuideHandle(imagePoint);
       if (hitPlanningGuideHandle) {
         const targetGuide = planningGuides.find(
           (guide) => guide.id === hitPlanningGuideHandle.guideId,
         );
         if (!targetGuide) return;
+        if (isTouchLikePointer) {
+          focusPlanningGuideCanvas(targetGuide.id);
+          clearMobileHandleAssist();
+          activateMobilePlanningGuideHandleAssist(
+            targetGuide.id,
+            hitPlanningGuideHandle.handleKey,
+          );
+          if (isMobileViewport) {
+            setMobileControlsOpen(false);
+          }
+          setNotice(
+            "Ujung planning guide dipilih. Bundaran assist aktif untuk Distal Cut, Tibial Cut, dan Tibial Slope.",
+          );
+          return;
+        }
         selectPlanningGuideForEdit(targetGuide.id);
         setSelectedLineId(null);
         setSelectedAngleId(null);
@@ -5236,7 +5426,16 @@ export default function XrayCalibrationWorkspace() {
           (guide) => guide.id === hitPlanningGuideId,
         );
         if (!targetGuide) return;
-        selectPlanningGuideForEdit(targetGuide.id);
+        if (isTouchLikePointer) {
+          focusPlanningGuideCanvas(targetGuide.id);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          if (isMobileViewport) {
+            setMobileControlsOpen(false);
+          }
+        } else {
+          selectPlanningGuideForEdit(targetGuide.id);
+        }
         setSelectedLineId(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
@@ -5544,8 +5743,10 @@ export default function XrayCalibrationWorkspace() {
     },
     [
       activateMobileHandleAssist,
+      activateMobilePlanningGuideHandleAssist,
       clampToImageBounds,
       clearMobileHandleAssist,
+      clearMobilePlanningGuideHandleAssist,
       completeDraftCut,
       circles,
       draftCut,
@@ -5555,7 +5756,9 @@ export default function XrayCalibrationWorkspace() {
       findClosestHkaHandle,
       findClosestLineId,
       findMobileHandleAssistHit,
+      findMobilePlanningGuideHandleAssistHit,
       getMobileHandleAssistGeometry,
+      getMobilePlanningGuideHandleAssistGeometry,
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
@@ -5563,6 +5766,7 @@ export default function XrayCalibrationWorkspace() {
       findCutLayerByPoint,
       findCutLayerHandle,
       focusLayerSettings,
+      focusPlanningGuideCanvas,
       getLocalPoint,
       image,
       focusCalibrationStep,
@@ -5690,20 +5894,30 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-planning-guide-handle") {
-        const movePoint = clampToImageBounds(
-          screenToImagePoint(point.x, point.y),
-        );
-        const { guideId, handleKey } = interactionRef.current;
+        const movePoint = screenToImagePoint(point.x, point.y);
+        const {
+          guideId,
+          handleKey,
+          pointerOffsetX = 0,
+          pointerOffsetY = 0,
+        } = interactionRef.current;
+        const adjustedPoint = clampToImageBounds({
+          x: movePoint.x + pointerOffsetX,
+          y: movePoint.y + pointerOffsetY,
+        });
         setPlanningGuides((prev) =>
           prev.map((guide) => {
             if (guide.id !== guideId) return guide;
             if (handleKey === "start") {
               return {
                 ...guide,
-                anchorStart: { x: movePoint.x, y: movePoint.y },
+                anchorStart: { x: adjustedPoint.x, y: adjustedPoint.y },
               };
             }
-            return { ...guide, anchorEnd: { x: movePoint.x, y: movePoint.y } };
+            return {
+              ...guide,
+              anchorEnd: { x: adjustedPoint.x, y: adjustedPoint.y },
+            };
           }),
         );
         return;
@@ -7177,17 +7391,28 @@ export default function XrayCalibrationWorkspace() {
     selectedPlanningGuideId,
   ]);
 
-  function selectPlanningGuideForEdit(guideId) {
+  function focusPlanningGuideCanvas(
+    guideId,
+    { openPanel = false, showNotice = false } = {},
+  ) {
     setSelectedPlanningGuideId(guideId);
     setMeasureAnatomyTab("knee");
     setMobilePanelMode("workspace");
     if (isMobileViewport) {
-      setMobileControlsOpen(true);
+      setMobileControlsOpen(openPanel);
     }
     setActiveRightPanel("measure");
-    setNotice(
-      "Planning guide dipilih. Parameter bisa diubah lalu update lagi.",
-    );
+    if (showNotice) {
+      setNotice(
+        openPanel
+          ? "Planning guide dipilih. Parameter bisa diubah lalu update lagi."
+          : "Planning guide dipilih. Adjust bisa langsung dari canvas.",
+      );
+    }
+  }
+
+  function selectPlanningGuideForEdit(guideId) {
+    focusPlanningGuideCanvas(guideId, { openPanel: true, showNotice: true });
   }
 
   const updateSelectedPlanningGuide = useCallback(
