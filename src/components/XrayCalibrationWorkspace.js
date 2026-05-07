@@ -2072,24 +2072,56 @@ export default function XrayCalibrationWorkspace() {
     [flipX, flipY, modelHeight, modelWidth, rotation, view],
   );
 
+  const getMobileHandleAssistGeometry = useCallback(
+    (line, handleKey) => {
+      if (!line) return null;
+      const handleImagePoint =
+        handleKey === "start"
+          ? { x: line.x1, y: line.y1 }
+          : { x: line.x2, y: line.y2 };
+      const otherImagePoint =
+        handleKey === "start"
+          ? { x: line.x2, y: line.y2 }
+          : { x: line.x1, y: line.y1 };
+      const handleScreenPoint = imageToScreenPoint(
+        handleImagePoint.x,
+        handleImagePoint.y,
+      );
+      const otherScreenPoint = imageToScreenPoint(
+        otherImagePoint.x,
+        otherImagePoint.y,
+      );
+      const dx = handleScreenPoint.x - otherScreenPoint.x;
+      const dy = handleScreenPoint.y - otherScreenPoint.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const unitX = dx / length;
+      const unitY = dy / length;
+      const offset = MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN * 0.62;
+
+      return {
+        handleImagePoint,
+        handleScreenPoint,
+        centerX: handleScreenPoint.x + unitX * offset,
+        centerY: handleScreenPoint.y + unitY * offset,
+      };
+    },
+    [imageToScreenPoint],
+  );
+
   const findMobileHandleAssistHit = useCallback(
     (screenPoint) => {
       if (!isCoarsePointer || !mobileHandleAssist) return null;
       const targetLine =
         lines.find((line) => line.id === mobileHandleAssist.lineId) || null;
       if (!targetLine) return null;
-
-      const handleImagePoint =
-        mobileHandleAssist.handleKey === "start"
-          ? { x: targetLine.x1, y: targetLine.y1 }
-          : { x: targetLine.x2, y: targetLine.y2 };
-      const handleScreenPoint = imageToScreenPoint(
-        handleImagePoint.x,
-        handleImagePoint.y,
+      const geometry = getMobileHandleAssistGeometry(
+        targetLine,
+        mobileHandleAssist.handleKey,
       );
+      if (!geometry) return null;
       const distance = Math.hypot(
-        screenPoint.x - handleScreenPoint.x,
-        screenPoint.y - handleScreenPoint.y,
+        screenPoint.x - geometry.centerX,
+        screenPoint.y - geometry.centerY,
       );
 
       if (distance > MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN) {
@@ -2101,7 +2133,7 @@ export default function XrayCalibrationWorkspace() {
         handleKey: mobileHandleAssist.handleKey,
       };
     },
-    [imageToScreenPoint, isCoarsePointer, lines, mobileHandleAssist],
+    [getMobileHandleAssistGeometry, isCoarsePointer, lines, mobileHandleAssist],
   );
 
   const clampToImageBounds = useCallback(
@@ -3758,20 +3790,17 @@ export default function XrayCalibrationWorkspace() {
     const drawLine = (line, opts = {}) => {
       const start = imageToScreenPoint(line.x1, line.y1);
       const end = imageToScreenPoint(line.x2, line.y2);
-      const assistPoint =
-        opts.assistHandleKey === "start"
-          ? start
-          : opts.assistHandleKey === "end"
-            ? end
-            : null;
+      const assistGeometry = opts.assistHandleKey
+        ? getMobileHandleAssistGeometry(line, opts.assistHandleKey)
+        : null;
 
       overlayCtx.save();
-      if (assistPoint) {
+      if (assistGeometry) {
         overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
         overlayCtx.beginPath();
         overlayCtx.arc(
-          assistPoint.x,
-          assistPoint.y,
+          assistGeometry.centerX,
+          assistGeometry.centerY,
           MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
           0,
           Math.PI * 2,
@@ -3781,8 +3810,8 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx.lineWidth = 1.5;
         overlayCtx.beginPath();
         overlayCtx.arc(
-          assistPoint.x,
-          assistPoint.y,
+          assistGeometry.centerX,
+          assistGeometry.centerY,
           MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
           0,
           Math.PI * 2,
@@ -4437,10 +4466,12 @@ export default function XrayCalibrationWorkspace() {
     lines,
     cutLayers,
     getLineLabelText,
+    getMobileHandleAssistGeometry,
     getPlanningGuideLabelText,
     isLineLocked,
     measurementUnit,
     mmPerPixel,
+    mobileHandleAssist,
     modelHeight,
     modelWidth,
     orientedSize.height,
@@ -4935,14 +4966,24 @@ export default function XrayCalibrationWorkspace() {
             setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
             return;
           }
+          const assistGeometry = getMobileHandleAssistGeometry(
+            targetLine,
+            assistHandleHit.handleKey,
+          );
           setHistoryPaused(true);
           interactionRef.current = {
             mode: "move-handle",
             lineId: targetLine.id,
             handleKey: assistHandleHit.handleKey,
+            pointerOffsetX: assistGeometry
+              ? assistGeometry.handleImagePoint.x - boundedPoint.x
+              : 0,
+            pointerOffsetY: assistGeometry
+              ? assistGeometry.handleImagePoint.y - boundedPoint.y
+              : 0,
           };
           setNotice(
-            "Adjust ujung line aktif. Geser jari di dalam bundaran untuk memanjangkan atau memendekkan garis.",
+            "Adjust ujung line aktif. Geser dari area bundaran, titik handle tetap terlihat dan tidak dipaksa ke tengah jari.",
           );
           return;
         }
@@ -4969,7 +5010,7 @@ export default function XrayCalibrationWorkspace() {
             setMobileControlsOpen(false);
           }
           setNotice(
-            "Ujung line dipilih. Bundaran assist aktif, sentuh area bundaran untuk adjust panjang garis.",
+            "Ujung line dipilih. Bundaran assist aktif, sentuh area putih bundaran untuk adjust tanpa menutupi titik handle.",
           );
           return;
         }
@@ -5514,6 +5555,7 @@ export default function XrayCalibrationWorkspace() {
       findClosestHkaHandle,
       findClosestLineId,
       findMobileHandleAssistHit,
+      getMobileHandleAssistGeometry,
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
@@ -5758,19 +5800,26 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-handle") {
-        const movePoint = clampToImageBounds(
-          screenToImagePoint(point.x, point.y),
-        );
-        const { lineId, handleKey } = interactionRef.current;
+        const movePoint = screenToImagePoint(point.x, point.y);
+        const {
+          lineId,
+          handleKey,
+          pointerOffsetX = 0,
+          pointerOffsetY = 0,
+        } = interactionRef.current;
         if (isLineLocked(lineId)) return;
+        const adjustedPoint = clampToImageBounds({
+          x: movePoint.x + pointerOffsetX,
+          y: movePoint.y + pointerOffsetY,
+        });
 
         setLines((prev) =>
           prev.map((line) => {
             if (line.id !== lineId) return line;
             if (handleKey === "start") {
-              return { ...line, x1: movePoint.x, y1: movePoint.y };
+              return { ...line, x1: adjustedPoint.x, y1: adjustedPoint.y };
             }
-            return { ...line, x2: movePoint.x, y2: movePoint.y };
+            return { ...line, x2: adjustedPoint.x, y2: adjustedPoint.y };
           }),
         );
         return;
@@ -10668,7 +10717,7 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                   <div className="text-[10px] text-emerald-700">
                     {isCoarsePointer
-                      ? "Mobile: sentuh ujung untuk munculkan bundaran assist, lalu geser dari area itu untuk adjust. Tap lagi pada badan garis untuk pindah."
+                      ? "Mobile: sentuh ujung untuk munculkan bundaran assist. Drag dari area bundaran untuk adjust tanpa menutupi titik handle, atau tap lagi pada badan garis untuk pindah."
                       : "Drag titik ujung, geser garis, atau drag label langsung di canvas."}
                   </div>
                   <div className="mt-1.5 flex flex-col gap-1.5">
