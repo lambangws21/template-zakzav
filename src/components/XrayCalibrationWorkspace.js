@@ -24,8 +24,12 @@ import {
   LockOpen,
   Maximize2,
   Menu,
+  Minus,
+  MoveDown,
+  MoveUp,
   Package,
   PencilLine,
+  Plus,
   RefreshCcw,
   Redo2,
   RotateCcw,
@@ -94,10 +98,26 @@ const BUTTON_TAP = { scale: 0.97 };
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
 const DEFAULT_LINE_LABEL_OFFSET_X = -42;
 const DEFAULT_LINE_LABEL_OFFSET_Y = -20;
+const DEFAULT_ANGLE_LABEL_OFFSET_X = 0;
+const DEFAULT_ANGLE_LABEL_OFFSET_Y = -16;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
 const MOBILE_IDLE_TOOL = "pan";
+const MIN_FREE_CUT_POINTS = 3;
+const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
+const DEFAULT_ANGLE_COLOR = "#f97316";
+const DEFAULT_ANGLE_STROKE_WIDTH = 2;
+const ANGLE_COLOR_OPTIONS = [
+  "#f97316",
+  "#ef4444",
+  "#f59e0b",
+  "#22c55e",
+  "#06b6d4",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+];
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -176,6 +196,155 @@ function normalizeRect(x1, y1, x2, y2) {
     y: top,
     width: right - left,
     height: bottom - top,
+  };
+}
+
+function isImageBackedLayerKind(kind) {
+  return kind === "upload" || kind === "free-cut";
+}
+
+function getPolygonBounds(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+
+  let minX = points[0].x;
+  let minY = points[0].y;
+  let maxX = points[0].x;
+  let maxY = points[0].y;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index];
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function tracePolygonPath(ctx, points) {
+  if (!ctx || !Array.isArray(points) || points.length === 0) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < points.length; index += 1) {
+    ctx.lineTo(points[index].x, points[index].y);
+  }
+  ctx.closePath();
+}
+
+function pointInPolygon(point, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+
+  for (
+    let currentIndex = 0, previousIndex = polygon.length - 1;
+    currentIndex < polygon.length;
+    previousIndex = currentIndex, currentIndex += 1
+  ) {
+    const currentPoint = polygon[currentIndex];
+    const previousPoint = polygon[previousIndex];
+    const intersects =
+      currentPoint.y > point.y !== previousPoint.y > point.y &&
+      point.x <
+        ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) /
+          (previousPoint.y - currentPoint.y || Number.EPSILON) +
+          currentPoint.x;
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function buildFreeCutLayerFromPoints({
+  sourceImage,
+  sourceOffsetX = 0,
+  sourceOffsetY = 0,
+  polygonPoints,
+  layerId,
+  name,
+}) {
+  if (
+    typeof document === "undefined" ||
+    !sourceImage ||
+    !Array.isArray(polygonPoints) ||
+    polygonPoints.length < MIN_FREE_CUT_POINTS
+  ) {
+    return null;
+  }
+
+  const rawBounds = getPolygonBounds(polygonPoints);
+  if (!rawBounds) return null;
+
+  const sourceX = Math.floor(rawBounds.x);
+  const sourceY = Math.floor(rawBounds.y);
+  const sourceRight = Math.ceil(rawBounds.x + rawBounds.width);
+  const sourceBottom = Math.ceil(rawBounds.y + rawBounds.height);
+  const width = Math.max(1, sourceRight - sourceX);
+  const height = Math.max(1, sourceBottom - sourceY);
+  if (width < 8 || height < 8) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const normalizedPoints = polygonPoints.map((point) => ({
+    x: point.x - sourceX,
+    y: point.y - sourceY,
+  }));
+
+  ctx.save();
+  tracePolygonPath(ctx, normalizedPoints);
+  ctx.clip();
+  ctx.drawImage(
+    sourceImage,
+    sourceOffsetX + sourceX,
+    sourceOffsetY + sourceY,
+    width,
+    height,
+    0,
+    0,
+    width,
+    height,
+  );
+  ctx.restore();
+
+  let imageSrc = "";
+  try {
+    imageSrc = canvas.toDataURL("image/png");
+  } catch {
+    imageSrc = "";
+  }
+
+  return {
+    id: layerId,
+    kind: "free-cut",
+    image: canvas,
+    imageSrc,
+    name: name || `Free Cut ${layerId}`,
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: width,
+    sourceHeight: height,
+    displayWidth: width,
+    displayHeight: height,
+    centerX: sourceX + width / 2,
+    centerY: sourceY + height / 2,
+    rotation: 0,
+    flipX: false,
+    flipY: false,
+    opacity: 1,
+    lockScale: false,
+    maskPoints: normalizedPoints.map((point) => ({
+      x: point.x - width / 2,
+      y: point.y - height / 2,
+    })),
   };
 }
 
@@ -429,11 +598,49 @@ function toLayerLocal(point, layer) {
   };
 }
 
+function toLayerShapeLocal(point, layer) {
+  const local = toLayerLocal(point, layer);
+  return {
+    x: layer.flipX ? -local.x : local.x,
+    y: layer.flipY ? -local.y : local.y,
+  };
+}
+
 function getLayerDisplaySize(layer) {
   return {
     width: layer.displayWidth || layer.sourceWidth,
     height: layer.displayHeight || layer.sourceHeight,
   };
+}
+
+function getLayerMaskDisplayPoints(layer) {
+  if (!Array.isArray(layer.maskPoints) || layer.maskPoints.length < 3) {
+    return null;
+  }
+
+  const size = getLayerDisplaySize(layer);
+  const scaleX = size.width / Math.max(1, layer.sourceWidth || size.width);
+  const scaleY = size.height / Math.max(1, layer.sourceHeight || size.height);
+
+  return layer.maskPoints.map((point) => ({
+    x: point.x * scaleX,
+    y: point.y * scaleY,
+  }));
+}
+
+function getLayerMaskScreenPoints(layer) {
+  const localPoints = getLayerMaskDisplayPoints(layer);
+  if (!localPoints) return null;
+
+  return localPoints.map((point) => {
+    const flippedX = layer.flipX ? -point.x : point.x;
+    const flippedY = layer.flipY ? -point.y : point.y;
+    const rotated = rotateVector(flippedX, flippedY, layer.rotation);
+    return {
+      x: layer.centerX + rotated.x,
+      y: layer.centerY + rotated.y,
+    };
+  });
 }
 
 function getImageContentBounds(image) {
@@ -845,6 +1052,10 @@ const ICON_COMPONENTS = {
   export: Download,
   package: Package,
   cloudOff: CloudOff,
+  minus: Minus,
+  plus: Plus,
+  moveUp: MoveUp,
+  moveDown: MoveDown,
 };
 
 function Icon({ name, className = "h-4 w-4" }) {
@@ -939,6 +1150,85 @@ function ToolIconButton({
         <Icon name={icon} />
       )}
     </motion.button>
+  );
+}
+
+function ColorSwatchButton({
+  color,
+  active = false,
+  onClick,
+  label = "Pilih warna",
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      whileHover={BUTTON_HOVER}
+      whileTap={BUTTON_TAP}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-full border-2 transition ${
+        active
+          ? "border-slate-900 bg-white shadow-sm"
+          : "border-slate-200 bg-white hover:border-slate-300"
+      }`}
+    >
+      <span
+        className="h-4 w-4 rounded-full border border-white/70"
+        style={{ backgroundColor: color }}
+      />
+    </motion.button>
+  );
+}
+
+function CompactSliderField({
+  label,
+  valueText,
+  min,
+  max,
+  step = 1,
+  value,
+  onChange,
+  onDecrease,
+  onIncrease,
+  decreaseIcon = "minus",
+  increaseIcon = "plus",
+  disabled = false,
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+      <div className="flex items-center justify-between gap-2 text-[10px] text-slate-600">
+        <span>{label}</span>
+        <span className="text-slate-400">{valueText}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-1.5">
+        <IconButton
+          icon={decreaseIcon}
+          label={`${label} kurang`}
+          onClick={onDecrease}
+          disabled={disabled}
+          className="h-7 w-7 shrink-0"
+        />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          className="min-w-0 flex-1 disabled:cursor-not-allowed disabled:opacity-45"
+        />
+        <IconButton
+          icon={increaseIcon}
+          label={`${label} tambah`}
+          onClick={onIncrease}
+          disabled={disabled}
+          className="h-7 w-7 shrink-0"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1227,21 +1517,47 @@ export default function XrayCalibrationWorkspace() {
       heightMm: mmPerPixel !== null ? layerHeight * mmPerPixel : null,
     };
   }, [mmPerPixel, modelHeight, modelWidth, selectedCutLayer]);
+  const selectedAngleMetrics = useMemo(() => {
+    if (!selectedAngle) return null;
+
+    return {
+      color: selectedAngle.color || DEFAULT_ANGLE_COLOR,
+      labelOffsetX: Number.isFinite(selectedAngle.labelOffsetX)
+        ? selectedAngle.labelOffsetX
+        : DEFAULT_ANGLE_LABEL_OFFSET_X,
+      labelOffsetY: Number.isFinite(selectedAngle.labelOffsetY)
+        ? selectedAngle.labelOffsetY
+        : DEFAULT_ANGLE_LABEL_OFFSET_Y,
+      labelOpacity: Math.round(
+        (Number.isFinite(selectedAngle.labelOpacity)
+          ? selectedAngle.labelOpacity
+          : DEFAULT_LABEL_OPACITY) * 100,
+      ),
+      strokeWidth: Number.isFinite(selectedAngle.strokeWidth)
+        ? selectedAngle.strokeWidth
+        : DEFAULT_ANGLE_STROKE_WIDTH,
+      valueDeg: getAngleDegrees(
+        selectedAngle.p1,
+        selectedAngle.p2,
+        selectedAngle.p3,
+      ),
+    };
+  }, [selectedAngle]);
   const selectedLayerCanApplyRealSize =
-    selectedCutLayer?.kind === "upload" &&
+    isImageBackedLayerKind(selectedCutLayer?.kind) &&
     mmPerPixel !== null &&
     !selectedCutLayer.lockScale;
   const selectedLayerCanTrim =
-    selectedCutLayer?.kind === "upload" &&
+    isImageBackedLayerKind(selectedCutLayer?.kind) &&
     Boolean(selectedCutLayer.image) &&
     !selectedCutLayer.lockScale;
   const selectedLayerCanApplyRulerScale =
-    selectedCutLayer?.kind === "upload" &&
+    isImageBackedLayerKind(selectedCutLayer?.kind) &&
     Boolean(selectedCutLayer.image) &&
     mmPerPixel !== null &&
     !selectedCutLayer.lockScale;
   const selectedLayerCanPasteScale =
-    selectedCutLayer?.kind === "upload" &&
+    isImageBackedLayerKind(selectedCutLayer?.kind) &&
     Boolean(copiedTemplateScale) &&
     !selectedCutLayer.lockScale;
   const isSelectedLineLocked = selectedLine
@@ -1264,6 +1580,17 @@ export default function XrayCalibrationWorkspace() {
     setCutLayers((prev) =>
       prev.map((item) => {
         if (item.id !== layerId) return item;
+        return typeof updater === "function"
+          ? updater(item)
+          : { ...item, ...updater };
+      }),
+    );
+  }, []);
+
+  const updateAngleById = useCallback((angleId, updater) => {
+    setAngles((prev) =>
+      prev.map((item) => {
+        if (item.id !== angleId) return item;
         return typeof updater === "function"
           ? updater(item)
           : { ...item, ...updater };
@@ -1510,7 +1837,12 @@ export default function XrayCalibrationWorkspace() {
         flipY: layer.flipY,
         opacity: layer.opacity ?? 1,
         lockScale: Boolean(layer.lockScale),
-        imageSrc: layer.kind === "upload" ? layer.imageSrc || "" : "",
+        imageSrc: isImageBackedLayerKind(layer.kind)
+          ? layer.imageSrc || ""
+          : "",
+        maskPoints: Array.isArray(layer.maskPoints)
+          ? layer.maskPoints.map((point) => ({ x: point.x, y: point.y }))
+          : null,
       })),
     [cutLayers],
   );
@@ -1792,6 +2124,10 @@ export default function XrayCalibrationWorkspace() {
       }
       setMobilePanelMode("workspace");
       setActiveRightPanel("tool");
+      if (nextTool !== "cut") {
+        setDraftCut(null);
+        setHistoryPaused(false);
+      }
       setTool(nextTool);
       if (isMobileViewport) {
         setMobileControlsOpen(false);
@@ -1799,6 +2135,58 @@ export default function XrayCalibrationWorkspace() {
     },
     [focusCalibrationStep, hasCalibration, isMobileViewport],
   );
+
+  const completeDraftCut = useCallback(() => {
+    if (!image || !draftCut || !Array.isArray(draftCut.points)) return false;
+    if (draftCut.points.length < MIN_FREE_CUT_POINTS) {
+      setNotice("Free cut butuh minimal 3 titik.");
+      return false;
+    }
+
+    const nextLayer = buildFreeCutLayerFromPoints({
+      sourceImage: image,
+      sourceOffsetX: cropRect?.x || 0,
+      sourceOffsetY: cropRect?.y || 0,
+      polygonPoints: draftCut.points,
+      layerId: nextCutLayerIdRef.current,
+      name: `Free Cut ${nextCutLayerIdRef.current}`,
+    });
+
+    if (!nextLayer) {
+      setDraftCut(null);
+      setHistoryPaused(false);
+      setNotice("Free cut gagal dibuat. Pastikan area cut cukup besar.");
+      return false;
+    }
+
+    nextCutLayerIdRef.current += 1;
+    setCutLayers((prev) => [...prev, nextLayer]);
+    focusLayerSettings(nextLayer.id);
+    setSelectedLineId(null);
+    setSelectedAngleId(null);
+    setSelectedCircleId(null);
+    setSelectedHkaId(null);
+    setDraftCut(null);
+    setHistoryPaused(false);
+    setNotice(
+      nextLayer.imageSrc
+        ? "Free cut berhasil dibuat sebagai layer baru."
+        : "Free cut berhasil dibuat. Layer ini tampil normal, tetapi sumber remote tidak bisa diekspor ulang.",
+    );
+    if (shouldUseMobileOneShotTool) {
+      setTool(MOBILE_IDLE_TOOL);
+      setMobileControlsOpen(false);
+    } else {
+      setTool("draw");
+    }
+    return true;
+  }, [
+    cropRect,
+    draftCut,
+    focusLayerSettings,
+    image,
+    shouldUseMobileOneShotTool,
+  ]);
 
   const handleLinePresetChange = useCallback(
     (nextPreset) => {
@@ -2019,15 +2407,33 @@ export default function XrayCalibrationWorkspace() {
                 ),
                 lockScale: Boolean(layer.lockScale),
                 imageSrc: layer.imageSrc || "",
+                maskPoints: Array.isArray(layer.maskPoints)
+                  ? layer.maskPoints
+                      .map((point) => ({
+                        x: Number(point?.x) || 0,
+                        y: Number(point?.y) || 0,
+                      }))
+                      .filter(
+                        (point) =>
+                          Number.isFinite(point.x) && Number.isFinite(point.y),
+                      )
+                  : null,
               };
 
-              if (baseLayer.kind === "upload" && baseLayer.imageSrc) {
+              if (
+                isImageBackedLayerKind(baseLayer.kind) &&
+                baseLayer.imageSrc
+              ) {
                 try {
                   const layerImage = await loadImageFromSrc(baseLayer.imageSrc);
                   return { ...baseLayer, image: layerImage };
                 } catch {
                   return null;
                 }
+              }
+
+              if (baseLayer.kind === "free-cut") {
+                return null;
               }
 
               return baseLayer;
@@ -2522,7 +2928,12 @@ export default function XrayCalibrationWorkspace() {
         knee: { ...item.knee },
         ankle: { ...item.ankle },
       })),
-      cutLayers: cutLayers.map((layer) => ({ ...layer })),
+      cutLayers: cutLayers.map((layer) => ({
+        ...layer,
+        maskPoints: Array.isArray(layer.maskPoints)
+          ? layer.maskPoints.map((point) => ({ ...point }))
+          : null,
+      })),
       calibrationLineId,
       lockedLineIds: [...lockedLineIds].sort((a, b) => a - b),
       mmPerPixel,
@@ -2632,7 +3043,14 @@ export default function XrayCalibrationWorkspace() {
         ankle: { ...item.ankle },
       })),
     );
-    setCutLayers(snapshot.cutLayers.map((layer) => ({ ...layer })));
+    setCutLayers(
+      snapshot.cutLayers.map((layer) => ({
+        ...layer,
+        maskPoints: Array.isArray(layer.maskPoints)
+          ? layer.maskPoints.map((point) => ({ ...point }))
+          : null,
+      })),
+    );
     setCalibrationLineId(snapshot.calibrationLineId);
     setLockedLineIds(new Set(snapshot.lockedLineIds));
     setMmPerPixel(snapshot.mmPerPixel);
@@ -3041,9 +3459,17 @@ export default function XrayCalibrationWorkspace() {
     (imagePoint) => {
       for (let i = cutLayers.length - 1; i >= 0; i -= 1) {
         const layer = cutLayers[i];
+        const maskPoints = getLayerMaskDisplayPoints(layer);
+        if (maskPoints) {
+          const local = toLayerShapeLocal(imagePoint, layer);
+          if (pointInPolygon(local, maskPoints)) {
+            return layer.id;
+          }
+          continue;
+        }
+
         const local = toLayerLocal(imagePoint, layer);
         const size = getLayerDisplaySize(layer);
-
         if (
           Math.abs(local.x) <= size.width / 2 &&
           Math.abs(local.y) <= size.height / 2
@@ -3152,11 +3578,11 @@ export default function XrayCalibrationWorkspace() {
       );
 
       for (const layer of cutLayers) {
-        const srcX =
-          layer.kind === "upload" ? layer.sourceX : sourceX + layer.sourceX;
-        const srcY =
-          layer.kind === "upload" ? layer.sourceY : sourceY + layer.sourceY;
-        const sourceImage = layer.kind === "upload" ? layer.image : image;
+        const isImageBacked = isImageBackedLayerKind(layer.kind);
+        const srcX = isImageBacked ? layer.sourceX : sourceX + layer.sourceX;
+        const srcY = isImageBacked ? layer.sourceY : sourceY + layer.sourceY;
+        const sourceImage = isImageBacked ? layer.image : image;
+        if (!sourceImage) continue;
         const displaySize = getLayerDisplaySize(layer);
 
         imageCtx.save();
@@ -3320,11 +3746,36 @@ export default function XrayCalibrationWorkspace() {
       const p3 = imageToScreenPoint(angle.p3.x, angle.p3.y);
       const value = getAngleDegrees(angle.p1, angle.p2, angle.p3);
       const isSelected = angle.id === selectedAngleId;
-      const color = isSelected ? "#fb923c" : "#f97316";
+      const color = angle.color || DEFAULT_ANGLE_COLOR;
+      const strokeWidth = Math.max(
+        1.5,
+        Number.isFinite(angle.strokeWidth)
+          ? angle.strokeWidth
+          : DEFAULT_ANGLE_STROKE_WIDTH,
+      );
+      const labelOffsetX = Number.isFinite(angle.labelOffsetX)
+        ? angle.labelOffsetX
+        : DEFAULT_ANGLE_LABEL_OFFSET_X;
+      const labelOffsetY = Number.isFinite(angle.labelOffsetY)
+        ? angle.labelOffsetY
+        : DEFAULT_ANGLE_LABEL_OFFSET_Y;
+      const labelOpacity = Number.isFinite(angle.labelOpacity)
+        ? angle.labelOpacity
+        : DEFAULT_LABEL_OPACITY;
 
       overlayCtx.save();
+      if (isSelected) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.95)";
+        overlayCtx.lineWidth = strokeWidth + 1.5;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(p2.x, p2.y);
+        overlayCtx.lineTo(p1.x, p1.y);
+        overlayCtx.moveTo(p2.x, p2.y);
+        overlayCtx.lineTo(p3.x, p3.y);
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = isSelected ? 2.5 : 2;
+      overlayCtx.lineWidth = strokeWidth + (isSelected ? 0.5 : 0);
       overlayCtx.beginPath();
       overlayCtx.moveTo(p2.x, p2.y);
       overlayCtx.lineTo(p1.x, p1.y);
@@ -3342,10 +3793,17 @@ export default function XrayCalibrationWorkspace() {
 
       drawTag(
         overlayCtx,
-        p2.x,
-        p2.y - 16,
+        p2.x + labelOffsetX,
+        p2.y + labelOffsetY,
         `ANGLE: ${value.toFixed(1)}°`,
         color,
+        {
+          bgOpacity: Math.max(0.2, Math.min(1, labelOpacity)),
+          fontSize: 9,
+          paddingX: 4,
+          paddingY: 2,
+          radius: 4,
+        },
       );
     }
 
@@ -3569,6 +4027,27 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx.fill();
         overlayCtx.stroke();
       }
+      const maskScreenPoints = getLayerMaskScreenPoints(activeCutLayer);
+      if (maskScreenPoints) {
+        overlayCtx.strokeStyle = getLayerPalette(activeCutLayer.id).border;
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.beginPath();
+        const firstPoint = imageToScreenPoint(
+          maskScreenPoints[0].x,
+          maskScreenPoints[0].y,
+        );
+        overlayCtx.moveTo(firstPoint.x, firstPoint.y);
+        for (let index = 1; index < maskScreenPoints.length; index += 1) {
+          const nextPoint = imageToScreenPoint(
+            maskScreenPoints[index].x,
+            maskScreenPoints[index].y,
+          );
+          overlayCtx.lineTo(nextPoint.x, nextPoint.y);
+        }
+        overlayCtx.closePath();
+        overlayCtx.stroke();
+      }
       overlayCtx.restore();
     }
 
@@ -3677,36 +4156,93 @@ export default function XrayCalibrationWorkspace() {
     }
 
     if (draftCut) {
-      const normRect = normalizeRect(
-        draftCut.x1,
-        draftCut.y1,
-        draftCut.x2,
-        draftCut.y2,
-      );
-      const topLeftCut = imageToScreenPoint(normRect.x, normRect.y);
-      const bottomRightCut = imageToScreenPoint(
-        normRect.x + normRect.width,
-        normRect.y + normRect.height,
-      );
-      const cutWidth = Math.abs(bottomRightCut.x - topLeftCut.x);
-      const cutHeight = Math.abs(bottomRightCut.y - topLeftCut.y);
-      const rectX = Math.min(topLeftCut.x, bottomRightCut.x);
-      const rectY = Math.min(topLeftCut.y, bottomRightCut.y);
+      const polygonPoints = Array.isArray(draftCut.points)
+        ? draftCut.points
+        : [];
+      const hoverPoint = draftCut.hoverPoint || null;
+      const previewPoints = [...polygonPoints];
+      const lastPoint = polygonPoints[polygonPoints.length - 1] || null;
+      if (hoverPoint && lastPoint && getDistance(lastPoint, hoverPoint) > 0.6) {
+        previewPoints.push(hoverPoint);
+      }
+
+      const canClose =
+        polygonPoints.length >= MIN_FREE_CUT_POINTS &&
+        hoverPoint &&
+        getDistance(polygonPoints[0], hoverPoint) <=
+          FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
 
       overlayCtx.save();
       overlayCtx.strokeStyle = "#22d3ee";
-      overlayCtx.fillStyle = "rgba(34, 211, 238, 0.15)";
+      overlayCtx.fillStyle = canClose
+        ? "rgba(34, 211, 238, 0.16)"
+        : "rgba(34, 211, 238, 0.08)";
       overlayCtx.lineWidth = 1.5;
       overlayCtx.setLineDash([6, 4]);
-      overlayCtx.fillRect(rectX, rectY, cutWidth, cutHeight);
-      overlayCtx.strokeRect(rectX, rectY, cutWidth, cutHeight);
+
+      if (previewPoints.length > 0) {
+        const firstPoint = imageToScreenPoint(
+          previewPoints[0].x,
+          previewPoints[0].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(firstPoint.x, firstPoint.y);
+        for (let index = 1; index < previewPoints.length; index += 1) {
+          const nextPoint = imageToScreenPoint(
+            previewPoints[index].x,
+            previewPoints[index].y,
+          );
+          overlayCtx.lineTo(nextPoint.x, nextPoint.y);
+        }
+        if (canClose) {
+          overlayCtx.closePath();
+          overlayCtx.fill();
+        }
+        overlayCtx.stroke();
+      }
+
+      overlayCtx.setLineDash([]);
+      for (let index = 0; index < polygonPoints.length; index += 1) {
+        const pointItem = imageToScreenPoint(
+          polygonPoints[index].x,
+          polygonPoints[index].y,
+        );
+        const isStartPoint = index === 0;
+        overlayCtx.fillStyle = isStartPoint ? "#ecfeff" : "#22d3ee";
+        overlayCtx.strokeStyle = "#22d3ee";
+        overlayCtx.lineWidth = isStartPoint ? 2 : 1.4;
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          pointItem.x,
+          pointItem.y,
+          isStartPoint ? 5.2 : 4,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.fill();
+        overlayCtx.stroke();
+      }
       overlayCtx.restore();
 
+      const labelAnchor = imageToScreenPoint(
+        (
+          hoverPoint ||
+          polygonPoints[polygonPoints.length - 1] ||
+          polygonPoints[0]
+        ).x,
+        (
+          hoverPoint ||
+          polygonPoints[polygonPoints.length - 1] ||
+          polygonPoints[0]
+        ).y,
+      );
       drawTag(
         overlayCtx,
-        rectX + cutWidth / 2,
-        rectY - 14,
-        `Cut ${normRect.width.toFixed(0)} x ${normRect.height.toFixed(0)} px`,
+        labelAnchor.x,
+        labelAnchor.y - 16,
+        canClose
+          ? "Free Cut: klik titik awal"
+          : `Free Cut: ${polygonPoints.length} titik`,
         "#22d3ee",
       );
     }
@@ -4210,6 +4746,65 @@ export default function XrayCalibrationWorkspace() {
 
       if (event.button !== 0) return;
 
+      if (tool === "cut") {
+        const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
+
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+
+        if (draftCut?.points?.length) {
+          const startPoint = draftCut.points[0];
+          if (
+            draftCut.points.length < MIN_FREE_CUT_POINTS &&
+            getDistance(startPoint, boundedPoint) <= closeRadius
+          ) {
+            setNotice(
+              `Free cut: pilih ${MIN_FREE_CUT_POINTS - draftCut.points.length} titik lagi.`,
+            );
+            return;
+          }
+          if (
+            draftCut.points.length >= MIN_FREE_CUT_POINTS &&
+            getDistance(startPoint, boundedPoint) <= closeRadius
+          ) {
+            completeDraftCut();
+            return;
+          }
+
+          const lastPoint = draftCut.points[draftCut.points.length - 1];
+          if (getDistance(lastPoint, boundedPoint) <= 1.5) {
+            return;
+          }
+
+          const nextPoints = [...draftCut.points, boundedPoint];
+          setDraftCut({
+            points: nextPoints,
+            hoverPoint: boundedPoint,
+          });
+          setHistoryPaused(true);
+          setNotice(
+            nextPoints.length >= MIN_FREE_CUT_POINTS
+              ? "Free cut: lanjutkan titik atau klik titik awal untuk selesai."
+              : `Free cut: pilih ${MIN_FREE_CUT_POINTS - nextPoints.length} titik lagi.`,
+          );
+          return;
+        }
+
+        setDraftCut({
+          points: [boundedPoint],
+          hoverPoint: boundedPoint,
+        });
+        setHistoryPaused(true);
+        setNotice(
+          "Free cut: klik beberapa titik mengikuti bentuk objek, lalu klik titik awal atau tekan Enter untuk selesai.",
+        );
+        return;
+      }
+
       const hitCutLayerHandle = findCutLayerHandle(imagePoint);
       if (hitCutLayerHandle) {
         const targetLayer = cutLayers.find(
@@ -4412,6 +5007,11 @@ export default function XrayCalibrationWorkspace() {
             p1: next[0],
             p2: next[1],
             p3: next[2],
+            color: DEFAULT_ANGLE_COLOR,
+            labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
+            labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
+            labelOpacity: DEFAULT_LABEL_OPACITY,
+            strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
           };
           nextAngleIdRef.current += 1;
           setAngles((items) => [...items, nextAngle]);
@@ -4529,16 +5129,6 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
-      if (tool === "cut") {
-        const start = boundedPoint;
-        setDraftCut({ x1: start.x, y1: start.y, x2: start.x, y2: start.y });
-        setHistoryPaused(true);
-        interactionRef.current = {
-          mode: "cut",
-        };
-        return;
-      }
-
       if (tool !== "draw") return;
 
       const hitHandle = findClosestHandle(imagePoint);
@@ -4625,7 +5215,9 @@ export default function XrayCalibrationWorkspace() {
     },
     [
       clampToImageBounds,
+      completeDraftCut,
       circles,
+      draftCut,
       findClosestAngleHandle,
       findClosestCircleHandle,
       findClosestHandle,
@@ -4655,15 +5247,33 @@ export default function XrayCalibrationWorkspace() {
       tool,
       view.panX,
       view.panY,
+      view.scale,
     ],
   );
 
   const handlePointerMove = useCallback(
     (event) => {
-      if (!image || !interactionRef.current.mode) return;
+      if (!image) return;
+
+      const point = getLocalPoint(event);
+      if (!interactionRef.current.mode) {
+        if (tool === "cut" && draftCut?.points?.length) {
+          const movePoint = clampToImageBounds(
+            screenToImagePoint(point.x, point.y),
+          );
+          setDraftCut((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  hoverPoint: movePoint,
+                }
+              : prev,
+          );
+        }
+        return;
+      }
 
       event.preventDefault();
-      const point = getLocalPoint(event);
 
       if (interactionRef.current.mode === "pan") {
         const dx = point.x - interactionRef.current.startX;
@@ -4681,17 +5291,6 @@ export default function XrayCalibrationWorkspace() {
           screenToImagePoint(point.x, point.y),
         );
         setDraftLine((prev) => {
-          if (!prev) return prev;
-          return { ...prev, x2: movePoint.x, y2: movePoint.y };
-        });
-        return;
-      }
-
-      if (interactionRef.current.mode === "cut") {
-        const movePoint = clampToImageBounds(
-          screenToImagePoint(point.x, point.y),
-        );
-        setDraftCut((prev) => {
           if (!prev) return prev;
           return { ...prev, x2: movePoint.x, y2: movePoint.y };
         });
@@ -5015,6 +5614,7 @@ export default function XrayCalibrationWorkspace() {
       angles,
       clampToImageBounds,
       circles,
+      draftCut,
       getLocalPoint,
       image,
       isLineLocked,
@@ -5024,6 +5624,7 @@ export default function XrayCalibrationWorkspace() {
       setPlanningGuides,
       screenToImagePoint,
       snapToLandmarks,
+      tool,
       view.scale,
     ],
   );
@@ -5081,56 +5682,9 @@ export default function XrayCalibrationWorkspace() {
       }
     }
 
-    if (interactionRef.current.mode === "cut" && draftCut) {
-      const nextCrop = normalizeRect(
-        draftCut.x1,
-        draftCut.y1,
-        draftCut.x2,
-        draftCut.y2,
-      );
-      if (nextCrop.width > 8 && nextCrop.height > 8) {
-        const nextLayer = {
-          id: nextCutLayerIdRef.current,
-          kind: "cut",
-          sourceX: nextCrop.x,
-          sourceY: nextCrop.y,
-          sourceWidth: nextCrop.width,
-          sourceHeight: nextCrop.height,
-          displayWidth: nextCrop.width,
-          displayHeight: nextCrop.height,
-          centerX: nextCrop.x + nextCrop.width / 2,
-          centerY: nextCrop.y + nextCrop.height / 2,
-          rotation: 0,
-          flipX: false,
-          flipY: false,
-          opacity: 1,
-          lockScale: false,
-        };
-        nextCutLayerIdRef.current += 1;
-        setCutLayers((prev) => [...prev, nextLayer]);
-        focusLayerSettings(nextLayer.id);
-        setNotice(
-          "Cut berhasil dibuat sebagai layer baru. Background asli tetap tampil.",
-        );
-      }
-      setDraftCut(null);
-      if (shouldUseMobileOneShotTool) {
-        setTool(MOBILE_IDLE_TOOL);
-        setMobileControlsOpen(false);
-      } else {
-        setTool("draw");
-      }
-    }
-
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     setHistoryPaused(false);
-  }, [
-    draftCirclePoints,
-    draftCut,
-    draftLine,
-    focusLayerSettings,
-    shouldUseMobileOneShotTool,
-  ]);
+  }, [draftCirclePoints, draftLine, shouldUseMobileOneShotTool]);
 
   const handleWheel = useCallback(
     (event) => {
@@ -5370,8 +5924,8 @@ export default function XrayCalibrationWorkspace() {
       setNotice("Pilih template layer dulu untuk di-scale.");
       return;
     }
-    if (selectedCutLayer.kind !== "upload") {
-      setNotice("Scale real size hanya untuk template/upload layer.");
+    if (!isImageBackedLayerKind(selectedCutLayer.kind)) {
+      setNotice("Scale real size hanya untuk layer gambar/template.");
       return;
     }
     if (mmPerPixel === null) {
@@ -5445,8 +5999,11 @@ export default function XrayCalibrationWorkspace() {
       setNotice("Pilih template layer dulu untuk trim margin.");
       return;
     }
-    if (selectedCutLayer.kind !== "upload" || !selectedCutLayer.image) {
-      setNotice("Trim margin hanya untuk template/upload layer.");
+    if (
+      !isImageBackedLayerKind(selectedCutLayer.kind) ||
+      !selectedCutLayer.image
+    ) {
+      setNotice("Trim margin hanya untuk layer gambar/template.");
       return;
     }
     if (selectedCutLayer.lockScale) {
@@ -5536,8 +6093,11 @@ export default function XrayCalibrationWorkspace() {
       setNotice("Pilih template layer dulu untuk scale dari ruler template.");
       return;
     }
-    if (selectedCutLayer.kind !== "upload" || !selectedCutLayer.image) {
-      setNotice("Scale ruler hanya untuk template/upload layer.");
+    if (
+      !isImageBackedLayerKind(selectedCutLayer.kind) ||
+      !selectedCutLayer.image
+    ) {
+      setNotice("Scale ruler hanya untuk layer gambar/template.");
       return;
     }
     if (mmPerPixel === null) {
@@ -5588,7 +6148,7 @@ export default function XrayCalibrationWorkspace() {
   }, [mmPerPixel, modelHeight, modelWidth, selectedCutLayer]);
 
   const copySelectedTemplateScale = useCallback(() => {
-    if (!selectedCutLayer || selectedCutLayer.kind !== "upload") {
+    if (!selectedCutLayer || !isImageBackedLayerKind(selectedCutLayer.kind)) {
       setNotice("Pilih template layer dulu untuk copy scale.");
       return;
     }
@@ -5616,7 +6176,7 @@ export default function XrayCalibrationWorkspace() {
   }, [selectedCutLayer]);
 
   const pasteTemplateScaleToSelected = useCallback(() => {
-    if (!selectedCutLayer || selectedCutLayer.kind !== "upload") {
+    if (!selectedCutLayer || !isImageBackedLayerKind(selectedCutLayer.kind)) {
       setNotice("Pilih template layer tujuan dulu untuk paste scale.");
       return;
     }
@@ -5685,6 +6245,7 @@ export default function XrayCalibrationWorkspace() {
   }, []);
 
   const resetCutArea = useCallback(() => {
+    setDraftCut(null);
     setCutLayers([]);
     setSelectedCutLayerId(null);
     nextCutLayerIdRef.current = 1;
@@ -5904,21 +6465,19 @@ export default function XrayCalibrationWorkspace() {
       return;
     }
 
-    const sourceImage =
-      selectedCutLayer.kind === "upload" ? selectedCutLayer.image : image;
+    const isImageBackedLayer = isImageBackedLayerKind(selectedCutLayer.kind);
+    const sourceImage = isImageBackedLayer ? selectedCutLayer.image : image;
     if (!sourceImage) {
       setNotice("Sumber layer tidak ditemukan.");
       return;
     }
 
-    const sourceX =
-      selectedCutLayer.kind === "upload"
-        ? selectedCutLayer.sourceX
-        : cropRect.x + selectedCutLayer.sourceX;
-    const sourceY =
-      selectedCutLayer.kind === "upload"
-        ? selectedCutLayer.sourceY
-        : cropRect.y + selectedCutLayer.sourceY;
+    const sourceX = isImageBackedLayer
+      ? selectedCutLayer.sourceX
+      : cropRect.x + selectedCutLayer.sourceX;
+    const sourceY = isImageBackedLayer
+      ? selectedCutLayer.sourceY
+      : cropRect.y + selectedCutLayer.sourceY;
 
     const sourceW = Math.max(1, Math.floor(selectedCutLayer.sourceWidth));
     const sourceH = Math.max(1, Math.floor(selectedCutLayer.sourceHeight));
@@ -5955,7 +6514,7 @@ export default function XrayCalibrationWorkspace() {
       id: Date.now(),
       name:
         selectedCutLayer.name ||
-        `${selectedCutLayer.kind === "upload" ? "Upload" : "Cut"}-${sourceW}x${sourceH}`,
+        `${selectedCutLayer.kind === "upload" ? "Upload" : "Fragment"}-${sourceW}x${sourceH}`,
       imageSrc,
       sourceWidth: sourceW,
       sourceHeight: sourceH,
@@ -6704,6 +7263,20 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
+      if (key === "escape" && draftCut?.points?.length) {
+        event.preventDefault();
+        setDraftCut(null);
+        setHistoryPaused(false);
+        setNotice("Free cut dibatalkan.");
+        return;
+      }
+
+      if (key === "enter" && tool === "cut" && draftCut?.points?.length >= 3) {
+        event.preventDefault();
+        completeDraftCut();
+        return;
+      }
+
       if (key === "l" || key === "d") handleToolChange("draw");
       if (key === "h" || key === "m" || key === "p") handleToolChange("pan");
       if (key === "c") handleToolChange("cut");
@@ -6720,6 +7293,8 @@ export default function XrayCalibrationWorkspace() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
+    completeDraftCut,
+    draftCut,
     fitImageToViewport,
     handleToolChange,
     redoHistory,
@@ -7192,7 +7767,7 @@ export default function XrayCalibrationWorkspace() {
               <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                 Tool
               </span>
-              <InfoTooltip text="Shortcut: L Draw Line, H Move/Pan, C Cut, A Angle, O Circle, K HKA, F Fit, Delete, Ctrl/Cmd+Z/Y." />
+              <InfoTooltip text="Shortcut: L Draw Line, H Move/Pan, C Free Cut, A Angle, O Circle, K HKA, F Fit, Delete, Ctrl/Cmd+Z/Y." />
             </div>
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
               <ToolIconButton
@@ -7209,7 +7784,7 @@ export default function XrayCalibrationWorkspace() {
               />
               <ToolIconButton
                 icon="cut"
-                label="Cut / Crop"
+                label="Free Cut (C)"
                 onClick={() => handleToolChange("cut")}
                 active={tool === "cut"}
               />
@@ -7484,20 +8059,20 @@ export default function XrayCalibrationWorkspace() {
                     return `${valueMm.toFixed(1)} mm`;
                   };
                   const canApplyTemplateRealSize =
-                    layer.kind === "upload" &&
+                    isImageBackedLayerKind(layer.kind) &&
                     mmPerPixel !== null &&
                     !layer.lockScale;
                   const canTrimTemplateLayer =
-                    layer.kind === "upload" &&
+                    isImageBackedLayerKind(layer.kind) &&
                     Boolean(layer.image) &&
                     !layer.lockScale;
                   const canApplyTemplateRulerScale =
-                    layer.kind === "upload" &&
+                    isImageBackedLayerKind(layer.kind) &&
                     Boolean(layer.image) &&
                     mmPerPixel !== null &&
                     !layer.lockScale;
                   const canPasteTemplateScale =
-                    layer.kind === "upload" &&
+                    isImageBackedLayerKind(layer.kind) &&
                     Boolean(copiedTemplateScale) &&
                     !layer.lockScale;
 
@@ -7662,7 +8237,7 @@ export default function XrayCalibrationWorkspace() {
                             </button>
                           </div>
 
-                          {layer.kind === "upload" ? (
+                          {isImageBackedLayerKind(layer.kind) ? (
                             <div className="rounded border border-cyan-200 bg-cyan-50/60 px-2 py-1.5">
                               <div className="flex items-center justify-between gap-2 text-[10px] text-cyan-900">
                                 <span>
@@ -8832,7 +9407,7 @@ export default function XrayCalibrationWorkspace() {
                     Tool
                   </span>
                 ) : null}
-                <InfoTooltip text="Shortcut: L, H, C, A, O, K, F, Delete, Ctrl/Cmd+Z/Y." />
+                <InfoTooltip text="Shortcut: L, H, C Free Cut, A, O, K, F, Delete, Ctrl/Cmd+Z/Y." />
               </div>
               <div className={SIDEBAR_ICON_GRID_CLASS}>
                 <ToolIconButton
@@ -8851,7 +9426,7 @@ export default function XrayCalibrationWorkspace() {
                 />
                 <ToolIconButton
                   icon="cut"
-                  label="Cut / Crop"
+                  label="Free Cut (C)"
                   onClick={() => handleToolChange("cut")}
                   active={tool === "cut"}
                   className="h-9 w-full"
@@ -9002,7 +9577,7 @@ export default function XrayCalibrationWorkspace() {
                                 : layer.name ||
                                   (layer.kind === "upload"
                                     ? "Template"
-                                    : "Cut")}
+                                    : "Fragment")}
                             </span>
                           </motion.button>
                         );
@@ -9051,25 +9626,25 @@ export default function XrayCalibrationWorkspace() {
                       {selectedCutLayer.name ||
                         (selectedCutLayer.kind === "upload"
                           ? "Template"
-                          : "Cut")}{" "}
+                          : "Fragment")}{" "}
                       | {selectedCutLayerIndex + 1}/{cutLayers.length}
                     </div>
 
-                    <div className={SIDEBAR_TEXT_BUTTON_GRID_CLASS}>
-                      <button
-                        type="button"
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <IconButton
+                        icon="target"
+                        label="Center Layer"
                         onClick={() =>
                           updateLayerById(selectedCutLayer.id, {
                             centerX: modelWidth / 2,
                             centerY: modelHeight / 2,
                           })
                         }
-                        className="rounded border border-slate-300 bg-white px-2 py-1 text-[10px] text-slate-700"
-                      >
-                        Center
-                      </button>
-                      <button
-                        type="button"
+                        className="h-8 w-full"
+                      />
+                      <IconButton
+                        icon="fit"
+                        label="Fit Rasio Layer"
                         onClick={() =>
                           updateLayerById(selectedCutLayer.id, (item) => {
                             const srcW = Math.max(
@@ -9110,12 +9685,11 @@ export default function XrayCalibrationWorkspace() {
                           !modelHeight ||
                           selectedCutLayer.lockScale
                         }
-                        className="rounded border border-slate-300 bg-white px-2 py-1 text-[10px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        Fit Rasio
-                      </button>
-                      <button
-                        type="button"
+                        className="h-8 w-full"
+                      />
+                      <IconButton
+                        icon="resetCrop"
+                        label="Samakan Dengan Background"
                         onClick={() =>
                           updateLayerById(selectedCutLayer.id, {
                             displayWidth: clamp(modelWidth, 16, modelWidth * 2),
@@ -9133,13 +9707,11 @@ export default function XrayCalibrationWorkspace() {
                           !modelHeight ||
                           selectedCutLayer.lockScale
                         }
-                        className="rounded border border-slate-300 bg-white px-2 py-1 text-[10px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        Samakan
-                      </button>
+                        className="h-8 w-full"
+                      />
                     </div>
 
-                    {selectedCutLayer.kind === "upload" ? (
+                    {isImageBackedLayerKind(selectedCutLayer.kind) ? (
                       <div className="rounded border border-cyan-200 bg-cyan-50/60 px-2 py-1.5">
                         <div className="flex items-center justify-between gap-2 text-[10px] text-cyan-900">
                           <span>
@@ -9261,18 +9833,13 @@ export default function XrayCalibrationWorkspace() {
                       </div>
                     ) : null}
 
-                    <label className="text-[11px] text-slate-600">
-                      <span className="flex items-center justify-between gap-2">
-                        <span>Width</span>
-                        <span className="text-[10px] text-slate-400">
-                          {Math.round(selectedLayerMetrics.width)}
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min="16"
+                    <div className="grid gap-1.5">
+                      <CompactSliderField
+                        label="Width"
+                        valueText={`${Math.round(selectedLayerMetrics.width)}`}
+                        min={16}
                         max={selectedLayerMetrics.widthMax}
-                        step="1"
+                        step={1}
                         value={selectedLayerMetrics.width}
                         onChange={(event) => {
                           const nextWidth = clamp(
@@ -9284,23 +9851,36 @@ export default function XrayCalibrationWorkspace() {
                             displayWidth: nextWidth,
                           });
                         }}
+                        onDecrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            displayWidth: clamp(
+                              Number(item.displayWidth || 16) - 2,
+                              16,
+                              selectedLayerMetrics.widthMax,
+                            ),
+                          }))
+                        }
+                        onIncrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            displayWidth: clamp(
+                              Number(item.displayWidth || 16) + 2,
+                              16,
+                              selectedLayerMetrics.widthMax,
+                            ),
+                          }))
+                        }
+                        decreaseIcon="zoomOut"
+                        increaseIcon="zoomIn"
                         disabled={selectedCutLayer.lockScale}
-                        className="mt-1 w-full disabled:cursor-not-allowed disabled:opacity-45"
                       />
-                    </label>
-
-                    <label className="text-[11px] text-slate-600">
-                      <span className="flex items-center justify-between gap-2">
-                        <span>Height</span>
-                        <span className="text-[10px] text-slate-400">
-                          {Math.round(selectedLayerMetrics.height)}
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min="16"
+                      <CompactSliderField
+                        label="Height"
+                        valueText={`${Math.round(selectedLayerMetrics.height)}`}
+                        min={16}
                         max={selectedLayerMetrics.heightMax}
-                        step="1"
+                        step={1}
                         value={selectedLayerMetrics.height}
                         onChange={(event) => {
                           const nextHeight = clamp(
@@ -9312,23 +9892,36 @@ export default function XrayCalibrationWorkspace() {
                             displayHeight: nextHeight,
                           });
                         }}
+                        onDecrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            displayHeight: clamp(
+                              Number(item.displayHeight || 16) - 2,
+                              16,
+                              selectedLayerMetrics.heightMax,
+                            ),
+                          }))
+                        }
+                        onIncrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            displayHeight: clamp(
+                              Number(item.displayHeight || 16) + 2,
+                              16,
+                              selectedLayerMetrics.heightMax,
+                            ),
+                          }))
+                        }
+                        decreaseIcon="zoomOut"
+                        increaseIcon="zoomIn"
                         disabled={selectedCutLayer.lockScale}
-                        className="mt-1 w-full disabled:cursor-not-allowed disabled:opacity-45"
                       />
-                    </label>
-
-                    <label className="text-[11px] text-slate-600">
-                      <span className="flex items-center justify-between gap-2">
-                        <span>Pos X</span>
-                        <span className="text-[10px] text-slate-400">
-                          {Math.round(selectedLayerMetrics.centerX)}
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
+                      <CompactSliderField
+                        label="Pos X"
+                        valueText={`${Math.round(selectedLayerMetrics.centerX)}`}
+                        min={0}
                         max={selectedLayerMetrics.centerXMax}
-                        step="1"
+                        step={1}
                         value={clamp(
                           selectedLayerMetrics.centerX,
                           0,
@@ -9344,22 +9937,35 @@ export default function XrayCalibrationWorkspace() {
                             centerX: nextCenterX,
                           });
                         }}
-                        className="mt-1 w-full"
+                        onDecrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            centerX: clamp(
+                              Number(item.centerX || 0) - 2,
+                              0,
+                              selectedLayerMetrics.centerXMax,
+                            ),
+                          }))
+                        }
+                        onIncrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            centerX: clamp(
+                              Number(item.centerX || 0) + 2,
+                              0,
+                              selectedLayerMetrics.centerXMax,
+                            ),
+                          }))
+                        }
+                        decreaseIcon="moveLeft"
+                        increaseIcon="moveRight"
                       />
-                    </label>
-
-                    <label className="text-[11px] text-slate-600">
-                      <span className="flex items-center justify-between gap-2">
-                        <span>Pos Y</span>
-                        <span className="text-[10px] text-slate-400">
-                          {Math.round(selectedLayerMetrics.centerY)}
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
+                      <CompactSliderField
+                        label="Pos Y"
+                        valueText={`${Math.round(selectedLayerMetrics.centerY)}`}
+                        min={0}
                         max={selectedLayerMetrics.centerYMax}
-                        step="1"
+                        step={1}
                         value={clamp(
                           selectedLayerMetrics.centerY,
                           0,
@@ -9375,22 +9981,35 @@ export default function XrayCalibrationWorkspace() {
                             centerY: nextCenterY,
                           });
                         }}
-                        className="mt-1 w-full"
+                        onDecrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            centerY: clamp(
+                              Number(item.centerY || 0) - 2,
+                              0,
+                              selectedLayerMetrics.centerYMax,
+                            ),
+                          }))
+                        }
+                        onIncrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            centerY: clamp(
+                              Number(item.centerY || 0) + 2,
+                              0,
+                              selectedLayerMetrics.centerYMax,
+                            ),
+                          }))
+                        }
+                        decreaseIcon="moveUp"
+                        increaseIcon="moveDown"
                       />
-                    </label>
-
-                    <label className="text-[11px] text-slate-600">
-                      <span className="flex items-center justify-between gap-2">
-                        <span>Opacity</span>
-                        <span className="text-[10px] text-slate-400">
-                          {selectedLayerMetrics.opacity}%
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min="10"
-                        max="100"
-                        step="1"
+                      <CompactSliderField
+                        label="Opacity"
+                        valueText={`${selectedLayerMetrics.opacity}%`}
+                        min={10}
+                        max={100}
+                        step={1}
                         value={selectedLayerMetrics.opacity}
                         onChange={(event) => {
                           const nextOpacity = clamp(
@@ -9402,22 +10021,33 @@ export default function XrayCalibrationWorkspace() {
                             opacity: nextOpacity,
                           });
                         }}
-                        className="mt-1 w-full"
+                        onDecrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            opacity: clamp(
+                              Number(item.opacity ?? 1) - 0.05,
+                              0.05,
+                              1,
+                            ),
+                          }))
+                        }
+                        onIncrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            opacity: clamp(
+                              Number(item.opacity ?? 1) + 0.05,
+                              0.05,
+                              1,
+                            ),
+                          }))
+                        }
                       />
-                    </label>
-
-                    <label className="text-[11px] text-slate-600">
-                      <span className="flex items-center justify-between gap-2">
-                        <span>Rotate</span>
-                        <span className="text-[10px] text-slate-400">
-                          {selectedLayerMetrics.rotation}°
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min="-180"
-                        max="180"
-                        step="1"
+                      <CompactSliderField
+                        label="Rotate"
+                        valueText={`${selectedLayerMetrics.rotation}°`}
+                        min={-180}
+                        max={180}
+                        step={1}
                         value={selectedLayerMetrics.rotation}
                         onChange={(event) => {
                           const nextDeg = Number(event.target.value);
@@ -9425,36 +10055,27 @@ export default function XrayCalibrationWorkspace() {
                             rotation: (nextDeg + 360) % 360,
                           });
                         }}
-                        className="mt-1 w-full"
+                        onDecrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            rotation: ((item.rotation || 0) - 2 + 360) % 360,
+                          }))
+                        }
+                        onIncrease={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            rotation: ((item.rotation || 0) + 2 + 360) % 360,
+                          }))
+                        }
+                        decreaseIcon="rotateLeft"
+                        increaseIcon="rotateRight"
                       />
-                    </label>
+                    </div>
 
-                    <div className={SIDEBAR_ICON_GRID_CLASS}>
-                      <IconButton
-                        icon="rotateLeft"
-                        label="Rotate Layer -5"
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            rotation: ((item.rotation || 0) - 5 + 360) % 360,
-                          }))
-                        }
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon="rotateRight"
-                        label="Rotate Layer +5"
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            rotation: ((item.rotation || 0) + 5 + 360) % 360,
-                          }))
-                        }
-                        className="h-8 w-full"
-                      />
+                    <div className="grid grid-cols-4 gap-1.5">
                       <IconButton
                         icon="flipH"
-                        label="Flip Layer H"
+                        label="Flip Layer Horizontal"
                         onClick={() =>
                           updateLayerById(selectedCutLayer.id, (item) => ({
                             ...item,
@@ -9465,26 +10086,13 @@ export default function XrayCalibrationWorkspace() {
                       />
                       <IconButton
                         icon="flipV"
-                        label="Flip Layer V"
+                        label="Flip Layer Vertical"
                         onClick={() =>
                           updateLayerById(selectedCutLayer.id, (item) => ({
                             ...item,
                             flipY: !item.flipY,
                           }))
                         }
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon="trash"
-                        label="Hapus Layer"
-                        onClick={() => {
-                          const deletedLayerId = selectedCutLayer.id;
-                          setCutLayers((prev) =>
-                            prev.filter((item) => item.id !== deletedLayerId),
-                          );
-                          setSelectedCutLayerId(null);
-                        }}
-                        tone="rose"
                         className="h-8 w-full"
                       />
                       <IconButton
@@ -9501,6 +10109,19 @@ export default function XrayCalibrationWorkspace() {
                           }))
                         }
                         tone="amber"
+                        className="h-8 w-full"
+                      />
+                      <IconButton
+                        icon="trash"
+                        label="Hapus Layer"
+                        onClick={() => {
+                          const deletedLayerId = selectedCutLayer.id;
+                          setCutLayers((prev) =>
+                            prev.filter((item) => item.id !== deletedLayerId),
+                          );
+                          setSelectedCutLayerId(null);
+                        }}
+                        tone="rose"
                         className="h-8 w-full"
                       />
                     </div>
@@ -9805,6 +10426,238 @@ export default function XrayCalibrationWorkspace() {
                         Ringkas
                       </button>
                     </div>
+                  </div>
+                </div>
+              ) : null}
+              {selectedAngle && selectedAngleMetrics ? (
+                <div className="rounded-md border border-orange-200 bg-orange-50/50 px-2 py-1.5 text-[11px] text-orange-900">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="font-medium text-orange-950">
+                      Angle Settings #{selectedAngle.id}
+                    </div>
+                    <span className="text-[10px] text-orange-700">
+                      {selectedAngleMetrics.valueDeg.toFixed(1)}°
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-orange-700">
+                    Drag 3 titik angle di canvas. Atur label dan warna dari
+                    panel ini.
+                  </div>
+                  <div className="mt-1.5 rounded-md border border-orange-200 bg-white px-2 py-1.5">
+                    <div className="mb-1 text-[10px] font-semibold tracking-wide text-orange-900 uppercase">
+                      Color
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {ANGLE_COLOR_OPTIONS.map((color) => (
+                        <ColorSwatchButton
+                          key={color}
+                          color={color}
+                          active={selectedAngleMetrics.color === color}
+                          label={`Warna angle ${color}`}
+                          onClick={() =>
+                            updateAngleById(selectedAngle.id, { color })
+                          }
+                        />
+                      ))}
+                      <label
+                        className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 border-slate-200 bg-white"
+                        title="Warna custom"
+                      >
+                        <span
+                          className="h-4 w-4 rounded-full border border-dashed border-slate-400"
+                          style={{
+                            background:
+                              "conic-gradient(from 180deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ef4444)",
+                          }}
+                        />
+                        <input
+                          type="color"
+                          value={selectedAngleMetrics.color}
+                          onChange={(event) =>
+                            updateAngleById(selectedAngle.id, {
+                              color: event.target.value,
+                            })
+                          }
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 grid gap-1.5">
+                    <CompactSliderField
+                      label="Stroke"
+                      valueText={`${selectedAngleMetrics.strokeWidth.toFixed(1)}x`}
+                      min={1.5}
+                      max={6}
+                      step={0.5}
+                      value={selectedAngleMetrics.strokeWidth}
+                      onChange={(event) =>
+                        updateAngleById(selectedAngle.id, {
+                          strokeWidth: Number(event.target.value),
+                        })
+                      }
+                      onDecrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          strokeWidth: clamp(
+                            (Number(item.strokeWidth) ||
+                              DEFAULT_ANGLE_STROKE_WIDTH) - 0.5,
+                            1.5,
+                            6,
+                          ),
+                        }))
+                      }
+                      onIncrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          strokeWidth: clamp(
+                            (Number(item.strokeWidth) ||
+                              DEFAULT_ANGLE_STROKE_WIDTH) + 0.5,
+                            1.5,
+                            6,
+                          ),
+                        }))
+                      }
+                    />
+                    <CompactSliderField
+                      label="Label X"
+                      valueText={`${Math.round(selectedAngleMetrics.labelOffsetX)}`}
+                      min={-180}
+                      max={180}
+                      step={1}
+                      value={selectedAngleMetrics.labelOffsetX}
+                      onChange={(event) =>
+                        updateAngleById(selectedAngle.id, {
+                          labelOffsetX: Number(event.target.value),
+                        })
+                      }
+                      onDecrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          labelOffsetX: clamp(
+                            (Number(item.labelOffsetX) ||
+                              DEFAULT_ANGLE_LABEL_OFFSET_X) - 2,
+                            -180,
+                            180,
+                          ),
+                        }))
+                      }
+                      onIncrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          labelOffsetX: clamp(
+                            (Number(item.labelOffsetX) ||
+                              DEFAULT_ANGLE_LABEL_OFFSET_X) + 2,
+                            -180,
+                            180,
+                          ),
+                        }))
+                      }
+                      decreaseIcon="moveLeft"
+                      increaseIcon="moveRight"
+                    />
+                    <CompactSliderField
+                      label="Label Y"
+                      valueText={`${Math.round(selectedAngleMetrics.labelOffsetY)}`}
+                      min={-140}
+                      max={140}
+                      step={1}
+                      value={selectedAngleMetrics.labelOffsetY}
+                      onChange={(event) =>
+                        updateAngleById(selectedAngle.id, {
+                          labelOffsetY: Number(event.target.value),
+                        })
+                      }
+                      onDecrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          labelOffsetY: clamp(
+                            (Number(item.labelOffsetY) ||
+                              DEFAULT_ANGLE_LABEL_OFFSET_Y) - 2,
+                            -140,
+                            140,
+                          ),
+                        }))
+                      }
+                      onIncrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          labelOffsetY: clamp(
+                            (Number(item.labelOffsetY) ||
+                              DEFAULT_ANGLE_LABEL_OFFSET_Y) + 2,
+                            -140,
+                            140,
+                          ),
+                        }))
+                      }
+                      decreaseIcon="moveUp"
+                      increaseIcon="moveDown"
+                    />
+                    <CompactSliderField
+                      label="Label Opacity"
+                      valueText={`${selectedAngleMetrics.labelOpacity}%`}
+                      min={20}
+                      max={100}
+                      step={1}
+                      value={selectedAngleMetrics.labelOpacity}
+                      onChange={(event) =>
+                        updateAngleById(selectedAngle.id, {
+                          labelOpacity: Number(event.target.value) / 100,
+                        })
+                      }
+                      onDecrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          labelOpacity: clamp(
+                            (Number(item.labelOpacity) ||
+                              DEFAULT_LABEL_OPACITY) - 0.05,
+                            0.2,
+                            1,
+                          ),
+                        }))
+                      }
+                      onIncrease={() =>
+                        updateAngleById(selectedAngle.id, (item) => ({
+                          ...item,
+                          labelOpacity: clamp(
+                            (Number(item.labelOpacity) ||
+                              DEFAULT_LABEL_OPACITY) + 0.05,
+                            0.2,
+                            1,
+                          ),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateAngleById(selectedAngle.id, {
+                          color: DEFAULT_ANGLE_COLOR,
+                          strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
+                          labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
+                          labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
+                          labelOpacity: DEFAULT_LABEL_OPACITY,
+                        })
+                      }
+                      className="rounded-md border border-orange-300 bg-white px-2 py-1 text-[10px] text-orange-900"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateAngleById(selectedAngle.id, {
+                          labelOffsetX: -38,
+                          labelOffsetY: -18,
+                          labelOpacity: 0.48,
+                        })
+                      }
+                      className="rounded-md border border-orange-300 bg-white px-2 py-1 text-[10px] text-orange-900"
+                    >
+                      Ringkas
+                    </button>
                   </div>
                 </div>
               ) : null}
@@ -10625,7 +11478,7 @@ export default function XrayCalibrationWorkspace() {
                 />
                 <ToolIconButton
                   icon="cut"
-                  label="Cut"
+                  label="Free Cut"
                   onClick={() => handleToolChange("cut")}
                   active={tool === "cut"}
                   className="h-8 w-8 border-slate-500"
@@ -10733,7 +11586,7 @@ export default function XrayCalibrationWorkspace() {
                 : tool === "pan"
                   ? "Move"
                   : tool === "cut"
-                    ? "Cut"
+                    ? "Free Cut"
                     : tool === "angle"
                       ? "Angle"
                       : tool === "circle"
