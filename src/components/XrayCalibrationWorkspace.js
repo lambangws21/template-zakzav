@@ -107,6 +107,7 @@ const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
 const MOBILE_DOUBLE_TAP_MS = 320;
+const MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN = 72;
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
 const ANGLE_COLOR_OPTIONS = [
@@ -1342,6 +1343,7 @@ export default function XrayCalibrationWorkspace() {
   const [mobilePanelMode, setMobilePanelMode] = useState("workspace");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
     LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -1583,12 +1585,13 @@ export default function XrayCalibrationWorkspace() {
     [isMobileViewport],
   );
 
-  const openMobileMeasurePanel = useCallback(() => {
-    if (!isMobileViewport) return;
-    setMobilePanelMode("workspace");
-    setActiveRightPanel("measure");
-    setMobileControlsOpen(true);
-  }, [isMobileViewport]);
+  const clearMobileHandleAssist = useCallback(() => {
+    setMobileHandleAssist(null);
+  }, []);
+
+  const activateMobileHandleAssist = useCallback((lineId, handleKey) => {
+    setMobileHandleAssist({ lineId, handleKey });
+  }, []);
 
   const resetMobileLineTapTarget = useCallback(() => {
     mobileLineTapRef.current = {
@@ -1795,6 +1798,16 @@ export default function XrayCalibrationWorkspace() {
     (lineId) => lockedLineIds.has(lineId),
     [lockedLineIds],
   );
+
+  useEffect(() => {
+    if (!mobileHandleAssist) return;
+    const stillExists = lines.some(
+      (line) => line.id === mobileHandleAssist.lineId,
+    );
+    if (!stillExists || selectedLineId !== mobileHandleAssist.lineId) {
+      setMobileHandleAssist(null);
+    }
+  }, [lines, mobileHandleAssist, selectedLineId]);
 
   const getLineLabelText = useCallback(
     (line) => {
@@ -2059,6 +2072,38 @@ export default function XrayCalibrationWorkspace() {
     [flipX, flipY, modelHeight, modelWidth, rotation, view],
   );
 
+  const findMobileHandleAssistHit = useCallback(
+    (screenPoint) => {
+      if (!isCoarsePointer || !mobileHandleAssist) return null;
+      const targetLine =
+        lines.find((line) => line.id === mobileHandleAssist.lineId) || null;
+      if (!targetLine) return null;
+
+      const handleImagePoint =
+        mobileHandleAssist.handleKey === "start"
+          ? { x: targetLine.x1, y: targetLine.y1 }
+          : { x: targetLine.x2, y: targetLine.y2 };
+      const handleScreenPoint = imageToScreenPoint(
+        handleImagePoint.x,
+        handleImagePoint.y,
+      );
+      const distance = Math.hypot(
+        screenPoint.x - handleScreenPoint.x,
+        screenPoint.y - handleScreenPoint.y,
+      );
+
+      if (distance > MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN) {
+        return null;
+      }
+
+      return {
+        lineId: targetLine.id,
+        handleKey: mobileHandleAssist.handleKey,
+      };
+    },
+    [imageToScreenPoint, isCoarsePointer, lines, mobileHandleAssist],
+  );
+
   const clampToImageBounds = useCallback(
     (point) => {
       if (!modelWidth || !modelHeight) return point;
@@ -2167,6 +2212,7 @@ export default function XrayCalibrationWorkspace() {
       setMobilePanelMode("workspace");
       setActiveRightPanel("tool");
       resetMobileLineTapTarget();
+      clearMobileHandleAssist();
       if (nextTool !== "cut") {
         setDraftCut(null);
         setHistoryPaused(false);
@@ -2177,6 +2223,7 @@ export default function XrayCalibrationWorkspace() {
       }
     },
     [
+      clearMobileHandleAssist,
       focusCalibrationStep,
       hasCalibration,
       isMobileViewport,
@@ -2257,6 +2304,7 @@ export default function XrayCalibrationWorkspace() {
       setMobilePanelMode("workspace");
       setActiveRightPanel("measure");
       resetMobileLineTapTarget();
+      clearMobileHandleAssist();
       setLinePreset(nextPreset);
       setTool("draw");
       if (isMobileViewport) {
@@ -2264,6 +2312,7 @@ export default function XrayCalibrationWorkspace() {
       }
     },
     [
+      clearMobileHandleAssist,
       focusCalibrationStep,
       hasCalibration,
       isMobileViewport,
@@ -3709,8 +3758,37 @@ export default function XrayCalibrationWorkspace() {
     const drawLine = (line, opts = {}) => {
       const start = imageToScreenPoint(line.x1, line.y1);
       const end = imageToScreenPoint(line.x2, line.y2);
+      const assistPoint =
+        opts.assistHandleKey === "start"
+          ? start
+          : opts.assistHandleKey === "end"
+            ? end
+            : null;
 
       overlayCtx.save();
+      if (assistPoint) {
+        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistPoint.x,
+          assistPoint.y,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistPoint.x,
+          assistPoint.y,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.stroke();
+      }
       if (opts.showTouchHalo) {
         overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.22)";
         overlayCtx.lineWidth = (opts.width || 2) + 18;
@@ -3810,6 +3888,10 @@ export default function XrayCalibrationWorkspace() {
         highlightHandles: isSelected && !isLocked,
         dashed: isLocked,
         showTouchHalo: isSelected && !isLocked && isCoarsePointer,
+        assistHandleKey:
+          mobileHandleAssist?.lineId === line.id
+            ? mobileHandleAssist.handleKey
+            : null,
       });
     }
 
@@ -4834,6 +4916,37 @@ export default function XrayCalibrationWorkspace() {
       if (event.button !== 0) return;
 
       if (tool === "pan" && isTouchLikePointer) {
+        const assistHandleHit = findMobileHandleAssistHit(point);
+        if (assistHandleHit) {
+          const targetLine = lines.find(
+            (line) => line.id === assistHandleHit.lineId,
+          );
+          if (!targetLine) return;
+          if (targetLine.type) {
+            setLinePreset(targetLine.type);
+          }
+          setSelectedLineId(targetLine.id);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedCutLayerId(null);
+          setSelectedPlanningGuideId(null);
+          if (isLineLocked(targetLine.id)) {
+            setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
+            return;
+          }
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-handle",
+            lineId: targetLine.id,
+            handleKey: assistHandleHit.handleKey,
+          };
+          setNotice(
+            "Adjust ujung line aktif. Geser jari di dalam bundaran untuk memanjangkan atau memendekkan garis.",
+          );
+          return;
+        }
+
         const hitHandle = findClosestHandle(imagePoint);
         if (hitHandle) {
           const targetLine = lines.find((line) => line.id === hitHandle.lineId);
@@ -4847,29 +4960,17 @@ export default function XrayCalibrationWorkspace() {
           setSelectedHkaId(null);
           setSelectedCutLayerId(null);
           setSelectedPlanningGuideId(null);
-          openMobileMeasurePanel();
           if (isLineLocked(targetLine.id)) {
             setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
             return;
           }
-          const shouldAdjust = isRepeatedMobileLineTap({
-            targetType: "line-handle",
-            lineId: targetLine.id,
-            handleKey: hitHandle.handleKey,
-          });
-          if (!shouldAdjust) {
-            setNotice(
-              "Tap 2x pada ujung line untuk adjust panjang. Radius sentuh line sudah diperbesar untuk mobile.",
-            );
-            return;
+          activateMobileHandleAssist(targetLine.id, hitHandle.handleKey);
+          if (isMobileViewport) {
+            setMobileControlsOpen(false);
           }
-          setHistoryPaused(true);
-          interactionRef.current = {
-            mode: "move-handle",
-            lineId: targetLine.id,
-            handleKey: hitHandle.handleKey,
-          };
-          setNotice("Adjust ujung line aktif. Geser jari untuk ubah panjang.");
+          setNotice(
+            "Ujung line dipilih. Bundaran assist aktif, sentuh area bundaran untuk adjust panjang garis.",
+          );
           return;
         }
 
@@ -4886,10 +4987,13 @@ export default function XrayCalibrationWorkspace() {
           setSelectedHkaId(null);
           setSelectedCutLayerId(null);
           setSelectedPlanningGuideId(null);
-          openMobileMeasurePanel();
+          clearMobileHandleAssist();
           if (isLineLocked(hitLineId)) {
             setNotice("Garis ini terkunci. Unlock dulu sebelum dipindah.");
             return;
+          }
+          if (isMobileViewport) {
+            setMobileControlsOpen(false);
           }
           const shouldMoveLine = isRepeatedMobileLineTap({
             targetType: "line-body",
@@ -4897,7 +5001,7 @@ export default function XrayCalibrationWorkspace() {
           });
           if (!shouldMoveLine) {
             setNotice(
-              "Tap 2x pada garis untuk pindah. Tap 2x ujung line untuk adjust panjang.",
+              "Garis dipilih. Tap lagi pada badan garis untuk pindah, atau sentuh ujung garis untuk adjust panjang.",
             );
             return;
           }
@@ -5398,7 +5502,9 @@ export default function XrayCalibrationWorkspace() {
       };
     },
     [
+      activateMobileHandleAssist,
       clampToImageBounds,
+      clearMobileHandleAssist,
       completeDraftCut,
       circles,
       draftCut,
@@ -5407,6 +5513,7 @@ export default function XrayCalibrationWorkspace() {
       findClosestHandle,
       findClosestHkaHandle,
       findClosestLineId,
+      findMobileHandleAssistHit,
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
@@ -5419,11 +5526,11 @@ export default function XrayCalibrationWorkspace() {
       focusCalibrationStep,
       hasCalibration,
       isCoarsePointer,
+      isMobileViewport,
       isLineLocked,
       isRepeatedMobileLineTap,
       cutLayers,
       lines,
-      openMobileMeasurePanel,
       planningGuides,
       linePreset,
       selectPlanningGuideForEdit,
@@ -5830,9 +5937,12 @@ export default function XrayCalibrationWorkspace() {
         nextLineIdRef.current += 1;
         setLines((prev) => [...prev, nextLine]);
         setSelectedLineId(nextLine.id);
+        if (isCoarsePointer) {
+          setMobileHandleAssist({ lineId: nextLine.id, handleKey: "end" });
+        }
         setNotice(
           shouldUseMobileOneShotTool
-            ? "Line dibuat. Tap 2x pada ujung untuk adjust panjang, atau tap 2x pada garis untuk pindah."
+            ? "Line dibuat. Bundaran assist aktif di ujung garis, sentuh area itu untuk adjust panjang."
             : "Line dibuat. Drag ujung atau garis untuk adjust.",
         );
       }
@@ -10558,7 +10668,7 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                   <div className="text-[10px] text-emerald-700">
                     {isCoarsePointer
-                      ? "Mobile: tap 2x ujung untuk adjust panjang, tap 2x garis untuk pindah, atau drag label langsung di canvas."
+                      ? "Mobile: sentuh ujung untuk munculkan bundaran assist, lalu geser dari area itu untuk adjust. Tap lagi pada badan garis untuk pindah."
                       : "Drag titik ujung, geser garis, atau drag label langsung di canvas."}
                   </div>
                   <div className="mt-1.5 flex flex-col gap-1.5">
@@ -11686,7 +11796,7 @@ export default function XrayCalibrationWorkspace() {
               ref={containerRef}
               className="relative h-[calc(100dvh-108px)] min-h-[460px] w-full overflow-hidden bg-slate-950/95 sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-156px)]"
             >
-              <div className="absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] lg:hidden">
+              <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-20 px-2 lg:hidden">
                 <div className="flex items-center gap-2">
                   <div className="grid flex-1 grid-cols-4 rounded-2xl border border-slate-600/70 bg-slate-900/82 p-1 shadow-xl backdrop-blur">
                     {[
@@ -11782,7 +11892,7 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 </div>
               </div>
-              <div className="absolute right-3 bottom-[78px] z-20 flex flex-col gap-1.5 rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur sm:bottom-3">
+              <div className="absolute top-2 right-2 z-20 flex flex-col gap-1.5 rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3">
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1.15)}
