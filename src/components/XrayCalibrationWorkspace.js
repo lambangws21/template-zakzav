@@ -106,6 +106,7 @@ const DEFAULT_LABEL_OPACITY = 0.56;
 const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
+const MOBILE_DOUBLE_TAP_MS = 320;
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
 const ANGLE_COLOR_OPTIONS = [
@@ -1254,6 +1255,12 @@ export default function XrayCalibrationWorkspace() {
   const sidebarResizeRef = useRef(null);
   const templateSyncingRef = useRef(false);
   const sheetImageSyncingRef = useRef(false);
+  const mobileLineTapRef = useRef({
+    targetType: null,
+    lineId: null,
+    handleKey: null,
+    time: 0,
+  });
   const nextLineIdRef = useRef(1);
   const nextAngleIdRef = useRef(1);
   const nextCircleIdRef = useRef(1);
@@ -1574,6 +1581,41 @@ export default function XrayCalibrationWorkspace() {
       setActiveRightPanel("tool");
     },
     [isMobileViewport],
+  );
+
+  const openMobileMeasurePanel = useCallback(() => {
+    if (!isMobileViewport) return;
+    setMobilePanelMode("workspace");
+    setActiveRightPanel("measure");
+    setMobileControlsOpen(true);
+  }, [isMobileViewport]);
+
+  const resetMobileLineTapTarget = useCallback(() => {
+    mobileLineTapRef.current = {
+      targetType: null,
+      lineId: null,
+      handleKey: null,
+      time: 0,
+    };
+  }, []);
+
+  const isRepeatedMobileLineTap = useCallback(
+    ({ targetType, lineId, handleKey = null }) => {
+      const previousTap = mobileLineTapRef.current;
+      const now = Date.now();
+      const isSameTarget =
+        previousTap.targetType === targetType &&
+        previousTap.lineId === lineId &&
+        previousTap.handleKey === handleKey;
+      mobileLineTapRef.current = {
+        targetType,
+        lineId,
+        handleKey,
+        time: now,
+      };
+      return isSameTarget && now - previousTap.time <= MOBILE_DOUBLE_TAP_MS;
+    },
+    [],
   );
 
   const updateLayerById = useCallback((layerId, updater) => {
@@ -2124,6 +2166,7 @@ export default function XrayCalibrationWorkspace() {
       }
       setMobilePanelMode("workspace");
       setActiveRightPanel("tool");
+      resetMobileLineTapTarget();
       if (nextTool !== "cut") {
         setDraftCut(null);
         setHistoryPaused(false);
@@ -2133,7 +2176,12 @@ export default function XrayCalibrationWorkspace() {
         setMobileControlsOpen(false);
       }
     },
-    [focusCalibrationStep, hasCalibration, isMobileViewport],
+    [
+      focusCalibrationStep,
+      hasCalibration,
+      isMobileViewport,
+      resetMobileLineTapTarget,
+    ],
   );
 
   const completeDraftCut = useCallback(() => {
@@ -2208,13 +2256,19 @@ export default function XrayCalibrationWorkspace() {
       }
       setMobilePanelMode("workspace");
       setActiveRightPanel("measure");
+      resetMobileLineTapTarget();
       setLinePreset(nextPreset);
       setTool("draw");
       if (isMobileViewport) {
         setMobileControlsOpen(false);
       }
     },
-    [focusCalibrationStep, hasCalibration, isMobileViewport],
+    [
+      focusCalibrationStep,
+      hasCalibration,
+      isMobileViewport,
+      resetMobileLineTapTarget,
+    ],
   );
 
   useEffect(() => {
@@ -3148,7 +3202,7 @@ export default function XrayCalibrationWorkspace() {
 
   const findClosestLineId = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 8 / view.scale;
+      const thresholdInImage = (isCoarsePointer ? 18 : 8) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -3162,7 +3216,7 @@ export default function XrayCalibrationWorkspace() {
 
       return pickedId;
     },
-    [lines, view.scale],
+    [isCoarsePointer, lines, view.scale],
   );
 
   const findClosestPlanningGuideId = useCallback(
@@ -3266,7 +3320,7 @@ export default function XrayCalibrationWorkspace() {
 
   const findClosestHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage = (isCoarsePointer ? 24 : 10) / view.scale;
       let pickedHandle = null;
       let minDistance = Infinity;
 
@@ -3290,7 +3344,7 @@ export default function XrayCalibrationWorkspace() {
 
       return pickedHandle;
     },
-    [lines, view.scale],
+    [isCoarsePointer, lines, view.scale],
   );
 
   const findLineLabelByPoint = useCallback(
@@ -3655,16 +3709,33 @@ export default function XrayCalibrationWorkspace() {
     const drawLine = (line, opts = {}) => {
       const start = imageToScreenPoint(line.x1, line.y1);
       const end = imageToScreenPoint(line.x2, line.y2);
-      const lineLengthPx = getLineLength(line);
 
       overlayCtx.save();
+      if (opts.showTouchHalo) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.22)";
+        overlayCtx.lineWidth = (opts.width || 2) + 18;
+        overlayCtx.lineCap = "round";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = opts.color;
       overlayCtx.lineWidth = opts.width || 2;
+      overlayCtx.lineCap = "round";
       overlayCtx.setLineDash(opts.dashed ? [6, 4] : []);
       overlayCtx.beginPath();
       overlayCtx.moveTo(start.x, start.y);
       overlayCtx.lineTo(end.x, end.y);
       overlayCtx.stroke();
+
+      if (opts.showTouchHalo) {
+        overlayCtx.fillStyle = "rgba(248, 250, 252, 0.18)";
+        overlayCtx.beginPath();
+        overlayCtx.arc(start.x, start.y, 16, 0, Math.PI * 2);
+        overlayCtx.arc(end.x, end.y, 16, 0, Math.PI * 2);
+        overlayCtx.fill();
+      }
 
       overlayCtx.fillStyle = opts.color;
       overlayCtx.beginPath();
@@ -3734,9 +3805,11 @@ export default function XrayCalibrationWorkspace() {
       drawLine(line, {
         color,
         width: isSelected ? 2.5 : 2,
-        handleRadius: isSelected && !isLocked ? 4.5 : 3,
+        handleRadius:
+          isSelected && !isLocked ? (isCoarsePointer ? 6.2 : 4.5) : 3,
         highlightHandles: isSelected && !isLocked,
         dashed: isLocked,
+        showTouchHalo: isSelected && !isLocked && isCoarsePointer,
       });
     }
 
@@ -3877,9 +3950,19 @@ export default function XrayCalibrationWorkspace() {
       overlayCtx.lineWidth = isSelected ? 2.5 : 2;
       overlayCtx.beginPath();
       overlayCtx.moveTo(hip.x, hip.y);
-      overlayCtx.lineTo(knee.x, knee.y);
       overlayCtx.lineTo(ankle.x, ankle.y);
       overlayCtx.stroke();
+      if (isSelected) {
+        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.lineWidth = 1.4;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(knee.x, knee.y);
+        overlayCtx.lineTo(hip.x, hip.y);
+        overlayCtx.moveTo(knee.x, knee.y);
+        overlayCtx.lineTo(ankle.x, ankle.y);
+        overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+      }
       overlayCtx.fillStyle = color;
       overlayCtx.beginPath();
       overlayCtx.arc(hip.x, hip.y, 3.6, 0, Math.PI * 2);
@@ -4264,6 +4347,7 @@ export default function XrayCalibrationWorkspace() {
     imageHeight,
     imageToScreenPoint,
     imageWidth,
+    isCoarsePointer,
     planningGuides,
     level,
     lineTypeColor,
@@ -4732,8 +4816,11 @@ export default function XrayCalibrationWorkspace() {
       const point = getLocalPoint(event);
       const imagePoint = screenToImagePoint(point.x, point.y);
       const boundedPoint = clampToImageBounds(imagePoint);
+      const isTouchLikePointer =
+        event.pointerType === "touch" ||
+        (isCoarsePointer && event.button === 0);
 
-      if (event.button === 1 || event.button === 2 || tool === "pan") {
+      if (event.button === 1 || event.button === 2) {
         interactionRef.current = {
           mode: "pan",
           startX: point.x,
@@ -4745,6 +4832,103 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (event.button !== 0) return;
+
+      if (tool === "pan" && isTouchLikePointer) {
+        const hitHandle = findClosestHandle(imagePoint);
+        if (hitHandle) {
+          const targetLine = lines.find((line) => line.id === hitHandle.lineId);
+          if (!targetLine) return;
+          if (targetLine.type) {
+            setLinePreset(targetLine.type);
+          }
+          setSelectedLineId(targetLine.id);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedCutLayerId(null);
+          setSelectedPlanningGuideId(null);
+          openMobileMeasurePanel();
+          if (isLineLocked(targetLine.id)) {
+            setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
+            return;
+          }
+          const shouldAdjust = isRepeatedMobileLineTap({
+            targetType: "line-handle",
+            lineId: targetLine.id,
+            handleKey: hitHandle.handleKey,
+          });
+          if (!shouldAdjust) {
+            setNotice(
+              "Tap 2x pada ujung line untuk adjust panjang. Radius sentuh line sudah diperbesar untuk mobile.",
+            );
+            return;
+          }
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-handle",
+            lineId: targetLine.id,
+            handleKey: hitHandle.handleKey,
+          };
+          setNotice("Adjust ujung line aktif. Geser jari untuk ubah panjang.");
+          return;
+        }
+
+        const hitLineId = findClosestLineId(imagePoint);
+        if (hitLineId !== null) {
+          const targetLine = lines.find((line) => line.id === hitLineId);
+          if (!targetLine) return;
+          if (targetLine.type) {
+            setLinePreset(targetLine.type);
+          }
+          setSelectedLineId(hitLineId);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedCutLayerId(null);
+          setSelectedPlanningGuideId(null);
+          openMobileMeasurePanel();
+          if (isLineLocked(hitLineId)) {
+            setNotice("Garis ini terkunci. Unlock dulu sebelum dipindah.");
+            return;
+          }
+          const shouldMoveLine = isRepeatedMobileLineTap({
+            targetType: "line-body",
+            lineId: hitLineId,
+          });
+          if (!shouldMoveLine) {
+            setNotice(
+              "Tap 2x pada garis untuk pindah. Tap 2x ujung line untuk adjust panjang.",
+            );
+            return;
+          }
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-line",
+            lineId: hitLineId,
+            startImageX: imagePoint.x,
+            startImageY: imagePoint.y,
+            origin: {
+              x1: targetLine.x1,
+              y1: targetLine.y1,
+              x2: targetLine.x2,
+              y2: targetLine.y2,
+            },
+          };
+          setNotice("Move line aktif. Geser jari untuk memindahkan garis.");
+          return;
+        }
+      }
+
+      if (tool === "pan") {
+        interactionRef.current = {
+          mode: "pan",
+          startX: point.x,
+          startY: point.y,
+          startPanX: view.panX,
+          startPanY: view.panY,
+        };
+        return;
+      }
 
       if (tool === "cut") {
         const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
@@ -5234,9 +5418,12 @@ export default function XrayCalibrationWorkspace() {
       image,
       focusCalibrationStep,
       hasCalibration,
+      isCoarsePointer,
       isLineLocked,
+      isRepeatedMobileLineTap,
       cutLayers,
       lines,
+      openMobileMeasurePanel,
       planningGuides,
       linePreset,
       selectPlanningGuideForEdit,
@@ -5643,6 +5830,11 @@ export default function XrayCalibrationWorkspace() {
         nextLineIdRef.current += 1;
         setLines((prev) => [...prev, nextLine]);
         setSelectedLineId(nextLine.id);
+        setNotice(
+          shouldUseMobileOneShotTool
+            ? "Line dibuat. Tap 2x pada ujung untuk adjust panjang, atau tap 2x pada garis untuk pindah."
+            : "Line dibuat. Drag ujung atau garis untuk adjust.",
+        );
       }
       setDraftLine(null);
       if (shouldUseMobileOneShotTool) {
@@ -5683,8 +5875,14 @@ export default function XrayCalibrationWorkspace() {
     }
 
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
+    resetMobileLineTapTarget();
     setHistoryPaused(false);
-  }, [draftCirclePoints, draftLine, shouldUseMobileOneShotTool]);
+  }, [
+    draftCirclePoints,
+    draftLine,
+    resetMobileLineTapTarget,
+    shouldUseMobileOneShotTool,
+  ]);
 
   const handleWheel = useCallback(
     (event) => {
@@ -7425,9 +7623,33 @@ export default function XrayCalibrationWorkspace() {
     mobileControlsOpen &&
     showRightSidebar &&
     mobilePanelMode === "workspace";
+  const activeToolLabel =
+    tool === "draw"
+      ? "Draw"
+      : tool === "pan"
+        ? "Move"
+        : tool === "cut"
+          ? "Free Cut"
+          : tool === "angle"
+            ? "Angle"
+            : tool === "circle"
+              ? "Circle"
+              : "Auto HKA";
+  const activeToolIcon =
+    tool === "draw"
+      ? "draw"
+      : tool === "pan"
+        ? "pan"
+        : tool === "cut"
+          ? "cut"
+          : tool === "angle"
+            ? "angle"
+            : tool === "circle"
+              ? "circle"
+              : "hka";
 
   return (
-    <div className="flex min-h-screen w-screen max-w-none flex-col gap-2 px-1 py-2 sm:px-2 lg:px-3">
+    <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 px-0 py-0 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
       <AnimatePresence>
         {showStartupCalibrationAlert ? (
           <motion.div
@@ -7498,12 +7720,14 @@ export default function XrayCalibrationWorkspace() {
           </motion.div>
         ) : null}
       </AnimatePresence>
-      <header className="flex items-start justify-between gap-2">
+      <header className="flex items-start justify-between gap-2 px-3 pt-2 pb-1 sm:px-0 sm:py-0">
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">
+          <h1 className="text-base font-semibold text-slate-900 sm:text-xl">
             Foto X-ray Measurement
           </h1>
-          <p className="text-xs text-slate-600">Upload, kalibrasi & ukur</p>
+          <p className="hidden text-xs text-slate-600 sm:block">
+            Upload, kalibrasi & ukur
+          </p>
         </div>
         <IconButton
           icon={mobileControlsOpen ? "close" : "menu"}
@@ -7516,7 +7740,7 @@ export default function XrayCalibrationWorkspace() {
 
       <motion.section
         layout
-        className={`relative grid flex-1 gap-2 ${desktopSectionClass}`}
+        className={`relative grid min-h-0 flex-1 gap-0 lg:gap-2 ${desktopSectionClass}`}
         style={{
           "--left-sidebar-width": `${leftSidebarWidth}px`,
           "--right-sidebar-width": `${rightSidebarWidth}px`,
@@ -7582,10 +7806,23 @@ export default function XrayCalibrationWorkspace() {
           transition={PANEL_SPRING}
           className={`order-2 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
             mobileSetupPanelVisible
-              ? "fixed inset-x-2 bottom-2 z-40 flex max-h-[44vh] overflow-y-auto rounded-2xl shadow-2xl"
+              ? "fixed inset-x-0 bottom-0 z-40 flex max-h-[72vh] overflow-y-auto overscroll-contain rounded-t-[28px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] shadow-2xl"
               : "hidden"
           } ${showLeftSidebar ? "lg:order-1 lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto lg:rounded-xl lg:shadow-none" : "lg:hidden"}`}
         >
+          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center border-b border-slate-200 bg-white/96 px-3 py-2 backdrop-blur lg:hidden">
+            <span />
+            <span className="h-1.5 w-12 justify-self-center rounded-full bg-slate-300" />
+            <button
+              type="button"
+              onClick={() => setMobileControlsOpen(false)}
+              className="inline-flex h-8 w-8 justify-self-end rounded-full border border-slate-200 bg-slate-50 text-slate-600"
+              aria-label="Tutup setup panel"
+              title="Tutup setup panel"
+            >
+              <Icon name="close" className="m-auto h-4 w-4" />
+            </button>
+          </div>
           <div className="mb-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 lg:hidden">
             <button
               type="button"
@@ -8915,7 +9152,7 @@ export default function XrayCalibrationWorkspace() {
               <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                 Measure
               </span>
-              <InfoTooltip text="Line preset: Normal, HKA, Offset, Femoral Offset, Global Offset, LLD. Circle lebih mudah: drag area dalam untuk pindah, drag tepi untuk resize, atau pakai slider diameter." />
+              <InfoTooltip text="Preset line: Normal, Offset, Femoral Offset, Global Offset, LLD. HKA gunakan Auto HKA. Circle lebih mudah: drag area dalam untuk pindah, drag tepi untuk resize, atau pakai slider diameter." />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-600">
               <span>
@@ -8950,14 +9187,14 @@ export default function XrayCalibrationWorkspace() {
               </button>
               <button
                 type="button"
-                onClick={() => handleLinePresetChange("hka")}
+                onClick={() => handleToolChange("hkaAuto")}
                 className={`rounded-md border px-2 py-1 text-xs ${
-                  linePreset === "hka"
+                  tool === "hkaAuto"
                     ? "border-cyan-600 bg-cyan-600 text-white"
                     : "border-slate-300 bg-white text-slate-700"
                 }`}
               >
-                HKA
+                Auto HKA
               </button>
               <button
                 type="button"
@@ -9312,10 +9549,23 @@ export default function XrayCalibrationWorkspace() {
           transition={PANEL_SPRING}
           className={`order-3 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
             mobileWorkspacePanelVisible
-              ? "fixed inset-x-2 bottom-2 z-40 flex max-h-[44vh] overflow-y-auto rounded-2xl shadow-2xl"
+              ? "fixed inset-x-0 bottom-0 z-40 flex max-h-[72vh] overflow-y-auto overscroll-contain rounded-t-[28px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] shadow-2xl"
               : "hidden"
           } ${showRightSidebar ? "lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto lg:rounded-xl lg:shadow-none" : "lg:hidden"}`}
         >
+          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center border-b border-slate-200 bg-white/96 px-3 py-2 backdrop-blur lg:hidden">
+            <span />
+            <span className="h-1.5 w-12 justify-self-center rounded-full bg-slate-300" />
+            <button
+              type="button"
+              onClick={() => setMobileControlsOpen(false)}
+              className="inline-flex h-8 w-8 justify-self-end rounded-full border border-slate-200 bg-slate-50 text-slate-600"
+              aria-label="Tutup workspace panel"
+              title="Tutup workspace panel"
+            >
+              <Icon name="close" className="m-auto h-4 w-4" />
+            </button>
+          </div>
           <div className="mb-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 lg:hidden">
             <button
               type="button"
@@ -10231,18 +10481,20 @@ export default function XrayCalibrationWorkspace() {
                 <div className="rounded-md border border-cyan-200 bg-cyan-50/40 px-2 py-1.5">
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                     <span>Knee</span>
-                    <span className="text-cyan-700 normal-case">HKA & TKA</span>
+                    <span className="text-cyan-700 normal-case">
+                      Auto HKA & TKA
+                    </span>
                   </div>
                   <div className={SIDEBAR_TEXT_BUTTON_GRID_CLASS}>
                     <button
                       type="button"
-                      onClick={() => handleLinePresetChange("hka")}
+                      onClick={() => handleToolChange("hkaAuto")}
                       className={measurePresetButtonClass(
-                        linePreset === "hka",
+                        tool === "hkaAuto",
                         "border-cyan-600 bg-cyan-600 text-white",
                       )}
                     >
-                      HKA
+                      Auto HKA
                     </button>
                   </div>
                 </div>
@@ -10305,8 +10557,9 @@ export default function XrayCalibrationWorkspace() {
                     Adjust Line #{selectedLine.id}
                   </div>
                   <div className="text-[10px] text-emerald-700">
-                    Drag titik ujung, geser garis, atau drag label langsung di
-                    canvas.
+                    {isCoarsePointer
+                      ? "Mobile: tap 2x ujung untuk adjust panjang, tap 2x garis untuk pindah, atau drag label langsung di canvas."
+                      : "Drag titik ujung, geser garis, atau drag label langsung di canvas."}
                   </div>
                   <div className="mt-1.5 flex flex-col gap-1.5">
                     <label className="text-[10px] text-slate-600">
@@ -11424,77 +11677,112 @@ export default function XrayCalibrationWorkspace() {
         <motion.div
           layout
           transition={PANEL_SPRING}
-          className="order-1 rounded-xl border border-slate-200 bg-white p-1.5 lg:order-2 lg:p-2"
+          className="order-1 border-0 bg-transparent p-0 lg:order-2 lg:rounded-xl lg:border lg:border-slate-200 lg:bg-white lg:p-2"
         >
           <div
-            className={`grid gap-2 ${compareMode ? "lg:grid-cols-2" : "grid-cols-1"}`}
+            className={`grid gap-0 lg:gap-2 ${compareMode ? "lg:grid-cols-2" : "grid-cols-1"}`}
           >
             <div
               ref={containerRef}
-              className="relative h-[58vh] min-h-[340px] w-full overflow-hidden rounded-lg border border-slate-300 bg-slate-950/95 sm:h-[70vh] sm:min-h-[420px] lg:h-[calc(100vh-156px)]"
+              className="relative h-[calc(100dvh-108px)] min-h-[460px] w-full overflow-hidden bg-slate-950/95 sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-156px)]"
             >
-              <div className="absolute top-2 left-2 z-20 flex items-center gap-1 overflow-x-auto rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur lg:hidden">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobilePanelMode("setup");
-                    setMobileControlsOpen(true);
-                  }}
-                  className={`inline-flex h-8 items-center justify-center rounded-md px-2 text-[10px] font-semibold transition ${
-                    mobileSetupPanelVisible
-                      ? "bg-white text-slate-900"
-                      : "bg-slate-800/80 text-slate-100"
-                  }`}
-                >
-                  Setup
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobilePanelMode("workspace");
-                    setMobileControlsOpen(true);
-                  }}
-                  className={`inline-flex h-8 items-center justify-center rounded-md px-2 text-[10px] font-semibold transition ${
-                    mobileWorkspacePanelVisible
-                      ? "bg-white text-slate-900"
-                      : "bg-slate-800/80 text-slate-100"
-                  }`}
-                >
-                  Panel
-                </button>
-                <ToolIconButton
-                  icon="draw"
-                  label="Draw Line (L)"
-                  onClick={() => handleToolChange("draw")}
-                  active={tool === "draw"}
-                  className="h-8 w-8 border-slate-500"
-                />
-                <ToolIconButton
-                  icon="pan"
-                  label="Move / Pan (H)"
-                  onClick={() => handleToolChange("pan")}
-                  active={tool === "pan"}
-                  className="h-8 w-8 border-slate-500"
-                />
-                <ToolIconButton
-                  icon="cut"
-                  label="Free Cut"
-                  onClick={() => handleToolChange("cut")}
-                  active={tool === "cut"}
-                  className="h-8 w-8 border-slate-500"
-                />
-                <IconButton
-                  icon={mobileControlsOpen ? "close" : "menu"}
-                  label={mobileControlsOpen ? "Tutup Kontrol" : "Buka Kontrol"}
-                  onClick={() => {
-                    setMobilePanelMode("workspace");
-                    setMobileControlsOpen((prev) => !prev);
-                  }}
-                  active={mobileControlsOpen}
-                  className="h-8 w-8 border-slate-500"
-                />
+              <div className="absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] lg:hidden">
+                <div className="flex items-center gap-2">
+                  <div className="grid flex-1 grid-cols-4 rounded-2xl border border-slate-600/70 bg-slate-900/82 p-1 shadow-xl backdrop-blur">
+                    {[
+                      {
+                        id: "setup",
+                        label: "Setup",
+                        onClick: () => {
+                          setMobilePanelMode("setup");
+                          setMobileControlsOpen(true);
+                        },
+                        active: mobileSetupPanelVisible,
+                      },
+                      {
+                        id: "tool",
+                        label: "Tool",
+                        onClick: () => {
+                          setMobilePanelMode("workspace");
+                          setActiveRightPanel("tool");
+                          setMobileControlsOpen(true);
+                        },
+                        active:
+                          mobileWorkspacePanelVisible &&
+                          activeRightPanel === "tool",
+                      },
+                      {
+                        id: "measure",
+                        label: "Measure",
+                        onClick: () => {
+                          setMobilePanelMode("workspace");
+                          setActiveRightPanel("measure");
+                          setMobileControlsOpen(true);
+                        },
+                        active:
+                          mobileWorkspacePanelVisible &&
+                          activeRightPanel === "measure",
+                      },
+                      {
+                        id: "planning",
+                        label: "Plan",
+                        onClick: () => {
+                          setMobilePanelMode("workspace");
+                          setActiveRightPanel("planning");
+                          setMobileControlsOpen(true);
+                        },
+                        active:
+                          mobileWorkspacePanelVisible &&
+                          activeRightPanel === "planning",
+                      },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={item.onClick}
+                        className={`inline-flex min-w-0 items-center justify-center rounded-xl px-2 py-2 text-[10px] font-semibold transition ${
+                          item.active
+                            ? "bg-white text-slate-900"
+                            : "text-slate-100 hover:bg-slate-800/70"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-600/70 bg-slate-900/82 p-1 shadow-xl backdrop-blur">
+                    <ToolIconButton
+                      icon="pan"
+                      label="Move / Pan (H)"
+                      onClick={() => handleToolChange("pan")}
+                      active={tool === "pan"}
+                      className="h-10 w-10 shrink-0 border-slate-500"
+                    />
+                    <ToolIconButton
+                      icon="draw"
+                      label="Draw Line (L)"
+                      onClick={() => handleToolChange("draw")}
+                      active={tool === "draw"}
+                      className="h-10 w-10 shrink-0 border-slate-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobilePanelMode("workspace");
+                        setActiveRightPanel("tool");
+                        setMobileControlsOpen(true);
+                      }}
+                      className="inline-flex h-10 min-w-[68px] items-center justify-center gap-1 rounded-xl border border-slate-500 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 transition hover:bg-slate-800"
+                      aria-label={`Buka tools, tool aktif ${activeToolLabel}`}
+                      title={`Tool aktif: ${activeToolLabel}`}
+                    >
+                      <Icon name={activeToolIcon} className="h-4 w-4" />
+                      <span>Tools</span>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="absolute right-3 bottom-3 z-20 flex flex-col gap-1.5 rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur">
+              <div className="absolute right-3 bottom-[78px] z-20 flex flex-col gap-1.5 rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur sm:bottom-3">
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1.15)}
@@ -11570,28 +11858,18 @@ export default function XrayCalibrationWorkspace() {
             {compareMode ? (
               <div
                 ref={compareContainerRef}
-                className="relative h-[58vh] min-h-[340px] w-full overflow-hidden rounded-lg border border-slate-300 bg-slate-950/95 sm:h-[68vh] sm:min-h-[420px] lg:h-[calc(100vh-170px)]"
+                className="relative h-[34vh] min-h-[220px] w-full overflow-hidden bg-slate-950/95 sm:h-[68vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-170px)]"
               >
                 <canvas ref={compareCanvasRef} className="absolute inset-0" />
               </div>
             ) : null}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+          <div className="mt-2 hidden flex-wrap items-center gap-2 text-[11px] text-slate-600 sm:flex">
             <span className="rounded bg-slate-100 px-2 py-0.5">
               Zoom {(view.scale * 100).toFixed(0)}%
             </span>
             <span className="rounded bg-slate-100 px-2 py-0.5">
-              {tool === "draw"
-                ? "Draw"
-                : tool === "pan"
-                  ? "Move"
-                  : tool === "cut"
-                    ? "Free Cut"
-                    : tool === "angle"
-                      ? "Angle"
-                      : tool === "circle"
-                        ? "Circle"
-                        : "Auto HKA"}
+              {activeToolLabel}
             </span>
             <span className="rounded bg-slate-100 px-2 py-0.5">
               {hasCalibration ? measurementUnit : "uncalibrated"}

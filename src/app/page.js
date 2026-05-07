@@ -9,7 +9,7 @@ export default function Home() {
           href="/google-sheet-drive"
           className="pointer-events-auto rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm"
         >
-          Sheet Drive Manager
+          My Drive
         </Link>
       </div>
       <ImagingWorkspaceShell />

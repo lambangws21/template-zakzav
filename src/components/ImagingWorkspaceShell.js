@@ -26,20 +26,21 @@ const XrayCalibrationWorkspace = dynamic(
 
 const WORKSPACE_OPTIONS = [
   {
-    key: "dicom",
-    title: "DICOM Viewer",
-    description: "Untuk file DICOM (.dcm) dengan tools PACS (WL, Pan, Zoom, Length).",
-  },
-  {
     key: "photo",
     title: "Upload X-ray",
     description:
       "Untuk file X-ray (.jpg, .jpeg, .png) dengan tools calibrasi (pan, zoom, length).",
   },
+  {
+    key: "dicom",
+    title: "Upload DICOM",
+    description:
+      "Untuk file DICOM (.dcm) dengan tools PACS (WL, Pan, Zoom, Length).",
+  },
 ];
 
 export default function ImagingWorkspaceShell() {
-  const [activeWorkspace, setActiveWorkspace] = useState("dicom");
+  const [activeWorkspace, setActiveWorkspace] = useState("photo");
 
   const activeWorkspaceInfo = useMemo(
     () => WORKSPACE_OPTIONS.find((item) => item.key === activeWorkspace),
@@ -66,11 +67,17 @@ export default function ImagingWorkspaceShell() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-slate-600">{activeWorkspaceInfo?.description}</p>
+          <p className="text-xs text-slate-600">
+            {activeWorkspaceInfo?.description}
+          </p>
         </div>
       </div>
 
-      {activeWorkspace === "dicom" ? <PacsDicomViewer /> : <XrayCalibrationWorkspace />}
+      {activeWorkspace === "dicom" ? (
+        <PacsDicomViewer />
+      ) : (
+        <XrayCalibrationWorkspace />
+      )}
     </div>
   );
 }
