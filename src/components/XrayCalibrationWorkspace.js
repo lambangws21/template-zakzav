@@ -3,6 +3,7 @@
 import { ID, Query } from "appwrite";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BadgeCheck,
   Bone,
@@ -156,9 +157,51 @@ const PLANNING_GUIDE_COLOR_OPTIONS = [
   "#14b8a6",
   "#f59e0b",
 ];
+const MOBILE_PANEL_PREVIEW_EVENT = "xray-mobile-panel-preview";
+let mobilePanelPreviewTimeoutId = null;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function triggerMobileHaptic(pattern = 8) {
+  if (typeof window === "undefined") return;
+  const navigatorRef = window.navigator;
+  const supportsCoarsePointer =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(pointer: coarse)").matches
+      : false;
+
+  if (!supportsCoarsePointer) return;
+  if (!navigatorRef || typeof navigatorRef.vibrate !== "function") return;
+
+  navigatorRef.vibrate(pattern);
+}
+
+function setMobilePanelPreview(active, durationMs = 0) {
+  if (typeof window === "undefined") return;
+
+  if (mobilePanelPreviewTimeoutId !== null) {
+    window.clearTimeout(mobilePanelPreviewTimeoutId);
+    mobilePanelPreviewTimeoutId = null;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(MOBILE_PANEL_PREVIEW_EVENT, {
+      detail: { active },
+    }),
+  );
+
+  if (active && durationMs > 0) {
+    mobilePanelPreviewTimeoutId = window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent(MOBILE_PANEL_PREVIEW_EVENT, {
+          detail: { active: false },
+        }),
+      );
+      mobilePanelPreviewTimeoutId = null;
+    }, durationMs);
+  }
 }
 
 function getLayerPalette(layerId) {
@@ -1169,6 +1212,9 @@ function IconButton({
     <motion.button
       type="button"
       onClick={onClick}
+      onPointerDown={() => {
+        if (!disabled) triggerMobileHaptic();
+      }}
       aria-label={label}
       title={label}
       disabled={disabled}
@@ -1196,6 +1242,7 @@ function LayerToolbarActionButton({
     <motion.button
       type="button"
       onClick={onClick}
+      onPointerDown={() => triggerMobileHaptic()}
       aria-label={label}
       title={label}
       whileHover={BUTTON_HOVER}
@@ -1239,6 +1286,9 @@ function ToolIconButton({
     <motion.button
       type="button"
       onClick={onClick}
+      onPointerDown={() => {
+        if (!disabled) triggerMobileHaptic();
+      }}
       aria-label={label}
       title={label}
       disabled={disabled}
@@ -1269,6 +1319,7 @@ function ColorSwatchButton({
     <motion.button
       type="button"
       onClick={onClick}
+      onPointerDown={() => triggerMobileHaptic()}
       aria-label={label}
       title={label}
       whileHover={BUTTON_HOVER}
@@ -1303,6 +1354,19 @@ function CompactSliderField({
 }) {
   const knobRef = useRef(null);
   const [isKnobDragging, setIsKnobDragging] = useState(false);
+  const [canUseMobilePreview, setCanUseMobilePreview] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mediaQuery = window.matchMedia(
+      "(max-width: 1023px) and (pointer: coarse)",
+    );
+    const update = () => setCanUseMobilePreview(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
 
   const emitValueChange = useCallback(
     (nextValue) => {
@@ -1350,6 +1414,7 @@ function CompactSliderField({
 
     const handlePointerUp = () => {
       setIsKnobDragging(false);
+      setMobilePanelPreview(false);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -1371,8 +1436,9 @@ function CompactSliderField({
   const knobDotRadius = 18;
   const knobDotX = 44 + Math.cos(knobRad) * knobDotRadius;
   const knobDotY = 44 + Math.sin(knobRad) * knobDotRadius;
+  const showPreviewOverlay = canUseMobilePreview && isKnobDragging;
 
-  return (
+  const controlContent = (
     <div className={`${SOFT_SURFACE_CLASS} px-3 py-2.5`}>
       <div className="flex items-center justify-between gap-2 text-[12px] text-slate-700">
         <span className="font-medium">{label}</span>
@@ -1402,6 +1468,7 @@ function CompactSliderField({
             onPointerDown={(event) => {
               if (disabled) return;
               event.preventDefault();
+              setMobilePanelPreview(true);
               setIsKnobDragging(true);
               updateKnobValueFromPoint(event.clientX, event.clientY);
             }}
@@ -1487,6 +1554,17 @@ function CompactSliderField({
       )}
     </div>
   );
+
+  if (showPreviewOverlay && typeof document !== "undefined") {
+    return createPortal(
+      <div className="fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+116px)] left-3 z-[85]">
+        {controlContent}
+      </div>,
+      document.body,
+    );
+  }
+
+  return controlContent;
 }
 
 export default function XrayCalibrationWorkspace() {
@@ -1598,6 +1676,8 @@ export default function XrayCalibrationWorkspace() {
   const [mobilePanelMode, setMobilePanelMode] = useState("workspace");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [mobilePanelPreviewActive, setMobilePanelPreviewActive] =
+    useState(false);
   const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
     useState(null);
@@ -1684,6 +1764,24 @@ export default function XrayCalibrationWorkspace() {
     setMobilePanelMode("workspace");
     setTool((prev) => (prev === "draw" ? MOBILE_IDLE_TOOL : prev));
   }, [isMobileViewport]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleMobilePanelPreview = (event) => {
+      setMobilePanelPreviewActive(Boolean(event?.detail?.active));
+    };
+
+    window.addEventListener(
+      MOBILE_PANEL_PREVIEW_EVENT,
+      handleMobilePanelPreview,
+    );
+    return () =>
+      window.removeEventListener(
+        MOBILE_PANEL_PREVIEW_EVENT,
+        handleMobilePanelPreview,
+      );
+  }, []);
 
   const shouldUseMobileOneShotTool = isMobileViewport && isCoarsePointer;
 
@@ -8845,7 +8943,17 @@ export default function XrayCalibrationWorkspace() {
             mobileSetupPanelVisible
               ? "pointer-events-auto"
               : "pointer-events-none"
-          } ${showLeftSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:shadow-none" : "lg:hidden"}`}
+          } ${
+            isMobileViewport
+              ? mobilePanelPreviewActive
+                ? "border-white/30 bg-[linear-gradient(180deg,rgba(244,247,251,0.44)_0%,rgba(229,236,244,0.4)_100%)] backdrop-blur-xl"
+                : "border-white/48 bg-[linear-gradient(180deg,rgba(244,247,251,0.74)_0%,rgba(229,236,244,0.68)_100%)] backdrop-blur-xl"
+              : ""
+          } ${
+            isMobileViewport && mobilePanelPreviewActive
+              ? "[&>*]:pointer-events-none [&>*]:opacity-0"
+              : ""
+          } ${showLeftSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
           <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
@@ -10602,7 +10710,17 @@ export default function XrayCalibrationWorkspace() {
             mobileWorkspacePanelVisible
               ? "pointer-events-auto"
               : "pointer-events-none"
-          } ${showRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:shadow-none" : "lg:hidden"}`}
+          } ${
+            isMobileViewport
+              ? mobilePanelPreviewActive
+                ? "border-white/30 bg-[linear-gradient(180deg,rgba(244,247,251,0.44)_0%,rgba(229,236,244,0.4)_100%)] backdrop-blur-xl"
+                : "border-white/48 bg-[linear-gradient(180deg,rgba(244,247,251,0.74)_0%,rgba(229,236,244,0.68)_100%)] backdrop-blur-xl"
+              : ""
+          } ${
+            isMobileViewport && mobilePanelPreviewActive
+              ? "[&>*]:pointer-events-none [&>*]:opacity-0"
+              : ""
+          } ${showRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
           <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
@@ -13302,6 +13420,7 @@ export default function XrayCalibrationWorkspace() {
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1.15)}
+                  onPointerDown={() => triggerMobileHaptic()}
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
@@ -13314,6 +13433,7 @@ export default function XrayCalibrationWorkspace() {
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1 / 1.15)}
+                  onPointerDown={() => triggerMobileHaptic()}
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
@@ -13326,6 +13446,7 @@ export default function XrayCalibrationWorkspace() {
                 <motion.button
                   type="button"
                   onClick={fitImageToViewport}
+                  onPointerDown={() => triggerMobileHaptic()}
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
