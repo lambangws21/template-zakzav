@@ -1,13 +1,29 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ExternalLink, Image as ImageIcon, Layers, RefreshCw } from "lucide-react";
+import {
+  ExternalLink,
+  Image as ImageIcon,
+  Layers,
+  RefreshCw,
+} from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT, parseSheetRawText } from "@/lib/googleSheetImageUtils";
+import {
+  DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
+  parseSheetRawText,
+} from "@/lib/googleSheetImageUtils";
 import DriveImageWithFallback from "./DriveImageWithFallback";
 
 const BUTTON_HOVER = { scale: 1.02, y: -1 };
 const BUTTON_TAP = { scale: 0.97 };
+const SOFT_SURFACE_CLASS =
+  "rounded-[24px] border border-white/78 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] shadow-[10px_10px_22px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.34)]";
+const SOFT_RAISED_CLASS =
+  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#fbfdff_0%,#ecf1f6_100%)] shadow-[6px_6px_14px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.28)]";
+const SOFT_INSET_CLASS =
+  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#eef2f7_0%,#f9fbfd_100%)] shadow-[inset_6px_6px_12px_rgba(71,85,105,0.12),inset_-3px_-3px_8px_rgba(255,255,255,0.26)]";
+const SOFT_PRIMARY_BUTTON_CLASS =
+  "rounded-[18px] border border-[#d8fff1] bg-[linear-gradient(180deg,#ddfff2_0%,#c5f3e6_100%)] shadow-[8px_8px_18px_rgba(16,185,129,0.12),-2px_-2px_6px_rgba(255,255,255,0.24)]";
 
 export default function GoogleSheetDrivePicker({
   onUseImage,
@@ -18,7 +34,9 @@ export default function GoogleSheetDrivePicker({
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [notice, setNotice] = useState("Masukkan URL Apps Script / CSV Google Sheet.");
+  const [notice, setNotice] = useState(
+    "Masukkan URL Apps Script / CSV Google Sheet.",
+  );
 
   const selectedItem = useMemo(
     () => items.find((item) => String(item.id) === String(selectedId)) || null,
@@ -80,10 +98,10 @@ export default function GoogleSheetDrivePicker({
   return (
     <motion.div
       layout
-      className="flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50 p-2"
+      className={`flex flex-col gap-2 p-3 ${SOFT_SURFACE_CLASS}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+        <span className="text-[11px] font-semibold tracking-wide text-slate-700 uppercase">
           {compact ? "Drive" : "Google Sheet / Drive"}
         </span>
         <motion.button
@@ -95,10 +113,12 @@ export default function GoogleSheetDrivePicker({
           whileHover={isLoading ? undefined : BUTTON_HOVER}
           whileTap={isLoading ? undefined : BUTTON_TAP}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className="inline-flex h-7 items-center gap-1 rounded border border-slate-300 bg-white px-2 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
+          className={`inline-flex h-8 items-center gap-1 px-3 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45 ${SOFT_RAISED_CLASS}`}
           title="Load data dari endpoint Google Sheet / Drive"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`}
+          />
           {compact ? null : isLoading ? "Load..." : "Load"}
         </motion.button>
       </div>
@@ -107,8 +127,10 @@ export default function GoogleSheetDrivePicker({
         type="text"
         value={endpoint}
         onChange={(event) => setEndpoint(event.target.value)}
-        placeholder={compact ? "URL endpoint" : "URL Apps Script / CSV Google Sheet"}
-        className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700"
+        placeholder={
+          compact ? "URL endpoint" : "URL Apps Script / CSV Google Sheet"
+        }
+        className={`w-full px-3 py-2 text-[11px] text-slate-700 ${SOFT_INSET_CLASS}`}
         title="URL Apps Script atau CSV Google Sheet"
       />
 
@@ -117,7 +139,7 @@ export default function GoogleSheetDrivePicker({
           value={selectedId || ""}
           onChange={(event) => setSelectedId(event.target.value || null)}
           disabled={items.length === 0}
-          className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
+          className={`px-3 py-2 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45 ${SOFT_RAISED_CLASS}`}
           title="Pilih gambar dari Google Sheet / Drive"
         >
           {items.length === 0 ? (
@@ -149,7 +171,7 @@ export default function GoogleSheetDrivePicker({
               whileHover={!selectedItem ? undefined : BUTTON_HOVER}
               whileTap={!selectedItem ? undefined : BUTTON_TAP}
               transition={{ duration: 0.16, ease: "easeOut" }}
-              className="inline-flex items-center justify-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
+              className={`inline-flex items-center justify-center gap-1 px-2 py-2 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45 ${SOFT_RAISED_CLASS}`}
               title="Pakai sebagai background utama"
             >
               <ImageIcon className="h-3.5 w-3.5" />
@@ -163,7 +185,7 @@ export default function GoogleSheetDrivePicker({
             whileHover={!selectedItem ? undefined : BUTTON_HOVER}
             whileTap={!selectedItem ? undefined : BUTTON_TAP}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className="inline-flex items-center justify-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
+            className={`inline-flex items-center justify-center gap-1 px-2 py-2 text-[11px] text-slate-800 disabled:cursor-not-allowed disabled:opacity-45 ${SOFT_PRIMARY_BUTTON_CLASS}`}
             title="Pakai sebagai template layer"
           >
             <Layers className="h-3.5 w-3.5" />
@@ -173,16 +195,18 @@ export default function GoogleSheetDrivePicker({
       </div>
 
       {selectedItem && !compact ? (
-        <div className="flex items-center gap-2 rounded border border-slate-200 bg-white p-1.5">
+        <div className={`flex items-center gap-2 p-2 ${SOFT_SURFACE_CLASS}`}>
           <DriveImageWithFallback
             src={selectedItem.imageSrc}
             driveId={selectedItem.driveId}
             alt={selectedItem.name}
-            className="h-12 w-12 rounded border border-slate-200 object-cover"
+            className={`h-12 w-12 object-cover ${SOFT_SURFACE_CLASS}`}
             loading="lazy"
           />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[11px] font-medium text-slate-700">{selectedItem.name}</div>
+            <div className="truncate text-[11px] font-medium text-slate-700">
+              {selectedItem.name}
+            </div>
             <a
               href={selectedItem.imageSrc}
               target="_blank"
@@ -197,7 +221,9 @@ export default function GoogleSheetDrivePicker({
       ) : null}
 
       {!compact || notice.toLowerCase().includes("gagal") ? (
-        <div className="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600">
+        <div
+          className={`${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-600`}
+        >
           {notice}
         </div>
       ) : null}

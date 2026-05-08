@@ -44,6 +44,7 @@ import {
   Undo2,
   Upload,
   X,
+  SlidersHorizontal,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -97,6 +98,28 @@ const SIDEBAR_TAB_GRID_CLASS =
 const BUTTON_HOVER = { scale: 1.03, y: -1 };
 const BUTTON_TAP = { scale: 0.97 };
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
+const SOFT_SURFACE_CLASS =
+  "rounded-[24px] border border-white/78 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] shadow-[10px_10px_22px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.34)]";
+const SOFT_RAISED_CLASS =
+  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#fbfdff_0%,#ecf1f6_100%)] shadow-[6px_6px_14px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.28)]";
+const SOFT_PRESSED_CLASS =
+  "rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#edf2f7_0%,#fafcff_100%)] shadow-[inset_6px_6px_12px_rgba(71,85,105,0.14),inset_-3px_-3px_8px_rgba(255,255,255,0.3)]";
+const SOFT_INSET_CLASS =
+  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#eef2f7_0%,#f9fbfd_100%)] shadow-[inset_6px_6px_12px_rgba(71,85,105,0.12),inset_-3px_-3px_8px_rgba(255,255,255,0.26)]";
+const SOFT_INPUT_CLASS = `${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700 outline-none`;
+const SOFT_SELECT_CLASS = `${SOFT_RAISED_CLASS} px-3 py-2 text-xs text-slate-700 outline-none`;
+const SOFT_TEXT_BUTTON_CLASS = `${SOFT_RAISED_CLASS} px-3 py-2 text-xs font-medium text-slate-700 transition hover:text-slate-900`;
+const SOFT_DANGER_BUTTON_CLASS = `${SOFT_RAISED_CLASS} px-3 py-2 text-xs font-medium text-rose-600 transition hover:text-rose-700`;
+const SOFT_PRIMARY_BUTTON_CLASS =
+  "rounded-[18px] border border-[#d8fff1] bg-[linear-gradient(180deg,#ddfff2_0%,#c5f3e6_100%)] px-3 py-2 text-xs font-medium text-slate-800 shadow-[8px_8px_18px_rgba(16,185,129,0.12),-2px_-2px_6px_rgba(255,255,255,0.24)] transition hover:text-slate-900";
+const SOFT_DARK_BUTTON_CLASS =
+  "rounded-[18px] border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] px-3 py-2 text-xs font-medium text-white shadow-[8px_8px_18px_rgba(15,23,42,0.26),-2px_-2px_8px_rgba(255,255,255,0.08)] transition";
+const SOFT_PANEL_CLASS = `${SOFT_SURFACE_CLASS} p-3`;
+const SOFT_CARD_CLASS = `${SOFT_SURFACE_CLASS} p-2.5`;
+const SOFT_SECTION_CLASS = `${SOFT_SURFACE_CLASS} flex flex-col gap-2 p-2.5`;
+const SOFT_TINT_CARD_CLASS = `${SOFT_SURFACE_CLASS} border border-white/90`;
+const SOFT_FLOAT_SURFACE_CLASS =
+  "rounded-[24px] border border-white/58 bg-[linear-gradient(180deg,rgba(244,247,251,0.92)_0%,rgba(229,236,244,0.9)_100%)] shadow-[0_12px_28px_rgba(15,23,42,0.3),0_1px_4px_rgba(255,255,255,0.08)] backdrop-blur";
 const DEFAULT_LINE_LABEL_OFFSET_X = -42;
 const DEFAULT_LINE_LABEL_OFFSET_Y = -20;
 const DEFAULT_ANGLE_LABEL_OFFSET_X = 0;
@@ -104,6 +127,8 @@ const DEFAULT_ANGLE_LABEL_OFFSET_Y = -16;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
+const KNOB_START_DEG = 135;
+const KNOB_SWEEP_DEG = 270;
 const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
@@ -1034,7 +1059,7 @@ function InfoTooltip({ text }) {
     >
       <button
         type="button"
-        className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-600"
+        className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold text-slate-500 ${SOFT_RAISED_CLASS}`}
         aria-label="Info"
       >
         !
@@ -1046,7 +1071,7 @@ function InfoTooltip({ text }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="pointer-events-none absolute top-[120%] left-1/2 z-30 w-56 -translate-x-1/2 rounded-md border border-slate-200 bg-slate-900 px-2 py-1.5 text-[11px] leading-snug text-slate-100 shadow-md"
+            className={`pointer-events-none absolute top-[120%] left-1/2 z-30 w-56 -translate-x-1/2 px-3 py-2 text-[11px] leading-snug text-slate-600 ${SOFT_SURFACE_CLASS}`}
           >
             {text}
           </motion.span>
@@ -1088,6 +1113,7 @@ const ICON_COMPONENTS = {
   redo: Redo2,
   eye: Eye,
   eyeOff: EyeOff,
+  settings: SlidersHorizontal,
   angle: DraftingCompass,
   circle: CircleIcon,
   hka: Bone,
@@ -1109,6 +1135,27 @@ function Icon({ name, className = "h-4 w-4" }) {
   );
 }
 
+function getSoftToneClass(tone = "slate", active = false) {
+  const toneClass =
+    tone === "emerald"
+      ? active
+        ? "text-emerald-700"
+        : "text-emerald-600 hover:text-emerald-700"
+      : tone === "rose"
+        ? active
+          ? "text-rose-700"
+          : "text-rose-600 hover:text-rose-700"
+        : tone === "amber"
+          ? active
+            ? "text-amber-700"
+            : "text-amber-600 hover:text-amber-700"
+          : active
+            ? "text-slate-800"
+            : "text-slate-500 hover:text-slate-700";
+
+  return `${active ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} ${toneClass}`;
+}
+
 function IconButton({
   icon,
   label,
@@ -1118,17 +1165,6 @@ function IconButton({
   tone = "slate",
   className = "",
 }) {
-  const activeClass =
-    tone === "emerald"
-      ? "border-emerald-600 bg-emerald-600 text-white"
-      : tone === "rose"
-        ? "border-rose-500 bg-rose-500 text-white"
-        : tone === "amber"
-          ? "border-amber-500 bg-amber-500 text-white"
-          : "border-slate-900 bg-slate-900 text-white";
-  const idleClass =
-    "border-slate-300 bg-white text-slate-700 hover:bg-slate-100";
-
   return (
     <motion.button
       type="button"
@@ -1139,11 +1175,12 @@ function IconButton({
       whileHover={disabled ? undefined : BUTTON_HOVER}
       whileTap={disabled ? undefined : BUTTON_TAP}
       transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-md border transition sm:h-9 sm:w-9 ${
-        active ? activeClass : idleClass
-      } disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
+      className={`inline-flex h-10 w-10 items-center justify-center transition sm:h-9 sm:w-9 ${getSoftToneClass(
+        tone,
+        active,
+      )} disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
     >
-      <Icon name={icon} />
+      <Icon name={icon} className="h-[18px] w-[18px]" />
     </motion.button>
   );
 }
@@ -1164,11 +1201,10 @@ function LayerToolbarActionButton({
       whileHover={BUTTON_HOVER}
       whileTap={BUTTON_TAP}
       transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-white transition ${
-        active
-          ? "border-cyan-400/80 bg-cyan-500/18 text-cyan-50"
-          : "border-slate-500/80 bg-slate-800/92 text-white hover:bg-slate-700/92"
-      } ${className}`}
+      className={`inline-flex h-8 w-8 items-center justify-center transition ${getSoftToneClass(
+        "slate",
+        active,
+      )} ${className}`}
     >
       <Icon name={icon} className="h-4 w-4" />
     </motion.button>
@@ -1198,9 +1234,6 @@ function ToolIconButton({
   className = "",
 }) {
   const ToolIcon = TOOL_ICON_COMPONENTS[icon];
-  const stateClass = active
-    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100";
 
   return (
     <motion.button
@@ -1212,7 +1245,10 @@ function ToolIconButton({
       whileHover={disabled ? undefined : BUTTON_HOVER}
       whileTap={disabled ? undefined : BUTTON_TAP}
       transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-lg border transition sm:h-9 sm:w-9 ${stateClass} disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
+      className={`inline-flex h-10 w-10 items-center justify-center transition sm:h-9 sm:w-9 ${getSoftToneClass(
+        "slate",
+        active,
+      )} disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
     >
       {ToolIcon ? (
         <ToolIcon className="h-4 w-4" strokeWidth={2} />
@@ -1238,14 +1274,12 @@ function ColorSwatchButton({
       whileHover={BUTTON_HOVER}
       whileTap={BUTTON_TAP}
       transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-full border-2 transition ${
-        active
-          ? "border-slate-900 bg-white shadow-sm"
-          : "border-slate-200 bg-white hover:border-slate-300"
+      className={`inline-flex h-8 w-8 items-center justify-center border-0 transition ${
+        active ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS
       }`}
     >
       <span
-        className="h-4 w-4 rounded-full border border-white/70"
+        className="h-[18px] w-[18px] rounded-full border border-white/70"
         style={{ backgroundColor: color }}
       />
     </motion.button>
@@ -1265,39 +1299,192 @@ function CompactSliderField({
   decreaseIcon = "minus",
   increaseIcon = "plus",
   disabled = false,
+  controlStyle = "knob",
 }) {
+  const knobRef = useRef(null);
+  const [isKnobDragging, setIsKnobDragging] = useState(false);
+
+  const emitValueChange = useCallback(
+    (nextValue) => {
+      onChange?.({
+        target: {
+          value: String(nextValue),
+        },
+      });
+    },
+    [onChange],
+  );
+
+  const updateKnobValueFromPoint = useCallback(
+    (clientX, clientY) => {
+      if (!knobRef.current || disabled) return;
+      const rect = knobRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = clientX - centerX;
+      const dy = clientY - centerY;
+      const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const normalizedAngle = (angleDeg + 360) % 360;
+      const relative = (normalizedAngle - KNOB_START_DEG + 360) % 360;
+      const clampedRelative =
+        relative <= KNOB_SWEEP_DEG
+          ? relative
+          : 360 - relative < relative - KNOB_SWEEP_DEG
+            ? 0
+            : KNOB_SWEEP_DEG;
+      const ratio = clamp(clampedRelative / KNOB_SWEEP_DEG, 0, 1);
+      const rawValue = min + ratio * (max - min);
+      const snappedValue = min + Math.round((rawValue - min) / step) * step;
+      const safeValue = clamp(Number(snappedValue.toFixed(4)), min, max);
+      emitValueChange(safeValue);
+    },
+    [disabled, emitValueChange, max, min, step],
+  );
+
+  useEffect(() => {
+    if (!isKnobDragging) return undefined;
+
+    const handlePointerMove = (event) => {
+      updateKnobValueFromPoint(event.clientX, event.clientY);
+    };
+
+    const handlePointerUp = () => {
+      setIsKnobDragging(false);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [isKnobDragging, updateKnobValueFromPoint]);
+
+  const knobRatio = clamp(
+    (Number(value) - min) / Math.max(max - min, 0.0001),
+    0,
+    1,
+  );
+  const knobAngle = KNOB_START_DEG + knobRatio * KNOB_SWEEP_DEG;
+  const knobRad = (knobAngle * Math.PI) / 180;
+  const knobDotRadius = 18;
+  const knobDotX = 44 + Math.cos(knobRad) * knobDotRadius;
+  const knobDotY = 44 + Math.sin(knobRad) * knobDotRadius;
+
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-      <div className="flex items-center justify-between gap-2 text-[10px] text-slate-600">
-        <span>{label}</span>
-        <span className="text-slate-400">{valueText}</span>
+    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2.5`}>
+      <div className="flex items-center justify-between gap-2 text-[12px] text-slate-700">
+        <span className="font-medium">{label}</span>
+        <span className="text-slate-500">{valueText}</span>
       </div>
-      <div className="mt-1 flex items-center gap-1.5">
-        <IconButton
-          icon={decreaseIcon}
-          label={`${label} kurang`}
-          onClick={onDecrease}
-          disabled={disabled}
-          className="h-7 w-7 shrink-0"
-        />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-          className="min-w-0 flex-1 disabled:cursor-not-allowed disabled:opacity-45"
-        />
-        <IconButton
-          icon={increaseIcon}
-          label={`${label} tambah`}
-          onClick={onIncrease}
-          disabled={disabled}
-          className="h-7 w-7 shrink-0"
-        />
-      </div>
+      {controlStyle === "knob" ? (
+        <div className="mt-3 grid grid-cols-[auto_1fr_auto] items-end gap-3">
+          <div className="flex items-center gap-2 pb-1">
+            <IconButton
+              icon={decreaseIcon}
+              label={`${label} kurang`}
+              onClick={onDecrease}
+              disabled={disabled}
+              className="h-10 w-10 shrink-0"
+            />
+            <IconButton
+              icon={increaseIcon}
+              label={`${label} tambah`}
+              onClick={onIncrease}
+              disabled={disabled}
+              className="h-10 w-10 shrink-0"
+            />
+          </div>
+          <div />
+          <div
+            ref={knobRef}
+            onPointerDown={(event) => {
+              if (disabled) return;
+              event.preventDefault();
+              setIsKnobDragging(true);
+              updateKnobValueFromPoint(event.clientX, event.clientY);
+            }}
+            className={`relative h-[88px] w-[88px] shrink-0 touch-none ${
+              disabled
+                ? "cursor-not-allowed opacity-45"
+                : "cursor-grab active:cursor-grabbing"
+            }`}
+            role="slider"
+            aria-label={label}
+            aria-valuemin={min}
+            aria-valuemax={max}
+            aria-valuenow={Number(value)}
+            tabIndex={disabled ? -1 : 0}
+          >
+            {Array.from({ length: 16 }).map((_, index) => {
+              const ratio = index / 15;
+              const tickAngle =
+                (KNOB_START_DEG + ratio * KNOB_SWEEP_DEG) * (Math.PI / 180);
+              const tickX = 44 + Math.cos(tickAngle) * 42;
+              const tickY = 44 + Math.sin(tickAngle) * 42;
+              return (
+                <span
+                  key={`${label}-tick-${index}`}
+                  className="absolute h-3 w-px rounded-full bg-slate-300/80"
+                  style={{
+                    left: tickX,
+                    top: tickY,
+                    transform: `translate(-50%, -50%) rotate(${KNOB_START_DEG + ratio * KNOB_SWEEP_DEG + 90}deg)`,
+                    opacity: index % 5 === 0 ? 1 : 0.7,
+                  }}
+                />
+              );
+            })}
+            <div
+              className={`absolute inset-0 rounded-full ${SOFT_RAISED_CLASS}`}
+            />
+            <div
+              className={`absolute inset-[8px] rounded-full ${SOFT_INSET_CLASS}`}
+            />
+            <div
+              className={`absolute inset-[16px] rounded-full ${SOFT_SURFACE_CLASS}`}
+            />
+            <span
+              className={`absolute h-6 w-6 rounded-full border border-slate-300/70 ${SOFT_RAISED_CLASS}`}
+              style={{
+                left: knobDotX,
+                top: knobDotY,
+                transform: "translate(-50%, -50%)",
+              }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center gap-2">
+          <IconButton
+            icon={decreaseIcon}
+            label={`${label} kurang`}
+            onClick={onDecrease}
+            disabled={disabled}
+            className="h-10 w-10 shrink-0"
+          />
+          <div className={`${SOFT_INSET_CLASS} flex min-w-0 flex-1 px-2 py-2`}>
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={step}
+              value={value}
+              onChange={onChange}
+              disabled={disabled}
+              className="min-w-0 flex-1 accent-slate-400 disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </div>
+          <IconButton
+            icon={increaseIcon}
+            label={`${label} tambah`}
+            onClick={onIncrease}
+            disabled={disabled}
+            className="h-10 w-10 shrink-0"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1414,7 +1601,6 @@ export default function XrayCalibrationWorkspace() {
   const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
     useState(null);
-  const [mobileLayerToolbarOpen, setMobileLayerToolbarOpen] = useState(false);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
@@ -1498,12 +1684,6 @@ export default function XrayCalibrationWorkspace() {
     setMobilePanelMode("workspace");
     setTool((prev) => (prev === "draw" ? MOBILE_IDLE_TOOL : prev));
   }, [isMobileViewport]);
-
-  useEffect(() => {
-    if (!selectedCutLayerId || !isMobileViewport) {
-      setMobileLayerToolbarOpen(false);
-    }
-  }, [isMobileViewport, selectedCutLayerId]);
 
   const shouldUseMobileOneShotTool = isMobileViewport && isCoarsePointer;
 
@@ -1670,7 +1850,6 @@ export default function XrayCalibrationWorkspace() {
   const focusLayerSettings = useCallback(
     (layerId) => {
       setSelectedCutLayerId(layerId);
-      setMobileLayerToolbarOpen(false);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
         setMobileControlsOpen(true);
@@ -1683,7 +1862,6 @@ export default function XrayCalibrationWorkspace() {
   const focusLayerCanvas = useCallback(
     (layerId, { openPanel = false } = {}) => {
       setSelectedCutLayerId(layerId);
-      setMobileLayerToolbarOpen(false);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
         setMobileControlsOpen(openPanel);
@@ -1704,6 +1882,56 @@ export default function XrayCalibrationWorkspace() {
   const clearMobilePlanningGuideHandleAssist = useCallback(() => {
     setMobilePlanningGuideHandleAssist(null);
   }, []);
+
+  const clearActiveCanvasSelection = useCallback(() => {
+    setSelectedLineId(null);
+    setSelectedAngleId(null);
+    setSelectedCircleId(null);
+    setSelectedHkaId(null);
+    setSelectedCutLayerId(null);
+    setSelectedPlanningGuideId(null);
+    clearMobileHandleAssist();
+    clearMobilePlanningGuideHandleAssist();
+  }, [clearMobileHandleAssist, clearMobilePlanningGuideHandleAssist]);
+
+  const openRelevantMobilePanel = useCallback(() => {
+    if (selectedLineId !== null || selectedPlanningGuideId !== null) {
+      setMobilePanelMode("workspace");
+      setActiveRightPanel("measure");
+      setMobileControlsOpen(true);
+      return;
+    }
+    if (
+      selectedCutLayerId !== null ||
+      selectedAngleId !== null ||
+      selectedCircleId !== null ||
+      selectedHkaId !== null
+    ) {
+      setMobilePanelMode("workspace");
+      setActiveRightPanel("tool");
+      setMobileControlsOpen(true);
+      return;
+    }
+    setMobilePanelMode(image ? "workspace" : "setup");
+    setActiveRightPanel("tool");
+    setMobileControlsOpen(true);
+  }, [
+    image,
+    selectedAngleId,
+    selectedCircleId,
+    selectedCutLayerId,
+    selectedHkaId,
+    selectedLineId,
+    selectedPlanningGuideId,
+  ]);
+
+  const toggleMobileControlsPanel = useCallback(() => {
+    if (mobileControlsOpen) {
+      setMobileControlsOpen(false);
+      return;
+    }
+    openRelevantMobilePanel();
+  }, [mobileControlsOpen, openRelevantMobilePanel]);
 
   const activateMobilePlanningGuideHandleAssist = useCallback(
     (guideId, handleKey) => {
@@ -5481,6 +5709,8 @@ export default function XrayCalibrationWorkspace() {
           centerY: targetLayer.centerY,
           rotation: targetLayer.rotation,
           handleKey: hitCutLayerHandle.handleKey,
+          startFlipX: Boolean(targetLayer.flipX),
+          startFlipY: Boolean(targetLayer.flipY),
           startDisplayWidth: Number(targetLayer.displayWidth || 16),
           startDisplayHeight: Number(targetLayer.displayHeight || 16),
         };
@@ -5774,6 +6004,17 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
+      if (
+        selectedLineId !== null ||
+        selectedAngleId !== null ||
+        selectedCircleId !== null ||
+        selectedHkaId !== null ||
+        selectedCutLayerId !== null ||
+        selectedPlanningGuideId !== null
+      ) {
+        clearActiveCanvasSelection();
+      }
+
       if (tool === "pan") {
         interactionRef.current = {
           mode: "pan",
@@ -5992,6 +6233,7 @@ export default function XrayCalibrationWorkspace() {
       findMobilePlanningGuideHandleAssistHit,
       getMobileHandleAssistGeometry,
       getMobilePlanningGuideHandleAssistGeometry,
+      clearActiveCanvasSelection,
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
@@ -6212,6 +6454,8 @@ export default function XrayCalibrationWorkspace() {
           centerY,
           rotation: layerRotation,
           handleKey,
+          startFlipX = false,
+          startFlipY = false,
           startDisplayWidth = 16,
           startDisplayHeight = 16,
         } = interactionRef.current;
@@ -6229,6 +6473,8 @@ export default function XrayCalibrationWorkspace() {
         let nextDisplayHeight = startDisplayHeight;
         let nextCenterX = centerX;
         let nextCenterY = centerY;
+        let nextFlipX = startFlipX;
+        let nextFlipY = startFlipY;
 
         if (
           handleKey === "tl" ||
@@ -6240,6 +6486,8 @@ export default function XrayCalibrationWorkspace() {
           const signY = handleKey === "br" || handleKey === "bl" ? 1 : -1;
           const fixedLocalX = -signX * halfStartW;
           const fixedLocalY = -signY * halfStartH;
+          const crossedX = signX * (localX - fixedLocalX) < 0;
+          const crossedY = signY * (localY - fixedLocalY) < 0;
           const candidateWidth = Math.max(16, Math.abs(localX - fixedLocalX));
           const candidateHeight = Math.max(16, Math.abs(localY - fixedLocalY));
           const scale = Math.max(
@@ -6258,8 +6506,11 @@ export default function XrayCalibrationWorkspace() {
             modelHeight * 2,
           );
 
-          const draggedLocalX = fixedLocalX + signX * nextDisplayWidth;
-          const draggedLocalY = fixedLocalY + signY * nextDisplayHeight;
+          const effectiveSignX = crossedX ? -signX : signX;
+          const effectiveSignY = crossedY ? -signY : signY;
+          const draggedLocalX = fixedLocalX + effectiveSignX * nextDisplayWidth;
+          const draggedLocalY =
+            fixedLocalY + effectiveSignY * nextDisplayHeight;
           const midpointLocal = {
             x: (fixedLocalX + draggedLocalX) / 2,
             y: (fixedLocalY + draggedLocalY) / 2,
@@ -6271,32 +6522,41 @@ export default function XrayCalibrationWorkspace() {
           );
           nextCenterX = centerX + centerOffset.x;
           nextCenterY = centerY + centerOffset.y;
+          nextFlipX = crossedX ? !startFlipX : startFlipX;
+          nextFlipY = crossedY ? !startFlipY : startFlipY;
         } else if (handleKey === "ml" || handleKey === "mr") {
           const signX = handleKey === "mr" ? 1 : -1;
           const fixedLocalX = -signX * halfStartW;
+          const crossedX = signX * (localX - fixedLocalX) < 0;
           nextDisplayWidth = clamp(
             Math.max(16, Math.abs(localX - fixedLocalX)),
             16,
             modelWidth * 2,
           );
-          const draggedLocalX = fixedLocalX + signX * nextDisplayWidth;
+          const effectiveSignX = crossedX ? -signX : signX;
+          const draggedLocalX = fixedLocalX + effectiveSignX * nextDisplayWidth;
           const midpointLocalX = (fixedLocalX + draggedLocalX) / 2;
           const centerOffset = rotateVector(midpointLocalX, 0, layerRotation);
           nextCenterX = centerX + centerOffset.x;
           nextCenterY = centerY + centerOffset.y;
+          nextFlipX = crossedX ? !startFlipX : startFlipX;
         } else if (handleKey === "tm" || handleKey === "bm") {
           const signY = handleKey === "bm" ? 1 : -1;
           const fixedLocalY = -signY * halfStartH;
+          const crossedY = signY * (localY - fixedLocalY) < 0;
           nextDisplayHeight = clamp(
             Math.max(16, Math.abs(localY - fixedLocalY)),
             16,
             modelHeight * 2,
           );
-          const draggedLocalY = fixedLocalY + signY * nextDisplayHeight;
+          const effectiveSignY = crossedY ? -signY : signY;
+          const draggedLocalY =
+            fixedLocalY + effectiveSignY * nextDisplayHeight;
           const midpointLocalY = (fixedLocalY + draggedLocalY) / 2;
           const centerOffset = rotateVector(0, midpointLocalY, layerRotation);
           nextCenterX = centerX + centerOffset.x;
           nextCenterY = centerY + centerOffset.y;
+          nextFlipY = crossedY ? !startFlipY : startFlipY;
         }
 
         setCutLayers((prev) =>
@@ -6310,6 +6570,8 @@ export default function XrayCalibrationWorkspace() {
                     centerY: nextCenterY,
                     displayWidth: nextDisplayWidth,
                     displayHeight: nextDisplayHeight,
+                    flipX: nextFlipX,
+                    flipY: nextFlipY,
                   }
               : layer,
           ),
@@ -7717,7 +7979,7 @@ export default function XrayCalibrationWorkspace() {
 
   const measurePresetButtonClass = useCallback(
     (isActive, activeClass) =>
-      `rounded-md border px-2 py-1 text-xs ${isActive ? activeClass : "border-slate-300 bg-white text-slate-700"}`,
+      `${isActive ? `${SOFT_DARK_BUTTON_CLASS} ${activeClass}` : `${SOFT_RAISED_CLASS} text-slate-700`} px-2 py-2 text-xs font-medium transition`,
     [],
   );
 
@@ -8411,7 +8673,7 @@ export default function XrayCalibrationWorkspace() {
               : "hka";
 
   return (
-    <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 px-0 py-0 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
+    <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
       <AnimatePresence>
         {showStartupCalibrationAlert ? (
           <motion.div
@@ -8430,7 +8692,7 @@ export default function XrayCalibrationWorkspace() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               transition={PANEL_SPRING}
-              className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+              className={`w-full max-w-lg ${SOFT_PANEL_CLASS}`}
             >
               <h2 className="text-base font-semibold text-slate-900">
                 Kalibrasi Wajib Sebelum Ukur
@@ -8440,7 +8702,9 @@ export default function XrayCalibrationWorkspace() {
                 X-ray (contoh 13 cm), lalu isi nilai aktual dan simpan kalibrasi
                 sebelum melakukan measurement.
               </p>
-              <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <div
+                className={`mt-3 ${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
+              >
                 Langkah cepat: Upload gambar, tarik garis di ruler, simpan
                 kalibrasi, lalu mulai ukur.
               </div>
@@ -8448,14 +8712,14 @@ export default function XrayCalibrationWorkspace() {
                 <button
                   type="button"
                   onClick={goToCalibrationPanel}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700"
+                  className={SOFT_TEXT_BUTTON_CLASS}
                 >
                   Keluar
                 </button>
                 <button
                   type="button"
                   onClick={goToCalibrationPanel}
-                  className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white"
+                  className={`${SOFT_PRESSED_CLASS} px-3 py-2 text-xs font-medium text-rose-600`}
                 >
                   Saya Mengerti
                 </button>
@@ -8472,17 +8736,19 @@ export default function XrayCalibrationWorkspace() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.96 }}
             transition={PANEL_SPRING}
-            className={`fixed top-4 right-4 z-[95] max-w-[320px] rounded-lg border px-3 py-2 text-xs font-medium shadow-lg transition-all ${
+            className={`fixed top-4 right-4 z-[95] max-w-[320px] px-3 py-2 text-xs font-medium transition-all ${
               actionToast.type === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : "border-slate-200 bg-white text-slate-800"
+                ? `${SOFT_SURFACE_CLASS} text-emerald-900`
+                : `${SOFT_SURFACE_CLASS} text-slate-800`
             }`}
           >
             {actionToast.text}
           </motion.div>
         ) : null}
       </AnimatePresence>
-      <header className="flex items-start justify-between gap-2 px-3 pt-2 pb-1 sm:px-0 sm:py-0">
+      <header
+        className={`${SOFT_PANEL_CLASS} flex items-start justify-between gap-2 px-3 pt-2 pb-1 sm:px-4 sm:py-3`}
+      >
         <div className="flex flex-col gap-0.5">
           <h1 className="text-base font-semibold text-slate-900 sm:text-xl">
             Foto X-ray Measurement
@@ -8494,7 +8760,7 @@ export default function XrayCalibrationWorkspace() {
         <IconButton
           icon={mobileControlsOpen ? "close" : "menu"}
           label={mobileControlsOpen ? "Tutup Kontrol" : "Buka Kontrol"}
-          onClick={() => setMobileControlsOpen((prev) => !prev)}
+          onClick={toggleMobileControlsPanel}
           active={mobileControlsOpen}
           className="lg:hidden"
         />
@@ -8502,7 +8768,7 @@ export default function XrayCalibrationWorkspace() {
 
       <motion.section
         layout
-        className={`relative grid min-h-0 flex-1 gap-0 lg:gap-2 ${desktopSectionClass}`}
+        className={`relative grid min-h-0 flex-1 gap-0 overflow-hidden lg:gap-2 ${desktopSectionClass}`}
         style={{
           "--left-sidebar-width": `${leftSidebarWidth}px`,
           "--right-sidebar-width": `${rightSidebarWidth}px`,
@@ -8525,7 +8791,7 @@ export default function XrayCalibrationWorkspace() {
           whileHover={BUTTON_HOVER}
           whileTap={BUTTON_TAP}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className="absolute top-1/2 z-30 hidden h-12 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-blue-500 text-slate-600 shadow-sm transition hover:bg-slate-50 lg:flex"
+          className={`absolute top-1/2 z-30 hidden h-12 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center transition lg:flex ${SOFT_RAISED_CLASS} text-rose-500`}
           style={{ left: showLeftSidebar ? leftSidebarWidth : 12 }}
           aria-label={showLeftSidebar ? "Hide menu kiri" : "Show menu kiri"}
           title={showLeftSidebar ? "Hide menu kiri" : "Show menu kiri"}
@@ -8552,7 +8818,7 @@ export default function XrayCalibrationWorkspace() {
           whileHover={BUTTON_HOVER}
           whileTap={BUTTON_TAP}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className="absolute top-1/2 z-30 hidden h-12 w-8 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-blue-500 text-slate-600 shadow-sm transition hover:bg-slate-50 lg:flex"
+          className={`absolute top-1/2 z-30 hidden h-12 w-8 translate-x-1/2 -translate-y-1/2 items-center justify-center transition lg:flex ${SOFT_RAISED_CLASS} text-rose-500`}
           style={{ right: showRightSidebar ? rightSidebarWidth : 12 }}
           aria-label={showRightSidebar ? "Hide menu kanan" : "Show menu kanan"}
           title={showRightSidebar ? "Hide menu kanan" : "Show menu kanan"}
@@ -8566,36 +8832,49 @@ export default function XrayCalibrationWorkspace() {
           layout
           initial={false}
           transition={PANEL_SPRING}
-          className={`order-2 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
+          animate={
+            isMobileViewport
+              ? {
+                  y: mobileSetupPanelVisible ? 0 : 64,
+                  opacity: mobileSetupPanelVisible ? 1 : 0,
+                  scale: mobileSetupPanelVisible ? 1 : 0.985,
+                }
+              : { y: 0, opacity: 1, scale: 1 }
+          }
+          className={`fixed inset-x-0 bottom-0 z-40 order-2 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] ${SOFT_FLOAT_SURFACE_CLASS} ${
             mobileSetupPanelVisible
-              ? "fixed inset-x-0 bottom-0 z-40 flex max-h-[72vh] overflow-y-auto overscroll-contain rounded-t-[28px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] shadow-2xl"
-              : "hidden"
-          } ${showLeftSidebar ? "lg:order-1 lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto lg:rounded-xl lg:shadow-none" : "lg:hidden"}`}
+              ? "pointer-events-auto"
+              : "pointer-events-none"
+          } ${showLeftSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:shadow-none" : "lg:hidden"}`}
         >
-          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center border-b border-slate-200 bg-white/96 px-3 py-2 backdrop-blur lg:hidden">
+          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
-            <span className="h-1.5 w-12 justify-self-center rounded-full bg-slate-300" />
+            <span
+              className={`h-1.5 w-12 justify-self-center ${SOFT_INSET_CLASS} bg-slate-300/70`}
+            />
             <button
               type="button"
               onClick={() => setMobileControlsOpen(false)}
-              className="inline-flex h-8 w-8 justify-self-end rounded-full border border-slate-200 bg-slate-50 text-slate-600"
+              className={`inline-flex h-8 w-8 justify-self-end ${SOFT_RAISED_CLASS} text-slate-600`}
               aria-label="Tutup setup panel"
               title="Tutup setup panel"
             >
               <Icon name="close" className="m-auto h-4 w-4" />
             </button>
           </div>
-          <div className="mb-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 lg:hidden">
+          <div
+            className={`mb-1 grid grid-cols-2 gap-1 p-1 lg:hidden ${SOFT_INSET_CLASS}`}
+          >
             <button
               type="button"
               onClick={() => {
                 setMobilePanelMode("setup");
                 setMobileControlsOpen(true);
               }}
-              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+              className={`px-2 py-1.5 text-[10px] font-semibold transition ${
                 mobilePanelMode === "setup"
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700"
+                  ? `${SOFT_PRESSED_CLASS} text-slate-800`
+                  : `${SOFT_RAISED_CLASS} text-slate-600`
               }`}
             >
               Setup
@@ -8606,10 +8885,10 @@ export default function XrayCalibrationWorkspace() {
                 setMobilePanelMode("workspace");
                 setMobileControlsOpen(true);
               }}
-              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+              className={`px-2 py-1.5 text-[10px] font-semibold transition ${
                 mobilePanelMode === "workspace"
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700"
+                  ? `${SOFT_PRESSED_CLASS} text-slate-800`
+                  : `${SOFT_RAISED_CLASS} text-slate-600`
               }`}
             >
               Panel
@@ -8631,7 +8910,7 @@ export default function XrayCalibrationWorkspace() {
               type="file"
               accept="image/*"
               onChange={handleImageUpload}
-              className="block w-full cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+              className={`block w-full cursor-pointer ${SOFT_INPUT_CLASS}`}
             />
             {!isLeftSidebarCompact ? (
               <p className="text-xs text-slate-500">
@@ -8658,7 +8937,7 @@ export default function XrayCalibrationWorkspace() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={PANEL_SPRING}
-              className="flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5"
+              className={SOFT_SECTION_CLASS}
             >
               <div className="flex items-center gap-1.5">
                 <Icon name="compare" className="h-4 w-4 text-slate-600" />
@@ -8723,7 +9002,7 @@ export default function XrayCalibrationWorkspace() {
               animate={{ opacity: 1, y: 0 }}
               transition={PANEL_SPRING}
               ref={exportPanelRef}
-              className="flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5"
+              className={SOFT_SECTION_CLASS}
             >
               <div className="flex items-center gap-1.5">
                 <Icon name="export" className="h-4 w-4 text-slate-600" />
@@ -8753,7 +9032,9 @@ export default function XrayCalibrationWorkspace() {
                 />
               </div>
               {!isLeftSidebarCompact ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600">
+                <div
+                  className={`${SOFT_INSET_CLASS} px-2 py-1.5 text-[11px] text-slate-600`}
+                >
                   Total row report: {measurementRows.length}
                 </div>
               ) : null}
@@ -8838,7 +9119,7 @@ export default function XrayCalibrationWorkspace() {
           <motion.div
             layout
             transition={PANEL_SPRING}
-            className="order-6 flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5"
+            className={`order-6 ${SOFT_SECTION_CLASS}`}
             style={{ order: 6 }}
           >
             <div className="flex items-center gap-1.5">
@@ -8850,30 +9131,28 @@ export default function XrayCalibrationWorkspace() {
               ) : null}
               <InfoTooltip text="Contrast, level, rotate, flip, dan reset cut layer." />
             </div>
-            <label className="text-[11px] text-slate-600">
-              C ({contrast}%)
-              <input
-                type="range"
-                min="20"
-                max="300"
-                step="1"
-                value={contrast}
-                onChange={(event) => setContrast(Number(event.target.value))}
-                className="mt-1 w-full"
-              />
-            </label>
-            <label className="text-[11px] text-slate-600">
-              L ({level}%)
-              <input
-                type="range"
-                min="20"
-                max="220"
-                step="1"
-                value={level}
-                onChange={(event) => setLevel(Number(event.target.value))}
-                className="mt-1 w-full"
-              />
-            </label>
+            <CompactSliderField
+              label="Contrast"
+              valueText={`${contrast}%`}
+              min={20}
+              max={300}
+              step={1}
+              value={contrast}
+              onChange={(event) => setContrast(Number(event.target.value))}
+              onDecrease={() => setContrast((prev) => clamp(prev - 2, 20, 300))}
+              onIncrease={() => setContrast((prev) => clamp(prev + 2, 20, 300))}
+            />
+            <CompactSliderField
+              label="Light"
+              valueText={`${level}%`}
+              min={20}
+              max={220}
+              step={1}
+              value={level}
+              onChange={(event) => setLevel(Number(event.target.value))}
+              onDecrease={() => setLevel((prev) => clamp(prev - 2, 20, 220))}
+              onIncrease={() => setLevel((prev) => clamp(prev + 2, 20, 220))}
+            />
             <div className={SIDEBAR_ICON_GRID_CLASS}>
               <IconButton
                 icon="rotateLeft"
@@ -8911,7 +9190,7 @@ export default function XrayCalibrationWorkspace() {
           <motion.div
             layout
             transition={PANEL_SPRING}
-            className="order-7 flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5"
+            className={`order-7 ${SOFT_SECTION_CLASS}`}
             style={{ order: 7 }}
           >
             <div className="flex items-center gap-1.5">
@@ -8974,16 +9253,6 @@ export default function XrayCalibrationWorkspace() {
                 library: {templateLibrary.length}
               </div>
             ) : null}
-            <LocalImplantLibraryPanel
-              items={LOCAL_IMPLANT_LIBRARY}
-              selectedType={selectedImplantType}
-              selectedItemId={selectedImplantLibraryId}
-              onSelectType={setSelectedImplantType}
-              onSelectItemId={setSelectedImplantLibraryId}
-              onUseSelected={useSelectedImplantLibraryAsLayer}
-              compact={isLeftSidebarCompact}
-              disabled={!image || !modelWidth || !modelHeight}
-            />
             <TemplateStoragePicker
               templates={templateLibrary}
               selectedTemplateId={selectedTemplateId}
@@ -9005,6 +9274,16 @@ export default function XrayCalibrationWorkspace() {
                   : "Lokal"
               }
               compact={isLeftSidebarCompact}
+            />
+            <LocalImplantLibraryPanel
+              items={LOCAL_IMPLANT_LIBRARY}
+              selectedType={selectedImplantType}
+              selectedItemId={selectedImplantLibraryId}
+              onSelectType={setSelectedImplantType}
+              onSelectItemId={setSelectedImplantLibraryId}
+              onUseSelected={useSelectedImplantLibraryAsLayer}
+              compact={isLeftSidebarCompact}
+              disabled={!image || !modelWidth || !modelHeight}
             />
             <div className="flex flex-col gap-1.5">
               {cutLayers.length === 0 ? (
@@ -9079,16 +9358,15 @@ export default function XrayCalibrationWorkspace() {
                     <motion.div
                       layout
                       key={layer.id}
-                      className={`rounded-md border p-1.5 transition-all duration-300 ${
-                        isActive ? "scale-[1.01] shadow-sm" : "bg-white"
+                      className={`${SOFT_TINT_CARD_CLASS} p-2 transition-all duration-300 ${
+                        isActive ? "scale-[1.01]" : ""
                       }`}
                       style={{
                         borderColor: isActive
                           ? layerPalette.border
                           : `${layerPalette.border}66`,
-                        backgroundColor: isActive ? layerPalette.bg : "#ffffff",
                         boxShadow: isActive
-                          ? `0 0 0 2px ${layerPalette.border}22`
+                          ? `10px 10px 24px rgba(148,163,184,0.16), -10px -10px 24px rgba(255,255,255,0.98), inset 0 0 0 1px ${layerPalette.border}22`
                           : undefined,
                       }}
                     >
@@ -9110,7 +9388,9 @@ export default function XrayCalibrationWorkspace() {
                       </button>
 
                       {isActive ? (
-                        <div className="mt-1 rounded border border-slate-200 bg-white/80 px-2 py-1 text-[10px] text-slate-600">
+                        <div
+                          className={`mt-1 ${SOFT_INSET_CLASS} px-2 py-1 text-[10px] text-slate-600`}
+                        >
                           Setting layer aktif berada di tab TOOL sebelah kanan.
                         </div>
                       ) : null}
@@ -9613,12 +9893,14 @@ export default function XrayCalibrationWorkspace() {
             layout
             transition={PANEL_SPRING}
             ref={calibrationPanelRef}
-            className={`order-3 flex flex-col gap-2 rounded-lg border p-2.5 transition-shadow ${
-              highlightCalibrationPanel
-                ? "border-cyan-400 bg-cyan-50/40 shadow-[0_0_0_2px_rgba(34,211,238,0.35)]"
-                : "border-slate-200"
-            }`}
-            style={{ order: 3 }}
+            className={`order-3 ${SOFT_SECTION_CLASS} transition-shadow`}
+            style={{
+              order: 3,
+              borderColor: highlightCalibrationPanel ? "#22d3ee" : undefined,
+              boxShadow: highlightCalibrationPanel
+                ? "10px 10px 24px rgba(148,163,184,0.16), -10px -10px 24px rgba(255,255,255,0.98), inset 0 0 0 2px rgba(34,211,238,0.28)"
+                : undefined,
+            }}
           >
             <div className="flex items-center gap-1.5">
               <Icon name="target" className="h-4 w-4 text-slate-600" />
@@ -9644,11 +9926,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => setCalibrationMode("line")}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  calibrationMode === "line"
-                    ? "border-slate-700 bg-slate-700 text-white"
-                    : "border-slate-300 bg-white text-slate-700"
-                }`}
+                className={`${calibrationMode === "line" ? `${SOFT_PRESSED_CLASS} text-slate-800` : `${SOFT_RAISED_CLASS} text-slate-700`} px-2 py-2 text-xs font-medium`}
                 title="Kalibrasi pakai garis referensi real"
               >
                 Garis Real
@@ -9656,17 +9934,13 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => setCalibrationMode("zoom")}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  calibrationMode === "zoom"
-                    ? "border-cyan-700 bg-cyan-700 text-white"
-                    : "border-slate-300 bg-white text-slate-700"
-                }`}
+                className={`${calibrationMode === "zoom" ? `${SOFT_PRESSED_CLASS} text-cyan-700` : `${SOFT_RAISED_CLASS} text-slate-700`} px-2 py-2 text-xs font-medium`}
                 title="Kalibrasi pakai mm/px pada zoom source"
               >
                 Zoom %
               </button>
             </div>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1">
+            <div className={`${SOFT_INSET_CLASS} px-2 py-2`}>
               {!isLeftSidebarCompact ? (
                 <div className="mb-1 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
                   Zoom Source
@@ -9685,7 +9959,7 @@ export default function XrayCalibrationWorkspace() {
                   step="0.1"
                   value={sourceZoomPercent}
                   onChange={(event) => setSourceZoomPercent(event.target.value)}
-                  className={`${isLeftSidebarNarrow ? "col-span-1 w-full" : "w-[84px]"} rounded-md border border-slate-300 bg-white px-2 py-1 text-xs`}
+                  className={`${isLeftSidebarNarrow ? "col-span-1 w-full" : "w-[84px]"} ${SOFT_INPUT_CLASS} px-2 py-1`}
                   title="Zoom source"
                 />
                 <span
@@ -9698,7 +9972,7 @@ export default function XrayCalibrationWorkspace() {
                 <button
                   type="button"
                   onClick={() => setSourceZoomPercent("100")}
-                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                  className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-slate-700`}
                   title="Set zoom source 100%"
                 >
                   100%
@@ -9706,7 +9980,7 @@ export default function XrayCalibrationWorkspace() {
                 <button
                   type="button"
                   onClick={() => setSourceZoomPercent("90")}
-                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                  className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-slate-700`}
                   title="Set zoom source 90%"
                 >
                   90%
@@ -9715,7 +9989,7 @@ export default function XrayCalibrationWorkspace() {
             </div>
             {calibrationMode === "line" ? (
               <div
-                className={`grid gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 ${
+                className={`grid gap-1.5 px-2 py-2 ${SOFT_INSET_CLASS} ${
                   isLeftSidebarNarrow
                     ? "grid-cols-2"
                     : "grid-cols-[auto_92px_62px]"
@@ -9736,12 +10010,12 @@ export default function XrayCalibrationWorkspace() {
                   step="0.01"
                   value={actualMmInput}
                   onChange={(event) => setActualMmInput(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
+                  className={`${SOFT_INPUT_CLASS} w-full px-2 py-1`}
                 />
                 <select
                   value={actualUnit}
                   onChange={(event) => setActualUnit(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs"
+                  className={`${SOFT_SELECT_CLASS} w-full px-1.5 py-1`}
                 >
                   <option value="cm">cm</option>
                   <option value="mm">mm</option>
@@ -9749,7 +10023,7 @@ export default function XrayCalibrationWorkspace() {
               </div>
             ) : (
               <div
-                className={`rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-1 ${
+                className={`${SOFT_INSET_CLASS} px-2 py-2 ${
                   isLeftSidebarNarrow
                     ? "flex flex-col gap-1.5"
                     : "flex items-center gap-1.5"
@@ -9766,11 +10040,13 @@ export default function XrayCalibrationWorkspace() {
                   onChange={(event) =>
                     setMmPerPixelAt100Input(event.target.value)
                   }
-                  className={`${isLeftSidebarNarrow ? "w-full" : "w-[120px]"} rounded-md border border-cyan-300 bg-white px-2 py-1 text-xs`}
+                  className={`${isLeftSidebarNarrow ? "w-full" : "w-[120px]"} ${SOFT_INPUT_CLASS} px-2 py-1`}
                 />
               </div>
             )}
-            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1">
+            <div
+              className={`${SOFT_INSET_CLASS} flex items-center gap-1.5 px-2 py-2`}
+            >
               <span className="text-[10px] font-medium tracking-wide text-slate-500 uppercase">
                 Faktor
               </span>
@@ -9779,13 +10055,15 @@ export default function XrayCalibrationWorkspace() {
               </span>
             </div>
             <div
-              className={`rounded-md border px-2 py-1.5 text-[11px] ${
-                calibrationQuality.status === "good"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : calibrationQuality.status === "warn"
-                    ? "border-amber-200 bg-amber-50 text-amber-800"
-                    : "border-rose-200 bg-rose-50 text-rose-800"
-              }`}
+              className={`${SOFT_TINT_CARD_CLASS} px-3 py-2 text-[11px]`}
+              style={{
+                color:
+                  calibrationQuality.status === "good"
+                    ? "#166534"
+                    : calibrationQuality.status === "warn"
+                      ? "#92400e"
+                      : "#9f1239",
+              }}
             >
               <div className="font-medium">{calibrationQuality.title}</div>
               {!isLeftSidebarCompact ? (
@@ -9822,7 +10100,7 @@ export default function XrayCalibrationWorkspace() {
           <motion.div
             layout
             transition={PANEL_SPRING}
-            className="order-1 flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5"
+            className={`order-1 ${SOFT_SECTION_CLASS}`}
             style={{ order: 1 }}
           >
             <div className="flex items-center gap-1.5">
@@ -9878,16 +10156,16 @@ export default function XrayCalibrationWorkspace() {
               ].map((step) => {
                 const isActive = workflowStep === step.id;
                 const toneClass = isActive
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? SOFT_DARK_BUTTON_CLASS
                   : step.done
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : "border-slate-300 bg-white text-slate-600";
+                    ? `${SOFT_PRIMARY_BUTTON_CLASS} text-slate-800`
+                    : `${SOFT_RAISED_CLASS} text-slate-600`;
                 return (
                   <button
                     key={step.id}
                     type="button"
                     onClick={step.onClick}
-                    className={`rounded-md border px-1 py-1 text-[10px] font-semibold ${toneClass}`}
+                    className={`px-1.5 py-2 text-[10px] font-semibold ${toneClass}`}
                     title={`${step.id}. ${step.label}`}
                   >
                     {isLeftSidebarCompact
@@ -10254,7 +10532,7 @@ export default function XrayCalibrationWorkspace() {
           <motion.p
             layout
             transition={PANEL_SPRING}
-            className="order-11 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+            className={`order-11 ${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-600`}
             style={{ order: 11 }}
           >
             {notice}
@@ -10263,7 +10541,7 @@ export default function XrayCalibrationWorkspace() {
           <motion.div
             layout
             transition={PANEL_SPRING}
-            className="order-12 flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5"
+            className={`order-12 ${SOFT_SECTION_CLASS}`}
             style={{ order: 12 }}
           >
             <div className="flex items-center gap-1.5">
@@ -10288,7 +10566,9 @@ export default function XrayCalibrationWorkspace() {
                 tone="rose"
               />
             </div>
-            <div className="max-h-24 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600">
+            <div
+              className={`max-h-24 overflow-y-auto ${SOFT_INSET_CLASS} px-2 py-1.5 text-[11px] text-slate-600`}
+            >
               {activityLog.length === 0 ? (
                 <p>Belum ada activity.</p>
               ) : (
@@ -10309,36 +10589,49 @@ export default function XrayCalibrationWorkspace() {
           layout
           initial={false}
           transition={PANEL_SPRING}
-          className={`order-3 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
+          animate={
+            isMobileViewport
+              ? {
+                  y: mobileWorkspacePanelVisible ? 0 : 64,
+                  opacity: mobileWorkspacePanelVisible ? 1 : 0,
+                  scale: mobileWorkspacePanelVisible ? 1 : 0.985,
+                }
+              : { y: 0, opacity: 1, scale: 1 }
+          }
+          className={`fixed inset-x-0 bottom-0 z-40 order-3 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] ${SOFT_FLOAT_SURFACE_CLASS} ${
             mobileWorkspacePanelVisible
-              ? "fixed inset-x-0 bottom-0 z-40 flex max-h-[72vh] overflow-y-auto overscroll-contain rounded-t-[28px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] shadow-2xl"
-              : "hidden"
-          } ${showRightSidebar ? "lg:flex lg:max-h-[calc(100vh-132px)] lg:overflow-y-auto lg:rounded-xl lg:shadow-none" : "lg:hidden"}`}
+              ? "pointer-events-auto"
+              : "pointer-events-none"
+          } ${showRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:shadow-none" : "lg:hidden"}`}
         >
-          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center border-b border-slate-200 bg-white/96 px-3 py-2 backdrop-blur lg:hidden">
+          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
-            <span className="h-1.5 w-12 justify-self-center rounded-full bg-slate-300" />
+            <span
+              className={`h-1.5 w-12 justify-self-center ${SOFT_INSET_CLASS} bg-slate-300/70`}
+            />
             <button
               type="button"
               onClick={() => setMobileControlsOpen(false)}
-              className="inline-flex h-8 w-8 justify-self-end rounded-full border border-slate-200 bg-slate-50 text-slate-600"
+              className={`inline-flex h-8 w-8 justify-self-end ${SOFT_RAISED_CLASS} text-slate-600`}
               aria-label="Tutup workspace panel"
               title="Tutup workspace panel"
             >
               <Icon name="close" className="m-auto h-4 w-4" />
             </button>
           </div>
-          <div className="mb-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 lg:hidden">
+          <div
+            className={`mb-1 grid grid-cols-2 gap-1 p-1 lg:hidden ${SOFT_INSET_CLASS}`}
+          >
             <button
               type="button"
               onClick={() => {
                 setMobilePanelMode("setup");
                 setMobileControlsOpen(true);
               }}
-              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+              className={`px-2 py-1.5 text-[10px] font-semibold transition ${
                 mobilePanelMode === "setup"
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700"
+                  ? `${SOFT_PRESSED_CLASS} text-slate-800`
+                  : `${SOFT_RAISED_CLASS} text-slate-600`
               }`}
             >
               Setup
@@ -10349,39 +10642,37 @@ export default function XrayCalibrationWorkspace() {
                 setMobilePanelMode("workspace");
                 setMobileControlsOpen(true);
               }}
-              className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition ${
+              className={`px-2 py-1.5 text-[10px] font-semibold transition ${
                 mobilePanelMode === "workspace"
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700"
+                  ? `${SOFT_PRESSED_CLASS} text-slate-800`
+                  : `${SOFT_RAISED_CLASS} text-slate-600`
               }`}
             >
               Panel
             </button>
           </div>
-          <div
-            className={`${SIDEBAR_TAB_GRID_CLASS} rounded-lg border border-slate-200 bg-slate-50 p-1`}
-          >
+          <div className={`${SIDEBAR_TAB_GRID_CLASS} p-1 ${SOFT_INSET_CLASS}`}>
             {[
               {
                 id: "tool",
                 label: "TOOL",
                 shortLabel: "T",
-                activeClass: "border-cyan-700 bg-cyan-700 text-white",
-                idleClass: "border-cyan-200 bg-cyan-50 text-cyan-800",
+                activeClass: `${SOFT_PRESSED_CLASS} text-cyan-700`,
+                idleClass: `${SOFT_RAISED_CLASS} text-cyan-700`,
               },
               {
                 id: "measure",
                 label: "MEASURE",
                 shortLabel: "M",
-                activeClass: "border-emerald-700 bg-emerald-700 text-white",
-                idleClass: "border-emerald-200 bg-emerald-50 text-emerald-800",
+                activeClass: `${SOFT_PRESSED_CLASS} text-emerald-700`,
+                idleClass: `${SOFT_RAISED_CLASS} text-emerald-700`,
               },
               {
                 id: "planning",
                 label: "Planning",
                 shortLabel: "P",
-                activeClass: "border-amber-700 bg-amber-700 text-white",
-                idleClass: "border-amber-200 bg-amber-50 text-amber-800",
+                activeClass: `${SOFT_PRESSED_CLASS} text-amber-700`,
+                idleClass: `${SOFT_RAISED_CLASS} text-amber-700`,
               },
             ].map((tab) => {
               const isActive = activeRightPanel === tab.id;
@@ -10393,7 +10684,7 @@ export default function XrayCalibrationWorkspace() {
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
-                  className={`rounded-md border px-2 py-2 text-[10px] font-semibold tracking-wide uppercase transition ${
+                  className={`px-2 py-2 text-[10px] font-semibold tracking-wide uppercase transition ${
                     isActive ? tab.activeClass : tab.idleClass
                   }`}
                   title={tab.label}
@@ -10410,7 +10701,7 @@ export default function XrayCalibrationWorkspace() {
               initial={{ opacity: 0, x: 12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={PANEL_SPRING}
-              className="flex flex-col gap-2 rounded-lg border border-cyan-200 bg-cyan-50/40 p-2.5"
+              className={SOFT_SECTION_CLASS}
             >
               <div className="flex items-center gap-1.5">
                 <Icon name="camera" className="h-4 w-4 text-cyan-700" />
@@ -10479,7 +10770,7 @@ export default function XrayCalibrationWorkspace() {
                   className="h-9 w-full"
                 />
               </div>
-              <div className="rounded-md border border-cyan-200 bg-white px-2 py-1.5">
+              <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
                 <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                   <span>Canvas</span>
                   <span
@@ -10492,7 +10783,7 @@ export default function XrayCalibrationWorkspace() {
                   <button
                     type="button"
                     onClick={() => resetWorkspaceState()}
-                    className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900"
+                    className={`${SOFT_TEXT_BUTTON_CLASS} text-cyan-700`}
                     title="Reset measurement, compare, layer, dan planning"
                   >
                     {isRightSidebarCompact ? "Reset" : "Reset Workspace"}
@@ -10500,7 +10791,7 @@ export default function XrayCalibrationWorkspace() {
                   <button
                     type="button"
                     onClick={() => resetWorkspaceState({ clearImage: true })}
-                    className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-[10px] font-medium text-rose-700"
+                    className={SOFT_DANGER_BUTTON_CLASS}
                     title="Reset total termasuk background"
                   >
                     {isRightSidebarCompact ? "Total" : "Reset Canvas Total"}
@@ -10513,7 +10804,7 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 ) : null}
               </div>
-              <div className="rounded-md border border-cyan-200 bg-white px-2 py-1.5">
+              <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
                 <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                   <span>Layer Move</span>
                   <span className="tracking-normal text-cyan-700 normal-case">
@@ -10565,16 +10856,13 @@ export default function XrayCalibrationWorkspace() {
                             key={`tool-layer-${layer.id}`}
                             type="button"
                             onClick={() => focusLayerSettings(layer.id)}
-                            className={`flex items-center gap-1.5 rounded border px-2 py-1 text-left text-[10px] transition-all duration-300 ${
-                              isLayerActive ? "scale-[1.01] shadow-sm" : ""
+                            className={`${SOFT_TINT_CARD_CLASS} flex items-center gap-1.5 px-2 py-1 text-left text-[10px] transition-all duration-300 ${
+                              isLayerActive ? "scale-[1.01]" : ""
                             }`}
                             style={{
                               borderColor: isLayerActive
                                 ? layerPalette.border
                                 : `${layerPalette.border}66`,
-                              backgroundColor: isLayerActive
-                                ? layerPalette.bg
-                                : "#ffffff",
                               color: layerPalette.text,
                             }}
                           >
@@ -10599,40 +10887,38 @@ export default function XrayCalibrationWorkspace() {
               </div>
               <div
                 ref={layerSettingsPanelRef}
-                className="rounded-md border bg-white px-2 py-1.5 transition-all duration-300"
+                className={`${SOFT_SURFACE_CLASS} px-3 py-3 transition-all duration-300`}
                 style={
                   selectedLayerPalette
                     ? {
-                        borderColor: `${selectedLayerPalette.border}88`,
+                        borderColor: `${selectedLayerPalette.border}44`,
                         boxShadow: selectedCutLayer
-                          ? `0 0 0 2px ${selectedLayerPalette.border}18`
+                          ? `10px 10px 24px rgba(148,163,184,0.16), -10px -10px 24px rgba(255,255,255,0.98), inset 0 0 0 1px ${selectedLayerPalette.border}22`
                           : undefined,
                       }
                     : undefined
                 }
               >
-                <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
+                <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold tracking-[0.2em] text-slate-500 uppercase">
                   <span>Layer Settings</span>
                   <span
-                    className="tracking-normal normal-case"
-                    style={{ color: selectedLayerPalette?.text || "#0e7490" }}
+                    className="text-sm font-semibold tracking-normal normal-case"
+                    style={{ color: selectedLayerPalette?.text || "#475569" }}
                   >
                     {selectedCutLayer ? `#${selectedCutLayer.id}` : "-"}
                   </span>
                 </div>
 
                 {!selectedCutLayer || !selectedLayerMetrics ? (
-                  <span className="text-[10px] text-slate-500">
+                  <span className="text-[11px] text-slate-500">
                     Pilih layer untuk membuka setting.
                   </span>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     <div
-                      className="rounded border px-2 py-1 text-[10px]"
+                      className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
                       style={{
-                        borderColor: `${selectedLayerPalette?.border || "#06b6d4"}66`,
-                        backgroundColor: selectedLayerPalette?.bg || "#ecfeff",
-                        color: selectedLayerPalette?.text || "#155e75",
+                        color: selectedLayerPalette?.text || "#334155",
                       }}
                     >
                       {selectedCutLayer.name ||
@@ -10724,8 +11010,8 @@ export default function XrayCalibrationWorkspace() {
                     </div>
 
                     {isImageBackedLayerKind(selectedCutLayer.kind) ? (
-                      <div className="rounded border border-cyan-200 bg-cyan-50/60 px-2 py-1.5">
-                        <div className="flex items-center justify-between gap-2 text-[10px] text-cyan-900">
+                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
+                        <div className="flex items-center justify-between gap-2 text-[13px] text-slate-700">
                           <span>
                             Real: W{" "}
                             {formatTemplateLayerRealSize(
@@ -10745,7 +11031,7 @@ export default function XrayCalibrationWorkspace() {
                                   "Buat garis kalibrasi real dulu, lalu isi ukuran template.",
                                 );
                               }}
-                              className="shrink-0 rounded border border-cyan-300 bg-white px-1.5 py-0.5 text-[10px] text-cyan-800"
+                              className={`${SOFT_TEXT_BUTTON_CLASS} shrink-0 px-2 py-1 text-[10px] text-slate-700`}
                             >
                               Kalibrasi
                             </button>
@@ -10767,14 +11053,14 @@ export default function XrayCalibrationWorkspace() {
                               setTemplateRealSizeInput(event.target.value)
                             }
                             placeholder="Ukuran real"
-                            className="min-w-0 rounded border border-cyan-200 bg-white px-2 py-1 text-[10px] text-slate-800 outline-none focus:border-cyan-500"
+                            className={`min-w-0 ${SOFT_INPUT_CLASS}`}
                           />
                           <select
                             value={templateRealSizeAxis}
                             onChange={(event) =>
                               setTemplateRealSizeAxis(event.target.value)
                             }
-                            className="rounded border border-cyan-200 bg-white px-1 py-1 text-[10px] text-slate-700 outline-none focus:border-cyan-500"
+                            className={SOFT_SELECT_CLASS}
                           >
                             <option value="height">Tinggi</option>
                             <option value="width">Lebar</option>
@@ -10784,7 +11070,7 @@ export default function XrayCalibrationWorkspace() {
                             onChange={(event) =>
                               setTemplateRealSizeUnit(event.target.value)
                             }
-                            className="rounded border border-cyan-200 bg-white px-1 py-1 text-[10px] text-slate-700 outline-none focus:border-cyan-500"
+                            className={SOFT_SELECT_CLASS}
                           >
                             <option value="mm">mm</option>
                             <option value="cm">cm</option>
@@ -10797,7 +11083,7 @@ export default function XrayCalibrationWorkspace() {
                             type="button"
                             onClick={trimSelectedTemplateLayer}
                             disabled={!selectedLayerCanTrim}
-                            className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
+                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
                           >
                             Trim
                           </button>
@@ -10805,7 +11091,7 @@ export default function XrayCalibrationWorkspace() {
                             type="button"
                             onClick={applyTemplateRulerScale}
                             disabled={!selectedLayerCanApplyRulerScale}
-                            className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
+                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
                           >
                             Ruler
                           </button>
@@ -10813,7 +11099,7 @@ export default function XrayCalibrationWorkspace() {
                             type="button"
                             onClick={applyTemplateRealSize}
                             disabled={!selectedLayerCanApplyRealSize}
-                            className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
+                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
                           >
                             Scale
                           </button>
@@ -10824,7 +11110,7 @@ export default function XrayCalibrationWorkspace() {
                           <button
                             type="button"
                             onClick={copySelectedTemplateScale}
-                            className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900"
+                            className={SOFT_TEXT_BUTTON_CLASS}
                           >
                             Copy Scale
                           </button>
@@ -10832,13 +11118,13 @@ export default function XrayCalibrationWorkspace() {
                             type="button"
                             onClick={pasteTemplateScaleToSelected}
                             disabled={!selectedLayerCanPasteScale}
-                            className="rounded border border-cyan-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-900 disabled:cursor-not-allowed disabled:opacity-45"
+                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
                           >
                             Paste Scale
                           </button>
                         </div>
                         {copiedTemplateScale ? (
-                          <div className="mt-1 text-[10px] text-cyan-800">
+                          <div className="mt-1 text-[10px] text-slate-500">
                             Scale siap di-paste
                           </div>
                         ) : null}
@@ -10886,6 +11172,7 @@ export default function XrayCalibrationWorkspace() {
                         decreaseIcon="zoomOut"
                         increaseIcon="zoomIn"
                         disabled={selectedCutLayer.lockScale}
+                        controlStyle="knob"
                       />
                       <CompactSliderField
                         label="Height"
@@ -10927,6 +11214,7 @@ export default function XrayCalibrationWorkspace() {
                         decreaseIcon="zoomOut"
                         increaseIcon="zoomIn"
                         disabled={selectedCutLayer.lockScale}
+                        controlStyle="knob"
                       />
                       <CompactSliderField
                         label="Pos X"
@@ -10971,6 +11259,7 @@ export default function XrayCalibrationWorkspace() {
                         }
                         decreaseIcon="moveLeft"
                         increaseIcon="moveRight"
+                        controlStyle="knob"
                       />
                       <CompactSliderField
                         label="Pos Y"
@@ -11015,6 +11304,7 @@ export default function XrayCalibrationWorkspace() {
                         }
                         decreaseIcon="moveUp"
                         increaseIcon="moveDown"
+                        controlStyle="knob"
                       />
                       <CompactSliderField
                         label="Opacity"
@@ -11150,7 +11440,7 @@ export default function XrayCalibrationWorkspace() {
               animate={{ opacity: 1, x: 0 }}
               transition={PANEL_SPRING}
               ref={measurePanelRef}
-              className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-2.5"
+              className={SOFT_SECTION_CLASS}
             >
               <div className="flex items-center gap-1.5">
                 <Icon name="camera" className="h-4 w-4 text-emerald-700" />
@@ -11185,14 +11475,14 @@ export default function XrayCalibrationWorkspace() {
                   </span>
                 </div>
               ) : null}
-              <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className={`grid grid-cols-2 gap-1 p-1 ${SOFT_INSET_CLASS}`}>
                 <button
                   type="button"
                   onClick={() => setMeasureAnatomyTab("hip")}
-                  className={`px-2 py-1.5 text-xs font-semibold transition ${
+                  className={`px-2 py-2 text-xs font-semibold transition ${
                     measureAnatomyTab === "hip"
-                      ? "bg-rose-600 text-white"
-                      : "bg-white text-rose-700 hover:bg-rose-50"
+                      ? SOFT_DARK_BUTTON_CLASS
+                      : `${SOFT_RAISED_CLASS} text-rose-700`
                   }`}
                 >
                   Hip
@@ -11200,16 +11490,16 @@ export default function XrayCalibrationWorkspace() {
                 <button
                   type="button"
                   onClick={() => setMeasureAnatomyTab("knee")}
-                  className={`border-l border-slate-200 px-2 py-1.5 text-xs font-semibold transition ${
+                  className={`px-2 py-2 text-xs font-semibold transition ${
                     measureAnatomyTab === "knee"
-                      ? "bg-cyan-600 text-white"
-                      : "bg-white text-cyan-700 hover:bg-cyan-50"
+                      ? SOFT_DARK_BUTTON_CLASS
+                      : `${SOFT_RAISED_CLASS} text-cyan-700`
                   }`}
                 >
                   Knee
                 </button>
               </div>
-              <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+              <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
                 <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-slate-700 uppercase">
                   <span>General</span>
                   <span className="text-slate-500 normal-case">
@@ -11224,7 +11514,7 @@ export default function XrayCalibrationWorkspace() {
                     onClick={() => handleLinePresetChange("normal")}
                     className={measurePresetButtonClass(
                       linePreset === "normal",
-                      "border-slate-700 bg-slate-700 text-white",
+                      "text-slate-800",
                     )}
                   >
                     Line
@@ -11232,7 +11522,7 @@ export default function XrayCalibrationWorkspace() {
                   <select
                     value={measurementUnit}
                     onChange={(event) => setMeasurementUnit(event.target.value)}
-                    className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs text-slate-700"
+                    className={SOFT_SELECT_CLASS}
                   >
                     <option value="cm">cm</option>
                     <option value="mm">mm</option>
@@ -11240,7 +11530,9 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               </div>
               {measureAnatomyTab === "knee" ? (
-                <div className="rounded-md border border-cyan-200 bg-cyan-50/40 px-2 py-1.5">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-cyan-900`}
+                >
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                     <span>Knee</span>
                     <span className="text-cyan-700 normal-case">
@@ -11253,7 +11545,7 @@ export default function XrayCalibrationWorkspace() {
                       onClick={() => handleToolChange("hkaAuto")}
                       className={measurePresetButtonClass(
                         tool === "hkaAuto",
-                        "border-cyan-600 bg-cyan-600 text-white",
+                        "text-cyan-700",
                       )}
                     >
                       Auto HKA
@@ -11262,7 +11554,9 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               ) : null}
               {measureAnatomyTab === "hip" ? (
-                <div className="rounded-md border border-rose-200 bg-rose-50/40 px-2 py-1.5">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-rose-900`}
+                >
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-rose-900 uppercase">
                     <span>Hip</span>
                     <span className="text-rose-700 normal-case">
@@ -11275,7 +11569,7 @@ export default function XrayCalibrationWorkspace() {
                       onClick={() => handleLinePresetChange("offset")}
                       className={measurePresetButtonClass(
                         linePreset === "offset",
-                        "border-rose-600 bg-rose-600 text-white",
+                        "text-rose-700",
                       )}
                     >
                       Offset
@@ -11285,7 +11579,7 @@ export default function XrayCalibrationWorkspace() {
                       onClick={() => handleLinePresetChange("femoralOffset")}
                       className={measurePresetButtonClass(
                         linePreset === "femoralOffset",
-                        "border-emerald-600 bg-emerald-600 text-white",
+                        "text-emerald-700",
                       )}
                     >
                       F-Offset
@@ -11295,7 +11589,7 @@ export default function XrayCalibrationWorkspace() {
                       onClick={() => handleLinePresetChange("globalOffset")}
                       className={measurePresetButtonClass(
                         linePreset === "globalOffset",
-                        "border-violet-600 bg-violet-600 text-white",
+                        "text-violet-700",
                       )}
                     >
                       G-Offset
@@ -11305,7 +11599,7 @@ export default function XrayCalibrationWorkspace() {
                       onClick={() => handleLinePresetChange("lld")}
                       className={measurePresetButtonClass(
                         linePreset === "lld",
-                        "border-orange-600 bg-orange-600 text-white",
+                        "text-orange-700",
                       )}
                     >
                       LLD
@@ -11314,7 +11608,9 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               ) : null}
               {selectedLine ? (
-                <div className="rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-[11px] text-emerald-900">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-emerald-900`}
+                >
                   <div className="mb-1 font-medium text-emerald-950">
                     Adjust Line #{selectedLine.id}
                   </div>
@@ -11323,82 +11619,197 @@ export default function XrayCalibrationWorkspace() {
                       ? "Mobile: sentuh ujung untuk munculkan bundaran assist. Drag dari area bundaran untuk adjust tanpa menutupi titik handle, atau tap lagi pada badan garis untuk pindah."
                       : "Drag titik ujung, geser garis, atau drag label langsung di canvas."}
                   </div>
-                  <div className="mt-1.5 flex flex-col gap-1.5">
-                    <label className="text-[10px] text-slate-600">
-                      Label X
-                      <input
-                        type="range"
-                        min="-180"
-                        max="180"
-                        step="1"
-                        value={
-                          Number.isFinite(selectedLine.labelOffsetX)
-                            ? selectedLine.labelOffsetX
-                            : DEFAULT_LINE_LABEL_OFFSET_X
-                        }
-                        onChange={(event) => {
-                          const nextValue = Number(event.target.value);
-                          setLines((prev) =>
-                            prev.map((line) =>
-                              line.id === selectedLine.id
-                                ? { ...line, labelOffsetX: nextValue }
-                                : line,
-                            ),
-                          );
-                        }}
-                        className="mt-1 w-full"
-                      />
-                    </label>
-                    <label className="text-[10px] text-slate-600">
-                      Label Y
-                      <input
-                        type="range"
-                        min="-120"
-                        max="120"
-                        step="1"
-                        value={
-                          Number.isFinite(selectedLine.labelOffsetY)
-                            ? selectedLine.labelOffsetY
-                            : DEFAULT_LINE_LABEL_OFFSET_Y
-                        }
-                        onChange={(event) => {
-                          const nextValue = Number(event.target.value);
-                          setLines((prev) =>
-                            prev.map((line) =>
-                              line.id === selectedLine.id
-                                ? { ...line, labelOffsetY: nextValue }
-                                : line,
-                            ),
-                          );
-                        }}
-                        className="mt-1 w-full"
-                      />
-                    </label>
-                    <label className="text-[10px] text-slate-600">
-                      Label Opacity
-                      <input
-                        type="range"
-                        min="20"
-                        max="100"
-                        step="1"
-                        value={Math.round(
-                          (Number.isFinite(selectedLine.labelOpacity)
-                            ? selectedLine.labelOpacity
-                            : DEFAULT_LABEL_OPACITY) * 100,
-                        )}
-                        onChange={(event) => {
-                          const nextValue = Number(event.target.value) / 100;
-                          setLines((prev) =>
-                            prev.map((line) =>
-                              line.id === selectedLine.id
-                                ? { ...line, labelOpacity: nextValue }
-                                : line,
-                            ),
-                          );
-                        }}
-                        className="mt-1 w-full"
-                      />
-                    </label>
+                  <div className="mt-1.5 grid gap-1.5">
+                    <CompactSliderField
+                      label="Label X"
+                      valueText={`${Math.round(
+                        Number.isFinite(selectedLine.labelOffsetX)
+                          ? selectedLine.labelOffsetX
+                          : DEFAULT_LINE_LABEL_OFFSET_X,
+                      )}`}
+                      min={-180}
+                      max={180}
+                      step={1}
+                      value={
+                        Number.isFinite(selectedLine.labelOffsetX)
+                          ? selectedLine.labelOffsetX
+                          : DEFAULT_LINE_LABEL_OFFSET_X
+                      }
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, labelOffsetX: nextValue }
+                              : line,
+                          ),
+                        );
+                      }}
+                      onDecrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  labelOffsetX: clamp(
+                                    (Number.isFinite(line.labelOffsetX)
+                                      ? line.labelOffsetX
+                                      : DEFAULT_LINE_LABEL_OFFSET_X) - 2,
+                                    -180,
+                                    180,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                      onIncrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  labelOffsetX: clamp(
+                                    (Number.isFinite(line.labelOffsetX)
+                                      ? line.labelOffsetX
+                                      : DEFAULT_LINE_LABEL_OFFSET_X) + 2,
+                                    -180,
+                                    180,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                      decreaseIcon="moveLeft"
+                      increaseIcon="moveRight"
+                    />
+                    <CompactSliderField
+                      label="Label Y"
+                      valueText={`${Math.round(
+                        Number.isFinite(selectedLine.labelOffsetY)
+                          ? selectedLine.labelOffsetY
+                          : DEFAULT_LINE_LABEL_OFFSET_Y,
+                      )}`}
+                      min={-120}
+                      max={120}
+                      step={1}
+                      value={
+                        Number.isFinite(selectedLine.labelOffsetY)
+                          ? selectedLine.labelOffsetY
+                          : DEFAULT_LINE_LABEL_OFFSET_Y
+                      }
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, labelOffsetY: nextValue }
+                              : line,
+                          ),
+                        );
+                      }}
+                      onDecrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  labelOffsetY: clamp(
+                                    (Number.isFinite(line.labelOffsetY)
+                                      ? line.labelOffsetY
+                                      : DEFAULT_LINE_LABEL_OFFSET_Y) - 2,
+                                    -120,
+                                    120,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                      onIncrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  labelOffsetY: clamp(
+                                    (Number.isFinite(line.labelOffsetY)
+                                      ? line.labelOffsetY
+                                      : DEFAULT_LINE_LABEL_OFFSET_Y) + 2,
+                                    -120,
+                                    120,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                      decreaseIcon="moveUp"
+                      increaseIcon="moveDown"
+                    />
+                    <CompactSliderField
+                      label="Label Opacity"
+                      valueText={`${Math.round(
+                        (Number.isFinite(selectedLine.labelOpacity)
+                          ? selectedLine.labelOpacity
+                          : DEFAULT_LABEL_OPACITY) * 100,
+                      )}%`}
+                      min={20}
+                      max={100}
+                      step={1}
+                      value={Math.round(
+                        (Number.isFinite(selectedLine.labelOpacity)
+                          ? selectedLine.labelOpacity
+                          : DEFAULT_LABEL_OPACITY) * 100,
+                      )}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value) / 100;
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, labelOpacity: nextValue }
+                              : line,
+                          ),
+                        );
+                      }}
+                      onDecrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  labelOpacity: clamp(
+                                    (Number.isFinite(line.labelOpacity)
+                                      ? line.labelOpacity
+                                      : DEFAULT_LABEL_OPACITY) - 0.05,
+                                    0.2,
+                                    1,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                      onIncrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  labelOpacity: clamp(
+                                    (Number.isFinite(line.labelOpacity)
+                                      ? line.labelOpacity
+                                      : DEFAULT_LABEL_OPACITY) + 0.05,
+                                    0.2,
+                                    1,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                    />
                     <div className="grid grid-cols-2 gap-1.5">
                       <button
                         type="button"
@@ -11416,7 +11827,7 @@ export default function XrayCalibrationWorkspace() {
                             ),
                           )
                         }
-                        className="rounded border border-emerald-300 bg-white px-2 py-1 text-[10px] text-emerald-900"
+                        className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-emerald-900`}
                       >
                         Reset Label
                       </button>
@@ -11436,7 +11847,7 @@ export default function XrayCalibrationWorkspace() {
                             ),
                           )
                         }
-                        className="rounded border border-emerald-300 bg-white px-2 py-1 text-[10px] text-emerald-900"
+                        className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-emerald-900`}
                       >
                         Ringkas
                       </button>
@@ -11445,7 +11856,9 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               ) : null}
               {selectedAngle && selectedAngleMetrics ? (
-                <div className="rounded-md border border-orange-200 bg-orange-50/50 px-2 py-1.5 text-[11px] text-orange-900">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-orange-900`}
+                >
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <div className="font-medium text-orange-950">
                       Angle Settings #{selectedAngle.id}
@@ -11458,7 +11871,7 @@ export default function XrayCalibrationWorkspace() {
                     Drag 3 titik angle di canvas. Atur label dan warna dari
                     panel ini.
                   </div>
-                  <div className="mt-1.5 rounded-md border border-orange-200 bg-white px-2 py-1.5">
+                  <div className={`${SOFT_SURFACE_CLASS} mt-1.5 px-2 py-1.5`}>
                     <div className="mb-1 text-[10px] font-semibold tracking-wide text-orange-900 uppercase">
                       Color
                     </div>
@@ -11475,7 +11888,7 @@ export default function XrayCalibrationWorkspace() {
                         />
                       ))}
                       <label
-                        className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 border-slate-200 bg-white"
+                        className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
                         title="Warna custom"
                       >
                         <span
@@ -11656,7 +12069,7 @@ export default function XrayCalibrationWorkspace() {
                           labelOpacity: DEFAULT_LABEL_OPACITY,
                         })
                       }
-                      className="rounded-md border border-orange-300 bg-white px-2 py-1 text-[10px] text-orange-900"
+                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-orange-900`}
                     >
                       Reset
                     </button>
@@ -11669,7 +12082,7 @@ export default function XrayCalibrationWorkspace() {
                           labelOpacity: 0.48,
                         })
                       }
-                      className="rounded-md border border-orange-300 bg-white px-2 py-1 text-[10px] text-orange-900"
+                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-orange-900`}
                     >
                       Ringkas
                     </button>
@@ -11677,14 +12090,18 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               ) : null}
               {measureAnatomyTab === "knee" ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50/40 px-2 py-1.5">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-amber-900`}
+                >
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
                     <span>TKA Planning</span>
                     <span className="tracking-normal text-amber-700 normal-case">
                       {planningGuides.length} guide
                     </span>
                   </div>
-                  <div className="rounded border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+                  <div
+                    className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+                  >
                     <div className="font-medium text-amber-950">
                       Acuan Planning
                     </div>
@@ -11719,11 +12136,7 @@ export default function XrayCalibrationWorkspace() {
                           key={mode.id}
                           type="button"
                           onClick={() => setPlanningGuideMode(mode.id)}
-                          className={`rounded-md border px-2 py-1 text-[11px] font-medium transition ${
-                            isActive
-                              ? "border-amber-700 bg-amber-700 text-white"
-                              : "border-amber-200 bg-white text-amber-900 hover:bg-amber-100"
-                          }`}
+                          className={`${isActive ? SOFT_DARK_BUTTON_CLASS : `${SOFT_RAISED_CLASS} text-amber-900`} px-2 py-2 text-[11px] font-medium transition`}
                         >
                           {mode.label}
                         </button>
@@ -11731,7 +12144,9 @@ export default function XrayCalibrationWorkspace() {
                     })}
                   </div>
                   {selectedPlanningGuide ? (
-                    <div className="mt-1.5 rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+                    <div
+                      className={`${SOFT_SURFACE_CLASS} mt-1.5 px-3 py-2 text-[11px] text-amber-900`}
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-medium text-amber-950">
                           Guide Aktif
@@ -11739,7 +12154,7 @@ export default function XrayCalibrationWorkspace() {
                         <button
                           type="button"
                           onClick={() => setSelectedPlanningGuideId(null)}
-                          className="rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] text-amber-900"
+                          className={`${SOFT_TEXT_BUTTON_CLASS} px-1.5 py-1 text-[10px] text-amber-900`}
                         >
                           Lepas
                         </button>
@@ -11764,7 +12179,7 @@ export default function XrayCalibrationWorkspace() {
                         Gunakan sync bila anchor mau ikut line baru.
                       </div>
                       <div className="mt-1.5 grid gap-1.5">
-                        <div className="rounded border border-amber-200 bg-amber-50/50 px-2 py-1.5">
+                        <div className={`${SOFT_INSET_CLASS} px-2 py-1.5`}>
                           <div className="mb-1 text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
                             Line Color
                           </div>
@@ -11806,60 +12221,85 @@ export default function XrayCalibrationWorkspace() {
                                   ),
                                 )
                               }
-                              className="rounded border border-amber-300 bg-white px-2 py-1 text-[10px] text-amber-900"
+                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-amber-900`}
                             >
                               Auto
                             </button>
                           </div>
                         </div>
-                        <label className="text-[10px] text-slate-600">
-                          Label X
-                          <input
-                            type="range"
-                            min="-220"
-                            max="220"
-                            step="1"
-                            value={planningGuideLabelOffsetX}
-                            onChange={(event) =>
-                              setPlanningGuideLabelOffsetX(
-                                Number(event.target.value),
-                              )
-                            }
-                            className="mt-1 w-full"
-                          />
-                        </label>
-                        <label className="text-[10px] text-slate-600">
-                          Label Y
-                          <input
-                            type="range"
-                            min="-140"
-                            max="140"
-                            step="1"
-                            value={planningGuideLabelOffsetY}
-                            onChange={(event) =>
-                              setPlanningGuideLabelOffsetY(
-                                Number(event.target.value),
-                              )
-                            }
-                            className="mt-1 w-full"
-                          />
-                        </label>
-                        <label className="text-[10px] text-slate-600">
-                          Label Opacity
-                          <input
-                            type="range"
-                            min="20"
-                            max="100"
-                            step="1"
-                            value={Math.round(planningGuideLabelOpacity * 100)}
-                            onChange={(event) =>
-                              setPlanningGuideLabelOpacity(
-                                Number(event.target.value) / 100,
-                              )
-                            }
-                            className="mt-1 w-full"
-                          />
-                        </label>
+                        <CompactSliderField
+                          label="Label X"
+                          valueText={`${Math.round(planningGuideLabelOffsetX)}`}
+                          min={-220}
+                          max={220}
+                          step={1}
+                          value={planningGuideLabelOffsetX}
+                          onChange={(event) =>
+                            setPlanningGuideLabelOffsetX(
+                              Number(event.target.value),
+                            )
+                          }
+                          onDecrease={() =>
+                            setPlanningGuideLabelOffsetX((prev) =>
+                              clamp(prev - 2, -220, 220),
+                            )
+                          }
+                          onIncrease={() =>
+                            setPlanningGuideLabelOffsetX((prev) =>
+                              clamp(prev + 2, -220, 220),
+                            )
+                          }
+                          decreaseIcon="moveLeft"
+                          increaseIcon="moveRight"
+                        />
+                        <CompactSliderField
+                          label="Label Y"
+                          valueText={`${Math.round(planningGuideLabelOffsetY)}`}
+                          min={-140}
+                          max={140}
+                          step={1}
+                          value={planningGuideLabelOffsetY}
+                          onChange={(event) =>
+                            setPlanningGuideLabelOffsetY(
+                              Number(event.target.value),
+                            )
+                          }
+                          onDecrease={() =>
+                            setPlanningGuideLabelOffsetY((prev) =>
+                              clamp(prev - 2, -140, 140),
+                            )
+                          }
+                          onIncrease={() =>
+                            setPlanningGuideLabelOffsetY((prev) =>
+                              clamp(prev + 2, -140, 140),
+                            )
+                          }
+                          decreaseIcon="moveUp"
+                          increaseIcon="moveDown"
+                        />
+                        <CompactSliderField
+                          label="Label Opacity"
+                          valueText={`${Math.round(planningGuideLabelOpacity * 100)}%`}
+                          min={20}
+                          max={100}
+                          step={1}
+                          value={Math.round(planningGuideLabelOpacity * 100)}
+                          onChange={(event) =>
+                            setPlanningGuideLabelOpacity(
+                              Number(event.target.value) / 100,
+                            )
+                          }
+                          onDecrease={() =>
+                            setPlanningGuideLabelOpacity((prev) =>
+                              clamp(prev - 0.05, 0.2, 1),
+                            )
+                          }
+                          onIncrease={() =>
+                            setPlanningGuideLabelOpacity((prev) =>
+                              clamp(prev + 0.05, 0.2, 1),
+                            )
+                          }
+                        />
                         <div className="grid grid-cols-2 gap-1.5">
                           <button
                             type="button"
@@ -11874,7 +12314,7 @@ export default function XrayCalibrationWorkspace() {
                                 DEFAULT_LABEL_OPACITY,
                               );
                             }}
-                            className="rounded border border-amber-300 bg-white px-2 py-1 text-[10px] text-amber-900"
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-amber-900`}
                           >
                             Reset Label
                           </button>
@@ -11885,7 +12325,7 @@ export default function XrayCalibrationWorkspace() {
                               setPlanningGuideLabelOffsetY(-20);
                               setPlanningGuideLabelOpacity(0.48);
                             }}
-                            className="rounded border border-amber-300 bg-white px-2 py-1 text-[10px] text-amber-900"
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-amber-900`}
                           >
                             Ringkas
                           </button>
@@ -11895,7 +12335,7 @@ export default function XrayCalibrationWorkspace() {
                   ) : null}
                   {planningGuideMode === "valgusCut" ? (
                     <div
-                      className={`mt-1.5 grid gap-1.5 rounded-md border border-amber-200 bg-white p-2 text-[11px] text-slate-600 ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
+                      className={`mt-1.5 grid gap-1.5 p-3 text-[11px] text-slate-600 ${SOFT_SURFACE_CLASS} ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
                     >
                       <label>
                         Angle
@@ -11910,7 +12350,7 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 0,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                       <label>
@@ -11920,7 +12360,7 @@ export default function XrayCalibrationWorkspace() {
                           onChange={(event) =>
                             setValgusCutSide(event.target.value)
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_SELECT_CLASS} px-2 py-1`}
                         >
                           <option value="Right">Right</option>
                           <option value="Left">Left</option>
@@ -11939,7 +12379,7 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 0,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                       <label>
@@ -11955,14 +12395,14 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 20,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                     </div>
                   ) : null}
                   {planningGuideMode === "tibialSlope" ? (
                     <div
-                      className={`mt-1.5 grid gap-1.5 rounded-md border border-amber-200 bg-white p-2 text-[11px] text-slate-600 ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
+                      className={`mt-1.5 grid gap-1.5 p-3 text-[11px] text-slate-600 ${SOFT_SURFACE_CLASS} ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
                     >
                       <label>
                         Slope
@@ -11975,7 +12415,7 @@ export default function XrayCalibrationWorkspace() {
                           onChange={(event) =>
                             setTibialSlopeDeg(Number(event.target.value) || 0)
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                       <label>
@@ -11985,7 +12425,7 @@ export default function XrayCalibrationWorkspace() {
                           onChange={(event) =>
                             setTibialPosteriorSide(event.target.value)
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_SELECT_CLASS} px-2 py-1`}
                         >
                           <option value="Right">Right</option>
                           <option value="Left">Left</option>
@@ -12004,7 +12444,7 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 0,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                       <label>
@@ -12020,14 +12460,14 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 20,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                     </div>
                   ) : null}
                   {planningGuideMode === "tibialCut" ? (
                     <div
-                      className={`mt-1.5 grid gap-1.5 rounded-md border border-amber-200 bg-white p-2 text-[11px] text-slate-600 ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
+                      className={`mt-1.5 grid gap-1.5 p-3 text-[11px] text-slate-600 ${SOFT_SURFACE_CLASS} ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
                     >
                       <label>
                         Angle
@@ -12042,7 +12482,7 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 0,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                       <label>
@@ -12052,7 +12492,7 @@ export default function XrayCalibrationWorkspace() {
                           onChange={(event) =>
                             setTibialCutDirection(event.target.value)
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_SELECT_CLASS} px-2 py-1`}
                         >
                           <option value="Valgus">Valgus</option>
                           <option value="Varus">Varus</option>
@@ -12071,7 +12511,7 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 0,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                       <label>
@@ -12087,7 +12527,7 @@ export default function XrayCalibrationWorkspace() {
                               Number(event.target.value) || 20,
                             )
                           }
-                          className="mt-1 w-full rounded-md border border-amber-200 px-2 py-1 text-xs text-slate-700"
+                          className={`mt-1 w-full ${SOFT_INPUT_CLASS} px-2 py-1`}
                         />
                       </label>
                     </div>
@@ -12098,7 +12538,7 @@ export default function XrayCalibrationWorkspace() {
                         <button
                           type="button"
                           onClick={() => updateSelectedPlanningGuide()}
-                          className="rounded-md border border-amber-800 bg-amber-800 px-2 py-1 text-xs font-medium text-white"
+                          className={`${SOFT_PRESSED_CLASS} px-2 py-2 text-xs font-medium text-amber-700`}
                         >
                           Update Guide
                         </button>
@@ -12108,7 +12548,7 @@ export default function XrayCalibrationWorkspace() {
                             updateSelectedPlanningGuide({ syncLine: true })
                           }
                           disabled={!selectedLine}
-                          className="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45"
+                          className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45`}
                         >
                           Sync dari Line
                         </button>
@@ -12118,7 +12558,7 @@ export default function XrayCalibrationWorkspace() {
                         type="button"
                         onClick={addPlanningGuideFromSelectedLine}
                         disabled={!selectedLine}
-                        className="rounded-md border border-amber-800 bg-amber-800 px-2 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                        className={`${SOFT_PRESSED_CLASS} px-2 py-2 text-xs font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-45`}
                       >
                         Buat dari Line
                       </button>
@@ -12131,12 +12571,14 @@ export default function XrayCalibrationWorkspace() {
                         setNotice("Semua planning guide dihapus.");
                       }}
                       disabled={planningGuides.length === 0}
-                      className="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45"
+                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45`}
                     >
                       Clear Guide
                     </button>
                   </div>
-                  <div className="mt-1.5 max-h-36 overflow-y-auto rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+                  <div
+                    className={`mt-1.5 max-h-36 overflow-y-auto ${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+                  >
                     {planningGuideRows.length === 0 ? (
                       <p>Belum ada planning guide.</p>
                     ) : (
@@ -12156,11 +12598,14 @@ export default function XrayCalibrationWorkspace() {
                               <motion.div
                                 layout
                                 key={row.id}
-                                className={`rounded border px-2 py-1.5 ${
-                                  isGuideSelected
-                                    ? "border-amber-300 bg-amber-100/70 shadow-sm"
-                                    : "border-amber-100 bg-amber-50/40"
+                                className={`${SOFT_TINT_CARD_CLASS} px-2 py-1.5 ${
+                                  isGuideSelected ? "scale-[1.01]" : ""
                                 }`}
+                                style={{
+                                  borderColor: isGuideSelected
+                                    ? `${guideColor}88`
+                                    : `${guideColor}44`,
+                                }}
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <button
@@ -12189,7 +12634,7 @@ export default function XrayCalibrationWorkspace() {
                                       onClick={() =>
                                         togglePlanningGuideHidden(row.id)
                                       }
-                                      className="rounded border border-amber-200 bg-white px-1.5 py-0.5 text-[10px] text-amber-900"
+                                      className={`${SOFT_TEXT_BUTTON_CLASS} px-1.5 py-1 text-[10px] text-amber-900`}
                                     >
                                       {guide?.hidden ? "Show" : "Hide"}
                                     </button>
@@ -12198,7 +12643,7 @@ export default function XrayCalibrationWorkspace() {
                                       onClick={() =>
                                         removePlanningGuide(row.id)
                                       }
-                                      className="rounded border border-rose-200 bg-white px-1.5 py-0.5 text-[10px] text-rose-700"
+                                      className={`${SOFT_DANGER_BUTTON_CLASS} px-1.5 py-1 text-[10px]`}
                                     >
                                       Hapus
                                     </button>
@@ -12213,7 +12658,9 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               ) : null}
               {selectedCircle ? (
-                <div className="rounded-md border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-slate-700">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-slate-700`}
+                >
                   <div className="mb-1 font-medium text-violet-800">
                     Adjust Circle Diameter
                   </div>
@@ -12232,11 +12679,27 @@ export default function XrayCalibrationWorkspace() {
                         } ${measurementUnit}`
                       : `${Math.round(selectedCircle.radius * 2)}`}
                   </div>
-                  <input
-                    type="range"
-                    min="6"
+                  <CompactSliderField
+                    label="Diameter"
+                    valueText={
+                      mmPerPixel !== null
+                        ? `${
+                            measurementUnit === "cm"
+                              ? (
+                                  (selectedCircle.radius * 2 * mmPerPixel) /
+                                  10
+                                ).toFixed(2)
+                              : (
+                                  selectedCircle.radius *
+                                  2 *
+                                  mmPerPixel
+                                ).toFixed(2)
+                          } ${measurementUnit}`
+                        : `${Math.round(selectedCircle.radius * 2)}`
+                    }
+                    min={6}
                     max={Math.max(10, Math.max(modelWidth, modelHeight) * 1.5)}
-                    step="0.5"
+                    step={0.5}
                     value={selectedCircle.radius * 2}
                     onChange={(event) => {
                       const nextDiameter = Number(event.target.value);
@@ -12248,7 +12711,35 @@ export default function XrayCalibrationWorkspace() {
                         ),
                       );
                     }}
-                    className="w-full"
+                    onDecrease={() =>
+                      setCircles((prev) =>
+                        prev.map((item) =>
+                          item.id === selectedCircle.id
+                            ? {
+                                ...item,
+                                radius: Math.max(3, item.radius - 1),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                    onIncrease={() =>
+                      setCircles((prev) =>
+                        prev.map((item) =>
+                          item.id === selectedCircle.id
+                            ? {
+                                ...item,
+                                radius: Math.min(
+                                  Math.max(modelWidth, modelHeight) * 1.5,
+                                  item.radius + 1,
+                                ),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                    decreaseIcon="zoomOut"
+                    increaseIcon="zoomIn"
                   />
                   <div
                     className={`mt-1 grid gap-1.5 ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
@@ -12267,7 +12758,7 @@ export default function XrayCalibrationWorkspace() {
                           ),
                         )
                       }
-                      className="rounded border border-violet-300 bg-white px-2 py-1 text-xs text-violet-800"
+                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-xs text-violet-800`}
                     >
                       - kecilkan
                     </button>
@@ -12288,7 +12779,7 @@ export default function XrayCalibrationWorkspace() {
                           ),
                         )
                       }
-                      className="rounded border border-violet-300 bg-white px-2 py-1 text-xs text-violet-800"
+                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-xs text-violet-800`}
                     >
                       + besarkan
                     </button>
@@ -12342,7 +12833,9 @@ export default function XrayCalibrationWorkspace() {
                 />
               </div>
               {measureAnatomyTab === "hip" ? (
-                <div className="rounded-md border border-rose-200 bg-rose-50/40 px-2 py-1.5 text-[11px] text-rose-900">
+                <div
+                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-rose-900`}
+                >
                   <div className="mb-1 font-medium text-rose-950">
                     Hip Summary
                   </div>
@@ -12360,7 +12853,7 @@ export default function XrayCalibrationWorkspace() {
               initial={{ opacity: 0, x: 12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={PANEL_SPRING}
-              className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50/50 p-2.5"
+              className={SOFT_SECTION_CLASS}
             >
               <div className="flex items-center gap-1.5">
                 <Icon name="package" className="h-4 w-4 text-amber-700" />
@@ -12374,17 +12867,19 @@ export default function XrayCalibrationWorkspace() {
               <div
                 className={`grid gap-1.5 text-[11px] text-amber-900 ${isRightSidebarNarrow ? "grid-cols-1" : "grid-cols-3"}`}
               >
-                <div className="rounded border border-amber-200 bg-white px-2 py-1">
+                <div className={`${SOFT_SURFACE_CLASS} px-2 py-1`}>
                   Measure: {measurementRows.length}
                 </div>
-                <div className="rounded border border-amber-200 bg-white px-2 py-1">
+                <div className={`${SOFT_SURFACE_CLASS} px-2 py-1`}>
                   Layer: {cutLayers.length}
                 </div>
-                <div className="rounded border border-amber-200 bg-white px-2 py-1">
+                <div className={`${SOFT_SURFACE_CLASS} px-2 py-1`}>
                   Step: {planSteps.length}
                 </div>
               </div>
-              <div className="rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+              <div
+                className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-slate-700`}
+              >
                 <div className="font-medium text-amber-950">Guide Aktif</div>
                 {planningGuideRows.length === 0 ? (
                   <div className="mt-0.5">
@@ -12415,14 +12910,14 @@ export default function XrayCalibrationWorkspace() {
                 onChange={(event) => setPlanNote(event.target.value)}
                 rows={3}
                 placeholder="Catatan step: reduction, implant size, posisi plate/screw, atau review final."
-                className="min-h-20 w-full resize-y rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+                className={`min-h-20 w-full resize-y ${SOFT_INPUT_CLASS}`}
               />
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
                   onClick={addPlanningStep}
                   disabled={!image}
-                  className="rounded-md border border-amber-800 bg-amber-800 px-2 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  className={`${SOFT_PRESSED_CLASS} px-3 py-2 text-xs font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-45`}
                 >
                   Tambah Step
                 </button>
@@ -12433,12 +12928,14 @@ export default function XrayCalibrationWorkspace() {
                     setNotice("Semua planning step dihapus.");
                   }}
                   disabled={planSteps.length === 0}
-                  className="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45"
+                  className={`${SOFT_TEXT_BUTTON_CLASS} px-3 py-2 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45`}
                 >
                   Clear Step
                 </button>
               </div>
-              <div className="rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+              <div
+                className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+              >
                 <div className="mb-1 font-medium text-amber-950">
                   Ringkasan Snapshot
                 </div>
@@ -12446,7 +12943,9 @@ export default function XrayCalibrationWorkspace() {
                 <div>Layer: {cutLayers.length}</div>
                 <div>Step: {planSteps.length}</div>
               </div>
-              <div className="rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+              <div
+                className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+              >
                 <div className="mb-1 font-medium text-amber-950">
                   Inventory Template / Fragment
                 </div>
@@ -12470,7 +12969,9 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 )}
               </div>
-              <div className="max-h-32 overflow-y-auto rounded-md border border-amber-200 bg-white px-2 py-1.5 text-[11px] text-amber-900">
+              <div
+                className={`max-h-32 overflow-y-auto ${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+              >
                 {planSteps.length === 0 ? (
                   <p>Belum ada planning step.</p>
                 ) : (
@@ -12510,7 +13011,7 @@ export default function XrayCalibrationWorkspace() {
         <motion.div
           layout
           transition={PANEL_SPRING}
-          className="order-1 border-0 bg-transparent p-0 lg:order-2 lg:rounded-xl lg:border lg:border-slate-200 lg:bg-white lg:p-2"
+          className={`order-1 min-h-0 overflow-hidden p-0 lg:order-2 lg:p-2 ${SOFT_PANEL_CLASS}`}
         >
           <div
             className={`grid gap-0 lg:gap-2 ${compareMode ? "lg:grid-cols-2" : "grid-cols-1"}`}
@@ -12534,120 +13035,73 @@ export default function XrayCalibrationWorkspace() {
                 >
                   {isMobileViewport ? (
                     <div className="max-w-[calc(100vw-20px)]">
-                      <div className="flex items-center gap-1 rounded-full border border-slate-600/80 bg-slate-900/92 px-1.5 py-1 text-white shadow-2xl backdrop-blur">
+                      <div
+                        className={`flex items-center gap-1 rounded-full px-1.5 py-1 ${SOFT_FLOAT_SURFACE_CLASS} text-slate-700`}
+                      >
                         <button
                           type="button"
                           onClick={() =>
                             focusLayerSettings(selectedCutLayer.id)
                           }
-                          className={`flex min-w-0 items-center rounded-full bg-slate-800/90 py-1 pl-1.5 text-left transition hover:bg-slate-700/90 ${
+                          className={`flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                             showLayerToolbarName ? "gap-1.5 pr-2" : "pr-1.5"
                           }`}
                           aria-label="Buka pengaturan layer"
                           title="Buka pengaturan layer"
                         >
-                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white shadow-sm">
-                            <Bone className="h-4 w-4" strokeWidth={2.2} />
+                          <span
+                            className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 ${SOFT_RAISED_CLASS}`}
+                          >
+                            <Bone className="h-4 w-4" strokeWidth={2.1} />
                           </span>
                           {showLayerToolbarName ? (
-                            <span className="max-w-[88px] truncate text-[11px] leading-none font-semibold">
+                            <span className="max-w-[84px] truncate text-[9px] leading-none font-semibold text-slate-700">
                               {selectedCutLayer.name ||
                                 `Layer #${selectedCutLayer.id}`}
                             </span>
                           ) : null}
                         </button>
                         <LayerToolbarActionButton
-                          icon={mobileLayerToolbarOpen ? "close" : "menu"}
+                          icon={showLayerToolbarName ? "eyeOff" : "eye"}
                           label={
-                            mobileLayerToolbarOpen
-                              ? "Tutup aksi layer"
-                              : "Buka aksi layer"
+                            showLayerToolbarName
+                              ? "Sembunyikan nama layer"
+                              : "Tampilkan nama layer"
                           }
                           onClick={() =>
-                            setMobileLayerToolbarOpen((prev) => !prev)
+                            setShowLayerToolbarName((prev) => !prev)
                           }
-                          active={mobileLayerToolbarOpen}
+                          active={!showLayerToolbarName}
+                        />
+                        <LayerToolbarActionButton
+                          icon="settings"
+                          label="Buka layer settings"
+                          onClick={() =>
+                            focusLayerSettings(selectedCutLayer.id)
+                          }
                         />
                       </div>
-                      <AnimatePresence>
-                        {mobileLayerToolbarOpen ? (
-                          <motion.div
-                            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                            transition={PANEL_SPRING}
-                            className="mt-2 flex items-center justify-center gap-1 rounded-2xl border border-slate-600/80 bg-slate-900/92 px-2 py-1.5 shadow-2xl backdrop-blur"
-                          >
-                            <LayerToolbarActionButton
-                              icon={showLayerToolbarName ? "eyeOff" : "eye"}
-                              label={
-                                showLayerToolbarName
-                                  ? "Sembunyikan nama layer"
-                                  : "Tampilkan nama layer"
-                              }
-                              onClick={() =>
-                                setShowLayerToolbarName((prev) => !prev)
-                              }
-                              active={!showLayerToolbarName}
-                            />
-                            <LayerToolbarActionButton
-                              icon={
-                                selectedCutLayer.lockScale ? "lock" : "unlock"
-                              }
-                              label={
-                                selectedCutLayer.lockScale
-                                  ? "Unlock layer"
-                                  : "Lock layer"
-                              }
-                              onClick={() =>
-                                updateLayerById(
-                                  selectedCutLayer.id,
-                                  (item) => ({
-                                    ...item,
-                                    lockScale: !item.lockScale,
-                                  }),
-                                )
-                              }
-                              active={selectedCutLayer.lockScale}
-                            />
-                            <LayerToolbarActionButton
-                              icon="plus"
-                              label="Duplicate layer"
-                              onClick={duplicateSelectedCutLayer}
-                            />
-                            <LayerToolbarActionButton
-                              icon="menu"
-                              label="Buka layer settings"
-                              onClick={() =>
-                                focusLayerSettings(selectedCutLayer.id)
-                              }
-                            />
-                            <LayerToolbarActionButton
-                              icon="trash"
-                              label="Hapus layer"
-                              onClick={removeSelectedCutLayer}
-                              className="border-rose-500/70 text-rose-100 hover:bg-rose-500/18"
-                            />
-                          </motion.div>
-                        ) : null}
-                      </AnimatePresence>
                     </div>
                   ) : (
-                    <div className="flex max-w-[calc(100vw-28px)] items-center gap-1 rounded-full border border-slate-600/80 bg-slate-900/92 px-2 py-1.5 text-white shadow-2xl backdrop-blur">
+                    <div
+                      className={`flex max-w-[calc(100vw-28px)] items-center gap-1 rounded-full px-2 py-1.5 ${SOFT_FLOAT_SURFACE_CLASS} text-slate-700`}
+                    >
                       <button
                         type="button"
                         onClick={() => focusLayerSettings(selectedCutLayer.id)}
-                        className={`mr-1 flex min-w-0 items-center rounded-full bg-slate-800/90 py-1 pl-1.5 text-left transition hover:bg-slate-700/90 ${
+                        className={`mr-1 flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                           showLayerToolbarName ? "gap-2 pr-2" : "pr-1.5"
                         }`}
                         aria-label="Buka pengaturan layer"
                         title="Buka pengaturan layer"
                       >
-                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white shadow-sm">
-                          <Bone className="h-4 w-4" strokeWidth={2.2} />
+                        <span
+                          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 ${SOFT_RAISED_CLASS}`}
+                        >
+                          <Bone className="h-4 w-4" strokeWidth={2.1} />
                         </span>
                         {showLayerToolbarName ? (
-                          <span className="max-w-[104px] truncate text-xs font-semibold">
+                          <span className="max-w-[100px] truncate text-[10px] font-semibold text-slate-700">
                             {selectedCutLayer.name ||
                               `Layer #${selectedCutLayer.id}`}
                           </span>
@@ -12687,10 +13141,10 @@ export default function XrayCalibrationWorkspace() {
                         icon="trash"
                         label="Hapus layer"
                         onClick={removeSelectedCutLayer}
-                        className="border-rose-500/70 text-rose-100 hover:bg-rose-500/18"
+                        className="text-rose-600"
                       />
                       <LayerToolbarActionButton
-                        icon="menu"
+                        icon="settings"
                         label="Buka layer settings"
                         onClick={() => focusLayerSettings(selectedCutLayer.id)}
                       />
@@ -12698,9 +13152,55 @@ export default function XrayCalibrationWorkspace() {
                   )}
                 </motion.div>
               ) : null}
+              {isMobileViewport && selectedLine ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={PANEL_SPRING}
+                  className="absolute top-2 left-2 z-30"
+                >
+                  <div
+                    className={`flex items-center gap-1 rounded-full px-1.5 py-1 ${SOFT_FLOAT_SURFACE_CLASS} text-slate-700`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobilePanelMode("workspace");
+                        setActiveRightPanel("measure");
+                        setMobileControlsOpen(true);
+                      }}
+                      className={`${SOFT_INSET_CLASS} px-2 py-1 text-[10px] font-semibold text-slate-700 transition`}
+                      aria-label="Buka pengaturan line"
+                      title="Buka pengaturan line"
+                    >
+                      Line
+                    </button>
+                    <LayerToolbarActionButton
+                      icon={isSelectedLineLocked ? "unlock" : "lock"}
+                      label={isSelectedLineLocked ? "Unlock line" : "Lock line"}
+                      onClick={toggleSelectedLineLock}
+                      active={isSelectedLineLocked}
+                    />
+                    <LayerToolbarActionButton
+                      icon="trash"
+                      label="Hapus line"
+                      onClick={removeSelectedLine}
+                      className="text-rose-600"
+                    />
+                    <LayerToolbarActionButton
+                      icon="close"
+                      label="Tutup seleksi"
+                      onClick={clearActiveCanvasSelection}
+                    />
+                  </div>
+                </motion.div>
+              ) : null}
               <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-20 px-2 lg:hidden">
                 <div className="flex items-center gap-2">
-                  <div className="grid flex-1 grid-cols-4 rounded-2xl border border-slate-600/70 bg-slate-900/82 p-1 shadow-xl backdrop-blur">
+                  <div
+                    className={`${SOFT_FLOAT_SURFACE_CLASS} grid flex-1 grid-cols-4 p-1`}
+                  >
                     {[
                       {
                         id: "setup",
@@ -12754,15 +13254,17 @@ export default function XrayCalibrationWorkspace() {
                         onClick={item.onClick}
                         className={`inline-flex min-w-0 items-center justify-center rounded-xl px-2 py-2 text-[10px] font-semibold transition ${
                           item.active
-                            ? "bg-white text-slate-900"
-                            : "text-slate-100 hover:bg-slate-800/70"
+                            ? `${SOFT_PRESSED_CLASS} text-slate-800`
+                            : `${SOFT_RAISED_CLASS} text-slate-600`
                         }`}
                       >
                         {item.label}
                       </button>
                     ))}
                   </div>
-                  <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-600/70 bg-slate-900/82 p-1 shadow-xl backdrop-blur">
+                  <div
+                    className={`${SOFT_FLOAT_SURFACE_CLASS} flex shrink-0 items-center gap-1 p-1`}
+                  >
                     <ToolIconButton
                       icon="pan"
                       label="Move / Pan (H)"
@@ -12784,7 +13286,7 @@ export default function XrayCalibrationWorkspace() {
                         setActiveRightPanel("tool");
                         setMobileControlsOpen(true);
                       }}
-                      className="inline-flex h-10 min-w-[68px] items-center justify-center gap-1 rounded-xl border border-slate-500 bg-slate-900/85 px-2 text-[10px] font-semibold text-slate-100 transition hover:bg-slate-800"
+                      className={`inline-flex h-10 min-w-[68px] items-center justify-center gap-1 px-2 text-[10px] font-semibold transition ${SOFT_RAISED_CLASS} text-slate-600`}
                       aria-label={`Buka tools, tool aktif ${activeToolLabel}`}
                       title={`Tool aktif: ${activeToolLabel}`}
                     >
@@ -12794,14 +13296,16 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 </div>
               </div>
-              <div className="absolute top-2 right-2 z-20 flex flex-col gap-1.5 rounded-md border border-slate-600/70 bg-slate-900/70 p-1 backdrop-blur sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3">
+              <div
+                className={`absolute top-2 right-2 z-20 flex flex-col gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 ${SOFT_FLOAT_SURFACE_CLASS}`}
+              >
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1.15)}
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-500/80 bg-slate-900/80 text-white transition hover:bg-slate-800"
+                  className={`inline-flex h-7 w-7 items-center justify-center transition ${SOFT_RAISED_CLASS} text-rose-500`}
                   aria-label="Zoom in"
                   title="Zoom in"
                 >
@@ -12813,7 +13317,7 @@ export default function XrayCalibrationWorkspace() {
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-500/80 bg-slate-900/80 text-white transition hover:bg-slate-800"
+                  className={`inline-flex h-7 w-7 items-center justify-center transition ${SOFT_RAISED_CLASS} text-rose-500`}
                   aria-label="Zoom out"
                   title="Zoom out"
                 >
@@ -12825,7 +13329,7 @@ export default function XrayCalibrationWorkspace() {
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
                   transition={{ duration: 0.16, ease: "easeOut" }}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-500/80 bg-slate-900/80 text-white transition hover:bg-slate-800"
+                  className={`inline-flex h-7 w-7 items-center justify-center transition ${SOFT_RAISED_CLASS} text-rose-500`}
                   aria-label="Fit to screen"
                   title="Fit to screen"
                 >
@@ -12877,21 +13381,21 @@ export default function XrayCalibrationWorkspace() {
             ) : null}
           </div>
           <div className="mt-2 hidden flex-wrap items-center gap-2 text-[11px] text-slate-600 sm:flex">
-            <span className="rounded bg-slate-100 px-2 py-0.5">
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
               Zoom {(view.scale * 100).toFixed(0)}%
             </span>
-            <span className="rounded bg-slate-100 px-2 py-0.5">
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
               {activeToolLabel}
             </span>
-            <span className="rounded bg-slate-100 px-2 py-0.5">
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
               {hasCalibration ? measurementUnit : "uncalibrated"}
             </span>
-            <span className="rounded bg-slate-100 px-2 py-0.5">
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
               Calib: {calibrationMode === "line" ? "Line" : "Zoom%"}
             </span>
-            <span className="rounded bg-slate-100 px-2 py-0.5">History</span>
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>History</span>
             {compareMode ? (
-              <span className="rounded bg-cyan-100 px-2 py-0.5 text-cyan-800">
+              <span className={`${SOFT_RAISED_CLASS} px-2 py-1 text-cyan-700`}>
                 Compare ON
               </span>
             ) : null}
