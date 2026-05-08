@@ -12,6 +12,8 @@ import {
   Crop,
   DraftingCompass,
   Download,
+  Eye,
+  EyeOff,
   Eraser,
   FlipHorizontal2,
   FlipVertical2,
@@ -62,7 +64,6 @@ import {
   LOCAL_IMPLANT_LIBRARY,
   LOCAL_IMPLANT_LIBRARY_TYPES,
 } from "../lib/digitalTemplating/implantLibrary";
-import { VIEWER_COLORS } from "../lib/digitalTemplating/viewerConstants";
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import LocalImplantLibraryPanel from "./LocalImplantLibraryPanel";
 import TemplateStoragePicker from "./TemplateStoragePicker";
@@ -119,6 +120,16 @@ const ANGLE_COLOR_OPTIONS = [
   "#3b82f6",
   "#8b5cf6",
   "#ec4899",
+];
+const PLANNING_GUIDE_COLOR_OPTIONS = [
+  "#38bdf8",
+  "#22c55e",
+  "#f97316",
+  "#f43f5e",
+  "#eab308",
+  "#a855f7",
+  "#14b8a6",
+  "#f59e0b",
 ];
 
 function clamp(value, min, max) {
@@ -905,6 +916,34 @@ function getLayerCorners(layer) {
   });
 }
 
+function getLayerControlPoints(layer) {
+  const size = getLayerDisplaySize(layer);
+  const halfW = size.width / 2;
+  const halfH = size.height / 2;
+  const rotateOffset = Math.max(30, Math.min(54, halfH * 0.24 + 18));
+  const points = [
+    { key: "tl", x: -halfW, y: -halfH, type: "corner" },
+    { key: "tm", x: 0, y: -halfH, type: "edge" },
+    { key: "tr", x: halfW, y: -halfH, type: "corner" },
+    { key: "mr", x: halfW, y: 0, type: "edge" },
+    { key: "br", x: halfW, y: halfH, type: "corner" },
+    { key: "bm", x: 0, y: halfH, type: "edge" },
+    { key: "bl", x: -halfW, y: halfH, type: "corner" },
+    { key: "ml", x: -halfW, y: 0, type: "edge" },
+    { key: "rotate", x: 0, y: halfH + rotateOffset, type: "rotate" },
+  ];
+
+  return points.map((point) => {
+    const rotated = rotateVector(point.x, point.y, layer.rotation);
+    return {
+      key: point.key,
+      type: point.type,
+      x: layer.centerX + rotated.x,
+      y: layer.centerY + rotated.y,
+    };
+  });
+}
+
 function distancePointToSegment(point, line) {
   const vx = line.x2 - line.x1;
   const vy = line.y2 - line.y1;
@@ -1047,6 +1086,8 @@ const ICON_COMPONENTS = {
   history: History,
   undo: Undo2,
   redo: Redo2,
+  eye: Eye,
+  eyeOff: EyeOff,
   angle: DraftingCompass,
   circle: CircleIcon,
   hka: Bone,
@@ -1103,6 +1144,33 @@ function IconButton({
       } disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
     >
       <Icon name={icon} />
+    </motion.button>
+  );
+}
+
+function LayerToolbarActionButton({
+  icon,
+  label,
+  onClick,
+  active = false,
+  className = "",
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      whileHover={BUTTON_HOVER}
+      whileTap={BUTTON_TAP}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-white transition ${
+        active
+          ? "border-cyan-400/80 bg-cyan-500/18 text-cyan-50"
+          : "border-slate-500/80 bg-slate-800/92 text-white hover:bg-slate-700/92"
+      } ${className}`}
+    >
+      <Icon name={icon} className="h-4 w-4" />
     </motion.button>
   );
 }
@@ -1346,6 +1414,8 @@ export default function XrayCalibrationWorkspace() {
   const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
     useState(null);
+  const [mobileLayerToolbarOpen, setMobileLayerToolbarOpen] = useState(false);
+  const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
     LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -1428,6 +1498,12 @@ export default function XrayCalibrationWorkspace() {
     setMobilePanelMode("workspace");
     setTool((prev) => (prev === "draw" ? MOBILE_IDLE_TOOL : prev));
   }, [isMobileViewport]);
+
+  useEffect(() => {
+    if (!selectedCutLayerId || !isMobileViewport) {
+      setMobileLayerToolbarOpen(false);
+    }
+  }, [isMobileViewport, selectedCutLayerId]);
 
   const shouldUseMobileOneShotTool = isMobileViewport && isCoarsePointer;
 
@@ -1528,6 +1604,22 @@ export default function XrayCalibrationWorkspace() {
       heightMm: mmPerPixel !== null ? layerHeight * mmPerPixel : null,
     };
   }, [mmPerPixel, modelHeight, modelWidth, selectedCutLayer]);
+  const getPlanningGuideAutoColor = useCallback((guide) => {
+    if (!guide) return "#38bdf8";
+    if (guide.kind === "valgusCut") {
+      return guide.side === "Left" ? "#f97316" : "#38bdf8";
+    }
+    if (guide.kind === "tibialSlope") {
+      return guide.posteriorSide === "Left" ? "#f43f5e" : "#14b8a6";
+    }
+    return guide.direction === "Varus" ? "#a855f7" : "#eab308";
+  }, []);
+  const selectedPlanningGuideColor = useMemo(
+    () =>
+      selectedPlanningGuide?.color ||
+      getPlanningGuideAutoColor(selectedPlanningGuide),
+    [getPlanningGuideAutoColor, selectedPlanningGuide],
+  );
   const selectedAngleMetrics = useMemo(() => {
     if (!selectedAngle) return null;
 
@@ -1578,9 +1670,23 @@ export default function XrayCalibrationWorkspace() {
   const focusLayerSettings = useCallback(
     (layerId) => {
       setSelectedCutLayerId(layerId);
+      setMobileLayerToolbarOpen(false);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
         setMobileControlsOpen(true);
+      }
+      setActiveRightPanel("tool");
+    },
+    [isMobileViewport],
+  );
+
+  const focusLayerCanvas = useCallback(
+    (layerId, { openPanel = false } = {}) => {
+      setSelectedCutLayerId(layerId);
+      setMobileLayerToolbarOpen(false);
+      setMobilePanelMode("workspace");
+      if (isMobileViewport) {
+        setMobileControlsOpen(openPanel);
       }
       setActiveRightPanel("tool");
     },
@@ -2101,6 +2207,32 @@ export default function XrayCalibrationWorkspace() {
     },
     [flipX, flipY, modelHeight, modelWidth, rotation, view],
   );
+
+  const selectedLayerToolbarAnchor = useMemo(() => {
+    if (!selectedCutLayer || !viewport.width || !viewport.height) return null;
+    const corners = getLayerCorners(selectedCutLayer).map((corner) =>
+      imageToScreenPoint(corner.x, corner.y),
+    );
+    const minX = Math.min(...corners.map((point) => point.x));
+    const maxX = Math.max(...corners.map((point) => point.x));
+    const minY = Math.min(...corners.map((point) => point.y));
+    const horizontalPadding = isMobileViewport ? 72 : 96;
+    const topOffset = isMobileViewport ? 44 : 62;
+    return {
+      centerX: clamp(
+        (minX + maxX) / 2,
+        horizontalPadding,
+        Math.max(horizontalPadding, viewport.width - horizontalPadding),
+      ),
+      topY: Math.max(10, minY - topOffset),
+    };
+  }, [
+    imageToScreenPoint,
+    isMobileViewport,
+    selectedCutLayer,
+    viewport.height,
+    viewport.width,
+  ]);
 
   const getMobileHandleAssistGeometry = useCallback(
     (line, handleKey) => {
@@ -3669,26 +3801,30 @@ export default function XrayCalibrationWorkspace() {
 
   const findCutLayerHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 12 / view.scale;
+      const thresholdInImage = (isCoarsePointer ? 22 : 14) / view.scale;
 
       for (let i = cutLayers.length - 1; i >= 0; i -= 1) {
         const layer = cutLayers[i];
-        const corners = getLayerCorners(layer);
+        const controlPoints = getLayerControlPoints(layer);
 
-        for (const corner of corners) {
+        for (const controlPoint of controlPoints) {
           const distance = Math.hypot(
-            imagePoint.x - corner.x,
-            imagePoint.y - corner.y,
+            imagePoint.x - controlPoint.x,
+            imagePoint.y - controlPoint.y,
           );
           if (distance <= thresholdInImage) {
-            return { layerId: layer.id, handleKey: corner.key };
+            return {
+              layerId: layer.id,
+              handleKey: controlPoint.key,
+              handleType: controlPoint.type,
+            };
           }
         }
       }
 
       return null;
     },
-    [cutLayers, view.scale],
+    [cutLayers, isCoarsePointer, view.scale],
   );
 
   const findCutLayerByPoint = useCallback(
@@ -4204,12 +4340,7 @@ export default function XrayCalibrationWorkspace() {
         guide.anchorEnd.x,
         guide.anchorEnd.y,
       );
-      const color =
-        guide.kind === "valgusCut"
-          ? VIEWER_COLORS.valgusCut
-          : guide.kind === "tibialSlope"
-            ? VIEWER_COLORS.tibialSlope
-            : VIEWER_COLORS.tibialCut;
+      const color = guide.color || getPlanningGuideAutoColor(guide);
 
       const geometry =
         guide.kind === "valgusCut"
@@ -4336,28 +4467,84 @@ export default function XrayCalibrationWorkspace() {
         : null;
     if (activeCutLayer) {
       const corners = getLayerCorners(activeCutLayer);
+      const controlPoints = getLayerControlPoints(activeCutLayer);
+      const edgePoints = controlPoints.filter((point) => point.type === "edge");
+      const rotatePoint = controlPoints.find((point) => point.key === "rotate");
       overlayCtx.save();
-      overlayCtx.fillStyle = "#10b981";
-      overlayCtx.strokeStyle = "#ecfeff";
-      overlayCtx.lineWidth = 1.5;
+      overlayCtx.strokeStyle = "#a855f7";
+      overlayCtx.lineWidth = 2.2;
+      overlayCtx.setLineDash([]);
+      overlayCtx.beginPath();
+      const firstCorner = imageToScreenPoint(corners[0].x, corners[0].y);
+      overlayCtx.moveTo(firstCorner.x, firstCorner.y);
+      for (let index = 1; index < corners.length; index += 1) {
+        const nextCorner = imageToScreenPoint(
+          corners[index].x,
+          corners[index].y,
+        );
+        overlayCtx.lineTo(nextCorner.x, nextCorner.y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.stroke();
+
+      overlayCtx.fillStyle = "#ffffff";
+      overlayCtx.strokeStyle = "#a855f7";
+      overlayCtx.lineWidth = 1.8;
       for (const corner of corners) {
         const screen = imageToScreenPoint(corner.x, corner.y);
         overlayCtx.beginPath();
-        overlayCtx.arc(
-          screen.x,
-          screen.y,
-          Math.max(4, 5 / Math.max(view.scale, 0.4)),
-          0,
-          Math.PI * 2,
-        );
+        overlayCtx.arc(screen.x, screen.y, 7.4, 0, Math.PI * 2);
         overlayCtx.fill();
         overlayCtx.stroke();
       }
+      for (const edgePoint of edgePoints) {
+        const screen = imageToScreenPoint(edgePoint.x, edgePoint.y);
+        overlayCtx.save();
+        overlayCtx.translate(screen.x, screen.y);
+        overlayCtx.rotate((activeCutLayer.rotation * Math.PI) / 180);
+        const isVertical = edgePoint.key === "ml" || edgePoint.key === "mr";
+        const width = isVertical ? 8 : 20;
+        const height = isVertical ? 20 : 8;
+        overlayCtx.beginPath();
+        overlayCtx.roundRect(-width / 2, -height / 2, width, height, 4);
+        overlayCtx.fill();
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
+      if (rotatePoint) {
+        const bottomMiddle = imageToScreenPoint(
+          controlPoints.find((point) => point.key === "bm").x,
+          controlPoints.find((point) => point.key === "bm").y,
+        );
+        const rotateScreen = imageToScreenPoint(rotatePoint.x, rotatePoint.y);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(bottomMiddle.x, bottomMiddle.y);
+        overlayCtx.lineTo(rotateScreen.x, rotateScreen.y - 16);
+        overlayCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.arc(rotateScreen.x, rotateScreen.y, 16, 0, Math.PI * 2);
+        overlayCtx.fill();
+        overlayCtx.stroke();
+        overlayCtx.save();
+        overlayCtx.translate(rotateScreen.x, rotateScreen.y);
+        overlayCtx.rotate(((activeCutLayer.rotation || 0) * Math.PI) / 180);
+        overlayCtx.strokeStyle = "#111827";
+        overlayCtx.lineWidth = 1.8;
+        overlayCtx.beginPath();
+        overlayCtx.arc(0, 0, 6.2, Math.PI * 0.15, Math.PI * 1.3);
+        overlayCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(4.5, -5.2);
+        overlayCtx.lineTo(7.2, -8);
+        overlayCtx.lineTo(7.6, -3.8);
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
       const maskScreenPoints = getLayerMaskScreenPoints(activeCutLayer);
       if (maskScreenPoints) {
-        overlayCtx.strokeStyle = getLayerPalette(activeCutLayer.id).border;
-        overlayCtx.lineWidth = 1.5;
-        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.strokeStyle = "rgba(168, 85, 247, 0.55)";
+        overlayCtx.lineWidth = 1.4;
+        overlayCtx.setLineDash([4, 4]);
         overlayCtx.beginPath();
         const firstPoint = imageToScreenPoint(
           maskScreenPoints[0].x,
@@ -4600,6 +4787,7 @@ export default function XrayCalibrationWorkspace() {
     getLineLabelText,
     getMobileHandleAssistGeometry,
     getMobilePlanningGuideHandleAssistGeometry,
+    getPlanningGuideAutoColor,
     getPlanningGuideLabelText,
     isLineLocked,
     measurementUnit,
@@ -5198,17 +5386,6 @@ export default function XrayCalibrationWorkspace() {
         }
       }
 
-      if (tool === "pan") {
-        interactionRef.current = {
-          mode: "pan",
-          startX: point.x,
-          startY: point.y,
-          startPanX: view.panX,
-          startPanY: view.panY,
-        };
-        return;
-      }
-
       if (tool === "cut") {
         const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
 
@@ -5274,36 +5451,60 @@ export default function XrayCalibrationWorkspace() {
           (layer) => layer.id === hitCutLayerHandle.layerId,
         );
         if (!targetLayer) return;
-        focusLayerSettings(targetLayer.id);
+        focusLayerCanvas(targetLayer.id);
         setSelectedLineId(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
+        setSelectedPlanningGuideId(null);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (targetLayer.lockScale) {
+          setNotice("Layer terkunci. Buka lock dulu untuk resize atau rotate.");
+          return;
+        }
         setHistoryPaused(true);
+        if (hitCutLayerHandle.handleKey === "rotate") {
+          const localPoint = toLayerLocal(imagePoint, targetLayer);
+          interactionRef.current = {
+            mode: "rotate-cut-layer",
+            layerId: targetLayer.id,
+            startPointerAngle: Math.atan2(localPoint.y, localPoint.x),
+            startRotation: Number(targetLayer.rotation || 0),
+          };
+          return;
+        }
         interactionRef.current = {
           mode: "resize-cut-layer",
           layerId: targetLayer.id,
           centerX: targetLayer.centerX,
           centerY: targetLayer.centerY,
           rotation: targetLayer.rotation,
+          handleKey: hitCutLayerHandle.handleKey,
+          startDisplayWidth: Number(targetLayer.displayWidth || 16),
+          startDisplayHeight: Number(targetLayer.displayHeight || 16),
         };
         return;
       }
 
       const hitCutLayerId = findCutLayerByPoint(imagePoint);
-      if (
-        hitCutLayerId !== null &&
-        (tool === "draw" || selectedCutLayerId === hitCutLayerId)
-      ) {
+      if (hitCutLayerId !== null) {
         const targetLayer = cutLayers.find(
           (layer) => layer.id === hitCutLayerId,
         );
         if (!targetLayer) return;
-        focusLayerSettings(hitCutLayerId);
+        focusLayerCanvas(hitCutLayerId);
         setSelectedLineId(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
+        setSelectedPlanningGuideId(null);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (targetLayer.lockScale) {
+          setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+          return;
+        }
         setHistoryPaused(true);
         interactionRef.current = {
           mode: "move-cut-layer",
@@ -5323,7 +5524,10 @@ export default function XrayCalibrationWorkspace() {
         );
         if (!targetGuide) return;
         if (isTouchLikePointer) {
-          focusPlanningGuideCanvas(targetGuide.id);
+          focusPlanningGuideCanvas(targetGuide.id, {
+            openPanel: true,
+            showNotice: true,
+          });
           clearMobileHandleAssist();
         } else {
           selectPlanningGuideForEdit(targetGuide.id);
@@ -5333,6 +5537,7 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        clearMobilePlanningGuideHandleAssist();
         setHistoryPaused(true);
         interactionRef.current = {
           mode: "move-planning-guide-label",
@@ -5363,6 +5568,7 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        clearMobilePlanningGuideHandleAssist();
         const assistGeometry = getMobilePlanningGuideHandleAssistGeometry(
           targetGuide,
           assistPlanningGuideHandleHit.handleKey,
@@ -5412,6 +5618,7 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        clearMobilePlanningGuideHandleAssist();
         interactionRef.current = {
           mode: "move-planning-guide-handle",
           guideId: targetGuide.id,
@@ -5427,12 +5634,12 @@ export default function XrayCalibrationWorkspace() {
         );
         if (!targetGuide) return;
         if (isTouchLikePointer) {
-          focusPlanningGuideCanvas(targetGuide.id);
+          focusPlanningGuideCanvas(targetGuide.id, {
+            openPanel: true,
+            showNotice: true,
+          });
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
-          if (isMobileViewport) {
-            setMobileControlsOpen(false);
-          }
         } else {
           selectPlanningGuideForEdit(targetGuide.id);
         }
@@ -5441,6 +5648,7 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        clearMobilePlanningGuideHandleAssist();
         interactionRef.current = {
           mode: "move-planning-guide",
           guideId: targetGuide.id,
@@ -5457,18 +5665,22 @@ export default function XrayCalibrationWorkspace() {
       }
 
       const hitLineLabelId = findLineLabelByPoint(point);
-      if (tool === "draw" && hitLineLabelId !== null) {
+      if (hitLineLabelId !== null) {
         const targetLine = lines.find((line) => line.id === hitLineLabelId);
         if (!targetLine) return;
         if (targetLine.type) {
           setLinePreset(targetLine.type);
         }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
         setSelectedLineId(targetLine.id);
         setSelectedPlanningGuideId(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
         if (isLineLocked(targetLine.id)) {
           setNotice(
             "Garis ini terkunci. Buka lock dulu untuk memindahkan label.",
@@ -5487,6 +5699,88 @@ export default function XrayCalibrationWorkspace() {
           originOffsetY: Number.isFinite(targetLine.labelOffsetY)
             ? targetLine.labelOffsetY
             : DEFAULT_LINE_LABEL_OFFSET_Y,
+        };
+        return;
+      }
+
+      const genericHitHandle = findClosestHandle(imagePoint);
+      if (genericHitHandle) {
+        const targetLine = lines.find(
+          (line) => line.id === genericHitHandle.lineId,
+        );
+        if (targetLine?.type) {
+          setLinePreset(targetLine.type);
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedLineId(genericHitHandle.lineId);
+        setSelectedPlanningGuideId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        clearMobilePlanningGuideHandleAssist();
+        if (isLineLocked(genericHitHandle.lineId)) {
+          setNotice(
+            "Garis ini terkunci. Buka lock dulu untuk mengubah ukuran/posisi.",
+          );
+          return;
+        }
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-handle",
+          lineId: genericHitHandle.lineId,
+          handleKey: genericHitHandle.handleKey,
+        };
+        return;
+      }
+
+      const genericHitLineId = findClosestLineId(imagePoint);
+      if (genericHitLineId !== null) {
+        const targetLine = lines.find((line) => line.id === genericHitLineId);
+        if (!targetLine) return;
+        if (targetLine.type) {
+          setLinePreset(targetLine.type);
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedLineId(genericHitLineId);
+        setSelectedPlanningGuideId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (isLineLocked(genericHitLineId)) {
+          setNotice(
+            "Garis ini terkunci. Buka lock dulu untuk mengubah ukuran/posisi.",
+          );
+          return;
+        }
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-line",
+          lineId: genericHitLineId,
+          startImageX: imagePoint.x,
+          startImageY: imagePoint.y,
+          origin: {
+            x1: targetLine.x1,
+            y1: targetLine.y1,
+            x2: targetLine.x2,
+            y2: targetLine.y2,
+          },
+        };
+        return;
+      }
+
+      if (tool === "pan") {
+        interactionRef.current = {
+          mode: "pan",
+          startX: point.x,
+          startY: point.y,
+          startPanX: view.panX,
+          startPanY: view.panY,
         };
         return;
       }
@@ -5659,67 +5953,6 @@ export default function XrayCalibrationWorkspace() {
 
       if (tool !== "draw") return;
 
-      const hitHandle = findClosestHandle(imagePoint);
-      if (hitHandle) {
-        const targetLine = lines.find((line) => line.id === hitHandle.lineId);
-        if (targetLine?.type) {
-          setLinePreset(targetLine.type);
-        }
-        setSelectedLineId(hitHandle.lineId);
-        setSelectedAngleId(null);
-        setSelectedCircleId(null);
-        setSelectedHkaId(null);
-        setSelectedCutLayerId(null);
-        if (isLineLocked(hitHandle.lineId)) {
-          setNotice(
-            "Garis ini terkunci. Buka lock dulu untuk mengubah ukuran/posisi.",
-          );
-          return;
-        }
-        setHistoryPaused(true);
-        interactionRef.current = {
-          mode: "move-handle",
-          lineId: hitHandle.lineId,
-          handleKey: hitHandle.handleKey,
-        };
-        return;
-      }
-
-      const hitLineId = findClosestLineId(imagePoint);
-      if (hitLineId !== null) {
-        const targetLine = lines.find((line) => line.id === hitLineId);
-        if (!targetLine) return;
-        if (targetLine.type) {
-          setLinePreset(targetLine.type);
-        }
-
-        setSelectedLineId(hitLineId);
-        setSelectedAngleId(null);
-        setSelectedCircleId(null);
-        setSelectedHkaId(null);
-        setSelectedCutLayerId(null);
-        if (isLineLocked(hitLineId)) {
-          setNotice(
-            "Garis ini terkunci. Buka lock dulu untuk mengubah ukuran/posisi.",
-          );
-          return;
-        }
-        setHistoryPaused(true);
-        interactionRef.current = {
-          mode: "move-line",
-          lineId: hitLineId,
-          startImageX: imagePoint.x,
-          startImageY: imagePoint.y,
-          origin: {
-            x1: targetLine.x1,
-            y1: targetLine.y1,
-            x2: targetLine.x2,
-            y2: targetLine.y2,
-          },
-        };
-        return;
-      }
-
       setSelectedLineId(null);
       setSelectedAngleId(null);
       setSelectedCircleId(null);
@@ -5765,7 +5998,7 @@ export default function XrayCalibrationWorkspace() {
       findPlanningGuideLabelByPoint,
       findCutLayerByPoint,
       findCutLayerHandle,
-      focusLayerSettings,
+      focusLayerCanvas,
       focusPlanningGuideCanvas,
       getLocalPoint,
       image,
@@ -5780,7 +6013,6 @@ export default function XrayCalibrationWorkspace() {
       planningGuides,
       linePreset,
       selectPlanningGuideForEdit,
-      selectedCutLayerId,
       setHistoryPaused,
       screenToImagePoint,
       shouldUseMobileOneShotTool,
@@ -5886,7 +6118,9 @@ export default function XrayCalibrationWorkspace() {
         setCutLayers((prev) =>
           prev.map((layer) =>
             layer.id === layerId
-              ? { ...layer, centerX: nextCenterX, centerY: nextCenterY }
+              ? layer.lockScale
+                ? layer
+                : { ...layer, centerX: nextCenterX, centerY: nextCenterY }
               : layer,
           ),
         );
@@ -5977,6 +6211,9 @@ export default function XrayCalibrationWorkspace() {
           centerX,
           centerY,
           rotation: layerRotation,
+          handleKey,
+          startDisplayWidth = 16,
+          startDisplayHeight = 16,
         } = interactionRef.current;
         const nextImagePoint = screenToImagePoint(point.x, point.y);
         const dx = nextImagePoint.x - centerX;
@@ -5986,16 +6223,81 @@ export default function XrayCalibrationWorkspace() {
         const sin = Math.sin(rad);
         const localX = dx * cos + dy * sin;
         const localY = -dx * sin + dy * cos;
-        const nextDisplayWidth = clamp(
-          Math.abs(localX) * 2,
-          16,
-          modelWidth * 2,
-        );
-        const nextDisplayHeight = clamp(
-          Math.abs(localY) * 2,
-          16,
-          modelHeight * 2,
-        );
+        const halfStartW = startDisplayWidth / 2;
+        const halfStartH = startDisplayHeight / 2;
+        let nextDisplayWidth = startDisplayWidth;
+        let nextDisplayHeight = startDisplayHeight;
+        let nextCenterX = centerX;
+        let nextCenterY = centerY;
+
+        if (
+          handleKey === "tl" ||
+          handleKey === "tr" ||
+          handleKey === "br" ||
+          handleKey === "bl"
+        ) {
+          const signX = handleKey === "tr" || handleKey === "br" ? 1 : -1;
+          const signY = handleKey === "br" || handleKey === "bl" ? 1 : -1;
+          const fixedLocalX = -signX * halfStartW;
+          const fixedLocalY = -signY * halfStartH;
+          const candidateWidth = Math.max(16, Math.abs(localX - fixedLocalX));
+          const candidateHeight = Math.max(16, Math.abs(localY - fixedLocalY));
+          const scale = Math.max(
+            candidateWidth / Math.max(1, startDisplayWidth),
+            candidateHeight / Math.max(1, startDisplayHeight),
+          );
+
+          nextDisplayWidth = clamp(
+            scale * startDisplayWidth,
+            16,
+            modelWidth * 2,
+          );
+          nextDisplayHeight = clamp(
+            scale * startDisplayHeight,
+            16,
+            modelHeight * 2,
+          );
+
+          const draggedLocalX = fixedLocalX + signX * nextDisplayWidth;
+          const draggedLocalY = fixedLocalY + signY * nextDisplayHeight;
+          const midpointLocal = {
+            x: (fixedLocalX + draggedLocalX) / 2,
+            y: (fixedLocalY + draggedLocalY) / 2,
+          };
+          const centerOffset = rotateVector(
+            midpointLocal.x,
+            midpointLocal.y,
+            layerRotation,
+          );
+          nextCenterX = centerX + centerOffset.x;
+          nextCenterY = centerY + centerOffset.y;
+        } else if (handleKey === "ml" || handleKey === "mr") {
+          const signX = handleKey === "mr" ? 1 : -1;
+          const fixedLocalX = -signX * halfStartW;
+          nextDisplayWidth = clamp(
+            Math.max(16, Math.abs(localX - fixedLocalX)),
+            16,
+            modelWidth * 2,
+          );
+          const draggedLocalX = fixedLocalX + signX * nextDisplayWidth;
+          const midpointLocalX = (fixedLocalX + draggedLocalX) / 2;
+          const centerOffset = rotateVector(midpointLocalX, 0, layerRotation);
+          nextCenterX = centerX + centerOffset.x;
+          nextCenterY = centerY + centerOffset.y;
+        } else if (handleKey === "tm" || handleKey === "bm") {
+          const signY = handleKey === "bm" ? 1 : -1;
+          const fixedLocalY = -signY * halfStartH;
+          nextDisplayHeight = clamp(
+            Math.max(16, Math.abs(localY - fixedLocalY)),
+            16,
+            modelHeight * 2,
+          );
+          const draggedLocalY = fixedLocalY + signY * nextDisplayHeight;
+          const midpointLocalY = (fixedLocalY + draggedLocalY) / 2;
+          const centerOffset = rotateVector(0, midpointLocalY, layerRotation);
+          nextCenterX = centerX + centerOffset.x;
+          nextCenterY = centerY + centerOffset.y;
+        }
 
         setCutLayers((prev) =>
           prev.map((layer) =>
@@ -6004,8 +6306,36 @@ export default function XrayCalibrationWorkspace() {
                 ? layer
                 : {
                     ...layer,
+                    centerX: nextCenterX,
+                    centerY: nextCenterY,
                     displayWidth: nextDisplayWidth,
                     displayHeight: nextDisplayHeight,
+                  }
+              : layer,
+          ),
+        );
+        return;
+      }
+
+      if (interactionRef.current.mode === "rotate-cut-layer") {
+        const { layerId, startPointerAngle, startRotation } =
+          interactionRef.current;
+        const targetLayer =
+          cutLayers.find((layer) => layer.id === layerId) || null;
+        if (!targetLayer) return;
+        const nextImagePoint = screenToImagePoint(point.x, point.y);
+        const localPoint = toLayerLocal(nextImagePoint, targetLayer);
+        const nextPointerAngle = Math.atan2(localPoint.y, localPoint.x);
+        const deltaDeg =
+          ((nextPointerAngle - startPointerAngle) * 180) / Math.PI;
+        setCutLayers((prev) =>
+          prev.map((layer) =>
+            layer.id === layerId
+              ? layer.lockScale
+                ? layer
+                : {
+                    ...layer,
+                    rotation: (((startRotation + deltaDeg) % 360) + 360) % 360,
                   }
               : layer,
           ),
@@ -6171,6 +6501,7 @@ export default function XrayCalibrationWorkspace() {
       angles,
       clampToImageBounds,
       circles,
+      cutLayers,
       draftCut,
       getLocalPoint,
       image,
@@ -6815,6 +7146,35 @@ export default function XrayCalibrationWorkspace() {
     setNotice("Urutan layer diperbarui.");
   }, []);
 
+  const duplicateSelectedCutLayer = useCallback(() => {
+    if (!selectedCutLayer) {
+      setNotice("Pilih layer dulu untuk diduplikasi.");
+      return;
+    }
+    const nextLayer = {
+      ...selectedCutLayer,
+      id: nextCutLayerIdRef.current,
+      name: `${selectedCutLayer.name || `Layer #${selectedCutLayer.id}`} Copy`,
+      centerX: Number(selectedCutLayer.centerX || 0) + 18,
+      centerY: Number(selectedCutLayer.centerY || 0) + 18,
+    };
+    nextCutLayerIdRef.current += 1;
+    setCutLayers((prev) => [...prev, nextLayer]);
+    setSelectedCutLayerId(nextLayer.id);
+    setNotice(`Layer #${selectedCutLayer.id} berhasil diduplikasi.`);
+  }, [selectedCutLayer]);
+
+  const removeSelectedCutLayer = useCallback(() => {
+    if (!selectedCutLayer) {
+      setNotice("Pilih layer dulu untuk dihapus.");
+      return;
+    }
+    const deletedLayerId = selectedCutLayer.id;
+    setCutLayers((prev) => prev.filter((layer) => layer.id !== deletedLayerId));
+    setSelectedCutLayerId(null);
+    setNotice(`Layer #${deletedLayerId} dihapus.`);
+  }, [selectedCutLayer]);
+
   const resetCutArea = useCallback(() => {
     setDraftCut(null);
     setCutLayers([]);
@@ -7436,7 +7796,7 @@ export default function XrayCalibrationWorkspace() {
               : guide.anchorEnd;
 
           if (planningGuideMode === "valgusCut") {
-            return {
+            const nextGuide = {
               ...guide,
               kind: "valgusCut",
               anchorStart,
@@ -7449,10 +7809,13 @@ export default function XrayCalibrationWorkspace() {
               labelOffsetY: planningGuideLabelOffsetY,
               labelOpacity: planningGuideLabelOpacity,
             };
+            return guide.customColor
+              ? nextGuide
+              : { ...nextGuide, color: getPlanningGuideAutoColor(nextGuide) };
           }
 
           if (planningGuideMode === "tibialSlope") {
-            return {
+            const nextGuide = {
               ...guide,
               kind: "tibialSlope",
               anchorStart,
@@ -7465,9 +7828,12 @@ export default function XrayCalibrationWorkspace() {
               labelOffsetY: planningGuideLabelOffsetY,
               labelOpacity: planningGuideLabelOpacity,
             };
+            return guide.customColor
+              ? nextGuide
+              : { ...nextGuide, color: getPlanningGuideAutoColor(nextGuide) };
           }
 
-          return {
+          const nextGuide = {
             ...guide,
             kind: "tibialCut",
             anchorStart,
@@ -7480,6 +7846,9 @@ export default function XrayCalibrationWorkspace() {
             labelOffsetY: planningGuideLabelOffsetY,
             labelOpacity: planningGuideLabelOpacity,
           };
+          return guide.customColor
+            ? nextGuide
+            : { ...nextGuide, color: getPlanningGuideAutoColor(nextGuide) };
         }),
       );
 
@@ -7494,6 +7863,7 @@ export default function XrayCalibrationWorkspace() {
       planningGuideLabelOffsetY,
       planningGuideLabelOpacity,
       planningGuideMode,
+      getPlanningGuideAutoColor,
       selectedLine,
       selectedPlanningGuide,
       tibialCutAngleDeg,
@@ -7583,9 +7953,11 @@ export default function XrayCalibrationWorkspace() {
         labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
+        customColor: false,
       };
+      nextGuide.color = getPlanningGuideAutoColor(nextGuide);
       setPlanningGuides((prev) => [...prev, nextGuide]);
-      setSelectedPlanningGuideId(nextGuide.id);
+      focusPlanningGuideCanvas(nextGuide.id, { openPanel: false });
       setNotice(`Distal cut guide dibuat dari Line #${selectedLine.id}.`);
       return;
     }
@@ -7604,9 +7976,11 @@ export default function XrayCalibrationWorkspace() {
         labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
+        customColor: false,
       };
+      nextGuide.color = getPlanningGuideAutoColor(nextGuide);
       setPlanningGuides((prev) => [...prev, nextGuide]);
-      setSelectedPlanningGuideId(nextGuide.id);
+      focusPlanningGuideCanvas(nextGuide.id, { openPanel: false });
       setNotice(`Tibial slope guide dibuat dari Line #${selectedLine.id}.`);
       return;
     }
@@ -7624,11 +7998,15 @@ export default function XrayCalibrationWorkspace() {
       labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
       labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
       labelOpacity: DEFAULT_LABEL_OPACITY,
+      customColor: false,
     };
+    nextGuide.color = getPlanningGuideAutoColor(nextGuide);
     setPlanningGuides((prev) => [...prev, nextGuide]);
-    setSelectedPlanningGuideId(nextGuide.id);
+    focusPlanningGuideCanvas(nextGuide.id, { openPanel: false });
     setNotice(`Tibial cut guide dibuat dari Line #${selectedLine.id}.`);
   }, [
+    focusPlanningGuideCanvas,
+    getPlanningGuideAutoColor,
     planningGuideMode,
     selectedLine,
     tibialCutAngleDeg,
@@ -11366,11 +11744,74 @@ export default function XrayCalibrationWorkspace() {
                           Lepas
                         </button>
                       </div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-amber-800">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{
+                            backgroundColor: selectedPlanningGuideColor,
+                          }}
+                        />
+                        <span className="truncate">
+                          {selectedPlanningGuide.kind === "valgusCut"
+                            ? `Distal Cut | ${selectedPlanningGuide.side}`
+                            : selectedPlanningGuide.kind === "tibialSlope"
+                              ? `Tibial Slope | ${selectedPlanningGuide.posteriorSide}`
+                              : `Tibial Cut | ${selectedPlanningGuide.direction}`}
+                        </span>
+                      </div>
                       <div className="mt-0.5 text-[10px] text-amber-700">
                         Anchor dan label bisa di-drag langsung di canvas.
                         Gunakan sync bila anchor mau ikut line baru.
                       </div>
                       <div className="mt-1.5 grid gap-1.5">
+                        <div className="rounded border border-amber-200 bg-amber-50/50 px-2 py-1.5">
+                          <div className="mb-1 text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
+                            Line Color
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {PLANNING_GUIDE_COLOR_OPTIONS.map((color) => (
+                              <ColorSwatchButton
+                                key={color}
+                                color={color}
+                                active={selectedPlanningGuideColor === color}
+                                label={`Warna guide ${color}`}
+                                onClick={() =>
+                                  setPlanningGuides((prev) =>
+                                    prev.map((guide) =>
+                                      guide.id === selectedPlanningGuide.id
+                                        ? {
+                                            ...guide,
+                                            color,
+                                            customColor: true,
+                                          }
+                                        : guide,
+                                    ),
+                                  )
+                                }
+                              />
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPlanningGuides((prev) =>
+                                  prev.map((guide) =>
+                                    guide.id === selectedPlanningGuide.id
+                                      ? {
+                                          ...guide,
+                                          color:
+                                            getPlanningGuideAutoColor(guide),
+                                          customColor: false,
+                                        }
+                                      : guide,
+                                  ),
+                                )
+                              }
+                              className="rounded border border-amber-300 bg-white px-2 py-1 text-[10px] text-amber-900"
+                            >
+                              Auto
+                            </button>
+                          </div>
+                        </div>
                         <label className="text-[10px] text-slate-600">
                           Label X
                           <input
@@ -11709,6 +12150,8 @@ export default function XrayCalibrationWorkspace() {
                             );
                             const isGuideSelected =
                               row.id === selectedPlanningGuideId;
+                            const guideColor =
+                              guide?.color || getPlanningGuideAutoColor(guide);
                             return (
                               <motion.div
                                 layout
@@ -11727,8 +12170,14 @@ export default function XrayCalibrationWorkspace() {
                                     }
                                     className="min-w-0 flex-1 text-left"
                                   >
-                                    <div className="truncate font-medium text-amber-950">
-                                      {row.label}
+                                    <div className="flex items-center gap-1.5 truncate font-medium text-amber-950">
+                                      <span
+                                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                        style={{ backgroundColor: guideColor }}
+                                      />
+                                      <span className="truncate">
+                                        {row.label}
+                                      </span>
                                     </div>
                                     <div className="text-[10px] text-amber-700">
                                       {row.meta}
@@ -12070,7 +12519,186 @@ export default function XrayCalibrationWorkspace() {
               ref={containerRef}
               className="relative h-[calc(100dvh-108px)] min-h-[460px] w-full overflow-hidden bg-slate-950/95 sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-156px)]"
             >
-              <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-20 px-2 lg:hidden">
+              {selectedCutLayer && selectedLayerToolbarAnchor ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                  transition={PANEL_SPRING}
+                  className="absolute z-30"
+                  style={{
+                    left: selectedLayerToolbarAnchor.centerX,
+                    top: selectedLayerToolbarAnchor.topY,
+                    transform: "translateX(-50%)",
+                  }}
+                >
+                  {isMobileViewport ? (
+                    <div className="max-w-[calc(100vw-20px)]">
+                      <div className="flex items-center gap-1 rounded-full border border-slate-600/80 bg-slate-900/92 px-1.5 py-1 text-white shadow-2xl backdrop-blur">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            focusLayerSettings(selectedCutLayer.id)
+                          }
+                          className={`flex min-w-0 items-center rounded-full bg-slate-800/90 py-1 pl-1.5 text-left transition hover:bg-slate-700/90 ${
+                            showLayerToolbarName ? "gap-1.5 pr-2" : "pr-1.5"
+                          }`}
+                          aria-label="Buka pengaturan layer"
+                          title="Buka pengaturan layer"
+                        >
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white shadow-sm">
+                            <Bone className="h-4 w-4" strokeWidth={2.2} />
+                          </span>
+                          {showLayerToolbarName ? (
+                            <span className="max-w-[88px] truncate text-[11px] leading-none font-semibold">
+                              {selectedCutLayer.name ||
+                                `Layer #${selectedCutLayer.id}`}
+                            </span>
+                          ) : null}
+                        </button>
+                        <LayerToolbarActionButton
+                          icon={mobileLayerToolbarOpen ? "close" : "menu"}
+                          label={
+                            mobileLayerToolbarOpen
+                              ? "Tutup aksi layer"
+                              : "Buka aksi layer"
+                          }
+                          onClick={() =>
+                            setMobileLayerToolbarOpen((prev) => !prev)
+                          }
+                          active={mobileLayerToolbarOpen}
+                        />
+                      </div>
+                      <AnimatePresence>
+                        {mobileLayerToolbarOpen ? (
+                          <motion.div
+                            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                            transition={PANEL_SPRING}
+                            className="mt-2 flex items-center justify-center gap-1 rounded-2xl border border-slate-600/80 bg-slate-900/92 px-2 py-1.5 shadow-2xl backdrop-blur"
+                          >
+                            <LayerToolbarActionButton
+                              icon={showLayerToolbarName ? "eyeOff" : "eye"}
+                              label={
+                                showLayerToolbarName
+                                  ? "Sembunyikan nama layer"
+                                  : "Tampilkan nama layer"
+                              }
+                              onClick={() =>
+                                setShowLayerToolbarName((prev) => !prev)
+                              }
+                              active={!showLayerToolbarName}
+                            />
+                            <LayerToolbarActionButton
+                              icon={
+                                selectedCutLayer.lockScale ? "lock" : "unlock"
+                              }
+                              label={
+                                selectedCutLayer.lockScale
+                                  ? "Unlock layer"
+                                  : "Lock layer"
+                              }
+                              onClick={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    lockScale: !item.lockScale,
+                                  }),
+                                )
+                              }
+                              active={selectedCutLayer.lockScale}
+                            />
+                            <LayerToolbarActionButton
+                              icon="plus"
+                              label="Duplicate layer"
+                              onClick={duplicateSelectedCutLayer}
+                            />
+                            <LayerToolbarActionButton
+                              icon="menu"
+                              label="Buka layer settings"
+                              onClick={() =>
+                                focusLayerSettings(selectedCutLayer.id)
+                              }
+                            />
+                            <LayerToolbarActionButton
+                              icon="trash"
+                              label="Hapus layer"
+                              onClick={removeSelectedCutLayer}
+                              className="border-rose-500/70 text-rose-100 hover:bg-rose-500/18"
+                            />
+                          </motion.div>
+                        ) : null}
+                      </AnimatePresence>
+                    </div>
+                  ) : (
+                    <div className="flex max-w-[calc(100vw-28px)] items-center gap-1 rounded-full border border-slate-600/80 bg-slate-900/92 px-2 py-1.5 text-white shadow-2xl backdrop-blur">
+                      <button
+                        type="button"
+                        onClick={() => focusLayerSettings(selectedCutLayer.id)}
+                        className={`mr-1 flex min-w-0 items-center rounded-full bg-slate-800/90 py-1 pl-1.5 text-left transition hover:bg-slate-700/90 ${
+                          showLayerToolbarName ? "gap-2 pr-2" : "pr-1.5"
+                        }`}
+                        aria-label="Buka pengaturan layer"
+                        title="Buka pengaturan layer"
+                      >
+                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white shadow-sm">
+                          <Bone className="h-4 w-4" strokeWidth={2.2} />
+                        </span>
+                        {showLayerToolbarName ? (
+                          <span className="max-w-[104px] truncate text-xs font-semibold">
+                            {selectedCutLayer.name ||
+                              `Layer #${selectedCutLayer.id}`}
+                          </span>
+                        ) : null}
+                      </button>
+                      <LayerToolbarActionButton
+                        icon={showLayerToolbarName ? "eyeOff" : "eye"}
+                        label={
+                          showLayerToolbarName
+                            ? "Sembunyikan nama layer"
+                            : "Tampilkan nama layer"
+                        }
+                        onClick={() => setShowLayerToolbarName((prev) => !prev)}
+                        active={!showLayerToolbarName}
+                      />
+                      <LayerToolbarActionButton
+                        icon={selectedCutLayer.lockScale ? "lock" : "unlock"}
+                        label={
+                          selectedCutLayer.lockScale
+                            ? "Unlock layer"
+                            : "Lock layer"
+                        }
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            lockScale: !item.lockScale,
+                          }))
+                        }
+                        active={selectedCutLayer.lockScale}
+                      />
+                      <LayerToolbarActionButton
+                        icon="plus"
+                        label="Duplicate layer"
+                        onClick={duplicateSelectedCutLayer}
+                      />
+                      <LayerToolbarActionButton
+                        icon="trash"
+                        label="Hapus layer"
+                        onClick={removeSelectedCutLayer}
+                        className="border-rose-500/70 text-rose-100 hover:bg-rose-500/18"
+                      />
+                      <LayerToolbarActionButton
+                        icon="menu"
+                        label="Buka layer settings"
+                        onClick={() => focusLayerSettings(selectedCutLayer.id)}
+                      />
+                    </div>
+                  )}
+                </motion.div>
+              ) : null}
+              <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-20 px-2 lg:hidden">
                 <div className="flex items-center gap-2">
                   <div className="grid flex-1 grid-cols-4 rounded-2xl border border-slate-600/70 bg-slate-900/82 p-1 shadow-xl backdrop-blur">
                     {[
