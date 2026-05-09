@@ -99,6 +99,7 @@ const SIDEBAR_TAB_GRID_CLASS =
 const BUTTON_HOVER = { scale: 1.03, y: -1 };
 const BUTTON_TAP = { scale: 0.97 };
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
+const MOBILE_PANEL_TRANSITION = { duration: 0.12, ease: "easeOut" };
 const SOFT_SURFACE_CLASS =
   "rounded-[24px] border border-white/78 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] shadow-[10px_10px_22px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.34)]";
 const SOFT_RAISED_CLASS =
@@ -1355,6 +1356,8 @@ function CompactSliderField({
   const knobRef = useRef(null);
   const [isKnobDragging, setIsKnobDragging] = useState(false);
   const [canUseMobilePreview, setCanUseMobilePreview] = useState(false);
+  const [isPreviewOverlayForced, setIsPreviewOverlayForced] = useState(false);
+  const previewOverlayTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1367,6 +1370,31 @@ function CompactSliderField({
     mediaQuery.addEventListener("change", update);
     return () => mediaQuery.removeEventListener("change", update);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (previewOverlayTimeoutRef.current !== null) {
+        window.clearTimeout(previewOverlayTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const forcePreviewOverlay = useCallback(
+    (durationMs = 120) => {
+      if (!canUseMobilePreview || typeof window === "undefined") return;
+      if (previewOverlayTimeoutRef.current !== null) {
+        window.clearTimeout(previewOverlayTimeoutRef.current);
+      }
+      setMobilePanelPreview(true, durationMs);
+      setIsPreviewOverlayForced(true);
+      previewOverlayTimeoutRef.current = window.setTimeout(() => {
+        setIsPreviewOverlayForced(false);
+        previewOverlayTimeoutRef.current = null;
+      }, durationMs);
+    },
+    [canUseMobilePreview],
+  );
 
   const emitValueChange = useCallback(
     (nextValue) => {
@@ -1436,10 +1464,29 @@ function CompactSliderField({
   const knobDotRadius = 18;
   const knobDotX = 44 + Math.cos(knobRad) * knobDotRadius;
   const knobDotY = 44 + Math.sin(knobRad) * knobDotRadius;
-  const showPreviewOverlay = canUseMobilePreview && isKnobDragging;
+  const showPreviewOverlay =
+    canUseMobilePreview && (isKnobDragging || isPreviewOverlayForced);
+
+  const handleStepDecrease = useCallback(() => {
+    if (disabled) return;
+    onDecrease?.();
+    forcePreviewOverlay();
+  }, [disabled, forcePreviewOverlay, onDecrease]);
+
+  const handleStepIncrease = useCallback(() => {
+    if (disabled) return;
+    onIncrease?.();
+    forcePreviewOverlay();
+  }, [disabled, forcePreviewOverlay, onIncrease]);
 
   const controlContent = (
-    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2.5`}>
+    <div
+      className={`px-3 py-2.5 ${
+        showPreviewOverlay
+          ? "rounded-[24px] border border-white/20 bg-[linear-gradient(180deg,rgba(248,250,252,0.34)_0%,rgba(237,242,247,0.26)_100%)] shadow-[0_10px_24px_rgba(15,23,42,0.16)] backdrop-blur-xl"
+          : SOFT_SURFACE_CLASS
+      }`}
+    >
       <div className="flex items-center justify-between gap-2 text-[12px] text-slate-700">
         <span className="font-medium">{label}</span>
         <span className="text-slate-500">{valueText}</span>
@@ -1450,14 +1497,14 @@ function CompactSliderField({
             <IconButton
               icon={decreaseIcon}
               label={`${label} kurang`}
-              onClick={onDecrease}
+              onClick={handleStepDecrease}
               disabled={disabled}
               className="h-10 w-10 shrink-0"
             />
             <IconButton
               icon={increaseIcon}
               label={`${label} tambah`}
-              onClick={onIncrease}
+              onClick={handleStepIncrease}
               disabled={disabled}
               className="h-10 w-10 shrink-0"
             />
@@ -1527,7 +1574,7 @@ function CompactSliderField({
           <IconButton
             icon={decreaseIcon}
             label={`${label} kurang`}
-            onClick={onDecrease}
+            onClick={handleStepDecrease}
             disabled={disabled}
             className="h-10 w-10 shrink-0"
           />
@@ -1546,7 +1593,7 @@ function CompactSliderField({
           <IconButton
             icon={increaseIcon}
             label={`${label} tambah`}
-            onClick={onIncrease}
+            onClick={handleStepIncrease}
             disabled={disabled}
             className="h-10 w-10 shrink-0"
           />
@@ -8927,9 +8974,9 @@ export default function XrayCalibrationWorkspace() {
           />
         </motion.button>
         <motion.aside
-          layout
+          layout={!isMobileViewport}
           initial={false}
-          transition={PANEL_SPRING}
+          transition={isMobileViewport ? MOBILE_PANEL_TRANSITION : PANEL_SPRING}
           animate={
             isMobileViewport
               ? {
@@ -8946,12 +8993,12 @@ export default function XrayCalibrationWorkspace() {
           } ${
             isMobileViewport
               ? mobilePanelPreviewActive
-                ? "border-white/30 bg-[linear-gradient(180deg,rgba(244,247,251,0.44)_0%,rgba(229,236,244,0.4)_100%)] backdrop-blur-xl"
+                ? "border-white/12 bg-[linear-gradient(180deg,rgba(244,247,251,0.14)_0%,rgba(229,236,244,0.1)_100%)] backdrop-blur-md"
                 : "border-white/48 bg-[linear-gradient(180deg,rgba(244,247,251,0.74)_0%,rgba(229,236,244,0.68)_100%)] backdrop-blur-xl"
               : ""
           } ${
             isMobileViewport && mobilePanelPreviewActive
-              ? "[&>*]:pointer-events-none [&>*]:opacity-0"
+              ? "!backdrop-blur-0 !max-h-0 !overflow-visible !rounded-none !border-transparent !bg-transparent !pb-0 !shadow-none [&>*]:pointer-events-none [&>*]:opacity-0"
               : ""
           } ${showLeftSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
@@ -10694,9 +10741,9 @@ export default function XrayCalibrationWorkspace() {
         </motion.aside>
 
         <motion.aside
-          layout
+          layout={!isMobileViewport}
           initial={false}
-          transition={PANEL_SPRING}
+          transition={isMobileViewport ? MOBILE_PANEL_TRANSITION : PANEL_SPRING}
           animate={
             isMobileViewport
               ? {
@@ -10713,12 +10760,12 @@ export default function XrayCalibrationWorkspace() {
           } ${
             isMobileViewport
               ? mobilePanelPreviewActive
-                ? "border-white/30 bg-[linear-gradient(180deg,rgba(244,247,251,0.44)_0%,rgba(229,236,244,0.4)_100%)] backdrop-blur-xl"
+                ? "border-white/12 bg-[linear-gradient(180deg,rgba(244,247,251,0.14)_0%,rgba(229,236,244,0.1)_100%)] backdrop-blur-md"
                 : "border-white/48 bg-[linear-gradient(180deg,rgba(244,247,251,0.74)_0%,rgba(229,236,244,0.68)_100%)] backdrop-blur-xl"
               : ""
           } ${
             isMobileViewport && mobilePanelPreviewActive
-              ? "[&>*]:pointer-events-none [&>*]:opacity-0"
+              ? "!backdrop-blur-0 !max-h-0 !overflow-visible !rounded-none !border-transparent !bg-transparent !pb-0 !shadow-none [&>*]:pointer-events-none [&>*]:opacity-0"
               : ""
           } ${showRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
