@@ -8,6 +8,7 @@ import {
   BadgeCheck,
   Bone,
   Camera,
+  ChartSpline,
   CircleDot,
   CloudOff,
   Crop,
@@ -19,7 +20,7 @@ import {
   FlipHorizontal2,
   FlipVertical2,
   GitCompare,
-  Hand,
+  HandGrab,
   History,
   MoveLeft,
   MoveRight,
@@ -37,7 +38,7 @@ import {
   Redo2,
   RotateCcw,
   RotateCw,
-  Ruler,
+  RulerDimensionLine,
   Save,
   Spline,
   Target,
@@ -142,6 +143,8 @@ const DEFAULT_ANGLE_STROKE_WIDTH = 2;
 const DEFAULT_ANGLE_FILL_OPACITY = 0.2;
 const DEFAULT_FREE_LINE_COLOR = "#3b82f6";
 const DEFAULT_FREE_LINE_MODE = "freehand";
+const DEFAULT_FREE_LINE_CURVE_FREEHAND = 0.16;
+const DEFAULT_FREE_LINE_CURVE_POINT = 0.58;
 const ANGLE_COLOR_OPTIONS = [
   "#f97316",
   "#ef4444",
@@ -341,6 +344,77 @@ function tracePolygonPath(ctx, points) {
   ctx.closePath();
 }
 
+function getFreeLineCurveStrength(shape) {
+  const fallback =
+    shape?.drawMode === "point"
+      ? DEFAULT_FREE_LINE_CURVE_POINT
+      : DEFAULT_FREE_LINE_CURVE_FREEHAND;
+  return clamp(
+    Number.isFinite(shape?.curveStrength) ? shape.curveStrength : fallback,
+    0,
+    1,
+  );
+}
+
+function getSmoothClosedSegmentControls(points, index, smoothness = 0) {
+  const len = points.length;
+  const p0 = points[(index - 1 + len) % len];
+  const p1 = points[index];
+  const p2 = points[(index + 1) % len];
+  const p3 = points[(index + 2) % len];
+  const tension = clamp(smoothness, 0, 1) * 0.9;
+  const autoCp1 = {
+    x: p1.x + ((p2.x - p0.x) / 6) * tension,
+    y: p1.y + ((p2.y - p0.y) / 6) * tension,
+  };
+  const autoCp2 = {
+    x: p2.x - ((p3.x - p1.x) / 6) * tension,
+    y: p2.y - ((p3.y - p1.y) / 6) * tension,
+  };
+
+  return {
+    cp1:
+      Number.isFinite(p1.handleOutX) && Number.isFinite(p1.handleOutY)
+        ? { x: p1.handleOutX, y: p1.handleOutY }
+        : autoCp1,
+    cp2:
+      Number.isFinite(p2.handleInX) && Number.isFinite(p2.handleInY)
+        ? { x: p2.handleInX, y: p2.handleInY }
+        : autoCp2,
+  };
+}
+
+function traceSmoothClosedPath(ctx, points, smoothness = 0) {
+  if (!ctx || !Array.isArray(points) || points.length === 0) return;
+  const hasCustomCurveHandles = points.some(
+    (point) =>
+      Number.isFinite(point?.handleInX) ||
+      Number.isFinite(point?.handleInY) ||
+      Number.isFinite(point?.handleOutX) ||
+      Number.isFinite(point?.handleOutY),
+  );
+  if (points.length < 3 || (smoothness <= 0.01 && !hasCustomCurveHandles)) {
+    tracePolygonPath(ctx, points);
+    return;
+  }
+
+  const len = points.length;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+
+  for (let index = 0; index < len; index += 1) {
+    const p2 = points[(index + 1) % len];
+    const { cp1, cp2 } = getSmoothClosedSegmentControls(
+      points,
+      index,
+      smoothness,
+    );
+    ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
+  }
+
+  ctx.closePath();
+}
+
 function pointInPolygon(point, polygon) {
   if (!Array.isArray(polygon) || polygon.length < 3) return false;
   let inside = false;
@@ -362,6 +436,25 @@ function pointInPolygon(point, polygon) {
   }
 
   return inside;
+}
+
+function projectPointOnSegment(point, start, end) {
+  const vx = end.x - start.x;
+  const vy = end.y - start.y;
+  const segmentLengthSq = vx * vx + vy * vy;
+  if (segmentLengthSq <= Number.EPSILON) {
+    return { x: start.x, y: start.y, t: 0 };
+  }
+  const t = clamp(
+    ((point.x - start.x) * vx + (point.y - start.y) * vy) / segmentLengthSq,
+    0,
+    1,
+  );
+  return {
+    x: start.x + vx * t,
+    y: start.y + vy * t,
+    t,
+  };
 }
 
 function buildFreeCutLayerFromPoints({
@@ -457,6 +550,8 @@ function buildFreeLineLayerFromPoints({
   layerId,
   name,
   fillColor = DEFAULT_FREE_LINE_COLOR,
+  drawMode = DEFAULT_FREE_LINE_MODE,
+  curveStrength,
 }) {
   if (
     !Array.isArray(polygonPoints) ||
@@ -494,6 +589,16 @@ function buildFreeLineLayerFromPoints({
     opacity: 0.85,
     lockScale: false,
     fillColor,
+    drawMode,
+    curveStrength: clamp(
+      Number.isFinite(curveStrength)
+        ? curveStrength
+        : drawMode === "point"
+          ? DEFAULT_FREE_LINE_CURVE_POINT
+          : DEFAULT_FREE_LINE_CURVE_FREEHAND,
+      0,
+      1,
+    ),
     maskPoints: polygonPoints.map((point) => ({
       x: point.x - (sourceX + width / 2),
       y: point.y - (sourceY + height / 2),
@@ -813,6 +918,16 @@ function getLayerDisplaySize(layer) {
   };
 }
 
+function transformLayerLocalPoint(layer, point) {
+  const flippedX = layer.flipX ? -point.x : point.x;
+  const flippedY = layer.flipY ? -point.y : point.y;
+  const rotated = rotateVector(flippedX, flippedY, layer.rotation);
+  return {
+    x: layer.centerX + rotated.x,
+    y: layer.centerY + rotated.y,
+  };
+}
+
 function getLayerMaskDisplayPoints(layer) {
   if (!Array.isArray(layer.maskPoints) || layer.maskPoints.length < 3) {
     return null;
@@ -825,22 +940,248 @@ function getLayerMaskDisplayPoints(layer) {
   return layer.maskPoints.map((point) => ({
     x: point.x * scaleX,
     y: point.y * scaleY,
+    handleInX: Number.isFinite(point?.handleInX)
+      ? point.handleInX * scaleX
+      : undefined,
+    handleInY: Number.isFinite(point?.handleInY)
+      ? point.handleInY * scaleY
+      : undefined,
+    handleOutX: Number.isFinite(point?.handleOutX)
+      ? point.handleOutX * scaleX
+      : undefined,
+    handleOutY: Number.isFinite(point?.handleOutY)
+      ? point.handleOutY * scaleY
+      : undefined,
   }));
+}
+
+function getFreeLineVertexPoints(layer) {
+  const localPoints = getLayerMaskDisplayPoints(layer);
+  if (!localPoints) return [];
+
+  return localPoints.map((point, pointIndex) => {
+    const rotated = transformLayerLocalPoint(layer, point);
+    return {
+      pointIndex,
+      x: rotated.x,
+      y: rotated.y,
+    };
+  });
+}
+
+function getFreeLineLocalHandlePair(layer, pointIndex) {
+  const localPoints = getLayerMaskDisplayPoints(layer);
+  if (!localPoints || localPoints.length < 3) return null;
+
+  const current = localPoints[pointIndex];
+  if (!current) return null;
+
+  const len = localPoints.length;
+  const previous = localPoints[(pointIndex - 1 + len) % len];
+  const next = localPoints[(pointIndex + 1) % len];
+  const tangent = {
+    x: next.x - previous.x,
+    y: next.y - previous.y,
+  };
+  const tangentLength = Math.hypot(tangent.x, tangent.y) || 1;
+  const unitTangent = {
+    x: tangent.x / tangentLength,
+    y: tangent.y / tangentLength,
+  };
+  const incomingLength = getDistance(previous, current);
+  const outgoingLength = getDistance(current, next);
+  const autoRadius = clamp(
+    Math.min(incomingLength, outgoingLength) *
+      (0.18 + getFreeLineCurveStrength(layer) * 0.42),
+    8,
+    120,
+  );
+
+  const defaultIn = {
+    x: current.x - unitTangent.x * autoRadius,
+    y: current.y - unitTangent.y * autoRadius,
+  };
+  const defaultOut = {
+    x: current.x + unitTangent.x * autoRadius,
+    y: current.y + unitTangent.y * autoRadius,
+  };
+
+  return {
+    point: current,
+    autoRadius,
+    handleIn:
+      Number.isFinite(current.handleInX) && Number.isFinite(current.handleInY)
+        ? { x: current.handleInX, y: current.handleInY }
+        : defaultIn,
+    handleOut:
+      Number.isFinite(current.handleOutX) && Number.isFinite(current.handleOutY)
+        ? { x: current.handleOutX, y: current.handleOutY }
+        : defaultOut,
+  };
+}
+
+function getFreeLineCurveRadius(layer, pointIndex) {
+  const handlePair = getFreeLineLocalHandlePair(layer, pointIndex);
+  if (!handlePair) return 0;
+
+  const handleInDistance = getDistance(handlePair.point, handlePair.handleIn);
+  const handleOutDistance = getDistance(handlePair.point, handlePair.handleOut);
+  const meanDistance = (handleInDistance + handleOutDistance) / 2;
+  return clamp(meanDistance || handlePair.autoRadius || 0, 8, 120);
+}
+
+function getFreeLineCurveHandles(layer, pointIndex) {
+  const handlePair = getFreeLineLocalHandlePair(layer, pointIndex);
+  if (!handlePair) return [];
+  const anchor = transformLayerLocalPoint(layer, handlePair.point);
+
+  return [
+    {
+      pointIndex,
+      handleKey: "in",
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+      ...transformLayerLocalPoint(layer, handlePair.handleIn),
+    },
+    {
+      pointIndex,
+      handleKey: "out",
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+      ...transformLayerLocalPoint(layer, handlePair.handleOut),
+    },
+  ];
+}
+
+function toLayerMaskPoint(point, layer) {
+  const local = toLayerShapeLocal(point, layer);
+  const size = getLayerDisplaySize(layer);
+  const sourceWidth = Math.max(1, layer.sourceWidth || size.width);
+  const sourceHeight = Math.max(1, layer.sourceHeight || size.height);
+  return {
+    x: clamp(
+      local.x * (sourceWidth / Math.max(1, size.width)),
+      -sourceWidth / 2,
+      sourceWidth / 2,
+    ),
+    y: clamp(
+      local.y * (sourceHeight / Math.max(1, size.height)),
+      -sourceHeight / 2,
+      sourceHeight / 2,
+    ),
+  };
+}
+
+function cloneMaskPoint(point) {
+  if (!point) return null;
+  const nextPoint = {
+    x: Number(point.x) || 0,
+    y: Number(point.y) || 0,
+  };
+  if (Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)) {
+    nextPoint.handleInX = Number(point.handleInX);
+    nextPoint.handleInY = Number(point.handleInY);
+  }
+  if (Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)) {
+    nextPoint.handleOutX = Number(point.handleOutX);
+    nextPoint.handleOutY = Number(point.handleOutY);
+  }
+  return nextPoint;
+}
+
+function applyFreeLineCurveRadiusToPoint(layer, pointIndex, radius) {
+  if (
+    !layer ||
+    layer.kind !== "free-line" ||
+    !Array.isArray(layer.maskPoints) ||
+    pointIndex < 0 ||
+    pointIndex >= layer.maskPoints.length
+  ) {
+    return layer;
+  }
+
+  const localPoints = getLayerMaskDisplayPoints(layer);
+  if (!localPoints || localPoints.length < 3) return layer;
+
+  const current = localPoints[pointIndex];
+  const len = localPoints.length;
+  const previous = localPoints[(pointIndex - 1 + len) % len];
+  const next = localPoints[(pointIndex + 1) % len];
+  const tangent = {
+    x: next.x - previous.x,
+    y: next.y - previous.y,
+  };
+  const tangentLength = Math.hypot(tangent.x, tangent.y) || 1;
+  const unitTangent = {
+    x: tangent.x / tangentLength,
+    y: tangent.y / tangentLength,
+  };
+  const nextRadius = clamp(radius, 6, 160);
+  const sourceScaleX =
+    Math.max(1, layer.sourceWidth || 1) /
+    Math.max(1, getLayerDisplaySize(layer).width);
+  const sourceScaleY =
+    Math.max(1, layer.sourceHeight || 1) /
+    Math.max(1, getLayerDisplaySize(layer).height);
+  const handleIn = {
+    x: current.x - unitTangent.x * nextRadius,
+    y: current.y - unitTangent.y * nextRadius,
+  };
+  const handleOut = {
+    x: current.x + unitTangent.x * nextRadius,
+    y: current.y + unitTangent.y * nextRadius,
+  };
+
+  return {
+    ...layer,
+    maskPoints: layer.maskPoints.map((point, index) => {
+      if (index !== pointIndex) return point;
+      return {
+        ...point,
+        handleInX: handleIn.x * sourceScaleX,
+        handleInY: handleIn.y * sourceScaleY,
+        handleOutX: handleOut.x * sourceScaleX,
+        handleOutY: handleOut.y * sourceScaleY,
+      };
+    }),
+  };
 }
 
 function getLayerMaskScreenPoints(layer) {
   const localPoints = getLayerMaskDisplayPoints(layer);
   if (!localPoints) return null;
 
-  return localPoints.map((point) => {
-    const flippedX = layer.flipX ? -point.x : point.x;
-    const flippedY = layer.flipY ? -point.y : point.y;
-    const rotated = rotateVector(flippedX, flippedY, layer.rotation);
-    return {
-      x: layer.centerX + rotated.x,
-      y: layer.centerY + rotated.y,
-    };
-  });
+  return localPoints.map((point) => ({
+    ...transformLayerLocalPoint(layer, point),
+    handleInX:
+      Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)
+        ? transformLayerLocalPoint(layer, {
+            x: point.handleInX,
+            y: point.handleInY,
+          }).x
+        : undefined,
+    handleInY:
+      Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)
+        ? transformLayerLocalPoint(layer, {
+            x: point.handleInX,
+            y: point.handleInY,
+          }).y
+        : undefined,
+    handleOutX:
+      Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)
+        ? transformLayerLocalPoint(layer, {
+            x: point.handleOutX,
+            y: point.handleOutY,
+          }).x
+        : undefined,
+    handleOutY:
+      Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)
+        ? transformLayerLocalPoint(layer, {
+            x: point.handleOutX,
+            y: point.handleOutY,
+          }).y
+        : undefined,
+  }));
 }
 
 function getImageContentBounds(image) {
@@ -1246,7 +1587,7 @@ function InfoTooltip({ text }) {
 const ICON_COMPONENTS = {
   draw: PencilLine,
   freeLine: Spline,
-  pan: Hand,
+  pan: HandGrab,
   cut: Slice,
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
@@ -1256,7 +1597,7 @@ const ICON_COMPONENTS = {
   flipH: FlipHorizontal2,
   flipV: FlipVertical2,
   resetCrop: Crop,
-  preset: Ruler,
+  preset: RulerDimensionLine,
   saveCal: BadgeCheck,
   trash: Trash2,
   clear: Eraser,
@@ -1279,7 +1620,7 @@ const ICON_COMPONENTS = {
   settings: SlidersHorizontal,
   angle: DraftingCompass,
   circle: CircleDot,
-  hka: Bone,
+  hka: ChartSpline,
   compare: GitCompare,
   export: Download,
   package: Package,
@@ -1381,11 +1722,11 @@ function LayerToolbarActionButton({
 const TOOL_ICON_COMPONENTS = {
   draw: PencilLine,
   freeLine: Spline,
-  pan: Hand,
+  pan: HandGrab,
   cut: Slice,
   angle: DraftingCompass,
   circle: CircleDot,
-  hka: Bone,
+  hka: ChartSpline,
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
   fit: Maximize2,
@@ -1816,6 +2157,8 @@ export default function XrayCalibrationWorkspace() {
   );
   const [snapToLandmarks, setSnapToLandmarks] = useState(true);
   const [selectedCutLayerId, setSelectedCutLayerId] = useState(null);
+  const [selectedFreeLinePointIndex, setSelectedFreeLinePointIndex] =
+    useState(null);
   const [selectedLineId, setSelectedLineId] = useState(null);
   const [selectedAngleId, setSelectedAngleId] = useState(null);
   const [selectedCircleId, setSelectedCircleId] = useState(null);
@@ -2045,12 +2388,27 @@ export default function XrayCalibrationWorkspace() {
           ? normalizedRotation - 360
           : normalizedRotation,
       ),
+      curveStrength: Math.round(
+        getFreeLineCurveStrength(selectedCutLayer) * 100,
+      ),
       width: layerWidth,
       widthMax: Math.max(200, Math.round(modelWidth * 2) || 200),
       widthMm: mmPerPixel !== null ? layerWidth * mmPerPixel : null,
       heightMm: mmPerPixel !== null ? layerHeight * mmPerPixel : null,
     };
   }, [mmPerPixel, modelHeight, modelWidth, selectedCutLayer]);
+  const selectedFreeLineCurveRadius = useMemo(() => {
+    if (
+      !selectedCutLayer ||
+      selectedCutLayer.kind !== "free-line" ||
+      selectedFreeLinePointIndex === null
+    ) {
+      return null;
+    }
+    return Math.round(
+      getFreeLineCurveRadius(selectedCutLayer, selectedFreeLinePointIndex),
+    );
+  }, [selectedCutLayer, selectedFreeLinePointIndex]);
   const getPlanningGuideAutoColor = useCallback((guide) => {
     if (!guide) return "#38bdf8";
     if (guide.kind === "valgusCut") {
@@ -2147,6 +2505,32 @@ export default function XrayCalibrationWorkspace() {
     },
     [isMobileViewport],
   );
+
+  useEffect(() => {
+    if (!selectedCutLayer || selectedCutLayer.kind !== "free-line") {
+      if (selectedFreeLinePointIndex !== null) {
+        setSelectedFreeLinePointIndex(null);
+      }
+      return;
+    }
+
+    const pointCount = Array.isArray(selectedCutLayer.maskPoints)
+      ? selectedCutLayer.maskPoints.length
+      : 0;
+    if (pointCount <= 0) {
+      if (selectedFreeLinePointIndex !== null) {
+        setSelectedFreeLinePointIndex(null);
+      }
+      return;
+    }
+
+    if (
+      selectedFreeLinePointIndex !== null &&
+      selectedFreeLinePointIndex >= pointCount
+    ) {
+      setSelectedFreeLinePointIndex(pointCount - 1);
+    }
+  }, [selectedCutLayer, selectedFreeLinePointIndex]);
 
   const clearMobileHandleAssist = useCallback(() => {
     setMobileHandleAssist(null);
@@ -2565,7 +2949,7 @@ export default function XrayCalibrationWorkspace() {
           ? layer.imageSrc || ""
           : "",
         maskPoints: Array.isArray(layer.maskPoints)
-          ? layer.maskPoints.map((point) => ({ x: point.x, y: point.y }))
+          ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
       })),
     [cutLayers],
@@ -2764,6 +3148,33 @@ export default function XrayCalibrationWorkspace() {
     isMobileViewport,
     selectedCutLayer,
     viewport.height,
+    viewport.width,
+  ]);
+
+  const selectedFreeLinePointAnchor = useMemo(() => {
+    if (
+      !selectedCutLayer ||
+      selectedCutLayer.kind !== "free-line" ||
+      selectedFreeLinePointIndex === null
+    ) {
+      return null;
+    }
+
+    const activePoint = getFreeLineVertexPoints(selectedCutLayer).find(
+      (point) => point.pointIndex === selectedFreeLinePointIndex,
+    );
+    if (!activePoint) return null;
+
+    const screen = imageToScreenPoint(activePoint.x, activePoint.y);
+    return {
+      centerX: clamp(screen.x, 92, Math.max(92, viewport.width - 92)),
+      topY: Math.max(70, screen.y - (isMobileViewport ? 70 : 62)),
+    };
+  }, [
+    imageToScreenPoint,
+    isMobileViewport,
+    selectedCutLayer,
+    selectedFreeLinePointIndex,
     viewport.width,
   ]);
 
@@ -3177,6 +3588,11 @@ export default function XrayCalibrationWorkspace() {
       layerId: nextCutLayerIdRef.current,
       name: `Free Line ${nextCutLayerIdRef.current}`,
       fillColor: draftFreeLine.fillColor || DEFAULT_FREE_LINE_COLOR,
+      drawMode: draftFreeLine.drawMode || freeLineMode,
+      curveStrength:
+        draftFreeLine.drawMode === "point" || freeLineMode === "point"
+          ? DEFAULT_FREE_LINE_CURVE_POINT
+          : DEFAULT_FREE_LINE_CURVE_FREEHAND,
     });
 
     if (!nextLayer) {
@@ -3204,7 +3620,12 @@ export default function XrayCalibrationWorkspace() {
       setTool("pan");
     }
     return true;
-  }, [draftFreeLine, focusLayerSettings, shouldUseMobileOneShotTool]);
+  }, [
+    draftFreeLine,
+    focusLayerSettings,
+    freeLineMode,
+    shouldUseMobileOneShotTool,
+  ]);
 
   const handleLinePresetChange = useCallback(
     (nextPreset) => {
@@ -3435,13 +3856,13 @@ export default function XrayCalibrationWorkspace() {
                 ),
                 lockScale: Boolean(layer.lockScale),
                 fillColor: layer.fillColor || "",
+                drawMode:
+                  layer.drawMode === "point" ? "point" : DEFAULT_FREE_LINE_MODE,
+                curveStrength: getFreeLineCurveStrength(layer),
                 imageSrc: layer.imageSrc || "",
                 maskPoints: Array.isArray(layer.maskPoints)
                   ? layer.maskPoints
-                      .map((point) => ({
-                        x: Number(point?.x) || 0,
-                        y: Number(point?.y) || 0,
-                      }))
+                      .map((point) => cloneMaskPoint(point))
                       .filter(
                         (point) =>
                           Number.isFinite(point.x) && Number.isFinite(point.y),
@@ -3969,7 +4390,7 @@ export default function XrayCalibrationWorkspace() {
       cutLayers: cutLayers.map((layer) => ({
         ...layer,
         maskPoints: Array.isArray(layer.maskPoints)
-          ? layer.maskPoints.map((point) => ({ ...point }))
+          ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
       })),
       calibrationLineId,
@@ -4086,7 +4507,7 @@ export default function XrayCalibrationWorkspace() {
       snapshot.cutLayers.map((layer) => ({
         ...layer,
         maskPoints: Array.isArray(layer.maskPoints)
-          ? layer.maskPoints.map((point) => ({ ...point }))
+          ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
       })),
     );
@@ -4447,6 +4868,71 @@ export default function XrayCalibrationWorkspace() {
     [hkaSets, view.scale],
   );
 
+  const findFreeLinePointHandle = useCallback(
+    (imagePoint) => {
+      if (!selectedCutLayer || selectedCutLayer.kind !== "free-line") {
+        return null;
+      }
+      const thresholdInImage = (isCoarsePointer ? 24 : 12) / view.scale;
+      let picked = null;
+      let minDistance = Infinity;
+
+      for (const point of getFreeLineVertexPoints(selectedCutLayer)) {
+        const distance = Math.hypot(
+          imagePoint.x - point.x,
+          imagePoint.y - point.y,
+        );
+        if (distance <= thresholdInImage && distance < minDistance) {
+          minDistance = distance;
+          picked = {
+            layerId: selectedCutLayer.id,
+            pointIndex: point.pointIndex,
+          };
+        }
+      }
+
+      return picked;
+    },
+    [isCoarsePointer, selectedCutLayer, view.scale],
+  );
+
+  const findFreeLineCurveHandle = useCallback(
+    (imagePoint) => {
+      if (
+        !selectedCutLayer ||
+        selectedCutLayer.kind !== "free-line" ||
+        selectedFreeLinePointIndex === null
+      ) {
+        return null;
+      }
+
+      const thresholdInImage = (isCoarsePointer ? 26 : 13) / view.scale;
+      let picked = null;
+      let minDistance = Infinity;
+
+      for (const handle of getFreeLineCurveHandles(
+        selectedCutLayer,
+        selectedFreeLinePointIndex,
+      )) {
+        const distance = Math.hypot(
+          imagePoint.x - handle.x,
+          imagePoint.y - handle.y,
+        );
+        if (distance <= thresholdInImage && distance < minDistance) {
+          minDistance = distance;
+          picked = {
+            layerId: selectedCutLayer.id,
+            pointIndex: handle.pointIndex,
+            handleKey: handle.handleKey,
+          };
+        }
+      }
+
+      return picked;
+    },
+    [isCoarsePointer, selectedCutLayer, selectedFreeLinePointIndex, view.scale],
+  );
+
   const landmarkPoints = useMemo(() => {
     const points = [];
 
@@ -4633,10 +5119,11 @@ export default function XrayCalibrationWorkspace() {
         if (layer.kind === "free-line") {
           const localMaskPoints = getLayerMaskDisplayPoints(layer);
           if (localMaskPoints?.length >= MIN_FREE_CUT_POINTS) {
+            const curveStrength = getFreeLineCurveStrength(layer);
             imageCtx.fillStyle = layer.fillColor || DEFAULT_FREE_LINE_COLOR;
             imageCtx.strokeStyle = layer.fillColor || DEFAULT_FREE_LINE_COLOR;
             imageCtx.lineWidth = Math.max(1 / view.scale, 1.15);
-            tracePolygonPath(imageCtx, localMaskPoints);
+            traceSmoothClosedPath(imageCtx, localMaskPoints, curveStrength);
             imageCtx.fill();
             imageCtx.stroke();
           }
@@ -5334,24 +5821,68 @@ export default function XrayCalibrationWorkspace() {
       }
       const maskScreenPoints = getLayerMaskScreenPoints(activeCutLayer);
       if (maskScreenPoints) {
+        const screenMaskPoints = maskScreenPoints.map((point) =>
+          imageToScreenPoint(point.x, point.y),
+        );
         overlayCtx.strokeStyle = "rgba(168, 85, 247, 0.55)";
         overlayCtx.lineWidth = 1.4;
         overlayCtx.setLineDash([4, 4]);
-        overlayCtx.beginPath();
-        const firstPoint = imageToScreenPoint(
-          maskScreenPoints[0].x,
-          maskScreenPoints[0].y,
+        traceSmoothClosedPath(
+          overlayCtx,
+          screenMaskPoints,
+          activeCutLayer.kind === "free-line"
+            ? getFreeLineCurveStrength(activeCutLayer)
+            : 0,
         );
-        overlayCtx.moveTo(firstPoint.x, firstPoint.y);
-        for (let index = 1; index < maskScreenPoints.length; index += 1) {
-          const nextPoint = imageToScreenPoint(
-            maskScreenPoints[index].x,
-            maskScreenPoints[index].y,
-          );
-          overlayCtx.lineTo(nextPoint.x, nextPoint.y);
-        }
-        overlayCtx.closePath();
         overlayCtx.stroke();
+
+        if (activeCutLayer.kind === "free-line") {
+          const vertexPoints = getFreeLineVertexPoints(activeCutLayer);
+          const curveHandles =
+            selectedFreeLinePointIndex !== null
+              ? getFreeLineCurveHandles(
+                  activeCutLayer,
+                  selectedFreeLinePointIndex,
+                )
+              : [];
+          overlayCtx.setLineDash([]);
+          for (const point of vertexPoints) {
+            const screen = imageToScreenPoint(point.x, point.y);
+            const isActivePoint =
+              point.pointIndex === selectedFreeLinePointIndex;
+            overlayCtx.fillStyle = isActivePoint ? "#fef3c7" : "#ffffff";
+            overlayCtx.strokeStyle = isActivePoint ? "#d97706" : "#a855f7";
+            overlayCtx.lineWidth = isActivePoint ? 2 : 1.6;
+            overlayCtx.beginPath();
+            overlayCtx.arc(
+              screen.x,
+              screen.y,
+              isActivePoint ? 6.2 : 5.4,
+              0,
+              Math.PI * 2,
+            );
+            overlayCtx.fill();
+            overlayCtx.stroke();
+          }
+          overlayCtx.strokeStyle = "rgba(249, 115, 22, 0.75)";
+          overlayCtx.lineWidth = 1.2;
+          for (const handle of curveHandles) {
+            const anchor = imageToScreenPoint(handle.anchorX, handle.anchorY);
+            const screen = imageToScreenPoint(handle.x, handle.y);
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(anchor.x, anchor.y);
+            overlayCtx.lineTo(screen.x, screen.y);
+            overlayCtx.stroke();
+            overlayCtx.fillStyle =
+              handle.handleKey === "in" ? "#fde68a" : "#fdba74";
+            overlayCtx.strokeStyle = "#c2410c";
+            overlayCtx.lineWidth = 1.5;
+            overlayCtx.beginPath();
+            overlayCtx.arc(screen.x, screen.y, 4.8, 0, Math.PI * 2);
+            overlayCtx.fill();
+            overlayCtx.stroke();
+          }
+        }
       }
       overlayCtx.restore();
     }
@@ -5362,6 +5893,8 @@ export default function XrayCalibrationWorkspace() {
 
     if (draftFreeLine?.points?.length) {
       const color = draftFreeLine.fillColor || DEFAULT_FREE_LINE_COLOR;
+      const isPointMode = draftFreeLine.drawMode === "point";
+      const curveStrength = getFreeLineCurveStrength(draftFreeLine);
       const polygonPoints = Array.isArray(draftFreeLine.points)
         ? draftFreeLine.points
         : [];
@@ -5369,7 +5902,7 @@ export default function XrayCalibrationWorkspace() {
       const previewPoints = [...polygonPoints];
       const lastPoint = polygonPoints[polygonPoints.length - 1] || null;
       if (
-        freeLineMode === "point" &&
+        isPointMode &&
         hoverPoint &&
         lastPoint &&
         getDistance(lastPoint, hoverPoint) > 0.6
@@ -5377,7 +5910,7 @@ export default function XrayCalibrationWorkspace() {
         previewPoints.push(hoverPoint);
       }
       const canClose =
-        freeLineMode === "point" &&
+        isPointMode &&
         polygonPoints.length >= MIN_FREE_CUT_POINTS &&
         hoverPoint &&
         getDistance(polygonPoints[0], hoverPoint) <=
@@ -5389,20 +5922,24 @@ export default function XrayCalibrationWorkspace() {
       overlayCtx.fillStyle = color;
       overlayCtx.strokeStyle = color;
       overlayCtx.globalAlpha = canClose ? 0.18 : 0.12;
-      if (screenPoints.length >= MIN_FREE_CUT_POINTS) {
-        tracePolygonPath(overlayCtx, screenPoints);
+      if (
+        screenPoints.length >= MIN_FREE_CUT_POINTS &&
+        (!isPointMode || canClose)
+      ) {
+        traceSmoothClosedPath(overlayCtx, screenPoints, curveStrength);
         overlayCtx.fill();
       }
       overlayCtx.globalAlpha = 1;
       overlayCtx.lineWidth = 1.8;
       if (screenPoints.length > 0) {
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(screenPoints[0].x, screenPoints[0].y);
-        for (let index = 1; index < screenPoints.length; index += 1) {
-          overlayCtx.lineTo(screenPoints[index].x, screenPoints[index].y);
-        }
-        if (freeLineMode !== "point" || canClose) {
-          overlayCtx.closePath();
+        if (isPointMode && !canClose) {
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(screenPoints[0].x, screenPoints[0].y);
+          for (let index = 1; index < screenPoints.length; index += 1) {
+            overlayCtx.lineTo(screenPoints[index].x, screenPoints[index].y);
+          }
+        } else {
+          traceSmoothClosedPath(overlayCtx, screenPoints, curveStrength);
         }
         overlayCtx.stroke();
       }
@@ -5412,7 +5949,7 @@ export default function XrayCalibrationWorkspace() {
           polygonPoints[index].x,
           polygonPoints[index].y,
         );
-        const isStartPoint = freeLineMode === "point" && index === 0;
+        const isStartPoint = isPointMode && index === 0;
         overlayCtx.beginPath();
         overlayCtx.arc(
           point.x,
@@ -5432,7 +5969,7 @@ export default function XrayCalibrationWorkspace() {
       }
       overlayCtx.restore();
 
-      if (freeLineMode === "point") {
+      if (isPointMode) {
         const labelSource =
           hoverPoint ||
           polygonPoints[polygonPoints.length - 1] ||
@@ -6332,78 +6869,147 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
-      const hitCutLayerHandle = findCutLayerHandle(imagePoint);
-      if (hitCutLayerHandle) {
-        const targetLayer = cutLayers.find(
-          (layer) => layer.id === hitCutLayerHandle.layerId,
-        );
-        if (!targetLayer) return;
-        focusLayerCanvas(targetLayer.id);
-        setSelectedLineId(null);
-        setSelectedAngleId(null);
-        setSelectedCircleId(null);
-        setSelectedHkaId(null);
-        setSelectedPlanningGuideId(null);
-        clearMobileHandleAssist();
-        clearMobilePlanningGuideHandleAssist();
-        if (targetLayer.lockScale) {
-          setNotice("Layer terkunci. Buka lock dulu untuk resize atau rotate.");
+      if (tool === "pan") {
+        const hitFreeLineCurveHandle = findFreeLineCurveHandle(imagePoint);
+        if (hitFreeLineCurveHandle) {
+          const targetLayer = cutLayers.find(
+            (layer) => layer.id === hitFreeLineCurveHandle.layerId,
+          );
+          if (!targetLayer) return;
+          focusLayerCanvas(targetLayer.id);
+          setSelectedFreeLinePointIndex(hitFreeLineCurveHandle.pointIndex);
+          setSelectedLineId(null);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedPlanningGuideId(null);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          if (targetLayer.lockScale) {
+            setNotice("Layer terkunci. Buka lock dulu untuk edit lengkungan.");
+            return;
+          }
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-free-line-curve-handle",
+            layerId: targetLayer.id,
+            pointIndex: hitFreeLineCurveHandle.pointIndex,
+            handleKey: hitFreeLineCurveHandle.handleKey,
+          };
+          setNotice(
+            "Handle lengkung aktif. Geser bebas 360 derajat untuk mencari rounded yang paling pas.",
+          );
           return;
         }
-        setHistoryPaused(true);
-        if (hitCutLayerHandle.handleKey === "rotate") {
-          const localPoint = toLayerLocal(imagePoint, targetLayer);
+
+        const hitFreeLinePointHandle = findFreeLinePointHandle(imagePoint);
+        if (hitFreeLinePointHandle) {
+          const targetLayer = cutLayers.find(
+            (layer) => layer.id === hitFreeLinePointHandle.layerId,
+          );
+          if (!targetLayer) return;
+          focusLayerCanvas(targetLayer.id);
+          setSelectedFreeLinePointIndex(hitFreeLinePointHandle.pointIndex);
+          setSelectedLineId(null);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedPlanningGuideId(null);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          if (targetLayer.lockScale) {
+            setNotice("Layer terkunci. Buka lock dulu untuk edit titik shape.");
+            return;
+          }
+          setHistoryPaused(true);
           interactionRef.current = {
-            mode: "rotate-cut-layer",
+            mode: "move-free-line-point",
             layerId: targetLayer.id,
-            startPointerAngle: Math.atan2(localPoint.y, localPoint.x),
-            startRotation: Number(targetLayer.rotation || 0),
+            pointIndex: hitFreeLinePointHandle.pointIndex,
+          };
+          setNotice(
+            "Edit titik Free Line aktif. Geser vertex untuk membentuk ulang shape.",
+          );
+          return;
+        }
+
+        const hitCutLayerHandle = findCutLayerHandle(imagePoint);
+        if (hitCutLayerHandle) {
+          const targetLayer = cutLayers.find(
+            (layer) => layer.id === hitCutLayerHandle.layerId,
+          );
+          if (!targetLayer) return;
+          focusLayerCanvas(targetLayer.id);
+          setSelectedFreeLinePointIndex(null);
+          setSelectedLineId(null);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedPlanningGuideId(null);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          if (targetLayer.lockScale) {
+            setNotice(
+              "Layer terkunci. Buka lock dulu untuk resize atau rotate.",
+            );
+            return;
+          }
+          setHistoryPaused(true);
+          if (hitCutLayerHandle.handleKey === "rotate") {
+            const localPoint = toLayerLocal(imagePoint, targetLayer);
+            interactionRef.current = {
+              mode: "rotate-cut-layer",
+              layerId: targetLayer.id,
+              startPointerAngle: Math.atan2(localPoint.y, localPoint.x),
+              startRotation: Number(targetLayer.rotation || 0),
+            };
+            return;
+          }
+          interactionRef.current = {
+            mode: "resize-cut-layer",
+            layerId: targetLayer.id,
+            centerX: targetLayer.centerX,
+            centerY: targetLayer.centerY,
+            rotation: targetLayer.rotation,
+            handleKey: hitCutLayerHandle.handleKey,
+            startFlipX: Boolean(targetLayer.flipX),
+            startFlipY: Boolean(targetLayer.flipY),
+            startDisplayWidth: Number(targetLayer.displayWidth || 16),
+            startDisplayHeight: Number(targetLayer.displayHeight || 16),
           };
           return;
         }
-        interactionRef.current = {
-          mode: "resize-cut-layer",
-          layerId: targetLayer.id,
-          centerX: targetLayer.centerX,
-          centerY: targetLayer.centerY,
-          rotation: targetLayer.rotation,
-          handleKey: hitCutLayerHandle.handleKey,
-          startFlipX: Boolean(targetLayer.flipX),
-          startFlipY: Boolean(targetLayer.flipY),
-          startDisplayWidth: Number(targetLayer.displayWidth || 16),
-          startDisplayHeight: Number(targetLayer.displayHeight || 16),
-        };
-        return;
-      }
 
-      const hitCutLayerId = findCutLayerByPoint(imagePoint);
-      if (hitCutLayerId !== null) {
-        const targetLayer = cutLayers.find(
-          (layer) => layer.id === hitCutLayerId,
-        );
-        if (!targetLayer) return;
-        focusLayerCanvas(hitCutLayerId);
-        setSelectedLineId(null);
-        setSelectedAngleId(null);
-        setSelectedCircleId(null);
-        setSelectedHkaId(null);
-        setSelectedPlanningGuideId(null);
-        clearMobileHandleAssist();
-        clearMobilePlanningGuideHandleAssist();
-        if (targetLayer.lockScale) {
-          setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+        const hitCutLayerId = findCutLayerByPoint(imagePoint);
+        if (hitCutLayerId !== null) {
+          const targetLayer = cutLayers.find(
+            (layer) => layer.id === hitCutLayerId,
+          );
+          if (!targetLayer) return;
+          focusLayerCanvas(hitCutLayerId);
+          setSelectedFreeLinePointIndex(null);
+          setSelectedLineId(null);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedPlanningGuideId(null);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          if (targetLayer.lockScale) {
+            setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+            return;
+          }
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-cut-layer",
+            layerId: hitCutLayerId,
+            startImageX: imagePoint.x,
+            startImageY: imagePoint.y,
+            originCenterX: targetLayer.centerX,
+            originCenterY: targetLayer.centerY,
+          };
           return;
         }
-        setHistoryPaused(true);
-        interactionRef.current = {
-          mode: "move-cut-layer",
-          layerId: hitCutLayerId,
-          startImageX: imagePoint.x,
-          startImageY: imagePoint.y,
-          originCenterX: targetLayer.centerX,
-          originCenterY: targetLayer.centerY,
-        };
-        return;
       }
 
       const hitPlanningGuideLabelId = findPlanningGuideLabelByPoint(point);
@@ -6754,6 +7360,7 @@ export default function XrayCalibrationWorkspace() {
             points: [boundedPoint],
             hoverPoint: boundedPoint,
             fillColor: DEFAULT_FREE_LINE_COLOR,
+            drawMode: "point",
           });
           setHistoryPaused(true);
           setNotice(
@@ -6766,6 +7373,7 @@ export default function XrayCalibrationWorkspace() {
         setDraftFreeLine({
           points: [startPoint],
           fillColor: DEFAULT_FREE_LINE_COLOR,
+          drawMode: "freehand",
         });
         setHistoryPaused(true);
         interactionRef.current = {
@@ -6981,6 +7589,8 @@ export default function XrayCalibrationWorkspace() {
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
+      findFreeLineCurveHandle,
+      findFreeLinePointHandle,
       findPlanningGuideLabelByPoint,
       findCutLayerByPoint,
       findCutLayerHandle,
@@ -7088,6 +7698,95 @@ export default function XrayCalibrationWorkspace() {
             points: [...prev.points, movePoint],
           };
         });
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-free-line-point") {
+        const movePoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        const { layerId, pointIndex } = interactionRef.current;
+        setCutLayers((prev) =>
+          prev.map((layer) => {
+            if (layer.id !== layerId || layer.kind !== "free-line") {
+              return layer;
+            }
+            const nextMaskPoint = toLayerMaskPoint(movePoint, layer);
+            const nextMaskPoints = Array.isArray(layer.maskPoints)
+              ? layer.maskPoints.map((pointItem, index) => {
+                  if (index !== pointIndex) return pointItem;
+                  const deltaX = nextMaskPoint.x - (Number(pointItem.x) || 0);
+                  const deltaY = nextMaskPoint.y - (Number(pointItem.y) || 0);
+                  const nextPointItem = {
+                    ...pointItem,
+                    x: nextMaskPoint.x,
+                    y: nextMaskPoint.y,
+                  };
+                  if (
+                    Number.isFinite(pointItem.handleInX) &&
+                    Number.isFinite(pointItem.handleInY)
+                  ) {
+                    nextPointItem.handleInX = pointItem.handleInX + deltaX;
+                    nextPointItem.handleInY = pointItem.handleInY + deltaY;
+                  }
+                  if (
+                    Number.isFinite(pointItem.handleOutX) &&
+                    Number.isFinite(pointItem.handleOutY)
+                  ) {
+                    nextPointItem.handleOutX = pointItem.handleOutX + deltaX;
+                    nextPointItem.handleOutY = pointItem.handleOutY + deltaY;
+                  }
+                  return nextPointItem;
+                })
+              : [];
+            return {
+              ...layer,
+              maskPoints: nextMaskPoints,
+            };
+          }),
+        );
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-free-line-curve-handle") {
+        const movePoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        const { layerId, pointIndex, handleKey } = interactionRef.current;
+        setCutLayers((prev) =>
+          prev.map((layer) => {
+            if (layer.id !== layerId || layer.kind !== "free-line") {
+              return layer;
+            }
+            const nextMaskPoints = Array.isArray(layer.maskPoints)
+              ? layer.maskPoints.map((pointItem, index) => {
+                  if (index !== pointIndex) return pointItem;
+                  const anchorX = Number(pointItem.x) || 0;
+                  const anchorY = Number(pointItem.y) || 0;
+                  const nextHandlePoint = toLayerMaskPoint(movePoint, layer);
+                  const vectorX = nextHandlePoint.x - anchorX;
+                  const vectorY = nextHandlePoint.y - anchorY;
+                  const nextPointItem = { ...pointItem };
+                  if (handleKey === "in") {
+                    nextPointItem.handleInX = nextHandlePoint.x;
+                    nextPointItem.handleInY = nextHandlePoint.y;
+                    nextPointItem.handleOutX = anchorX - vectorX;
+                    nextPointItem.handleOutY = anchorY - vectorY;
+                  } else {
+                    nextPointItem.handleOutX = nextHandlePoint.x;
+                    nextPointItem.handleOutY = nextHandlePoint.y;
+                    nextPointItem.handleInX = anchorX - vectorX;
+                    nextPointItem.handleInY = anchorY - vectorY;
+                  }
+                  return nextPointItem;
+                })
+              : [];
+            return {
+              ...layer,
+              maskPoints: nextMaskPoints,
+            };
+          }),
+        );
         return;
       }
 
@@ -7778,7 +8477,121 @@ export default function XrayCalibrationWorkspace() {
     sourceZoomPercent,
   ]);
 
+  const deleteSelectedFreeLinePoint = useCallback(() => {
+    if (
+      !selectedCutLayer ||
+      selectedCutLayer.kind !== "free-line" ||
+      selectedFreeLinePointIndex === null
+    ) {
+      return false;
+    }
+
+    const pointCount = Array.isArray(selectedCutLayer.maskPoints)
+      ? selectedCutLayer.maskPoints.length
+      : 0;
+    if (pointCount <= MIN_FREE_CUT_POINTS) {
+      setNotice("Free Line minimal harus memiliki 3 titik.");
+      return true;
+    }
+
+    const deletedIndex = selectedFreeLinePointIndex;
+    setCutLayers((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || layer.kind !== "free-line") {
+          return layer;
+        }
+        return {
+          ...layer,
+          maskPoints: layer.maskPoints.filter(
+            (_, index) => index !== deletedIndex,
+          ),
+        };
+      }),
+    );
+    setSelectedFreeLinePointIndex(
+      Math.max(0, Math.min(deletedIndex, pointCount - 2)),
+    );
+    setNotice(`Titik #${deletedIndex + 1} pada Free Line dihapus.`);
+    return true;
+  }, [selectedCutLayer, selectedFreeLinePointIndex]);
+
+  const insertFreeLinePointAfterSelection = useCallback(() => {
+    if (
+      !selectedCutLayer ||
+      selectedCutLayer.kind !== "free-line" ||
+      selectedFreeLinePointIndex === null ||
+      !Array.isArray(selectedCutLayer.maskPoints) ||
+      selectedCutLayer.maskPoints.length < 2
+    ) {
+      setNotice("Pilih satu titik Free Line dulu untuk menambah point.");
+      return;
+    }
+
+    const pointCount = selectedCutLayer.maskPoints.length;
+    const insertAfterIndex = selectedFreeLinePointIndex;
+    const nextIndex = (insertAfterIndex + 1) % pointCount;
+    const currentPoint = selectedCutLayer.maskPoints[insertAfterIndex];
+    const nextPoint = selectedCutLayer.maskPoints[nextIndex];
+    const insertedPoint = {
+      x: ((Number(currentPoint?.x) || 0) + (Number(nextPoint?.x) || 0)) / 2,
+      y: ((Number(currentPoint?.y) || 0) + (Number(nextPoint?.y) || 0)) / 2,
+    };
+    const insertedIndex = insertAfterIndex + 1;
+
+    setCutLayers((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || layer.kind !== "free-line") {
+          return layer;
+        }
+        return {
+          ...layer,
+          maskPoints: [
+            ...layer.maskPoints.slice(0, insertedIndex),
+            insertedPoint,
+            ...layer.maskPoints.slice(insertedIndex),
+          ],
+        };
+      }),
+    );
+    setSelectedFreeLinePointIndex(insertedIndex);
+    setNotice(
+      `Point baru ditambahkan setelah titik #${selectedFreeLinePointIndex + 1}.`,
+    );
+  }, [selectedCutLayer, selectedFreeLinePointIndex]);
+
+  const adjustSelectedFreeLinePointRound = useCallback(
+    (delta) => {
+      if (
+        !selectedCutLayer ||
+        selectedCutLayer.kind !== "free-line" ||
+        selectedFreeLinePointIndex === null
+      ) {
+        setNotice("Pilih satu titik Free Line dulu untuk atur rounded.");
+        return;
+      }
+
+      updateLayerById(selectedCutLayer.id, (item) => {
+        if (item.kind !== "free-line") return item;
+        const currentRadius = getFreeLineCurveRadius(
+          item,
+          selectedFreeLinePointIndex,
+        );
+        return applyFreeLineCurveRadiusToPoint(
+          item,
+          selectedFreeLinePointIndex,
+          currentRadius + delta,
+        );
+      });
+      setNotice("Rounded point diperbarui.");
+    },
+    [selectedCutLayer, selectedFreeLinePointIndex, updateLayerById],
+  );
+
   const removeSelectedLine = useCallback(() => {
+    if (deleteSelectedFreeLinePoint()) {
+      return;
+    }
+
     if (selectedLine) {
       if (isLineLocked(selectedLine.id)) {
         setNotice("Garis terkunci. Unlock dulu sebelum dihapus.");
@@ -7840,6 +8653,7 @@ export default function XrayCalibrationWorkspace() {
     setNotice("Tidak ada measurement yang dipilih.");
   }, [
     calibrationLineId,
+    deleteSelectedFreeLinePoint,
     isLineLocked,
     selectedAngle,
     selectedCircle,
@@ -10010,7 +10824,7 @@ export default function XrayCalibrationWorkspace() {
             style={{ order: 6 }}
           >
             <div className="flex items-center gap-1.5">
-              <Icon name="target" className="h-4 w-4 text-slate-600" />
+              <Icon name="preset" className="h-4 w-4 text-slate-600" />
               {!isLeftSidebarCompact ? (
                 <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                   Adjust
@@ -10793,7 +11607,7 @@ export default function XrayCalibrationWorkspace() {
             }}
           >
             <div className="flex items-center gap-1.5">
-              <Icon name="target" className="h-4 w-4 text-slate-600" />
+              <Icon name="preset" className="h-4 w-4 text-slate-600" />
               {!isLeftSidebarCompact ? (
                 <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                   Kalibrasi
@@ -11859,20 +12673,82 @@ export default function XrayCalibrationWorkspace() {
                       : "-"}
                   </span>
                 </div>
-                <div className={`${SIDEBAR_ICON_GRID_CLASS} mb-1.5`}>
-                  <IconButton
-                    icon="moveLeft"
-                    label="Turunkan Layer"
+                <div
+                  className={`${SOFT_INSET_CLASS} mb-1.5 px-3 py-2 text-[10px] text-slate-600`}
+                >
+                  Edit drag, resize, rotate, insert point, dan delete point
+                  layer berjalan saat tool{" "}
+                  <span className="font-semibold text-slate-800">Move</span>{" "}
+                  aktif.
+                </div>
+                <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleToolChange("pan");
+                      if (selectedCutLayer) {
+                        focusLayerCanvas(selectedCutLayer.id);
+                      }
+                    }}
+                    className={`px-2 py-2 text-xs font-medium transition ${
+                      tool === "pan"
+                        ? SOFT_DARK_BUTTON_CLASS
+                        : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                    }`}
+                  >
+                    Aktifkan Move
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      selectedCutLayer &&
+                      focusLayerSettings(selectedCutLayer.id)
+                    }
+                    disabled={!selectedCutLayer}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    Layer Settings
+                  </button>
+                </div>
+                <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      selectedCutLayer &&
+                      moveCutLayerInStack(selectedCutLayer.id, "back")
+                    }
+                    disabled={!selectedCutLayer || selectedCutLayerIndex <= 0}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    Paling Bawah
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      selectedCutLayer &&
+                      moveCutLayerInStack(selectedCutLayer.id, "front")
+                    }
+                    disabled={
+                      !selectedCutLayer ||
+                      selectedCutLayerIndex >= cutLayers.length - 1
+                    }
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    Paling Atas
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       selectedCutLayer &&
                       moveCutLayerInStack(selectedCutLayer.id, "down")
                     }
                     disabled={!selectedCutLayer || selectedCutLayerIndex <= 0}
-                    className="h-8 w-full"
-                  />
-                  <IconButton
-                    icon="moveRight"
-                    label="Naikkan Layer"
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    Turun 1
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       selectedCutLayer &&
                       moveCutLayerInStack(selectedCutLayer.id, "up")
@@ -11881,10 +12757,12 @@ export default function XrayCalibrationWorkspace() {
                       !selectedCutLayer ||
                       selectedCutLayerIndex >= cutLayers.length - 1
                     }
-                    className="h-8 w-full"
-                  />
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    Naik 1
+                  </button>
                 </div>
-                <div className="flex max-h-28 flex-col gap-1 overflow-y-auto">
+                <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
                   {cutLayers.length === 0 ? (
                     <span className="text-[10px] text-slate-500">
                       Belum ada layer.
@@ -11901,8 +12779,15 @@ export default function XrayCalibrationWorkspace() {
                             layout
                             key={`tool-layer-${layer.id}`}
                             type="button"
-                            onClick={() => focusLayerSettings(layer.id)}
-                            className={`${SOFT_TINT_CARD_CLASS} flex items-center gap-1.5 px-2 py-1 text-left text-[10px] transition-all duration-300 ${
+                            onClick={() => {
+                              handleToolChange("pan");
+                              setSelectedFreeLinePointIndex(null);
+                              focusLayerCanvas(layer.id, { openPanel: false });
+                              setNotice(
+                                `Layer #${layer.id} aktif. Gunakan Move untuk drag, resize, rotate, atau edit titik.`,
+                              );
+                            }}
+                            className={`${SOFT_TINT_CARD_CLASS} flex items-center justify-between gap-2 px-2 py-1.5 text-left text-[10px] transition-all duration-300 ${
                               isLayerActive ? "scale-[1.01]" : ""
                             }`}
                             style={{
@@ -11912,15 +12797,38 @@ export default function XrayCalibrationWorkspace() {
                               color: layerPalette.text,
                             }}
                           >
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-1.5">
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor: layerPalette.border,
+                                  }}
+                                />
+                                <span className="truncate font-medium">
+                                  #{layer.id}{" "}
+                                  {isRightSidebarCompact
+                                    ? null
+                                    : layer.name || getLayerDefaultName(layer)}
+                                </span>
+                              </span>
+                              {!isRightSidebarCompact ? (
+                                <span className="mt-0.5 block truncate text-[9px] text-slate-500">
+                                  {getLayerDefaultName(layer)} | urutan{" "}
+                                  {cutLayers.findIndex(
+                                    (item) => item.id === layer.id,
+                                  ) + 1}
+                                </span>
+                              ) : null}
+                            </span>
                             <span
-                              className="h-2.5 w-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: layerPalette.border }}
-                            />
-                            <span className="min-w-0 truncate">
-                              #{layer.id}{" "}
-                              {isRightSidebarCompact
-                                ? null
-                                : layer.name || getLayerDefaultName(layer)}
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] ${
+                                isLayerActive
+                                  ? SOFT_DARK_BUTTON_CLASS
+                                  : `${SOFT_RAISED_CLASS} text-slate-500`
+                              }`}
+                            >
+                              {isLayerActive ? "Aktif" : "Pilih"}
                             </span>
                           </motion.button>
                         );
@@ -12219,6 +13127,134 @@ export default function XrayCalibrationWorkspace() {
                               className="absolute inset-0 cursor-pointer opacity-0"
                             />
                           </label>
+                        </div>
+                        <div className="mt-2 text-[10px] text-slate-500">
+                          Drag titik ungu di canvas untuk edit shape. Saat satu
+                          titik aktif, menu melayang akan muncul untuk tambah /
+                          hapus point. Dua handle oranye bisa digeser bebas 360
+                          derajat untuk mencari rounded yang paling pas.
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-1.5">
+                          <div
+                            className={`${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-600`}
+                          >
+                            {selectedFreeLinePointIndex !== null
+                              ? `Titik aktif: #${selectedFreeLinePointIndex + 1}`
+                              : "Pilih titik ungu untuk edit / hapus"}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={deleteSelectedFreeLinePoint}
+                            disabled={selectedFreeLinePointIndex === null}
+                            className={`${SOFT_DANGER_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Delete Point
+                          </button>
+                        </div>
+                        <div className="mt-1 grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateLayerById(selectedCutLayer.id, (item) => {
+                                if (
+                                  item.kind !== "free-line" ||
+                                  selectedFreeLinePointIndex === null ||
+                                  !Array.isArray(item.maskPoints)
+                                ) {
+                                  return item;
+                                }
+                                return {
+                                  ...item,
+                                  maskPoints: item.maskPoints.map(
+                                    (point, index) => {
+                                      if (
+                                        index !== selectedFreeLinePointIndex
+                                      ) {
+                                        return point;
+                                      }
+                                      const nextPoint = { ...point };
+                                      delete nextPoint.handleInX;
+                                      delete nextPoint.handleInY;
+                                      delete nextPoint.handleOutX;
+                                      delete nextPoint.handleOutY;
+                                      return nextPoint;
+                                    },
+                                  ),
+                                };
+                              })
+                            }
+                            disabled={selectedFreeLinePointIndex === null}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Reset Handle
+                          </button>
+                          <div
+                            className={`${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-500`}
+                          >
+                            Handle 360°
+                          </div>
+                        </div>
+                        <div className="mt-2 grid gap-1.5">
+                          <CompactSliderField
+                            label="Curve"
+                            valueText={`${selectedLayerMetrics.curveStrength}%`}
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={selectedLayerMetrics.curveStrength}
+                            onChange={(event) =>
+                              updateLayerById(selectedCutLayer.id, {
+                                curveStrength: Number(event.target.value) / 100,
+                              })
+                            }
+                            onDecrease={() =>
+                              updateLayerById(selectedCutLayer.id, (item) => ({
+                                ...item,
+                                curveStrength: clamp(
+                                  getFreeLineCurveStrength(item) - 0.05,
+                                  0,
+                                  1,
+                                ),
+                              }))
+                            }
+                            onIncrease={() =>
+                              updateLayerById(selectedCutLayer.id, (item) => ({
+                                ...item,
+                                curveStrength: clamp(
+                                  getFreeLineCurveStrength(item) + 0.05,
+                                  0,
+                                  1,
+                                ),
+                              }))
+                            }
+                          />
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  curveStrength: 0,
+                                })
+                              }
+                              className={SOFT_TEXT_BUTTON_CLASS}
+                            >
+                              Lurus
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  curveStrength:
+                                    selectedCutLayer.drawMode === "point"
+                                      ? DEFAULT_FREE_LINE_CURVE_POINT
+                                      : DEFAULT_FREE_LINE_CURVE_FREEHAND,
+                                })
+                              }
+                              className={SOFT_TEXT_BUTTON_CLASS}
+                            >
+                              Lengkung
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : null}
@@ -14258,7 +15294,12 @@ export default function XrayCalibrationWorkspace() {
               ref={containerRef}
               className="relative h-[calc(100dvh-108px)] min-h-[460px] w-full overflow-hidden bg-slate-950/95 sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-156px)]"
             >
-              {selectedCutLayer && selectedLayerToolbarAnchor ? (
+              {selectedCutLayer &&
+              selectedLayerToolbarAnchor &&
+              !(
+                selectedCutLayer.kind === "free-line" &&
+                selectedFreeLinePointIndex !== null
+              ) ? (
                 <motion.div
                   initial={{ opacity: 0, y: -8, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -14388,6 +15429,60 @@ export default function XrayCalibrationWorkspace() {
                       />
                     </div>
                   )}
+                </motion.div>
+              ) : null}
+              {selectedCutLayer?.kind === "free-line" &&
+              selectedFreeLinePointIndex !== null &&
+              selectedFreeLinePointAnchor ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={PANEL_SPRING}
+                  className="absolute z-30"
+                  style={{
+                    left: selectedFreeLinePointAnchor.centerX,
+                    top: selectedFreeLinePointAnchor.topY,
+                    transform: "translateX(-50%)",
+                  }}
+                >
+                  <div
+                    className={`flex items-center gap-1.5 rounded-full px-2 py-1.5 ${SOFT_FLOAT_SURFACE_CLASS} text-slate-700`}
+                  >
+                    <span
+                      className={`${SOFT_INSET_CLASS} px-2.5 py-1 text-[10px] font-semibold text-slate-600`}
+                    >
+                      P{selectedFreeLinePointIndex + 1}
+                    </span>
+                    <div
+                      className={`flex items-center gap-1 rounded-full px-1 py-0.5 ${SOFT_INSET_CLASS}`}
+                    >
+                      <LayerToolbarActionButton
+                        icon="minus"
+                        label="Kurangi rounded point"
+                        onClick={() => adjustSelectedFreeLinePointRound(-8)}
+                      />
+                      <span className="min-w-[44px] text-center text-[10px] font-semibold text-slate-600">
+                        {selectedFreeLineCurveRadius ?? "-"}
+                      </span>
+                      <LayerToolbarActionButton
+                        icon="plus"
+                        label="Tambah rounded point"
+                        onClick={() => adjustSelectedFreeLinePointRound(8)}
+                      />
+                    </div>
+                    <LayerToolbarActionButton
+                      icon="plus"
+                      label="Tambah point setelah titik aktif"
+                      onClick={insertFreeLinePointAfterSelection}
+                    />
+                    <LayerToolbarActionButton
+                      icon="trash"
+                      label="Hapus point aktif"
+                      onClick={deleteSelectedFreeLinePoint}
+                      className="text-rose-600"
+                    />
+                  </div>
                 </motion.div>
               ) : null}
               {isMobileViewport && selectedLine ? (
