@@ -62,6 +62,12 @@ import {
   DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
   parseSheetRawText,
 } from "../lib/googleSheetImageUtils";
+import { signedCoronalAngle as getHkaSignedCoronalAngle } from "../lib/hka/geometry";
+import {
+  calculateFullLengthHKA,
+  classifyAlignment,
+} from "../lib/hka/hkaCalculator";
+import { calculateFTA, predictHKAAFromFTA } from "../lib/hka/ftaCalculator";
 import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
 import {
   getImplantLibraryItemById,
@@ -128,11 +134,52 @@ const DEFAULT_LINE_LABEL_OFFSET_X = -42;
 const DEFAULT_LINE_LABEL_OFFSET_Y = -20;
 const DEFAULT_ANGLE_LABEL_OFFSET_X = 0;
 const DEFAULT_ANGLE_LABEL_OFFSET_Y = -16;
+const DEFAULT_HKA_LABEL_OFFSET_X = 0;
+const DEFAULT_HKA_LABEL_OFFSET_Y = -16;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
 const KNOB_START_DEG = 135;
 const KNOB_SWEEP_DEG = 270;
+const HKA_MODE_DEFINITIONS = {
+  full: {
+    key: "full",
+    label: "HKA",
+    modeLabel: "Full Length Standing HKA",
+    points: [
+      { key: "hip", shortLabel: "CFH", promptLabel: "center femoral head" },
+      { key: "knee", shortLabel: "CK", promptLabel: "center knee / notch" },
+      { key: "ankle", shortLabel: "CA", promptLabel: "center ankle" },
+    ],
+  },
+  fta: {
+    key: "fta",
+    label: "FTA",
+    modeLabel: "FTA (Fem2 + Tib1)",
+    points: [
+      {
+        key: "femurMidshaft10cm",
+        shortLabel: "Fem2",
+        promptLabel: "Fem2 mid-shaft ±10 cm proximal",
+      },
+      {
+        key: "femoralNotch",
+        shortLabel: "Notch",
+        promptLabel: "femoral notch",
+      },
+      {
+        key: "tibiaMidshaft4cm",
+        shortLabel: "Tib1 4",
+        promptLabel: "Tib1 ±4 cm distal",
+      },
+      {
+        key: "tibiaMidshaft10cm",
+        shortLabel: "Tib1 10",
+        promptLabel: "Tib1 ±10 cm distal",
+      },
+    ],
+  },
+};
 const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
@@ -140,7 +187,7 @@ const MOBILE_DOUBLE_TAP_MS = 320;
 const MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN = 72;
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
-const DEFAULT_ANGLE_FILL_OPACITY = 0.2;
+const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
 const DEFAULT_FREE_LINE_COLOR = "#3b82f6";
 const DEFAULT_FREE_LINE_MODE = "freehand";
 const DEFAULT_FREE_LINE_CURVE_FREEHAND = 0.16;
@@ -161,6 +208,16 @@ const FREE_SHAPE_COLOR_OPTIONS = [
   "#22c55e",
   "#f59e0b",
   "#f43f5e",
+  "#8b5cf6",
+  "#111827",
+  "#94a3b8",
+];
+const HKA_COLOR_OPTIONS = [
+  "#14b8a6",
+  "#0ea5e9",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
   "#8b5cf6",
   "#111827",
   "#94a3b8",
@@ -710,19 +767,163 @@ function getAngleResultOpacity(angle) {
   return clamp(rawValue, 0.08, 1);
 }
 
-function getAngleFillOpacity(angle) {
-  const rawValue = Number.isFinite(angle?.fillOpacity)
-    ? angle.fillOpacity
-    : DEFAULT_ANGLE_FILL_OPACITY;
-  return clamp(rawValue, 0, 1);
+function getHkaLineColor(hka) {
+  return hka?.lineColor || DEFAULT_HKA_LINE_COLOR;
 }
 
-function getAngleEffectiveFillAlpha(angle) {
-  return clamp(getAngleFillOpacity(angle) * 0.28, 0, 0.28);
+function getHkaModeDefinition(mode = "full") {
+  return HKA_MODE_DEFINITIONS[mode] || HKA_MODE_DEFINITIONS.full;
 }
 
-function getHkaEffectiveFillAlpha(hka) {
-  return clamp(getAngleFillOpacity(hka) * 0.14, 0, 0.14);
+function cloneOptionalPoint(point) {
+  return point ? { ...point } : null;
+}
+
+function getHkaPointEntries(hka) {
+  const definition = getHkaModeDefinition(hka?.mode);
+  return definition.points
+    .map((pointDef) =>
+      hka?.[pointDef.key]
+        ? {
+            ...pointDef,
+            point: hka[pointDef.key],
+          }
+        : null,
+    )
+    .filter(Boolean);
+}
+
+function getAnglePointEntries(angle) {
+  if (!angle) return [];
+  return [
+    { key: "p1", point: angle.p1 },
+    { key: "p2", point: angle.p2 },
+    { key: "p3", point: angle.p3 },
+  ].filter((entry) => entry.point);
+}
+
+function cloneHkaItem(item) {
+  const definition = getHkaModeDefinition(item?.mode);
+  const cloned = {
+    ...item,
+    mode: definition.key,
+    direction: item?.direction || "varus",
+    side: item?.side || "right",
+    showArc: definition.key === "full" ? item?.showArc !== false : false,
+    lineColor: item?.lineColor || DEFAULT_HKA_LINE_COLOR,
+    labelOffsetX: Number.isFinite(item?.labelOffsetX)
+      ? item.labelOffsetX
+      : DEFAULT_HKA_LABEL_OFFSET_X,
+    labelOffsetY: Number.isFinite(item?.labelOffsetY)
+      ? item.labelOffsetY
+      : DEFAULT_HKA_LABEL_OFFSET_Y,
+  };
+
+  for (const pointDef of definition.points) {
+    cloned[pointDef.key] = cloneOptionalPoint(item?.[pointDef.key]);
+  }
+
+  return cloned;
+}
+
+function getHkaDraftNotice(mode, pointsPlaced) {
+  const definition = getHkaModeDefinition(mode);
+  const remaining = definition.points.length - pointsPlaced;
+  if (remaining <= 0) return `${definition.label} siap dibuat.`;
+  return `${definition.label}: pilih ${remaining} titik lagi (${definition.points
+    .slice(pointsPlaced)
+    .map((item) => item.promptLabel)
+    .join(" -> ")}).`;
+}
+
+function getHkaMeasurementResult(hka) {
+  const mode = hka?.mode || "full";
+  const definition = getHkaModeDefinition(mode);
+  const isComplete = definition.points.every((pointDef) => hka?.[pointDef.key]);
+
+  if (!isComplete) {
+    return {
+      mode,
+      absoluteDeviation: null,
+      signedDeviation: null,
+      direction: hka?.direction || "varus",
+      side: hka?.side || "right",
+      label: mode === "fta" ? "FTA belum lengkap" : "Belum lengkap",
+      modeLabel: definition.modeLabel,
+      fta: null,
+      predictedHka: null,
+    };
+  }
+
+  if (mode === "fta") {
+    const fta = calculateFTA({
+      femurMidshaft10cm: hka.femurMidshaft10cm,
+      femoralNotch: hka.femoralNotch,
+      tibiaMidshaft4cm: hka.tibiaMidshaft4cm,
+      tibiaMidshaft10cm: hka.tibiaMidshaft10cm,
+    });
+    const predictedHka = predictHKAAFromFTA(fta);
+
+    return {
+      mode,
+      absoluteDeviation: predictedHka,
+      signedDeviation: null,
+      direction: hka.direction || "varus",
+      side: hka.side || "right",
+      label:
+        fta !== null && predictedHka !== null
+          ? `FTA ${fta.toFixed(1)}° -> HKAA ${predictedHka.toFixed(1)}°`
+          : "FTA belum lengkap",
+      modeLabel: definition.modeLabel,
+      fta,
+      predictedHka,
+    };
+  }
+
+  const direction = hka.direction || "varus";
+  const side = hka.side || "right";
+  const result = calculateFullLengthHKA({
+    femoralHead: hka.hip,
+    kneeCenter: hka.knee,
+    ankleCenter: hka.ankle,
+    side,
+  });
+  const absoluteDeviation = result?.absoluteDeviation ?? null;
+  const signedDeviation = getHkaSignedCoronalAngle(
+    hka.hip,
+    hka.knee,
+    hka.ankle,
+  );
+
+  return {
+    mode,
+    absoluteDeviation,
+    signedDeviation,
+    direction,
+    side,
+    label: classifyAlignment(absoluteDeviation, direction),
+    modeLabel: definition.modeLabel,
+    fta: null,
+    predictedHka: null,
+  };
+}
+
+function getHkaCanvasLabelText(measurement, expanded = false) {
+  if (!measurement) return "HKA";
+
+  if (measurement.mode === "fta") {
+    if (measurement.fta === null) return "FTA";
+    if (expanded && measurement.predictedHka !== null) {
+      return `FTA ${measurement.fta.toFixed(1)}° | HKAA ${measurement.predictedHka.toFixed(1)}°`;
+    }
+    return `FTA ${measurement.fta.toFixed(1)}°`;
+  }
+
+  if (measurement.absoluteDeviation === null) return "HKA";
+  if (expanded) {
+    return `${measurement.label} (${measurement.absoluteDeviation.toFixed(1)}°)`;
+  }
+  return `HKA ${measurement.absoluteDeviation.toFixed(1)}°`;
 }
 
 function getAngleArcGeometry(a, vertex, b) {
@@ -1521,6 +1722,24 @@ function drawTag(ctx, x, y, text, color, options = {}) {
   ctx.restore();
 }
 
+function fillCircleMarkers(ctx, markers) {
+  for (const marker of markers) {
+    if (!marker) continue;
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, marker.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function strokeCircleMarkers(ctx, markers) {
+  for (const marker of markers) {
+    if (!marker) continue;
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, marker.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
 function getTagBounds(x, y, text, options = {}) {
   const fontSize = options.fontSize ?? 10;
   const paddingX = options.paddingX ?? 5;
@@ -2177,6 +2396,7 @@ export default function XrayCalibrationWorkspace() {
   const [copiedTemplateScale, setCopiedTemplateScale] = useState(null);
   const [measurementUnit, setMeasurementUnit] = useState("cm");
   const [linePreset, setLinePreset] = useState("normal");
+  const [hkaInputMode, setHkaInputMode] = useState("full");
   const [measureAnatomyTab, setMeasureAnatomyTab] = useState("knee");
   const [contrast, setContrast] = useState(100);
   const [level, setLevel] = useState(100);
@@ -2191,8 +2411,12 @@ export default function XrayCalibrationWorkspace() {
   const [mobilePanelPreviewActive, setMobilePanelPreviewActive] =
     useState(false);
   const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
+  const [mobileAngleHandleAssist, setMobileAngleHandleAssist] = useState(null);
+  const [mobileHkaHandleAssist, setMobileHkaHandleAssist] = useState(null);
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
     useState(null);
+  const [selectionPulse, setSelectionPulse] = useState(null);
+  const [hoveredMeasurementInfo, setHoveredMeasurementInfo] = useState(null);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
@@ -2327,6 +2551,10 @@ export default function XrayCalibrationWorkspace() {
     () => hkaSets.find((item) => item.id === selectedHkaId) || null,
     [hkaSets, selectedHkaId],
   );
+  useEffect(() => {
+    if (!selectedHka?.mode) return;
+    setHkaInputMode(selectedHka.mode);
+  }, [selectedHka?.id, selectedHka?.mode]);
   const selectedCutLayer = useMemo(
     () => cutLayers.find((layer) => layer.id === selectedCutLayerId) || null,
     [cutLayers, selectedCutLayerId],
@@ -2430,7 +2658,6 @@ export default function XrayCalibrationWorkspace() {
 
     return {
       color: selectedAngle.color || DEFAULT_ANGLE_COLOR,
-      fillOpacity: Math.round(getAngleFillOpacity(selectedAngle) * 100),
       labelOffsetX: Number.isFinite(selectedAngle.labelOffsetX)
         ? selectedAngle.labelOffsetX
         : DEFAULT_ANGLE_LABEL_OFFSET_X,
@@ -2451,14 +2678,20 @@ export default function XrayCalibrationWorkspace() {
   const selectedHkaMetrics = useMemo(() => {
     if (!selectedHka) return null;
 
+    const measurement = getHkaMeasurementResult(selectedHka);
     return {
-      fillOpacity: Math.round(getAngleFillOpacity(selectedHka) * 100),
-      showArc: selectedHka.showArc !== false,
-      valueDeg: getAngleDegrees(
-        selectedHka.hip,
-        selectedHka.knee,
-        selectedHka.ankle,
-      ),
+      mode: measurement.mode,
+      modeLabel: measurement.modeLabel,
+      lineColor: getHkaLineColor(selectedHka),
+      showArc:
+        selectedHka.mode === "full" ? selectedHka.showArc !== false : false,
+      valueDeg: measurement.absoluteDeviation,
+      signedDeg: measurement.signedDeviation,
+      direction: measurement.direction,
+      side: measurement.side,
+      label: measurement.label,
+      fta: measurement.fta,
+      predictedHka: measurement.predictedHka,
     };
   }, [selectedHka]);
   const selectedLayerCanApplyRealSize =
@@ -2540,34 +2773,95 @@ export default function XrayCalibrationWorkspace() {
     setMobileHandleAssist({ lineId, handleKey });
   }, []);
 
+  const clearMobileAngleHandleAssist = useCallback(() => {
+    setMobileAngleHandleAssist(null);
+  }, []);
+
+  const activateMobileAngleHandleAssist = useCallback((angleId, handleKey) => {
+    setMobileAngleHandleAssist({ angleId, handleKey });
+  }, []);
+
+  const clearMobileHkaHandleAssist = useCallback(() => {
+    setMobileHkaHandleAssist(null);
+  }, []);
+
+  const activateMobileHkaHandleAssist = useCallback((hkaId, handleKey) => {
+    setMobileHkaHandleAssist({ hkaId, handleKey });
+  }, []);
+
   const clearMobilePlanningGuideHandleAssist = useCallback(() => {
     setMobilePlanningGuideHandleAssist(null);
   }, []);
 
+  const triggerSelectionPulse = useCallback((type, id) => {
+    if (id === null || id === undefined) return;
+    setSelectionPulse({
+      type,
+      id,
+      token: `${type}-${id}-${Date.now()}`,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectionPulse) return undefined;
+
+    const timeoutId = setTimeout(() => {
+      setSelectionPulse((current) =>
+        current?.token === selectionPulse.token ? null : current,
+      );
+    }, 520);
+
+    return () => clearTimeout(timeoutId);
+  }, [selectionPulse]);
+
+  const syncMobileCanvasSelection = useCallback(
+    (panel = "measure", { openPanel = false, noticeText = "" } = {}) => {
+      if (!isMobileViewport) return;
+      setMobilePanelMode("workspace");
+      setActiveRightPanel(panel);
+      setMobileControlsOpen(openPanel);
+      if (noticeText) {
+        setNotice(noticeText);
+      }
+    },
+    [isMobileViewport],
+  );
+
   const clearActiveCanvasSelection = useCallback(() => {
+    setSelectedFreeLinePointIndex(null);
     setSelectedLineId(null);
     setSelectedAngleId(null);
     setSelectedCircleId(null);
     setSelectedHkaId(null);
     setSelectedCutLayerId(null);
     setSelectedPlanningGuideId(null);
+    setSelectionPulse(null);
     clearMobileHandleAssist();
+    clearMobileAngleHandleAssist();
+    clearMobileHkaHandleAssist();
     clearMobilePlanningGuideHandleAssist();
-  }, [clearMobileHandleAssist, clearMobilePlanningGuideHandleAssist]);
+  }, [
+    clearMobileAngleHandleAssist,
+    clearMobileHandleAssist,
+    clearMobileHkaHandleAssist,
+    clearMobilePlanningGuideHandleAssist,
+    setSelectionPulse,
+  ]);
 
   const openRelevantMobilePanel = useCallback(() => {
-    if (selectedLineId !== null || selectedPlanningGuideId !== null) {
+    if (
+      selectedLineId !== null ||
+      selectedPlanningGuideId !== null ||
+      selectedAngleId !== null ||
+      selectedCircleId !== null ||
+      selectedHkaId !== null
+    ) {
       setMobilePanelMode("workspace");
       setActiveRightPanel("measure");
       setMobileControlsOpen(true);
       return;
     }
-    if (
-      selectedCutLayerId !== null ||
-      selectedAngleId !== null ||
-      selectedCircleId !== null ||
-      selectedHkaId !== null
-    ) {
+    if (selectedCutLayerId !== null) {
       setMobilePanelMode("workspace");
       setActiveRightPanel("tool");
       setMobileControlsOpen(true);
@@ -2837,6 +3131,26 @@ export default function XrayCalibrationWorkspace() {
   }, [lines, mobileHandleAssist, selectedLineId]);
 
   useEffect(() => {
+    if (!mobileAngleHandleAssist) return;
+    const stillExists = angles.some(
+      (angle) => angle.id === mobileAngleHandleAssist.angleId,
+    );
+    if (!stillExists || selectedAngleId !== mobileAngleHandleAssist.angleId) {
+      setMobileAngleHandleAssist(null);
+    }
+  }, [angles, mobileAngleHandleAssist, selectedAngleId]);
+
+  useEffect(() => {
+    if (!mobileHkaHandleAssist) return;
+    const stillExists = hkaSets.some(
+      (item) => item.id === mobileHkaHandleAssist.hkaId,
+    );
+    if (!stillExists || selectedHkaId !== mobileHkaHandleAssist.hkaId) {
+      setMobileHkaHandleAssist(null);
+    }
+  }, [hkaSets, mobileHkaHandleAssist, selectedHkaId]);
+
+  useEffect(() => {
     if (!mobilePlanningGuideHandleAssist) return;
     const stillExists = planningGuides.some(
       (guide) => guide.id === mobilePlanningGuideHandleAssist.guideId,
@@ -2982,6 +3296,7 @@ export default function XrayCalibrationWorkspace() {
       mmPerPixelAt100Input,
       actualMmInput,
       actualUnit,
+      hkaInputMode,
       templateRealSizeInput,
       templateRealSizeUnit,
       templateRealSizeAxis,
@@ -3039,6 +3354,7 @@ export default function XrayCalibrationWorkspace() {
       flipX,
       flipY,
       hkaSets,
+      hkaInputMode,
       imageName,
       leftSidebarWidth,
       level,
@@ -3242,6 +3558,81 @@ export default function XrayCalibrationWorkspace() {
     [getMobileHandleAssistGeometry, isCoarsePointer, lines, mobileHandleAssist],
   );
 
+  const getMobileAngleHandleAssistGeometry = useCallback(
+    (angle, handleKey) => {
+      if (!angle) return null;
+      const entries = getAnglePointEntries(angle);
+      const targetEntry = entries.find((entry) => entry.key === handleKey);
+      if (!targetEntry) return null;
+      const handleImagePoint = targetEntry.point;
+      const handleScreenPoint = imageToScreenPoint(
+        handleImagePoint.x,
+        handleImagePoint.y,
+      );
+      const otherEntries = entries.filter((entry) => entry.key !== handleKey);
+      let centroidX = handleScreenPoint.x;
+      let centroidY = handleScreenPoint.y - 1;
+      if (otherEntries.length > 0) {
+        const centroid = otherEntries.reduce(
+          (accumulator, entry) => {
+            const screen = imageToScreenPoint(entry.point.x, entry.point.y);
+            accumulator.x += screen.x;
+            accumulator.y += screen.y;
+            return accumulator;
+          },
+          { x: 0, y: 0 },
+        );
+        centroidX = centroid.x / otherEntries.length;
+        centroidY = centroid.y / otherEntries.length;
+      }
+      let dx = handleScreenPoint.x - centroidX;
+      let dy = handleScreenPoint.y - centroidY;
+      const length = Math.hypot(dx, dy) || 1;
+      dx /= length;
+      dy /= length;
+      const offset = MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN * 0.62;
+      return {
+        handleImagePoint,
+        handleScreenPoint,
+        centerX: handleScreenPoint.x + dx * offset,
+        centerY: handleScreenPoint.y + dy * offset,
+      };
+    },
+    [imageToScreenPoint],
+  );
+
+  const findMobileAngleHandleAssistHit = useCallback(
+    (screenPoint) => {
+      if (!isCoarsePointer || !mobileAngleHandleAssist) return null;
+      const targetAngle =
+        angles.find((angle) => angle.id === mobileAngleHandleAssist.angleId) ||
+        null;
+      if (!targetAngle) return null;
+      const geometry = getMobileAngleHandleAssistGeometry(
+        targetAngle,
+        mobileAngleHandleAssist.handleKey,
+      );
+      if (!geometry) return null;
+      const distance = Math.hypot(
+        screenPoint.x - geometry.centerX,
+        screenPoint.y - geometry.centerY,
+      );
+      if (distance > MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN) {
+        return null;
+      }
+      return {
+        angleId: targetAngle.id,
+        handleKey: mobileAngleHandleAssist.handleKey,
+      };
+    },
+    [
+      angles,
+      getMobileAngleHandleAssistGeometry,
+      isCoarsePointer,
+      mobileAngleHandleAssist,
+    ],
+  );
+
   const getMobilePlanningGuideHandleAssistGeometry = useCallback(
     (guide, handleKey) => {
       if (!guide) return null;
@@ -3272,6 +3663,80 @@ export default function XrayCalibrationWorkspace() {
       };
     },
     [imageToScreenPoint],
+  );
+
+  const getMobileHkaHandleAssistGeometry = useCallback(
+    (item, handleKey) => {
+      if (!item) return null;
+      const entries = getHkaPointEntries(item);
+      const targetEntry = entries.find((entry) => entry.key === handleKey);
+      if (!targetEntry) return null;
+      const handleImagePoint = targetEntry.point;
+      const handleScreenPoint = imageToScreenPoint(
+        handleImagePoint.x,
+        handleImagePoint.y,
+      );
+      const otherEntries = entries.filter((entry) => entry.key !== handleKey);
+      let centroidX = handleScreenPoint.x;
+      let centroidY = handleScreenPoint.y - 1;
+      if (otherEntries.length > 0) {
+        const centroid = otherEntries.reduce(
+          (accumulator, entry) => {
+            const screen = imageToScreenPoint(entry.point.x, entry.point.y);
+            accumulator.x += screen.x;
+            accumulator.y += screen.y;
+            return accumulator;
+          },
+          { x: 0, y: 0 },
+        );
+        centroidX = centroid.x / otherEntries.length;
+        centroidY = centroid.y / otherEntries.length;
+      }
+      let dx = handleScreenPoint.x - centroidX;
+      let dy = handleScreenPoint.y - centroidY;
+      const length = Math.hypot(dx, dy) || 1;
+      dx /= length;
+      dy /= length;
+      const offset = MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN * 0.62;
+      return {
+        handleImagePoint,
+        handleScreenPoint,
+        centerX: handleScreenPoint.x + dx * offset,
+        centerY: handleScreenPoint.y + dy * offset,
+      };
+    },
+    [imageToScreenPoint],
+  );
+
+  const findMobileHkaHandleAssistHit = useCallback(
+    (screenPoint) => {
+      if (!isCoarsePointer || !mobileHkaHandleAssist) return null;
+      const targetItem =
+        hkaSets.find((item) => item.id === mobileHkaHandleAssist.hkaId) || null;
+      if (!targetItem) return null;
+      const geometry = getMobileHkaHandleAssistGeometry(
+        targetItem,
+        mobileHkaHandleAssist.handleKey,
+      );
+      if (!geometry) return null;
+      const distance = Math.hypot(
+        screenPoint.x - geometry.centerX,
+        screenPoint.y - geometry.centerY,
+      );
+      if (distance > MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN) {
+        return null;
+      }
+      return {
+        hkaId: targetItem.id,
+        handleKey: mobileHkaHandleAssist.handleKey,
+      };
+    },
+    [
+      getMobileHkaHandleAssistGeometry,
+      hkaSets,
+      isCoarsePointer,
+      mobileHkaHandleAssist,
+    ],
   );
 
   const findMobilePlanningGuideHandleAssistHit = useCallback(
@@ -3489,6 +3954,12 @@ export default function XrayCalibrationWorkspace() {
     createCalibrationPresetLine(targetMm);
   }, [actualMmInput, actualUnit, createCalibrationPresetLine]);
 
+  const handleHkaModeChange = useCallback((nextMode) => {
+    setHkaInputMode(nextMode);
+    setDraftHkaPoints([]);
+    setNotice(getHkaDraftNotice(nextMode, 0));
+  }, []);
+
   const handleToolChange = useCallback(
     (nextTool) => {
       const requiresCalibration =
@@ -3513,15 +3984,22 @@ export default function XrayCalibrationWorkspace() {
         setHistoryPaused(false);
       }
       setTool(nextTool);
+      if (nextTool === "hkaAuto") {
+        setDraftHkaPoints([]);
+        setNotice(getHkaDraftNotice(hkaInputMode, 0));
+      }
       if (isMobileViewport) {
         setMobileControlsOpen(false);
       }
     },
     [
       clearMobileHandleAssist,
+      clearMobileAngleHandleAssist,
+      clearMobileHkaHandleAssist,
       clearMobilePlanningGuideHandleAssist,
       focusCalibrationStep,
       hasCalibration,
+      hkaInputMode,
       isMobileViewport,
       resetMobileLineTapTarget,
       setDraftFreeLine,
@@ -3910,15 +4388,7 @@ export default function XrayCalibrationWorkspace() {
         setLines(parsedLines);
         setAngles(parsedAngles);
         setCircles(parsedCircles);
-        setHkaSets(
-          parsedHkaSets.map((item) => ({
-            ...item,
-            hip: { ...item.hip },
-            knee: { ...item.knee },
-            ankle: { ...item.ankle },
-            showArc: item.showArc !== false,
-          })),
-        );
+        setHkaSets(parsedHkaSets.map((item) => cloneHkaItem(item)));
         setDraftAnglePoints([]);
         setDraftCirclePoints([]);
         setDraftHkaPoints([]);
@@ -3939,6 +4409,7 @@ export default function XrayCalibrationWorkspace() {
         setMmPerPixelAt100Input(payload.mmPerPixelAt100Input || "0.63");
         setActualMmInput(payload.actualMmInput || "13");
         setActualUnit(payload.actualUnit || "cm");
+        setHkaInputMode(payload.hkaInputMode || "full");
         setTemplateRealSizeInput(payload.templateRealSizeInput || "");
         setTemplateRealSizeUnit(payload.templateRealSizeUnit || "cm");
         setTemplateRealSizeAxis(payload.templateRealSizeAxis || "height");
@@ -4381,12 +4852,7 @@ export default function XrayCalibrationWorkspace() {
           ? item.points.map((point) => ({ ...point }))
           : [],
       })),
-      hkaSets: hkaSets.map((item) => ({
-        ...item,
-        hip: { ...item.hip },
-        knee: { ...item.knee },
-        ankle: { ...item.ankle },
-      })),
+      hkaSets: hkaSets.map((item) => cloneHkaItem(item)),
       cutLayers: cutLayers.map((layer) => ({
         ...layer,
         maskPoints: Array.isArray(layer.maskPoints)
@@ -4494,15 +4960,7 @@ export default function XrayCalibrationWorkspace() {
           : [],
       })),
     );
-    setHkaSets(
-      snapshot.hkaSets.map((item) => ({
-        ...item,
-        hip: { ...item.hip },
-        knee: { ...item.knee },
-        ankle: { ...item.ankle },
-        showArc: item.showArc !== false,
-      })),
-    );
+    setHkaSets(snapshot.hkaSets.map((item) => cloneHkaItem(item)));
     setCutLayers(
       snapshot.cutLayers.map((layer) => ({
         ...layer,
@@ -4784,9 +5242,108 @@ export default function XrayCalibrationWorkspace() {
     [getLineLabelText, imageToScreenPoint, lines],
   );
 
+  const findAngleLabelByPoint = useCallback(
+    (screenPoint) => {
+      for (let index = angles.length - 1; index >= 0; index -= 1) {
+        const angle = angles[index];
+        const vertex = imageToScreenPoint(angle.p2.x, angle.p2.y);
+        const labelX =
+          vertex.x +
+          (Number.isFinite(angle.labelOffsetX)
+            ? angle.labelOffsetX
+            : DEFAULT_ANGLE_LABEL_OFFSET_X);
+        const labelY =
+          vertex.y +
+          (Number.isFinite(angle.labelOffsetY)
+            ? angle.labelOffsetY
+            : DEFAULT_ANGLE_LABEL_OFFSET_Y);
+        const bounds = getTagBounds(
+          labelX,
+          labelY,
+          `ANGLE: ${getAngleDegrees(angle.p1, angle.p2, angle.p3).toFixed(1)}°`,
+          {
+            fontSize: 9,
+            radius: 4,
+          },
+        );
+        if (
+          screenPoint.x >= bounds.left &&
+          screenPoint.x <= bounds.right &&
+          screenPoint.y >= bounds.top &&
+          screenPoint.y <= bounds.bottom
+        ) {
+          return angle.id;
+        }
+      }
+      return null;
+    },
+    [angles, imageToScreenPoint],
+  );
+
+  const findHkaLabelByPoint = useCallback(
+    (screenPoint) => {
+      for (let index = hkaSets.length - 1; index >= 0; index -= 1) {
+        const item = hkaSets[index];
+        const measurement = getHkaMeasurementResult(item);
+        let anchor = null;
+
+        if (item.mode === "fta") {
+          if (
+            !item.femoralNotch ||
+            !item.tibiaMidshaft4cm
+          ) {
+            continue;
+          }
+          const notch = imageToScreenPoint(
+            item.femoralNotch.x,
+            item.femoralNotch.y,
+          );
+          const tibia4 = imageToScreenPoint(
+            item.tibiaMidshaft4cm.x,
+            item.tibiaMidshaft4cm.y,
+          );
+          anchor = {
+            x: (notch.x + tibia4.x) / 2,
+            y: (notch.y + tibia4.y) / 2,
+          };
+        } else {
+          if (!item.knee) continue;
+          anchor = imageToScreenPoint(item.knee.x, item.knee.y);
+        }
+
+        const labelX =
+          anchor.x +
+          (Number.isFinite(item.labelOffsetX)
+            ? item.labelOffsetX
+            : DEFAULT_HKA_LABEL_OFFSET_X);
+        const labelY =
+          anchor.y +
+          (Number.isFinite(item.labelOffsetY)
+            ? item.labelOffsetY
+            : DEFAULT_HKA_LABEL_OFFSET_Y);
+        const bounds = getTagBounds(
+          labelX,
+          labelY,
+          getHkaCanvasLabelText(measurement, true),
+          { fontSize: 9, radius: 4 },
+        );
+        if (
+          screenPoint.x >= bounds.left &&
+          screenPoint.x <= bounds.right &&
+          screenPoint.y >= bounds.top &&
+          screenPoint.y <= bounds.bottom
+        ) {
+          return item.id;
+        }
+      }
+      return null;
+    },
+    [hkaSets, imageToScreenPoint],
+  );
+
   const findClosestAngleHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage = (isCoarsePointer ? 22 : 10) / view.scale;
       let picked = null;
       let minDistance = Infinity;
 
@@ -4808,6 +5365,37 @@ export default function XrayCalibrationWorkspace() {
         }
       }
       return picked;
+    },
+    [angles, isCoarsePointer, view.scale],
+  );
+
+  const findClosestAngleId = useCallback(
+    (imagePoint) => {
+      const thresholdInImage = 10 / view.scale;
+      let pickedId = null;
+      let minDistance = Infinity;
+
+      for (const angle of angles) {
+        const distanceA = distancePointToSegment(imagePoint, {
+          x1: angle.p2.x,
+          y1: angle.p2.y,
+          x2: angle.p1.x,
+          y2: angle.p1.y,
+        });
+        const distanceB = distancePointToSegment(imagePoint, {
+          x1: angle.p2.x,
+          y1: angle.p2.y,
+          x2: angle.p3.x,
+          y2: angle.p3.y,
+        });
+        const distance = Math.min(distanceA, distanceB);
+        if (distance <= thresholdInImage && distance < minDistance) {
+          minDistance = distance;
+          pickedId = angle.id;
+        }
+      }
+
+      return pickedId;
     },
     [angles, view.scale],
   );
@@ -4841,16 +5429,16 @@ export default function XrayCalibrationWorkspace() {
 
   const findClosestHkaHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage = (isCoarsePointer ? 22 : 10) / view.scale;
       let picked = null;
       let minDistance = Infinity;
 
       for (const item of hkaSets) {
-        const handles = [
-          { key: "hip", x: item.hip.x, y: item.hip.y },
-          { key: "knee", x: item.knee.x, y: item.knee.y },
-          { key: "ankle", x: item.ankle.x, y: item.ankle.y },
-        ];
+        const handles = getHkaPointEntries(item).map((entry) => ({
+          key: entry.key,
+          x: entry.point.x,
+          y: entry.point.y,
+        }));
         for (const handle of handles) {
           const distance = Math.hypot(
             imagePoint.x - handle.x,
@@ -4864,6 +5452,65 @@ export default function XrayCalibrationWorkspace() {
       }
 
       return picked;
+    },
+    [hkaSets, isCoarsePointer, view.scale],
+  );
+
+  const findClosestHkaId = useCallback(
+    (imagePoint) => {
+      const thresholdInImage = 10 / view.scale;
+      let pickedId = null;
+      let minDistance = Infinity;
+
+      for (const item of hkaSets) {
+        const segments =
+          item.mode === "fta"
+            ? item.femurMidshaft10cm &&
+              item.femoralNotch &&
+              item.tibiaMidshaft4cm &&
+              item.tibiaMidshaft10cm
+              ? [
+                  {
+                    x1: item.femurMidshaft10cm.x,
+                    y1: item.femurMidshaft10cm.y,
+                    x2: item.femoralNotch.x,
+                    y2: item.femoralNotch.y,
+                  },
+                  {
+                    x1: item.tibiaMidshaft4cm.x,
+                    y1: item.tibiaMidshaft4cm.y,
+                    x2: item.tibiaMidshaft10cm.x,
+                    y2: item.tibiaMidshaft10cm.y,
+                  },
+                ]
+              : []
+            : item.hip && item.knee && item.ankle
+              ? [
+                  {
+                    x1: item.knee.x,
+                    y1: item.knee.y,
+                    x2: item.hip.x,
+                    y2: item.hip.y,
+                  },
+                  {
+                    x1: item.knee.x,
+                    y1: item.knee.y,
+                    x2: item.ankle.x,
+                    y2: item.ankle.y,
+                  },
+                ]
+              : [];
+
+        for (const segment of segments) {
+          const distance = distancePointToSegment(imagePoint, segment);
+          if (distance <= thresholdInImage && distance < minDistance) {
+            minDistance = distance;
+            pickedId = item.id;
+          }
+        }
+      }
+
+      return pickedId;
     },
     [hkaSets, view.scale],
   );
@@ -4949,9 +5596,9 @@ export default function XrayCalibrationWorkspace() {
       points.push({ x: circle.cx, y: circle.cy });
     }
     for (const item of hkaSets) {
-      points.push({ x: item.hip.x, y: item.hip.y });
-      points.push({ x: item.knee.x, y: item.knee.y });
-      points.push({ x: item.ankle.x, y: item.ankle.y });
+      for (const entry of getHkaPointEntries(item)) {
+        points.push({ x: entry.point.x, y: entry.point.y });
+      }
     }
 
     return points;
@@ -5239,6 +5886,15 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx.lineTo(end.x, end.y);
         overlayCtx.stroke();
       }
+      if (opts.pulse) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.4)";
+        overlayCtx.lineWidth = (opts.width || 2) + 6;
+        overlayCtx.lineCap = "round";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = opts.color;
       overlayCtx.lineWidth = opts.width || 2;
       overlayCtx.lineCap = "round";
@@ -5286,37 +5942,33 @@ export default function XrayCalibrationWorkspace() {
 
       if (opts.showTouchHalo) {
         overlayCtx.fillStyle = "rgba(248, 250, 252, 0.18)";
-        overlayCtx.beginPath();
-        overlayCtx.arc(start.x, start.y, 16, 0, Math.PI * 2);
-        overlayCtx.arc(end.x, end.y, 16, 0, Math.PI * 2);
-        overlayCtx.fill();
+        fillCircleMarkers(overlayCtx, [
+          { x: start.x, y: start.y, radius: 16 },
+          { x: end.x, y: end.y, radius: 16 },
+        ]);
       }
 
       overlayCtx.fillStyle = opts.color;
-      overlayCtx.beginPath();
-      overlayCtx.arc(start.x, start.y, opts.handleRadius || 3, 0, Math.PI * 2);
-      overlayCtx.arc(end.x, end.y, opts.handleRadius || 3, 0, Math.PI * 2);
-      overlayCtx.fill();
+      fillCircleMarkers(overlayCtx, [
+        { x: start.x, y: start.y, radius: opts.handleRadius || 3 },
+        { x: end.x, y: end.y, radius: opts.handleRadius || 3 },
+      ]);
 
       if (opts.highlightHandles) {
         overlayCtx.strokeStyle = "#f8fafc";
         overlayCtx.lineWidth = 1.5;
-        overlayCtx.beginPath();
-        overlayCtx.arc(
-          start.x,
-          start.y,
-          (opts.handleRadius || 3) + 1.2,
-          0,
-          Math.PI * 2,
-        );
-        overlayCtx.arc(
-          end.x,
-          end.y,
-          (opts.handleRadius || 3) + 1.2,
-          0,
-          Math.PI * 2,
-        );
-        overlayCtx.stroke();
+        strokeCircleMarkers(overlayCtx, [
+          {
+            x: start.x,
+            y: start.y,
+            radius: (opts.handleRadius || 3) + 1.2,
+          },
+          {
+            x: end.x,
+            y: end.y,
+            radius: (opts.handleRadius || 3) + 1.2,
+          },
+        ]);
       }
 
       overlayCtx.restore();
@@ -5346,6 +5998,8 @@ export default function XrayCalibrationWorkspace() {
 
     for (const line of lines) {
       const isSelected = line.id === selectedLineId;
+      const isPulsing =
+        selectionPulse?.type === "line" && selectionPulse.id === line.id;
       const isCalibration = line.id === calibrationLineId;
       const isLocked = isLineLocked(line.id);
       const typeColor = lineTypeColor(line.type);
@@ -5359,12 +6013,17 @@ export default function XrayCalibrationWorkspace() {
 
       drawLine(line, {
         color,
-        width: isSelected ? 2.5 : 2,
+        width: isSelected || isPulsing ? 2.6 : 2,
         handleRadius:
-          isSelected && !isLocked ? (isCoarsePointer ? 6.2 : 4.5) : 3,
-        highlightHandles: isSelected && !isLocked,
+          (isSelected || isPulsing) && !isLocked
+            ? isCoarsePointer
+              ? 6.6
+              : 4.9
+            : 3,
+        highlightHandles: (isSelected || isPulsing) && !isLocked,
         dashed: isLocked,
         showTouchHalo: isSelected && !isLocked && isCoarsePointer,
+        pulse: isPulsing,
         assistHandleKey:
           mobileHandleAssist?.lineId === line.id
             ? mobileHandleAssist.handleKey
@@ -5378,6 +6037,9 @@ export default function XrayCalibrationWorkspace() {
       const p3 = imageToScreenPoint(angle.p3.x, angle.p3.y);
       const value = getAngleDegrees(angle.p1, angle.p2, angle.p3);
       const isSelected = angle.id === selectedAngleId;
+      const isPulsing =
+        selectionPulse?.type === "angle" && selectionPulse.id === angle.id;
+      const isEmphasized = isSelected || isPulsing;
       const color = angle.color || DEFAULT_ANGLE_COLOR;
       const strokeWidth = Math.max(
         1.5,
@@ -5392,24 +6054,53 @@ export default function XrayCalibrationWorkspace() {
         ? angle.labelOffsetY
         : DEFAULT_ANGLE_LABEL_OFFSET_Y;
       const resultOpacity = getAngleResultOpacity(angle);
-      const fillOpacity = getAngleFillOpacity(angle);
-      const effectiveFillAlpha = getAngleEffectiveFillAlpha(angle);
       const arcGeometry = getAngleArcGeometry(p1, p2, p3);
+      const assistGeometry =
+        mobileAngleHandleAssist?.angleId === angle.id
+          ? getMobileAngleHandleAssistGeometry(
+              angle,
+              mobileAngleHandleAssist.handleKey,
+            )
+          : null;
 
       overlayCtx.save();
-      if (isSelected && fillOpacity > 0.001) {
-        overlayCtx.fillStyle = color;
-        overlayCtx.globalAlpha = effectiveFillAlpha;
+      if (assistGeometry) {
+        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistGeometry.centerX,
+          assistGeometry.centerY,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistGeometry.centerX,
+          assistGeometry.centerY,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.stroke();
+      }
+      if (isPulsing) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.38)";
+        overlayCtx.lineWidth = strokeWidth + 5.2;
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
         overlayCtx.beginPath();
         overlayCtx.moveTo(p2.x, p2.y);
         overlayCtx.lineTo(p1.x, p1.y);
+        overlayCtx.moveTo(p2.x, p2.y);
         overlayCtx.lineTo(p3.x, p3.y);
-        overlayCtx.closePath();
-        overlayCtx.fill();
-        overlayCtx.globalAlpha = 1;
+        overlayCtx.stroke();
       }
       overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = strokeWidth + (isSelected ? 0.35 : 0);
+      overlayCtx.lineWidth = strokeWidth + (isEmphasized ? 0.35 : 0);
       overlayCtx.lineCap = "round";
       overlayCtx.lineJoin = "round";
       overlayCtx.beginPath();
@@ -5434,11 +6125,11 @@ export default function XrayCalibrationWorkspace() {
       }
 
       overlayCtx.fillStyle = color;
-      overlayCtx.beginPath();
-      overlayCtx.arc(p1.x, p1.y, 3.8, 0, Math.PI * 2);
-      overlayCtx.arc(p2.x, p2.y, 4.5, 0, Math.PI * 2);
-      overlayCtx.arc(p3.x, p3.y, 3.8, 0, Math.PI * 2);
-      overlayCtx.fill();
+      fillCircleMarkers(overlayCtx, [
+        { x: p1.x, y: p1.y, radius: isEmphasized ? 4.4 : 3.8 },
+        { x: p2.x, y: p2.y, radius: isEmphasized ? 5.1 : 4.5 },
+        { x: p3.x, y: p3.y, radius: isEmphasized ? 4.4 : 3.8 },
+      ]);
       overlayCtx.restore();
 
       drawTag(
@@ -5449,7 +6140,10 @@ export default function XrayCalibrationWorkspace() {
         color,
         {
           bgOpacity: Math.max(0.08, Math.min(1, resultOpacity)),
-          borderOpacity: Math.max(0.42, Math.min(0.92, resultOpacity + 0.2)),
+          borderOpacity: Math.max(
+            0.42,
+            Math.min(0.96, resultOpacity + (isEmphasized ? 0.28 : 0.2)),
+          ),
           fontSize: 9,
           paddingX: 4,
           paddingY: 2,
@@ -5463,6 +6157,9 @@ export default function XrayCalibrationWorkspace() {
       const edge = imageToScreenPoint(circle.cx + circle.radius, circle.cy);
       const radiusPx = Math.hypot(edge.x - center.x, edge.y - center.y);
       const isSelected = circle.id === selectedCircleId;
+      const isPulsing =
+        selectionPulse?.type === "circle" && selectionPulse.id === circle.id;
+      const isEmphasized = isSelected || isPulsing;
       const color = isSelected ? "#a78bfa" : "#8b5cf6";
       const diameterText =
         mmPerPixel !== null
@@ -5470,12 +6167,19 @@ export default function XrayCalibrationWorkspace() {
           : `${(circle.radius * 2).toFixed(1)} px`;
 
       overlayCtx.save();
+      if (isPulsing) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.38)";
+        overlayCtx.lineWidth = 7;
+        overlayCtx.beginPath();
+        overlayCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = isSelected ? 2.5 : 2;
+      overlayCtx.lineWidth = isEmphasized ? 2.6 : 2;
       overlayCtx.beginPath();
       overlayCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
       overlayCtx.stroke();
-      if (isSelected) {
+      if (isEmphasized) {
         overlayCtx.setLineDash([6, 4]);
         overlayCtx.beginPath();
         overlayCtx.moveTo(center.x - radiusPx, center.y);
@@ -5485,9 +6189,9 @@ export default function XrayCalibrationWorkspace() {
       }
       overlayCtx.fillStyle = color;
       overlayCtx.beginPath();
-      overlayCtx.arc(center.x, center.y, 4, 0, Math.PI * 2);
+      overlayCtx.arc(center.x, center.y, isEmphasized ? 4.6 : 4, 0, Math.PI * 2);
       overlayCtx.fill();
-      if (isSelected) {
+      if (isEmphasized) {
         const handles = [
           { x: center.x + radiusPx, y: center.y },
           { x: center.x - radiusPx, y: center.y },
@@ -5516,18 +6220,119 @@ export default function XrayCalibrationWorkspace() {
     }
 
     for (const item of hkaSets) {
+      const measurement = getHkaMeasurementResult(item);
+      const isSelected = item.id === selectedHkaId;
+      const isHovered =
+        hoveredMeasurementInfo?.type === "hka" &&
+        hoveredMeasurementInfo.id === item.id;
+      const isPulsing =
+        selectionPulse?.type === "hka" && selectionPulse.id === item.id;
+      const isEmphasized = isSelected || isPulsing;
+      const showExpandedInfo = isSelected || isHovered;
+      const lineColor = getHkaLineColor(item);
+      const color = lineColor;
+      if (item.mode === "fta") {
+        if (
+          !item.femurMidshaft10cm ||
+          !item.femoralNotch ||
+          !item.tibiaMidshaft4cm ||
+          !item.tibiaMidshaft10cm
+        ) {
+          continue;
+        }
+        const femurShaft = imageToScreenPoint(
+          item.femurMidshaft10cm.x,
+          item.femurMidshaft10cm.y,
+        );
+        const notch = imageToScreenPoint(
+          item.femoralNotch.x,
+          item.femoralNotch.y,
+        );
+        const tibia4 = imageToScreenPoint(
+          item.tibiaMidshaft4cm.x,
+          item.tibiaMidshaft4cm.y,
+        );
+        const tibia10 = imageToScreenPoint(
+          item.tibiaMidshaft10cm.x,
+          item.tibiaMidshaft10cm.y,
+        );
+        const strokeWidth = isEmphasized ? 2.45 : 1.9;
+        const labelAnchor = {
+          x: (notch.x + tibia4.x) / 2,
+          y: (notch.y + tibia4.y) / 2,
+        };
+        const labelOffsetX = Number.isFinite(item.labelOffsetX)
+          ? item.labelOffsetX
+          : DEFAULT_HKA_LABEL_OFFSET_X;
+        const labelOffsetY = Number.isFinite(item.labelOffsetY)
+          ? item.labelOffsetY
+          : DEFAULT_HKA_LABEL_OFFSET_Y;
+
+        overlayCtx.save();
+        if (isPulsing) {
+          overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.38)";
+          overlayCtx.lineWidth = strokeWidth + 5.2;
+          overlayCtx.lineCap = "round";
+          overlayCtx.lineJoin = "round";
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(femurShaft.x, femurShaft.y);
+          overlayCtx.lineTo(notch.x, notch.y);
+          overlayCtx.moveTo(tibia4.x, tibia4.y);
+          overlayCtx.lineTo(tibia10.x, tibia10.y);
+          overlayCtx.stroke();
+        }
+        overlayCtx.strokeStyle = color;
+        overlayCtx.fillStyle = color;
+        overlayCtx.lineWidth = strokeWidth;
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(femurShaft.x, femurShaft.y);
+        overlayCtx.lineTo(notch.x, notch.y);
+        overlayCtx.moveTo(tibia4.x, tibia4.y);
+        overlayCtx.lineTo(tibia10.x, tibia10.y);
+        overlayCtx.stroke();
+        fillCircleMarkers(overlayCtx, [
+          { x: femurShaft.x, y: femurShaft.y, radius: isEmphasized ? 4.2 : 3.6 },
+          { x: notch.x, y: notch.y, radius: isEmphasized ? 4.8 : 4.2 },
+          { x: tibia4.x, y: tibia4.y, radius: isEmphasized ? 4.8 : 4.2 },
+          { x: tibia10.x, y: tibia10.y, radius: isEmphasized ? 4.2 : 3.6 },
+        ]);
+        overlayCtx.restore();
+
+        drawTag(
+          overlayCtx,
+          labelAnchor.x + labelOffsetX,
+          labelAnchor.y + labelOffsetY,
+          getHkaCanvasLabelText(measurement, showExpandedInfo),
+          color,
+          {
+            bgOpacity: showExpandedInfo ? 0.72 : 0.34,
+            borderOpacity: showExpandedInfo ? 0.96 : 0.82,
+            fontSize: 9,
+            paddingX: 4,
+            paddingY: 2,
+            radius: 4,
+          },
+        );
+        continue;
+      }
+
+      if (!item.hip || !item.knee || !item.ankle) continue;
       const hip = imageToScreenPoint(item.hip.x, item.hip.y);
       const knee = imageToScreenPoint(item.knee.x, item.knee.y);
       const ankle = imageToScreenPoint(item.ankle.x, item.ankle.y);
-      const angleDeg = getAngleDegrees(item.hip, item.knee, item.ankle);
-      const isSelected = item.id === selectedHkaId;
-      const color = isSelected ? "#14b8a6" : "#0d9488";
-      const fillOpacity = getAngleFillOpacity(item);
-      const effectiveFillAlpha = getHkaEffectiveFillAlpha(item);
+      const angleDeg = measurement.absoluteDeviation;
       const arcGeometry = getAngleArcGeometry(hip, knee, ankle);
       const showArc = item.showArc !== false;
-      const strokeWidth = isSelected ? 2.35 : 1.9;
-      const kneeGap = isSelected ? 10 : 7;
+      const labelOffsetX = Number.isFinite(item.labelOffsetX)
+        ? item.labelOffsetX
+        : DEFAULT_HKA_LABEL_OFFSET_X;
+      const labelOffsetY = Number.isFinite(item.labelOffsetY)
+        ? item.labelOffsetY
+        : DEFAULT_HKA_LABEL_OFFSET_Y;
+      const strokeWidth = isEmphasized ? 2.45 : 1.9;
+      const kneeGap = isEmphasized ? 10 : 7;
       const hipVector = { x: hip.x - knee.x, y: hip.y - knee.y };
       const ankleVector = { x: ankle.x - knee.x, y: ankle.y - knee.y };
       const hipLength = Math.hypot(hipVector.x, hipVector.y) || 1;
@@ -5548,18 +6353,49 @@ export default function XrayCalibrationWorkspace() {
           knee.y +
           (ankleVector.y / ankleLength) * Math.min(kneeGap, ankleLength * 0.35),
       };
+      const assistGeometry =
+        mobileHkaHandleAssist?.hkaId === item.id
+          ? getMobileHkaHandleAssistGeometry(
+              item,
+              mobileHkaHandleAssist.handleKey,
+            )
+          : null;
 
       overlayCtx.save();
-      if (isSelected && fillOpacity > 0.001) {
-        overlayCtx.fillStyle = color;
-        overlayCtx.globalAlpha = effectiveFillAlpha;
+      if (assistGeometry) {
+        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
         overlayCtx.beginPath();
-        overlayCtx.moveTo(knee.x, knee.y);
-        overlayCtx.lineTo(hip.x, hip.y);
-        overlayCtx.lineTo(ankle.x, ankle.y);
-        overlayCtx.closePath();
+        overlayCtx.arc(
+          assistGeometry.centerX,
+          assistGeometry.centerY,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
         overlayCtx.fill();
-        overlayCtx.globalAlpha = 1;
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          assistGeometry.centerX,
+          assistGeometry.centerY,
+          MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.stroke();
+      }
+      if (isPulsing) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.38)";
+        overlayCtx.lineWidth = strokeWidth + 5.2;
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(hipNearKnee.x, hipNearKnee.y);
+        overlayCtx.lineTo(hip.x, hip.y);
+        overlayCtx.moveTo(ankleNearKnee.x, ankleNearKnee.y);
+        overlayCtx.lineTo(ankle.x, ankle.y);
+        overlayCtx.stroke();
       }
       overlayCtx.strokeStyle = color;
       overlayCtx.lineWidth = strokeWidth;
@@ -5578,7 +6414,7 @@ export default function XrayCalibrationWorkspace() {
           1.05,
           strokeWidth - (isSelected ? 0.45 : 0.7),
         );
-        overlayCtx.globalAlpha = isSelected ? 1 : 0.68;
+        overlayCtx.globalAlpha = isEmphasized ? 1 : 0.68;
         overlayCtx.arc(
           knee.x,
           knee.y,
@@ -5591,19 +6427,27 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx.globalAlpha = 1;
       }
       overlayCtx.fillStyle = color;
-      overlayCtx.beginPath();
-      overlayCtx.arc(hip.x, hip.y, 3.6, 0, Math.PI * 2);
-      overlayCtx.arc(knee.x, knee.y, 4.4, 0, Math.PI * 2);
-      overlayCtx.arc(ankle.x, ankle.y, 3.6, 0, Math.PI * 2);
-      overlayCtx.fill();
+      fillCircleMarkers(overlayCtx, [
+        { x: hip.x, y: hip.y, radius: isEmphasized ? 4.2 : 3.6 },
+        { x: knee.x, y: knee.y, radius: isEmphasized ? 5 : 4.4 },
+        { x: ankle.x, y: ankle.y, radius: isEmphasized ? 4.2 : 3.6 },
+      ]);
       overlayCtx.restore();
 
       drawTag(
         overlayCtx,
-        knee.x,
-        knee.y - 16,
-        `HKA: ${angleDeg.toFixed(1)}°`,
+        knee.x + labelOffsetX,
+        knee.y + labelOffsetY,
+        getHkaCanvasLabelText(measurement, showExpandedInfo),
         color,
+        {
+          bgOpacity: showExpandedInfo ? 0.72 : 0.34,
+          borderOpacity: showExpandedInfo ? 0.96 : 0.82,
+          fontSize: 9,
+          paddingX: 4,
+          paddingY: 2,
+          radius: 4,
+        },
       );
     }
 
@@ -5644,11 +6488,24 @@ export default function XrayCalibrationWorkspace() {
       );
       const label = getPlanningGuideLabelText(guide, index);
       const isSelectedGuide = guide.id === selectedPlanningGuideId;
+      const isPulsingGuide =
+        selectionPulse?.type === "planning" &&
+        selectionPulse.id === guide.id;
+      const isEmphasizedGuide = isSelectedGuide || isPulsingGuide;
 
       overlayCtx.save();
+      if (isPulsingGuide) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.34)";
+        overlayCtx.lineWidth = 7;
+        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(anchorStart.x, anchorStart.y);
+        overlayCtx.lineTo(anchorEnd.x, anchorEnd.y);
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = color;
       overlayCtx.fillStyle = color;
-      overlayCtx.lineWidth = isSelectedGuide ? 2.5 : 2;
+      overlayCtx.lineWidth = isEmphasizedGuide ? 2.6 : 2;
       overlayCtx.setLineDash([6, 4]);
       overlayCtx.beginPath();
       overlayCtx.moveTo(anchorStart.x, anchorStart.y);
@@ -5672,14 +6529,14 @@ export default function XrayCalibrationWorkspace() {
       overlayCtx.arc(
         anchorStart.x,
         anchorStart.y,
-        isSelectedGuide ? 4.6 : 3.8,
+        isEmphasizedGuide ? 4.8 : 3.8,
         0,
         Math.PI * 2,
       );
       overlayCtx.arc(
         anchorEnd.x,
         anchorEnd.y,
-        isSelectedGuide ? 4.6 : 3.8,
+        isEmphasizedGuide ? 4.8 : 3.8,
         0,
         Math.PI * 2,
       );
@@ -5729,7 +6586,7 @@ export default function XrayCalibrationWorkspace() {
             Math.min(
               1,
               (guide.labelOpacity ?? DEFAULT_LABEL_OPACITY) +
-                (isSelectedGuide ? 0.12 : 0),
+                (isEmphasizedGuide ? 0.14 : 0),
             ),
           ),
           fontSize: 9,
@@ -5745,13 +6602,33 @@ export default function XrayCalibrationWorkspace() {
         ? cutLayers.find((layer) => layer.id === selectedCutLayerId) || null
         : null;
     if (activeCutLayer) {
+      const isPulsingLayer =
+        selectionPulse?.type === "layer" &&
+        selectionPulse.id === activeCutLayer.id;
       const corners = getLayerCorners(activeCutLayer);
       const controlPoints = getLayerControlPoints(activeCutLayer);
       const edgePoints = controlPoints.filter((point) => point.type === "edge");
       const rotatePoint = controlPoints.find((point) => point.key === "rotate");
       overlayCtx.save();
+      if (isPulsingLayer) {
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.4)";
+        overlayCtx.lineWidth = 8;
+        overlayCtx.setLineDash([]);
+        overlayCtx.beginPath();
+        const pulseFirstCorner = imageToScreenPoint(corners[0].x, corners[0].y);
+        overlayCtx.moveTo(pulseFirstCorner.x, pulseFirstCorner.y);
+        for (let index = 1; index < corners.length; index += 1) {
+          const nextCorner = imageToScreenPoint(
+            corners[index].x,
+            corners[index].y,
+          );
+          overlayCtx.lineTo(nextCorner.x, nextCorner.y);
+        }
+        overlayCtx.closePath();
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = "#a855f7";
-      overlayCtx.lineWidth = 2.2;
+      overlayCtx.lineWidth = isPulsingLayer ? 2.8 : 2.2;
       overlayCtx.setLineDash([]);
       overlayCtx.beginPath();
       const firstCorner = imageToScreenPoint(corners[0].x, corners[0].y);
@@ -5772,7 +6649,13 @@ export default function XrayCalibrationWorkspace() {
       for (const corner of corners) {
         const screen = imageToScreenPoint(corner.x, corner.y);
         overlayCtx.beginPath();
-        overlayCtx.arc(screen.x, screen.y, 7.4, 0, Math.PI * 2);
+        overlayCtx.arc(
+          screen.x,
+          screen.y,
+          isPulsingLayer ? 8.2 : 7.4,
+          0,
+          Math.PI * 2,
+        );
         overlayCtx.fill();
         overlayCtx.stroke();
       }
@@ -6208,7 +7091,9 @@ export default function XrayCalibrationWorkspace() {
     lines,
     cutLayers,
     getLineLabelText,
+    getMobileAngleHandleAssistGeometry,
     getMobileHandleAssistGeometry,
+    getMobileHkaHandleAssistGeometry,
     getMobilePlanningGuideHandleAssistGeometry,
     getPlanningGuideAutoColor,
     getPlanningGuideLabelText,
@@ -6216,12 +7101,15 @@ export default function XrayCalibrationWorkspace() {
     measurementUnit,
     mmPerPixel,
     mobileHandleAssist,
+    mobileAngleHandleAssist,
+    mobileHkaHandleAssist,
     mobilePlanningGuideHandleAssist,
     modelHeight,
     modelWidth,
     orientedSize.height,
     orientedSize.width,
     rotation,
+    selectionPulse,
     selectedAngleId,
     selectedCircleId,
     selectedCutLayerId,
@@ -6708,6 +7596,7 @@ export default function XrayCalibrationWorkspace() {
           setSelectedHkaId(null);
           setSelectedCutLayerId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("line", targetLine.id);
           if (isLineLocked(targetLine.id)) {
             setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
             return;
@@ -6734,6 +7623,86 @@ export default function XrayCalibrationWorkspace() {
           return;
         }
 
+        const assistAngleHandleHit = findMobileAngleHandleAssistHit(point);
+        if (assistAngleHandleHit) {
+          const targetAngle = angles.find(
+            (angle) => angle.id === assistAngleHandleHit.angleId,
+          );
+          if (!targetAngle) return;
+          setMobilePanelMode("workspace");
+          setActiveRightPanel("measure");
+          setSelectedAngleId(targetAngle.id);
+          setSelectedLineId(null);
+          setSelectedFreeLinePointIndex(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedCutLayerId(null);
+          setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("angle", targetAngle.id);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          setHistoryPaused(true);
+          const assistGeometry = getMobileAngleHandleAssistGeometry(
+            targetAngle,
+            assistAngleHandleHit.handleKey,
+          );
+          interactionRef.current = {
+            mode: "move-angle-handle",
+            angleId: targetAngle.id,
+            handleKey: assistAngleHandleHit.handleKey,
+            pointerOffsetX: assistGeometry
+              ? assistGeometry.handleImagePoint.x - boundedPoint.x
+              : 0,
+            pointerOffsetY: assistGeometry
+              ? assistGeometry.handleImagePoint.y - boundedPoint.y
+              : 0,
+          };
+          setNotice(
+            "Adjust titik angle aktif. Geser dari area bundaran agar titik tetap terlihat.",
+          );
+          return;
+        }
+
+        const assistHkaHandleHit = findMobileHkaHandleAssistHit(point);
+        if (assistHkaHandleHit) {
+          const targetItem = hkaSets.find(
+            (item) => item.id === assistHkaHandleHit.hkaId,
+          );
+          if (!targetItem) return;
+          setMobilePanelMode("workspace");
+          setActiveRightPanel("measure");
+          setSelectedHkaId(targetItem.id);
+          setSelectedLineId(null);
+          setSelectedFreeLinePointIndex(null);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedCutLayerId(null);
+          setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("hka", targetItem.id);
+          clearMobileHandleAssist();
+          clearMobilePlanningGuideHandleAssist();
+          setHistoryPaused(true);
+          const assistGeometry = getMobileHkaHandleAssistGeometry(
+            targetItem,
+            assistHkaHandleHit.handleKey,
+          );
+          interactionRef.current = {
+            mode: "move-hka-handle",
+            hkaId: targetItem.id,
+            handleKey: assistHkaHandleHit.handleKey,
+            pointerOffsetX: assistGeometry
+              ? assistGeometry.handleImagePoint.x - boundedPoint.x
+              : 0,
+            pointerOffsetY: assistGeometry
+              ? assistGeometry.handleImagePoint.y - boundedPoint.y
+              : 0,
+          };
+          setNotice(
+            "Adjust titik HKA aktif. Geser dari area bundaran agar landmark tetap terlihat.",
+          );
+          return;
+        }
+
         const hitHandle = findClosestHandle(imagePoint);
         if (hitHandle) {
           const targetLine = lines.find((line) => line.id === hitHandle.lineId);
@@ -6747,6 +7716,7 @@ export default function XrayCalibrationWorkspace() {
           setSelectedHkaId(null);
           setSelectedCutLayerId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("line", targetLine.id);
           if (isLineLocked(targetLine.id)) {
             setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
             return;
@@ -6774,6 +7744,7 @@ export default function XrayCalibrationWorkspace() {
           setSelectedHkaId(null);
           setSelectedCutLayerId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("line", hitLineId);
           clearMobileHandleAssist();
           if (isLineLocked(hitLineId)) {
             setNotice("Garis ini terkunci. Unlock dulu sebelum dipindah.");
@@ -6814,6 +7785,7 @@ export default function XrayCalibrationWorkspace() {
         const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
 
         setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
@@ -6883,8 +7855,10 @@ export default function XrayCalibrationWorkspace() {
           setSelectedCircleId(null);
           setSelectedHkaId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("layer", targetLayer.id);
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
+          syncMobileCanvasSelection("tool");
           if (targetLayer.lockScale) {
             setNotice("Layer terkunci. Buka lock dulu untuk edit lengkungan.");
             return;
@@ -6915,8 +7889,10 @@ export default function XrayCalibrationWorkspace() {
           setSelectedCircleId(null);
           setSelectedHkaId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("layer", targetLayer.id);
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
+          syncMobileCanvasSelection("tool");
           if (targetLayer.lockScale) {
             setNotice("Layer terkunci. Buka lock dulu untuk edit titik shape.");
             return;
@@ -6946,8 +7922,10 @@ export default function XrayCalibrationWorkspace() {
           setSelectedCircleId(null);
           setSelectedHkaId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("layer", targetLayer.id);
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
+          syncMobileCanvasSelection("tool");
           if (targetLayer.lockScale) {
             setNotice(
               "Layer terkunci. Buka lock dulu untuk resize atau rotate.",
@@ -6993,8 +7971,10 @@ export default function XrayCalibrationWorkspace() {
           setSelectedCircleId(null);
           setSelectedHkaId(null);
           setSelectedPlanningGuideId(null);
+          triggerSelectionPulse("layer", targetLayer.id);
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
+          syncMobileCanvasSelection("tool");
           if (targetLayer.lockScale) {
             setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
             return;
@@ -7028,10 +8008,12 @@ export default function XrayCalibrationWorkspace() {
           selectPlanningGuideForEdit(targetGuide.id);
         }
         setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        triggerSelectionPulse("planning", targetGuide.id);
         clearMobilePlanningGuideHandleAssist();
         setHistoryPaused(true);
         interactionRef.current = {
@@ -7057,8 +8039,10 @@ export default function XrayCalibrationWorkspace() {
         );
         if (!targetGuide) return;
         focusPlanningGuideCanvas(targetGuide.id);
+        triggerSelectionPulse("planning", targetGuide.id);
         clearMobileHandleAssist();
         setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
@@ -7094,6 +8078,7 @@ export default function XrayCalibrationWorkspace() {
         if (!targetGuide) return;
         if (isTouchLikePointer) {
           focusPlanningGuideCanvas(targetGuide.id);
+          triggerSelectionPulse("planning", targetGuide.id);
           clearMobileHandleAssist();
           activateMobilePlanningGuideHandleAssist(
             targetGuide.id,
@@ -7108,7 +8093,9 @@ export default function XrayCalibrationWorkspace() {
           return;
         }
         selectPlanningGuideForEdit(targetGuide.id);
+        triggerSelectionPulse("planning", targetGuide.id);
         setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
@@ -7133,12 +8120,15 @@ export default function XrayCalibrationWorkspace() {
             openPanel: true,
             showNotice: true,
           });
+          triggerSelectionPulse("planning", targetGuide.id);
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
         } else {
           selectPlanningGuideForEdit(targetGuide.id);
+          triggerSelectionPulse("planning", targetGuide.id);
         }
         setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedHkaId(null);
@@ -7174,8 +8164,11 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        setSelectedFreeLinePointIndex(null);
+        triggerSelectionPulse("line", targetLine.id);
         clearMobileHandleAssist();
         clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure");
         if (isLineLocked(targetLine.id)) {
           setNotice(
             "Garis ini terkunci. Buka lock dulu untuk memindahkan label.",
@@ -7198,6 +8191,80 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
+      const hitAngleLabelId = findAngleLabelByPoint(point);
+      if (hitAngleLabelId !== null) {
+        const targetAngle = angles.find((angle) => angle.id === hitAngleLabelId);
+        if (!targetAngle) return;
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedAngleId(targetAngle.id);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("angle", targetAngle.id);
+        clearMobileHandleAssist();
+        clearMobileAngleHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (isMobileViewport) {
+          setMobileControlsOpen(false);
+        }
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-angle-label",
+          angleId: targetAngle.id,
+          startX: point.x,
+          startY: point.y,
+          originOffsetX: Number.isFinite(targetAngle.labelOffsetX)
+            ? targetAngle.labelOffsetX
+            : DEFAULT_ANGLE_LABEL_OFFSET_X,
+          originOffsetY: Number.isFinite(targetAngle.labelOffsetY)
+            ? targetAngle.labelOffsetY
+            : DEFAULT_ANGLE_LABEL_OFFSET_Y,
+        };
+        setNotice("Hasil angle aktif. Geser label hasil untuk memindahkannya.");
+        return;
+      }
+
+      const hitHkaLabelId = findHkaLabelByPoint(point);
+      if (hitHkaLabelId !== null) {
+        const targetItem = hkaSets.find((item) => item.id === hitHkaLabelId);
+        if (!targetItem) return;
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedHkaId(targetItem.id);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("hka", targetItem.id);
+        clearMobileHandleAssist();
+        clearMobileHkaHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (isMobileViewport) {
+          setMobileControlsOpen(false);
+        }
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-hka-label",
+          hkaId: targetItem.id,
+          startX: point.x,
+          startY: point.y,
+          originOffsetX: Number.isFinite(targetItem.labelOffsetX)
+            ? targetItem.labelOffsetX
+            : DEFAULT_HKA_LABEL_OFFSET_X,
+          originOffsetY: Number.isFinite(targetItem.labelOffsetY)
+            ? targetItem.labelOffsetY
+            : DEFAULT_HKA_LABEL_OFFSET_Y,
+        };
+        setNotice("Hasil HKA aktif. Geser label hasil untuk memindahkannya.");
+        return;
+      }
+
       const genericHitHandle = findClosestHandle(imagePoint);
       if (genericHitHandle) {
         const targetLine = lines.find(
@@ -7214,7 +8281,10 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        setSelectedFreeLinePointIndex(null);
+        triggerSelectionPulse("line", genericHitHandle.lineId);
         clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure");
         if (isLineLocked(genericHitHandle.lineId)) {
           setNotice(
             "Garis ini terkunci. Buka lock dulu untuk mengubah ukuran/posisi.",
@@ -7245,8 +8315,11 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
+        setSelectedFreeLinePointIndex(null);
+        triggerSelectionPulse("line", genericHitLineId);
         clearMobileHandleAssist();
         clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure");
         if (isLineLocked(genericHitLineId)) {
           setNotice(
             "Garis ini terkunci. Buka lock dulu untuk mengubah ukuran/posisi.",
@@ -7266,6 +8339,252 @@ export default function XrayCalibrationWorkspace() {
             y2: targetLine.y2,
           },
         };
+        return;
+      }
+
+      const genericAngleHandle = findClosestAngleHandle(boundedPoint);
+      if (genericAngleHandle) {
+        const targetAngle = angles.find(
+          (angle) => angle.id === genericAngleHandle.angleId,
+        );
+        if (!targetAngle) return;
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedAngleId(targetAngle.id);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("angle", targetAngle.id);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (isTouchLikePointer) {
+          activateMobileAngleHandleAssist(
+            targetAngle.id,
+            genericAngleHandle.handleKey,
+          );
+          syncMobileCanvasSelection("measure", {
+            noticeText:
+              "Titik angle dipilih. Bundaran assist aktif untuk adjust yang lebih presisi.",
+          });
+          return;
+        }
+        syncMobileCanvasSelection("measure");
+        if (tool === "pan" || tool === "angle") {
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-angle-handle",
+            angleId: genericAngleHandle.angleId,
+            handleKey: genericAngleHandle.handleKey,
+          };
+        }
+        return;
+      }
+
+      const genericAngleId = findClosestAngleId(imagePoint);
+      if (genericAngleId !== null) {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedAngleId(genericAngleId);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("angle", genericAngleId);
+        clearMobileHandleAssist();
+        clearMobileAngleHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure", {
+          noticeText: "Angle aktif. Tap titik atau drag untuk atur ulang.",
+        });
+        return;
+      }
+
+      const genericCircleHandle = findClosestCircleHandle(boundedPoint);
+      if (genericCircleHandle) {
+        const targetCircle = circles.find(
+          (circle) => circle.id === genericCircleHandle.circleId,
+        );
+        if (!targetCircle) return;
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedCircleId(targetCircle.id);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("circle", targetCircle.id);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure", {
+          noticeText: "Circle dipilih. Drag pusat atau tepi untuk adjust.",
+        });
+        if (tool === "pan" || tool === "circle") {
+          setHistoryPaused(true);
+          if (
+            genericCircleHandle.handleKey === "center" ||
+            genericCircleHandle.handleKey === "move"
+          ) {
+            interactionRef.current = {
+              mode: "move-circle-center",
+              circleId: genericCircleHandle.circleId,
+              startImageX: boundedPoint.x,
+              startImageY: boundedPoint.y,
+              originCenterX: targetCircle.cx,
+              originCenterY: targetCircle.cy,
+            };
+          } else {
+            interactionRef.current = {
+              mode: "move-circle-radius",
+              circleId: genericCircleHandle.circleId,
+            };
+          }
+        }
+        return;
+      }
+
+      const genericHkaHandle = findClosestHkaHandle(boundedPoint);
+      if (genericHkaHandle) {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedHkaId(genericHkaHandle.hkaId);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("hka", genericHkaHandle.hkaId);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        if (isTouchLikePointer) {
+          activateMobileHkaHandleAssist(
+            genericHkaHandle.hkaId,
+            genericHkaHandle.handleKey,
+          );
+          syncMobileCanvasSelection("measure", {
+            noticeText:
+              "Titik HKA dipilih. Bundaran assist aktif untuk adjust landmark lebih mudah.",
+          });
+          return;
+        }
+        syncMobileCanvasSelection("measure");
+        if (tool === "pan" || tool === "hkaAuto") {
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-hka-handle",
+            hkaId: genericHkaHandle.hkaId,
+            handleKey: genericHkaHandle.handleKey,
+          };
+        }
+        return;
+      }
+
+      const genericHkaId = findClosestHkaId(imagePoint);
+      if (genericHkaId !== null) {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedHkaId(genericHkaId);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("hka", genericHkaId);
+        clearMobileHandleAssist();
+        clearMobileHkaHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure", {
+          noticeText: "HKA aktif. Tap titik landmark untuk mengubah posisi.",
+        });
+        return;
+      }
+
+      const genericCutLayerHandle = findCutLayerHandle(imagePoint);
+      if (genericCutLayerHandle) {
+        const targetLayer = cutLayers.find(
+          (layer) => layer.id === genericCutLayerHandle.layerId,
+        );
+        if (!targetLayer) return;
+        focusLayerCanvas(targetLayer.id, { openPanel: false });
+        triggerSelectionPulse("layer", targetLayer.id);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedPlanningGuideId(null);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("tool", {
+          noticeText:
+            "Layer dipilih. Drag handle untuk resize atau rotate langsung di canvas.",
+        });
+        if (!targetLayer.lockScale && tool === "pan") {
+          setHistoryPaused(true);
+          if (genericCutLayerHandle.handleKey === "rotate") {
+            const localPoint = toLayerLocal(imagePoint, targetLayer);
+            interactionRef.current = {
+              mode: "rotate-cut-layer",
+              layerId: targetLayer.id,
+              startPointerAngle: Math.atan2(localPoint.y, localPoint.x),
+              startRotation: Number(targetLayer.rotation || 0),
+            };
+          } else {
+            interactionRef.current = {
+              mode: "resize-cut-layer",
+              layerId: targetLayer.id,
+              centerX: targetLayer.centerX,
+              centerY: targetLayer.centerY,
+              rotation: targetLayer.rotation,
+              handleKey: genericCutLayerHandle.handleKey,
+              startFlipX: Boolean(targetLayer.flipX),
+              startFlipY: Boolean(targetLayer.flipY),
+              startDisplayWidth: Number(targetLayer.displayWidth || 16),
+              startDisplayHeight: Number(targetLayer.displayHeight || 16),
+            };
+          }
+        }
+        return;
+      }
+
+      const genericCutLayerId = findCutLayerByPoint(imagePoint);
+      if (genericCutLayerId !== null) {
+        const targetLayer = cutLayers.find(
+          (layer) => layer.id === genericCutLayerId,
+        );
+        if (!targetLayer) return;
+        focusLayerCanvas(genericCutLayerId, { openPanel: false });
+        triggerSelectionPulse("layer", genericCutLayerId);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedPlanningGuideId(null);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("tool", {
+          noticeText: "Layer aktif. Geser layer atau pilih handle untuk edit.",
+        });
+        if (!targetLayer.lockScale && tool === "pan") {
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-cut-layer",
+            layerId: genericCutLayerId,
+            startImageX: imagePoint.x,
+            startImageY: imagePoint.y,
+            originCenterX: targetLayer.centerX,
+            originCenterY: targetLayer.centerY,
+          };
+        }
         return;
       }
 
@@ -7388,9 +8707,22 @@ export default function XrayCalibrationWorkspace() {
         if (hitAngleHandle) {
           setSelectedAngleId(hitAngleHandle.angleId);
           setSelectedLineId(null);
+          setSelectedFreeLinePointIndex(null);
           setSelectedCircleId(null);
           setSelectedHkaId(null);
           setSelectedCutLayerId(null);
+          triggerSelectionPulse("angle", hitAngleHandle.angleId);
+          if (isTouchLikePointer) {
+            activateMobileAngleHandleAssist(
+              hitAngleHandle.angleId,
+              hitAngleHandle.handleKey,
+            );
+            syncMobileCanvasSelection("measure", {
+              noticeText:
+                "Titik angle dipilih. Bundaran assist aktif untuk adjust yang lebih presisi.",
+            });
+            return;
+          }
           setHistoryPaused(true);
           interactionRef.current = {
             mode: "move-angle-handle",
@@ -7418,7 +8750,6 @@ export default function XrayCalibrationWorkspace() {
             p2: next[1],
             p3: next[2],
             color: DEFAULT_ANGLE_COLOR,
-            fillOpacity: DEFAULT_ANGLE_FILL_OPACITY,
             labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
             labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
             resultOpacity: DEFAULT_LABEL_OPACITY,
@@ -7496,9 +8827,22 @@ export default function XrayCalibrationWorkspace() {
         if (hitHkaHandle) {
           setSelectedHkaId(hitHkaHandle.hkaId);
           setSelectedLineId(null);
+          setSelectedFreeLinePointIndex(null);
           setSelectedAngleId(null);
           setSelectedCircleId(null);
           setSelectedCutLayerId(null);
+          triggerSelectionPulse("hka", hitHkaHandle.hkaId);
+          if (isTouchLikePointer) {
+            activateMobileHkaHandleAssist(
+              hitHkaHandle.hkaId,
+              hitHkaHandle.handleKey,
+            );
+            syncMobileCanvasSelection("measure", {
+              noticeText:
+                "Titik HKA dipilih. Bundaran assist aktif untuk adjust landmark lebih mudah.",
+            });
+            return;
+          }
           setHistoryPaused(true);
           interactionRef.current = {
             mode: "move-hka-handle",
@@ -7515,24 +8859,31 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCutLayerId(null);
         setDraftHkaPoints((prev) => {
           const next = [...prev, { x: boundedPoint.x, y: boundedPoint.y }];
-          if (next.length < 3) {
-            setNotice(
-              `Auto HKA: pilih ${3 - next.length} titik lagi (hip-knee-ankle).`,
-            );
+          const definition = getHkaModeDefinition(hkaInputMode);
+          if (next.length < definition.points.length) {
+            setNotice(getHkaDraftNotice(hkaInputMode, next.length));
             return next;
           }
-          const nextHka = {
-            id: nextHkaIdRef.current,
-            hip: next[0],
-            knee: next[1],
-            ankle: next[2],
-            fillOpacity: DEFAULT_ANGLE_FILL_OPACITY,
-            showArc: true,
-          };
+          const nextHka = definition.points.reduce(
+            (accumulator, pointDef, index) => {
+              accumulator[pointDef.key] = next[index];
+              return accumulator;
+            },
+            {
+              id: nextHkaIdRef.current,
+              mode: hkaInputMode,
+              direction: "varus",
+              side: "right",
+              lineColor: DEFAULT_HKA_LINE_COLOR,
+              labelOffsetX: DEFAULT_HKA_LABEL_OFFSET_X,
+              labelOffsetY: DEFAULT_HKA_LABEL_OFFSET_Y,
+              showArc: hkaInputMode === "full",
+            },
+          );
           nextHkaIdRef.current += 1;
           setHkaSets((items) => [...items, nextHka]);
           setSelectedHkaId(nextHka.id);
-          setNotice("Auto HKA dibuat dari landmarks.");
+          setNotice(`${definition.label} dibuat dari landmarks.`);
           if (shouldUseMobileOneShotTool) {
             setTool(MOBILE_IDLE_TOOL);
             setMobileControlsOpen(false);
@@ -7567,23 +8918,36 @@ export default function XrayCalibrationWorkspace() {
     },
     [
       activateMobileHandleAssist,
+      activateMobileAngleHandleAssist,
+      activateMobileHkaHandleAssist,
       activateMobilePlanningGuideHandleAssist,
       clampToImageBounds,
+      clearMobileAngleHandleAssist,
       clearMobileHandleAssist,
+      clearMobileHkaHandleAssist,
       clearMobilePlanningGuideHandleAssist,
       completeDraftCut,
       completeDraftFreeLine,
       circles,
       draftCut,
       draftFreeLine,
+      angles,
       findClosestAngleHandle,
+      findClosestAngleId,
+      findAngleLabelByPoint,
       findClosestCircleHandle,
       findClosestHandle,
       findClosestHkaHandle,
+      findClosestHkaId,
+      findHkaLabelByPoint,
       findClosestLineId,
       findMobileHandleAssistHit,
+      findMobileAngleHandleAssistHit,
+      findMobileHkaHandleAssistHit,
       findMobilePlanningGuideHandleAssistHit,
+      getMobileAngleHandleAssistGeometry,
       getMobileHandleAssistGeometry,
+      getMobileHkaHandleAssistGeometry,
       getMobilePlanningGuideHandleAssistGeometry,
       clearActiveCanvasSelection,
       findLineLabelByPoint,
@@ -7612,8 +8976,11 @@ export default function XrayCalibrationWorkspace() {
       selectPlanningGuideForEdit,
       setHistoryPaused,
       screenToImagePoint,
+      syncMobileCanvasSelection,
       shouldUseMobileOneShotTool,
       tool,
+      toLayerLocal,
+      triggerSelectionPulse,
       view.panX,
       view.panY,
       view.scale,
@@ -7626,10 +8993,28 @@ export default function XrayCalibrationWorkspace() {
 
       const point = getLocalPoint(event);
       if (!interactionRef.current.mode) {
+        const moveImagePoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        if (!isCoarsePointer) {
+          const hoveredHkaLabelId = findHkaLabelByPoint(point);
+          const hoveredHkaId =
+            hoveredHkaLabelId ?? findClosestHkaId(moveImagePoint);
+          setHoveredMeasurementInfo((current) => {
+            if (hoveredHkaId === null) {
+              return current ? null : current;
+            }
+            if (current?.type === "hka" && current.id === hoveredHkaId) {
+              return current;
+            }
+            return { type: "hka", id: hoveredHkaId };
+          });
+        } else if (hoveredMeasurementInfo) {
+          setHoveredMeasurementInfo(null);
+        }
+
         if (tool === "cut" && draftCut?.points?.length) {
-          const movePoint = clampToImageBounds(
-            screenToImagePoint(point.x, point.y),
-          );
+          const movePoint = moveImagePoint;
           setDraftCut((prev) =>
             prev
               ? {
@@ -7644,9 +9029,7 @@ export default function XrayCalibrationWorkspace() {
           freeLineMode === "point" &&
           draftFreeLine?.points?.length
         ) {
-          const movePoint = clampToImageBounds(
-            screenToImagePoint(point.x, point.y),
-          );
+          const movePoint = moveImagePoint;
           setDraftFreeLine((prev) =>
             prev
               ? {
@@ -8163,19 +9546,64 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-angle-handle") {
-        const movePoint = clampToImageBounds(
-          screenToImagePoint(point.x, point.y),
-        );
-        const { angleId, handleKey } = interactionRef.current;
+        const movePoint = screenToImagePoint(point.x, point.y);
+        const {
+          angleId,
+          handleKey,
+          pointerOffsetX = 0,
+          pointerOffsetY = 0,
+        } = interactionRef.current;
+        const adjustedPoint = clampToImageBounds({
+          x: movePoint.x + pointerOffsetX,
+          y: movePoint.y + pointerOffsetY,
+        });
         setAngles((prev) =>
           prev.map((item) => {
             if (item.id !== angleId) return item;
             if (handleKey === "p1")
-              return { ...item, p1: { x: movePoint.x, y: movePoint.y } };
+              return { ...item, p1: { x: adjustedPoint.x, y: adjustedPoint.y } };
             if (handleKey === "p2")
-              return { ...item, p2: { x: movePoint.x, y: movePoint.y } };
-            return { ...item, p3: { x: movePoint.x, y: movePoint.y } };
+              return { ...item, p2: { x: adjustedPoint.x, y: adjustedPoint.y } };
+            return { ...item, p3: { x: adjustedPoint.x, y: adjustedPoint.y } };
           }),
+        );
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-angle-label") {
+        const { angleId, startX, startY, originOffsetX, originOffsetY } =
+          interactionRef.current;
+        const dx = point.x - startX;
+        const dy = point.y - startY;
+        setAngles((prev) =>
+          prev.map((item) =>
+            item.id === angleId
+              ? {
+                  ...item,
+                  labelOffsetX: clamp(originOffsetX + dx, -320, 320),
+                  labelOffsetY: clamp(originOffsetY + dy, -220, 220),
+                }
+              : item,
+          ),
+        );
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-hka-label") {
+        const { hkaId, startX, startY, originOffsetX, originOffsetY } =
+          interactionRef.current;
+        const dx = point.x - startX;
+        const dy = point.y - startY;
+        setHkaSets((prev) =>
+          prev.map((item) =>
+            item.id === hkaId
+              ? {
+                  ...item,
+                  labelOffsetX: clamp(originOffsetX + dx, -320, 320),
+                  labelOffsetY: clamp(originOffsetY + dy, -220, 220),
+                }
+              : item,
+          ),
         );
         return;
       }
@@ -8222,20 +9650,27 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-hka-handle") {
-        const movePoint = clampToImageBounds(
-          screenToImagePoint(point.x, point.y),
-        );
-        const { hkaId, handleKey } = interactionRef.current;
+        const movePoint = screenToImagePoint(point.x, point.y);
+        const {
+          hkaId,
+          handleKey,
+          pointerOffsetX = 0,
+          pointerOffsetY = 0,
+        } = interactionRef.current;
+        const adjustedPoint = clampToImageBounds({
+          x: movePoint.x + pointerOffsetX,
+          y: movePoint.y + pointerOffsetY,
+        });
         setHkaSets((prev) =>
           prev.map((item) => {
             if (item.id !== hkaId) return item;
-            if (handleKey === "hip")
-              return { ...item, hip: { x: movePoint.x, y: movePoint.y } };
-            if (handleKey === "knee")
-              return { ...item, knee: { x: movePoint.x, y: movePoint.y } };
-            return { ...item, ankle: { x: movePoint.x, y: movePoint.y } };
+            return {
+              ...item,
+              [handleKey]: { x: adjustedPoint.x, y: adjustedPoint.y },
+            };
           }),
         );
+        return;
       }
     },
     [
@@ -8245,11 +9680,15 @@ export default function XrayCalibrationWorkspace() {
       cutLayers,
       draftCut,
       draftFreeLine,
+      findClosestHkaId,
+      findHkaLabelByPoint,
       freeLineMode,
       getLocalPoint,
+      hoveredMeasurementInfo,
       image,
       isLineLocked,
       landmarkPoints,
+      setHoveredMeasurementInfo,
       modelHeight,
       modelWidth,
       setPlanningGuides,
@@ -9534,9 +10973,17 @@ export default function XrayCalibrationWorkspace() {
       });
     }
     for (const item of hkaSets) {
+      const result = getHkaMeasurementResult(item);
       rows.push({
         type: "HKA",
-        value: `${getAngleDegrees(item.hip, item.knee, item.ankle).toFixed(2)}°`,
+        value:
+          result.mode === "fta"
+            ? result.fta !== null && result.predictedHka !== null
+              ? `FTA ${result.fta.toFixed(2)}° | HKAA ${result.predictedHka.toFixed(2)}°`
+              : "FTA belum lengkap"
+            : result.absoluteDeviation !== null
+              ? `${result.label} (${result.absoluteDeviation.toFixed(2)}°)`
+              : "Belum lengkap",
       });
     }
     return rows;
@@ -10341,7 +11788,7 @@ export default function XrayCalibrationWorkspace() {
               ? "Angle"
               : tool === "circle"
                 ? "Circle"
-                : "Auto HKA";
+                : " HKA";
   const activeToolIcon =
     tool === "draw"
       ? "draw"
@@ -10783,7 +12230,7 @@ export default function XrayCalibrationWorkspace() {
               />
               <ToolIconButton
                 icon="hka"
-                label="Auto HKA Tool (K)"
+                label=" HKA Tool (K)"
                 onClick={() => handleToolChange("hkaAuto")}
                 active={tool === "hkaAuto"}
               />
@@ -11977,7 +13424,7 @@ export default function XrayCalibrationWorkspace() {
               <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                 Measure
               </span>
-              <InfoTooltip text="Preset line: Normal, Offset, Femoral Offset, Global Offset, LLD. HKA gunakan Auto HKA. Circle lebih mudah: drag area dalam untuk pindah, drag tepi untuk resize, atau pakai slider diameter." />
+              <InfoTooltip text="Preset line: Normal, Offset, Femoral Offset, Global Offset, LLD. HKA gunakan HKA. Circle lebih mudah: drag area dalam untuk pindah, drag tepi untuk resize, atau pakai slider diameter." />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-600">
               <span>
@@ -12019,7 +13466,7 @@ export default function XrayCalibrationWorkspace() {
                     : "border-slate-300 bg-white text-slate-700"
                 }`}
               >
-                Auto HKA
+               HKA Line
               </button>
               <button
                 type="button"
@@ -12665,9 +14112,9 @@ export default function XrayCalibrationWorkspace() {
                 ) : null}
               </div>
               <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
-                <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
+                <div className="mb-1.5 flex items-center justify-between gap-2 p-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                   <span>Layer Move</span>
-                  <span className="tracking-normal text-cyan-700 normal-case">
+                  <span className="p-1 tracking-normal text-cyan-700 normal-case">
                     {selectedCutLayer
                       ? `#${selectedCutLayer.id} (${selectedCutLayerIndex + 1}/${cutLayers.length})`
                       : "-"}
@@ -12681,7 +14128,7 @@ export default function XrayCalibrationWorkspace() {
                   <span className="font-semibold text-slate-800">Move</span>{" "}
                   aktif.
                 </div>
-                <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                <div className="mb-1.5 grid grid-cols-2 gap-1.5 p-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -13664,7 +15111,7 @@ export default function XrayCalibrationWorkspace() {
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                     <span>Knee</span>
                     <span className="text-cyan-700 normal-case">
-                      Auto HKA & TKA
+                       HKA & TKA
                     </span>
                   </div>
                   <div className={SIDEBAR_TEXT_BUTTON_GRID_CLASS}>
@@ -13676,8 +15123,26 @@ export default function XrayCalibrationWorkspace() {
                         "text-cyan-700",
                       )}
                     >
-                      Auto HKA
+                     HKA Line
                     </button>
+                  </div>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => (
+                      <button
+                        key={modeItem.key}
+                        type="button"
+                        onClick={() => handleHkaModeChange(modeItem.key)}
+                        className={measurePresetButtonClass(
+                          hkaInputMode === modeItem.key,
+                          "text-cyan-700",
+                        )}
+                      >
+                        {modeItem.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-1.5 rounded-[16px] border border-cyan-100 bg-cyan-50/70 px-3 py-2 text-[10px] text-cyan-800">
+                    Mode aktif: {getHkaModeDefinition(hkaInputMode).modeLabel}
                   </div>
                 </div>
               ) : null}
@@ -14076,39 +15541,6 @@ export default function XrayCalibrationWorkspace() {
                       }
                     />
                     <CompactSliderField
-                      label="Arsiran"
-                      valueText={`${selectedAngleMetrics.fillOpacity}%`}
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={selectedAngleMetrics.fillOpacity}
-                      onChange={(event) =>
-                        updateAngleById(selectedAngle.id, {
-                          fillOpacity: Number(event.target.value) / 100,
-                        })
-                      }
-                      onDecrease={() =>
-                        updateAngleById(selectedAngle.id, (item) => ({
-                          ...item,
-                          fillOpacity: clamp(
-                            getAngleFillOpacity(item) - 0.05,
-                            0,
-                            1,
-                          ),
-                        }))
-                      }
-                      onIncrease={() =>
-                        updateAngleById(selectedAngle.id, (item) => ({
-                          ...item,
-                          fillOpacity: clamp(
-                            getAngleFillOpacity(item) + 0.05,
-                            0,
-                            1,
-                          ),
-                        }))
-                      }
-                    />
-                    <CompactSliderField
                       label="Hasil X"
                       valueText={`${Math.round(selectedAngleMetrics.labelOffsetX)}`}
                       min={-180}
@@ -14222,7 +15654,6 @@ export default function XrayCalibrationWorkspace() {
                       onClick={() =>
                         updateAngleById(selectedAngle.id, {
                           color: DEFAULT_ANGLE_COLOR,
-                          fillOpacity: DEFAULT_ANGLE_FILL_OPACITY,
                           strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
                           labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
                           labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
@@ -14237,7 +15668,6 @@ export default function XrayCalibrationWorkspace() {
                       type="button"
                       onClick={() =>
                         updateAngleById(selectedAngle.id, {
-                          fillOpacity: 0.12,
                           labelOffsetX: -38,
                           labelOffsetY: -18,
                           resultOpacity: 0.34,
@@ -14259,108 +15689,232 @@ export default function XrayCalibrationWorkspace() {
                       HKA Settings #{selectedHka.id}
                     </div>
                     <span className="text-[10px] text-cyan-700">
-                      {selectedHkaMetrics.valueDeg.toFixed(1)}°
+                      {selectedHkaMetrics.valueDeg !== null
+                        ? `${selectedHkaMetrics.valueDeg.toFixed(1)}°`
+                        : "-"}
                     </span>
                   </div>
-                  <div className="text-[10px] text-cyan-700">
-                    Arsiran HKA memakai area hip-knee-ankle. Stroke line tetap
-                    solid.
+                  <div className="rounded-[16px] border border-cyan-100 bg-cyan-50/70 px-3 py-2 text-[10px] text-cyan-800">
+                    <div className="font-semibold text-cyan-950">
+                      {selectedHkaMetrics.label}
+                    </div>
+                    <div className="mt-0.5">
+                      Mode jurnal: {selectedHkaMetrics.modeLabel}
+                    </div>
+                    {selectedHkaMetrics.mode === "fta" ? (
+                      <>
+                        <div className="mt-0.5">
+                          FTA:{" "}
+                          {selectedHkaMetrics.fta !== null
+                            ? `${selectedHkaMetrics.fta.toFixed(2)}°`
+                            : "-"}
+                        </div>
+                        <div className="mt-0.5">
+                          Prediksi HKAA:{" "}
+                          {selectedHkaMetrics.predictedHka !== null
+                            ? `${selectedHkaMetrics.predictedHka.toFixed(2)}°`
+                            : "-"}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-0.5">
+                        Signed coronal:{" "}
+                        {selectedHkaMetrics.signedDeg !== null
+                          ? `${selectedHkaMetrics.signedDeg.toFixed(2)}°`
+                          : "-"}
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateHkaById(selectedHka.id, (item) => ({
-                          ...item,
-                          showArc: item.showArc === false,
-                        }))
-                      }
-                      className={`px-2 py-1 text-[10px] font-medium transition ${
-                        selectedHkaMetrics.showArc
-                          ? SOFT_DARK_BUTTON_CLASS
-                          : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
-                      }`}
-                    >
-                      Show Arc
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateHkaById(selectedHka.id, (item) => ({
-                          ...item,
-                          showArc: false,
-                        }))
-                      }
-                      className={`px-2 py-1 text-[10px] font-medium transition ${
-                        !selectedHkaMetrics.showArc
-                          ? SOFT_DARK_BUTTON_CLASS
-                          : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
-                      }`}
-                    >
-                      Hide Arc
-                    </button>
+                  <div className="mt-1.5 text-[10px] text-cyan-700">
+                    {selectedHkaMetrics.mode === "fta"
+                      ? "FTA jurnal memakai 4 landmark: Fem2, femoral notch, Tib1 4 cm, dan Tib1 10 cm. Hover atau klik line FTA di canvas untuk melihat nilai ringkas, lalu buka panel ini untuk panduan lengkapnya."
+                      : "Sign varus/valgus tetap bisa dipilih manual karena orientasi AP kanan/kiri dapat membingungkan. Label hasil HKA juga bisa di-drag langsung di canvas."}
                   </div>
-                  <div className="mt-1.5 grid gap-1.5">
-                    <CompactSliderField
-                      label="Arsiran"
-                      valueText={`${selectedHkaMetrics.fillOpacity}%`}
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={selectedHkaMetrics.fillOpacity}
-                      onChange={(event) =>
-                        updateHkaById(selectedHka.id, {
-                          fillOpacity: Number(event.target.value) / 100,
-                        })
-                      }
-                      onDecrease={() =>
-                        updateHkaById(selectedHka.id, (item) => ({
-                          ...item,
-                          fillOpacity: clamp(
-                            getAngleFillOpacity(item) - 0.05,
-                            0,
-                            1,
-                          ),
-                        }))
-                      }
-                      onIncrease={() =>
-                        updateHkaById(selectedHka.id, (item) => ({
-                          ...item,
-                          fillOpacity: clamp(
-                            getAngleFillOpacity(item) + 0.05,
-                            0,
-                            1,
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateHkaById(selectedHka.id, {
-                          fillOpacity: DEFAULT_ANGLE_FILL_OPACITY,
-                          showArc: true,
-                        })
-                      }
-                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-cyan-900`}
+                  {selectedHkaMetrics.mode === "fta" ? (
+                    <div
+                      className={`${SOFT_SURFACE_CLASS} mt-1.5 px-3 py-2 text-[10px] text-cyan-900`}
                     >
-                      Reset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateHkaById(selectedHka.id, {
-                          fillOpacity: 0.12,
-                          showArc: false,
-                        })
-                      }
-                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-cyan-900`}
-                    >
-                      Ringkas
-                    </button>
+                      <div className="font-semibold text-cyan-950">
+                        Panduan FTA Jurnal
+                      </div>
+                      <div className="mt-1 space-y-1 text-cyan-800">
+                        <div>
+                          1. Pilih mode <span className="font-semibold">FTA</span>,
+                          lalu taruh 4 landmark berurutan:
+                          <span className="font-semibold">
+                            {" "}Fem2 proximal, femoral notch, Tib1 4 cm, Tib1 10 cm.
+                          </span>
+                        </div>
+                        <div>
+                          2. Garis femur dibentuk dari{" "}
+                          <span className="font-semibold">
+                            Fem2 ke femoral notch
+                          </span>
+                          , sedangkan garis tibia dibentuk dari{" "}
+                          <span className="font-semibold">
+                            Tib1 4 cm ke Tib1 10 cm
+                          </span>
+                          .
+                        </div>
+                        <div>
+                          3. Sistem menghitung{" "}
+                          <span className="font-semibold">FTA</span> dari dua
+                          axis itu, lalu memprediksi{" "}
+                          <span className="font-semibold">HKAA</span> dengan
+                          rumus:
+                          <span className="font-semibold">
+                            {" "}HKAA = -2.182 + FTA x 0.995
+                          </span>
+                          .
+                        </div>
+                        <div>
+                          4. Mode ini cocok saat full-length HKA tidak tersedia.
+                          Hasilnya adalah{" "}
+                          <span className="font-semibold">estimasi alignment</span>,
+                          bukan pengganti mechanical axis full standing HKA.
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className={`${SOFT_INSET_CLASS} mt-1.5 px-2 py-1.5`}>
+                    <div className="mb-1 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
+                      Line Color
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {HKA_COLOR_OPTIONS.map((color) => (
+                        <ColorSwatchButton
+                          key={`hka-line-${color}`}
+                          color={color}
+                          active={selectedHkaMetrics.lineColor === color}
+                          label={`Warna line HKA ${color}`}
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, {
+                              lineColor: color,
+                            })
+                          }
+                        />
+                      ))}
+                      <label
+                        className={`${SOFT_RAISED_CLASS} relative inline-flex h-8 w-8 cursor-pointer items-center justify-center`}
+                        title="Custom line color"
+                      >
+                        <div
+                          className="h-[18px] w-[18px] rounded-full border border-white/70"
+                          style={{
+                            background:
+                              "conic-gradient(#f43f5e, #f59e0b, #22c55e, #0ea5e9, #8b5cf6, #f43f5e)",
+                          }}
+                        />
+                        <input
+                          type="color"
+                          value={selectedHkaMetrics.lineColor}
+                          onChange={(event) =>
+                            updateHkaById(selectedHka.id, {
+                              lineColor: event.target.value,
+                            })
+                          }
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        />
+                      </label>
+                    </div>
                   </div>
+                  {selectedHkaMetrics.mode === "full" ? (
+                    <>
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, (item) => ({
+                              ...item,
+                              direction: "varus",
+                            }))
+                          }
+                          className={`px-2 py-1 text-[10px] font-medium transition ${
+                            selectedHkaMetrics.direction === "varus"
+                              ? SOFT_DARK_BUTTON_CLASS
+                              : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                          }`}
+                        >
+                          Varus
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, (item) => ({
+                              ...item,
+                              direction: "valgus",
+                            }))
+                          }
+                          className={`px-2 py-1 text-[10px] font-medium transition ${
+                            selectedHkaMetrics.direction === "valgus"
+                              ? SOFT_DARK_BUTTON_CLASS
+                              : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                          }`}
+                        >
+                          Valgus
+                        </button>
+                      </div>
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, (item) => ({
+                              ...item,
+                              showArc: item.showArc === false,
+                            }))
+                          }
+                          className={`px-2 py-1 text-[10px] font-medium transition ${
+                            selectedHkaMetrics.showArc
+                              ? SOFT_DARK_BUTTON_CLASS
+                              : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                          }`}
+                        >
+                          Show Arc
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, (item) => ({
+                              ...item,
+                              showArc: false,
+                            }))
+                          }
+                          className={`px-2 py-1 text-[10px] font-medium transition ${
+                            !selectedHkaMetrics.showArc
+                              ? SOFT_DARK_BUTTON_CLASS
+                              : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                          }`}
+                        >
+                          Hide Arc
+                        </button>
+                      </div>
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, {
+                              lineColor: DEFAULT_HKA_LINE_COLOR,
+                              showArc: true,
+                            })
+                          }
+                          className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-cyan-900`}
+                        >
+                          Reset
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateHkaById(selectedHka.id, {
+                              showArc: false,
+                            })
+                          }
+                          className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-cyan-900`}
+                        >
+                          Ringkas
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
               {measureAnatomyTab === "knee" ? (
@@ -15730,6 +17284,7 @@ export default function XrayCalibrationWorkspace() {
                       : "cursor-grab"
                     : interactionRef.current.mode === "move-line" ||
                         interactionRef.current.mode === "move-line-label" ||
+                        interactionRef.current.mode === "move-hka-label" ||
                         interactionRef.current.mode === "move-cut-layer" ||
                         interactionRef.current.mode === "move-circle-center" ||
                         interactionRef.current.mode === "move-planning-guide" ||
@@ -15750,7 +17305,10 @@ export default function XrayCalibrationWorkspace() {
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onPointerLeave={handlePointerUp}
+                onPointerLeave={() => {
+                  setHoveredMeasurementInfo(null);
+                  handlePointerUp();
+                }}
                 onContextMenu={(event) => event.preventDefault()}
               />
             </div>
