@@ -106,17 +106,17 @@ export default function LocalImplantLibraryPanel({
           <div className="text-[11px] font-medium text-slate-700">
             {selectedItem.label}
           </div>
-          <div className="mt-0.5 text-[10px] text-slate-500">
+          <div className="mt-0.5 text-[10px] text-slate-500 ">
             {selectedItem.brand} | {selectedItem.system} | Size{" "}
             {selectedItem.size}
           </div>
           <div
-            className={`mt-2 flex h-20 items-center justify-center overflow-hidden bg-slate-950/95 ${SOFT_SURFACE_CLASS}`}
+            className={`mt-2 flex h-50 items-center justify-center overflow-hidden bg-slate-950/95 ${SOFT_SURFACE_CLASS}`}
           >
             <img
               src={selectedItem.imageSrc}
               alt={selectedItem.label}
-              className="h-full w-full object-contain"
+              className="h-full w-full object-contain bg-slate-900"
             />
           </div>
         </motion.div>
@@ -134,7 +134,7 @@ export default function LocalImplantLibraryPanel({
         className={`mt-2 w-full px-3 py-2 text-[11px] font-medium text-slate-800 transition disabled:cursor-not-allowed disabled:opacity-45 ${SOFT_PRIMARY_BUTTON_CLASS}`}
         title="Tambahkan implant sebagai layer template"
       >
-        {compact ? "Pakai" : "Pakai Sebagai Layer"}
+        {compact ? "Pakai" : "Pakai Template"}
       </motion.button>
     </motion.div>
   );

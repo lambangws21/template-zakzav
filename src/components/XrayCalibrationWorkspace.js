@@ -82,8 +82,18 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
 const STORY_STORAGE_KEY = "xray_workspace_story_v1";
 const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
+const MEASURE_LEGEND_VISIBILITY_KEY = "xray_measure_legend_visible_v1";
 const DEFAULT_TEMPLATE_LAYER_OPACITY = 0.55;
 const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
+const DEFAULT_SNAP_SETTINGS = {
+  endpoint: true,
+  midpoint: true,
+  intersection: true,
+  center: true,
+  tangent: false,
+  perpendicular: false,
+  shiftOnlyDesktop: false,
+};
 const LEFT_SIDEBAR_MIN_WIDTH = 130;
 const LEFT_SIDEBAR_MAX_WIDTH = 420;
 const LEFT_SIDEBAR_DEFAULT_WIDTH = 260;
@@ -185,10 +195,15 @@ const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
 const MOBILE_DOUBLE_TAP_MS = 320;
 const MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN = 72;
+const DEFAULT_LINE_STROKE_WIDTH = 2;
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
 const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
+const DEFAULT_HKA_STROKE_WIDTH = 2;
+const DEFAULT_CIRCLE_STROKE_WIDTH = 2;
+const DEFAULT_PLANNING_GUIDE_STROKE_WIDTH = 2;
 const DEFAULT_FREE_LINE_COLOR = "#3b82f6";
+const DEFAULT_LAYER_DUPLICATE_OFFSET = 18;
 const DEFAULT_FREE_LINE_MODE = "freehand";
 const DEFAULT_FREE_LINE_CURVE_FREEHAND = 0.16;
 const DEFAULT_FREE_LINE_CURVE_POINT = 0.58;
@@ -233,6 +248,17 @@ const PLANNING_GUIDE_COLOR_OPTIONS = [
   "#f59e0b",
 ];
 const MOBILE_PANEL_PREVIEW_EVENT = "xray-mobile-panel-preview";
+const TOOL_CONFIG_MODAL_DEFAULT_SIZES = {
+  snapTool: { width: 517, height: 808 },
+  centerFinder: { width: 517, height: 808 },
+  axisBuilder: { width: 517, height: 808 },
+  guideBuilder: { width: 517, height: 808 },
+  layerMove: { width: 517, height: 808 },
+  layerLayout: { width: 517, height: 808 },
+  layerSettings: { width: 517, height: 808 },
+};
+const TOOL_CONFIG_MODAL_MIN_WIDTH = 420;
+const TOOL_CONFIG_MODAL_MIN_HEIGHT = 260;
 let mobilePanelPreviewTimeoutId = null;
 
 function clamp(value, min, max) {
@@ -924,6 +950,49 @@ function getHkaCanvasLabelText(measurement, expanded = false) {
     return `${measurement.label} (${measurement.absoluteDeviation.toFixed(1)}°)`;
   }
   return `HKA ${measurement.absoluteDeviation.toFixed(1)}°`;
+}
+
+function getAngleCanvasLabelText(angle, expanded = false) {
+  if (!angle) return "ANGLE";
+  const value = getAngleDegrees(angle.p1, angle.p2, angle.p3);
+  if (!Number.isFinite(value)) return "ANGLE";
+  if (expanded) {
+    return `ANGLE: ${value.toFixed(1)}°`;
+  }
+  return `${value.toFixed(1)}°`;
+}
+
+function getCircleDiameterText(
+  circle,
+  mmPerPixel,
+  measurementUnit = "cm",
+  decimals = 1,
+) {
+  if (!circle) return "-";
+  if (mmPerPixel !== null) {
+    const diameterMm = circle.radius * 2 * mmPerPixel;
+    return measurementUnit === "cm"
+      ? `${(diameterMm / 10).toFixed(decimals)} ${measurementUnit}`
+      : `${diameterMm.toFixed(decimals)} ${measurementUnit}`;
+  }
+  return `${(circle.radius * 2).toFixed(decimals)} px`;
+}
+
+function getCircleCanvasLabelText(
+  circle,
+  mmPerPixel,
+  measurementUnit = "cm",
+  expanded = false,
+) {
+  if (!circle) return "DIA";
+  if (circle.source === "centerFinder") {
+    return expanded
+      ? `CTR | DIA: ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 2)}`
+      : "CTR";
+  }
+  return expanded
+    ? `DIA: ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 2)}`
+    : `DIA ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 1)}`;
 }
 
 function getAngleArcGeometry(a, vertex, b) {
@@ -1645,6 +1714,73 @@ function getLayerCorners(layer) {
   });
 }
 
+function getLayerBounds(layer) {
+  const corners = getLayerCorners(layer);
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const top = Math.min(...ys);
+  const bottom = Math.max(...ys);
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
+function reorderLayerStack(layers, layerIds, placement) {
+  const selectedSet = new Set(layerIds);
+  if (!selectedSet.size) return layers;
+
+  if (placement === "back") {
+    const selected = layers.filter((layer) => selectedSet.has(layer.id));
+    const rest = layers.filter((layer) => !selectedSet.has(layer.id));
+    return [...selected, ...rest];
+  }
+
+  if (placement === "front") {
+    const rest = layers.filter((layer) => !selectedSet.has(layer.id));
+    const selected = layers.filter((layer) => selectedSet.has(layer.id));
+    return [...rest, ...selected];
+  }
+
+  const next = [...layers];
+  if (placement === "up") {
+    for (let index = next.length - 2; index >= 0; index -= 1) {
+      if (
+        selectedSet.has(next[index].id) &&
+        !selectedSet.has(next[index + 1].id)
+      ) {
+        const current = next[index];
+        next[index] = next[index + 1];
+        next[index + 1] = current;
+      }
+    }
+    return next;
+  }
+
+  if (placement === "down") {
+    for (let index = 1; index < next.length; index += 1) {
+      if (
+        selectedSet.has(next[index].id) &&
+        !selectedSet.has(next[index - 1].id)
+      ) {
+        const current = next[index];
+        next[index] = next[index - 1];
+        next[index - 1] = current;
+      }
+    }
+  }
+
+  return next;
+}
+
 function getLayerControlPoints(layer) {
   const size = getLayerDisplaySize(layer);
   const halfW = size.width / 2;
@@ -1690,6 +1826,173 @@ function distancePointToSegment(point, line) {
   const closestY = line.y1 + clampedT * vy;
 
   return Math.hypot(point.x - closestX, point.y - closestY);
+}
+
+function getSegmentMidpoint(a, b) {
+  return {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  };
+}
+
+function getCircumcircleFromThreePoints(a, b, c) {
+  const determinant =
+    2 *
+    (a.x * (b.y - c.y) +
+      b.x * (c.y - a.y) +
+      c.x * (a.y - b.y));
+  if (Math.abs(determinant) < 1e-6) return null;
+
+  const aSq = a.x * a.x + a.y * a.y;
+  const bSq = b.x * b.x + b.y * b.y;
+  const cSq = c.x * c.x + c.y * c.y;
+  const centerX =
+    (aSq * (b.y - c.y) + bSq * (c.y - a.y) + cSq * (a.y - b.y)) /
+    determinant;
+  const centerY =
+    (aSq * (c.x - b.x) + bSq * (a.x - c.x) + cSq * (b.x - a.x)) /
+    determinant;
+  const radius = Math.hypot(centerX - a.x, centerY - a.y);
+
+  if (
+    !Number.isFinite(centerX) ||
+    !Number.isFinite(centerY) ||
+    !Number.isFinite(radius) ||
+    radius <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    center: { x: centerX, y: centerY },
+    radius,
+  };
+}
+
+function buildAxisLineFromPoints(points) {
+  if (!Array.isArray(points) || points.length < 4) return null;
+  const proximalMid = getSegmentMidpoint(points[0], points[1]);
+  const distalMid = getSegmentMidpoint(points[2], points[3]);
+  if (Math.hypot(distalMid.x - proximalMid.x, distalMid.y - proximalMid.y) < 2) {
+    return null;
+  }
+  return {
+    x1: proximalMid.x,
+    y1: proximalMid.y,
+    x2: distalMid.x,
+    y2: distalMid.y,
+  };
+}
+
+function buildGuideLineFromReference(referenceLine, throughPoint, mode = "parallel") {
+  if (!referenceLine || !throughPoint) return null;
+  const dx = referenceLine.x2 - referenceLine.x1;
+  const dy = referenceLine.y2 - referenceLine.y1;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-6) return null;
+
+  let ux = dx / length;
+  let uy = dy / length;
+  if (mode === "perpendicular") {
+    const nextUx = -uy;
+    const nextUy = ux;
+    ux = nextUx;
+    uy = nextUy;
+  }
+
+  const halfLength = Math.max(18, length * 0.5);
+  return {
+    x1: throughPoint.x - ux * halfLength,
+    y1: throughPoint.y - uy * halfLength,
+    x2: throughPoint.x + ux * halfLength,
+    y2: throughPoint.y + uy * halfLength,
+  };
+}
+
+function getSegmentIntersectionPoint(a, b) {
+  const x1 = a.x1;
+  const y1 = a.y1;
+  const x2 = a.x2;
+  const y2 = a.y2;
+  const x3 = b.x1;
+  const y3 = b.y1;
+  const x4 = b.x2;
+  const y4 = b.y2;
+
+  const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(denominator) < 1e-6) return null;
+
+  const determinantA = x1 * y2 - y1 * x2;
+  const determinantB = x3 * y4 - y3 * x4;
+  const px =
+    (determinantA * (x3 - x4) - (x1 - x2) * determinantB) / denominator;
+  const py =
+    (determinantA * (y3 - y4) - (y1 - y2) * determinantB) / denominator;
+
+  const withinSegment = (value, start, end) =>
+    value >= Math.min(start, end) - 1e-4 && value <= Math.max(start, end) + 1e-4;
+
+  if (
+    !withinSegment(px, x1, x2) ||
+    !withinSegment(py, y1, y2) ||
+    !withinSegment(px, x3, x4) ||
+    !withinSegment(py, y3, y4)
+  ) {
+    return null;
+  }
+
+  return { x: px, y: py };
+}
+
+function projectPointToInfiniteLine(point, line) {
+  const vx = line.x2 - line.x1;
+  const vy = line.y2 - line.y1;
+  const lengthSq = vx * vx + vy * vy;
+  if (lengthSq <= 1e-6) return null;
+  const t = ((point.x - line.x1) * vx + (point.y - line.y1) * vy) / lengthSq;
+  return {
+    x: line.x1 + t * vx,
+    y: line.y1 + t * vy,
+    t,
+  };
+}
+
+function getCircleTangentPointsFromExternalPoint(point, circle) {
+  const dx = point.x - circle.cx;
+  const dy = point.y - circle.cy;
+  const distanceSq = dx * dx + dy * dy;
+  const radiusSq = circle.radius * circle.radius;
+  if (distanceSq <= radiusSq + 1e-6) return [];
+
+  const distance = Math.sqrt(distanceSq);
+  const baseAngle = Math.atan2(dy, dx);
+  const deltaAngle = Math.acos(clamp(circle.radius / distance, -1, 1));
+
+  return [baseAngle - deltaAngle, baseAngle + deltaAngle].map((angle) => ({
+    x: circle.cx + circle.radius * Math.cos(angle),
+    y: circle.cy + circle.radius * Math.sin(angle),
+  }));
+}
+
+function normalizeSnapSettings(settings) {
+  return {
+    endpoint: settings?.endpoint !== false,
+    midpoint: settings?.midpoint !== false,
+    intersection: settings?.intersection !== false,
+    center: settings?.center !== false,
+    tangent: Boolean(settings?.tangent),
+    perpendicular: Boolean(settings?.perpendicular),
+    shiftOnlyDesktop: Boolean(settings?.shiftOnlyDesktop),
+  };
+}
+
+function getSnapTypeShortLabel(type) {
+  if (type === "midpoint") return "MID";
+  if (type === "intersection") return "X";
+  if (type === "center") return "CTR";
+  if (type === "tangent") return "TAN";
+  if (type === "perpendicular") return "PERP";
+  return "END";
 }
 
 function drawTag(ctx, x, y, text, color, options = {}) {
@@ -1808,6 +2111,9 @@ const ICON_COMPONENTS = {
   freeLine: Spline,
   pan: HandGrab,
   cut: Slice,
+  centerFinder: Target,
+  axisBuilder: Bone,
+  guideBuilder: RulerDimensionLine,
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
   fit: Maximize2,
@@ -1943,6 +2249,9 @@ const TOOL_ICON_COMPONENTS = {
   freeLine: Spline,
   pan: HandGrab,
   cut: Slice,
+  centerFinder: Target,
+  axisBuilder: Bone,
+  guideBuilder: RulerDimensionLine,
   angle: DraftingCompass,
   circle: CircleDot,
   hka: ChartSpline,
@@ -2314,6 +2623,7 @@ export default function XrayCalibrationWorkspace() {
   const skipNextAutosaveRef = useRef(false);
   const restoredRef = useRef(false);
   const sidebarResizeRef = useRef(null);
+  const toolConfigModalInteractionRef = useRef(null);
   const templateSyncingRef = useRef(false);
   const sheetImageSyncingRef = useRef(false);
   const mobileLineTapRef = useRef({
@@ -2331,6 +2641,8 @@ export default function XrayCalibrationWorkspace() {
   const historyFutureRef = useRef([]);
   const historyCurrentRef = useRef(null);
   const historyApplyingRef = useRef(false);
+  const measureLegendPreferenceLoadedRef = useRef(false);
+  const snapModifierPressedRef = useRef(false);
 
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [compareViewport, setCompareViewport] = useState({
@@ -2352,6 +2664,15 @@ export default function XrayCalibrationWorkspace() {
   const [draftAnglePoints, setDraftAnglePoints] = useState([]);
   const [circles, setCircles] = useState([]);
   const [draftCirclePoints, setDraftCirclePoints] = useState([]);
+  const [draftCenterFinderPoints, setDraftCenterFinderPoints] = useState([]);
+  const [draftAxisBuilderPoints, setDraftAxisBuilderPoints] = useState([]);
+  const [guideBuilderMode, setGuideBuilderMode] = useState("parallel");
+  const [guideBuilderPreviewPoint, setGuideBuilderPreviewPoint] =
+    useState(null);
+  const [toolConfigModal, setToolConfigModal] = useState(null);
+  const [toolConfigModalFrames, setToolConfigModalFrames] = useState({});
+  const [toolConfigModalPinned, setToolConfigModalPinned] = useState({});
+  const [layerSettingsTab, setLayerSettingsTab] = useState("transform");
   const [hkaSets, setHkaSets] = useState([]);
   const [draftHkaPoints, setDraftHkaPoints] = useState([]);
   const [draftCut, setDraftCut] = useState(null);
@@ -2375,7 +2696,11 @@ export default function XrayCalibrationWorkspace() {
     DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
   );
   const [snapToLandmarks, setSnapToLandmarks] = useState(true);
+  const [snapSettings, setSnapSettings] = useState(DEFAULT_SNAP_SETTINGS);
+  const [activeSnapTarget, setActiveSnapTarget] = useState(null);
+  const [snapModifierPressed, setSnapModifierPressed] = useState(false);
   const [selectedCutLayerId, setSelectedCutLayerId] = useState(null);
+  const [selectedCutLayerExtraIds, setSelectedCutLayerExtraIds] = useState([]);
   const [selectedFreeLinePointIndex, setSelectedFreeLinePointIndex] =
     useState(null);
   const [selectedLineId, setSelectedLineId] = useState(null);
@@ -2398,6 +2723,7 @@ export default function XrayCalibrationWorkspace() {
   const [linePreset, setLinePreset] = useState("normal");
   const [hkaInputMode, setHkaInputMode] = useState("full");
   const [measureAnatomyTab, setMeasureAnatomyTab] = useState("knee");
+  const [showMeasureLegend, setShowMeasureLegend] = useState(false);
   const [contrast, setContrast] = useState(100);
   const [level, setLevel] = useState(100);
   const [rotation, setRotation] = useState(0);
@@ -2519,6 +2845,40 @@ export default function XrayCalibrationWorkspace() {
       );
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const updateShiftState = (nextValue) => {
+      snapModifierPressedRef.current = nextValue;
+      setSnapModifierPressed(nextValue);
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Shift") {
+        updateShiftState(true);
+      }
+    };
+
+    const handleKeyUp = (event) => {
+      if (event.key === "Shift") {
+        updateShiftState(false);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      updateShiftState(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, []);
+
   const shouldUseMobileOneShotTool = isMobileViewport && isCoarsePointer;
 
   const getIdleTool = useCallback(
@@ -2559,12 +2919,83 @@ export default function XrayCalibrationWorkspace() {
     () => cutLayers.find((layer) => layer.id === selectedCutLayerId) || null,
     [cutLayers, selectedCutLayerId],
   );
+  useEffect(() => {
+    setSelectedCutLayerExtraIds((prev) => {
+      if (selectedCutLayerId === null) {
+        return prev.length ? [] : prev;
+      }
+      const validLayerIds = new Set(cutLayers.map((layer) => layer.id));
+      const next = prev.filter(
+        (layerId) =>
+          layerId !== selectedCutLayerId && validLayerIds.has(layerId),
+      );
+      return next.length === prev.length ? prev : next;
+    });
+  }, [cutLayers, selectedCutLayerId]);
+  const selectedCutLayerIds = useMemo(() => {
+    if (selectedCutLayerId === null) return [];
+    const validLayerIds = new Set(cutLayers.map((layer) => layer.id));
+    return [
+      selectedCutLayerId,
+      ...selectedCutLayerExtraIds.filter(
+        (layerId) =>
+          layerId !== selectedCutLayerId && validLayerIds.has(layerId),
+      ),
+    ];
+  }, [cutLayers, selectedCutLayerExtraIds, selectedCutLayerId]);
+  const selectedCutLayerIdsSet = useMemo(
+    () => new Set(selectedCutLayerIds),
+    [selectedCutLayerIds],
+  );
+  const selectedCutLayers = useMemo(
+    () => cutLayers.filter((layer) => selectedCutLayerIdsSet.has(layer.id)),
+    [cutLayers, selectedCutLayerIdsSet],
+  );
   const selectedPlanningGuide = useMemo(
     () =>
       planningGuides.find((guide) => guide.id === selectedPlanningGuideId) ||
       null,
     [planningGuides, selectedPlanningGuideId],
   );
+  const guideBuilderReference = useMemo(() => {
+    if (selectedLine) {
+      return {
+        kind: "line",
+        id: selectedLine.id,
+        label: `Line #${selectedLine.id}`,
+        line: {
+          x1: selectedLine.x1,
+          y1: selectedLine.y1,
+          x2: selectedLine.x2,
+          y2: selectedLine.y2,
+        },
+      };
+    }
+    if (selectedPlanningGuide) {
+      const guideIndex =
+        planningGuides.findIndex(
+          (guide) => guide.id === selectedPlanningGuide.id,
+        ) + 1;
+      const guideLabel =
+        selectedPlanningGuide.kind === "valgusCut"
+          ? `DC${guideIndex}`
+          : selectedPlanningGuide.kind === "tibialSlope"
+            ? `TS${guideIndex}`
+            : `TC${guideIndex}`;
+      return {
+        kind: "planning",
+        id: selectedPlanningGuide.id,
+        label: guideLabel,
+        line: {
+          x1: selectedPlanningGuide.anchorStart.x,
+          y1: selectedPlanningGuide.anchorStart.y,
+          x2: selectedPlanningGuide.anchorEnd.x,
+          y2: selectedPlanningGuide.anchorEnd.y,
+        },
+      };
+    }
+    return null;
+  }, [planningGuides, selectedLine, selectedPlanningGuide]);
   const selectedImplantLibraryItem = useMemo(
     () =>
       getImplantLibraryItemById(
@@ -2577,6 +3008,31 @@ export default function XrayCalibrationWorkspace() {
     () => cutLayers.findIndex((layer) => layer.id === selectedCutLayerId),
     [cutLayers, selectedCutLayerId],
   );
+  const selectedCutLayerGroupId = useMemo(() => {
+    if (selectedCutLayers.length === 0) return null;
+    const groupIds = [
+      ...new Set(
+        selectedCutLayers
+          .map((layer) => layer.groupId)
+          .filter((groupId) => Boolean(groupId)),
+      ),
+    ];
+    return groupIds.length === 1 ? groupIds[0] : null;
+  }, [selectedCutLayers]);
+  const hasLayerMultiSelection = selectedCutLayerIds.length > 1;
+  const selectedLayerStackRangeLabel = useMemo(() => {
+    if (!selectedCutLayerIds.length) return "-";
+    if (!hasLayerMultiSelection && selectedCutLayer) {
+      return `#${selectedCutLayer.id} (${selectedCutLayerIndex + 1}/${cutLayers.length})`;
+    }
+    return `${selectedCutLayerIds.length} layer`;
+  }, [
+    cutLayers.length,
+    hasLayerMultiSelection,
+    selectedCutLayer,
+    selectedCutLayerIds.length,
+    selectedCutLayerIndex,
+  ]);
   const selectedLayerPalette = useMemo(
     () => (selectedCutLayer ? getLayerPalette(selectedCutLayer.id) : null),
     [selectedCutLayer],
@@ -2683,6 +3139,9 @@ export default function XrayCalibrationWorkspace() {
       mode: measurement.mode,
       modeLabel: measurement.modeLabel,
       lineColor: getHkaLineColor(selectedHka),
+      strokeWidth: Number.isFinite(selectedHka.strokeWidth)
+        ? selectedHka.strokeWidth
+        : DEFAULT_HKA_STROKE_WIDTH,
       showArc:
         selectedHka.mode === "full" ? selectedHka.showArc !== false : false,
       valueDeg: measurement.absoluteDeviation,
@@ -2714,29 +3173,130 @@ export default function XrayCalibrationWorkspace() {
   const isSelectedLineLocked = selectedLine
     ? lockedLineIds.has(selectedLine.id)
     : false;
+  const getRelatedLayerIds = useCallback(
+    (layerId, { includeGroup = false } = {}) => {
+      const layer = cutLayers.find((item) => item.id === layerId);
+      if (!layer) return [];
+      if (includeGroup && layer.groupId) {
+        return cutLayers
+          .filter((item) => item.groupId === layer.groupId)
+          .map((item) => item.id);
+      }
+      return [layerId];
+    },
+    [cutLayers],
+  );
+  const selectSingleLayer = useCallback(
+    (layerId, { includeGroup = false } = {}) => {
+      const layerIds = getRelatedLayerIds(layerId, { includeGroup });
+      setSelectedCutLayerId(layerId);
+      setSelectedCutLayerExtraIds(layerIds.filter((item) => item !== layerId));
+    },
+    [getRelatedLayerIds],
+  );
+  const toggleLayerSelection = useCallback(
+    (layerId, { includeGroup = false } = {}) => {
+      const targetIds = getRelatedLayerIds(layerId, { includeGroup });
+      if (!targetIds.length) return;
+
+      const selectedSet = new Set(selectedCutLayerIds);
+      const isAlreadySelected = targetIds.every((id) => selectedSet.has(id));
+      if (isAlreadySelected) {
+        const remaining = selectedCutLayerIds.filter(
+          (id) => !targetIds.includes(id),
+        );
+        const nextPrimary =
+          selectedCutLayerId !== null && remaining.includes(selectedCutLayerId)
+            ? selectedCutLayerId
+            : remaining[0] ?? null;
+        setSelectedCutLayerId(nextPrimary);
+        setSelectedCutLayerExtraIds(
+          nextPrimary === null
+            ? []
+            : remaining.filter((id) => id !== nextPrimary),
+        );
+        return;
+      }
+
+      const mergedIds = [...selectedCutLayerIds];
+      for (const targetId of targetIds) {
+        if (!mergedIds.includes(targetId)) {
+          mergedIds.push(targetId);
+        }
+      }
+      const nextPrimary = selectedCutLayerId ?? layerId;
+      setSelectedCutLayerId(nextPrimary);
+      setSelectedCutLayerExtraIds(
+        mergedIds.filter((id) => id !== nextPrimary),
+      );
+    },
+    [getRelatedLayerIds, selectedCutLayerId, selectedCutLayerIds],
+  );
 
   const focusLayerSettings = useCallback(
     (layerId) => {
-      setSelectedCutLayerId(layerId);
+      selectSingleLayer(layerId);
+      setSelectedLineId(null);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedPlanningGuideId(null);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
         setMobileControlsOpen(true);
       }
       setActiveRightPanel("tool");
     },
-    [isMobileViewport],
+    [isMobileViewport, selectSingleLayer],
   );
 
   const focusLayerCanvas = useCallback(
     (layerId, { openPanel = false } = {}) => {
-      setSelectedCutLayerId(layerId);
+      selectSingleLayer(layerId);
+      setSelectedLineId(null);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedPlanningGuideId(null);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
         setMobileControlsOpen(openPanel);
       }
       setActiveRightPanel("tool");
     },
-    [isMobileViewport],
+    [isMobileViewport, selectSingleLayer],
+  );
+  const openLayerSettingsModal = useCallback(
+    (layerId = selectedCutLayerId, tab = "transform") => {
+      if (!layerId) return;
+      focusLayerSettings(layerId);
+      setLayerSettingsTab(tab);
+      setToolConfigModal("layerSettings");
+    },
+    [focusLayerSettings, selectedCutLayerId],
+  );
+  const selectLayerFromCanvas = useCallback(
+    (
+      layerId,
+      { additive = false, includeGroup = false, openPanel = false } = {},
+    ) => {
+      if (additive) {
+        toggleLayerSelection(layerId, { includeGroup });
+      } else {
+        selectSingleLayer(layerId, { includeGroup });
+      }
+      setSelectedLineId(null);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedPlanningGuideId(null);
+      setMobilePanelMode("workspace");
+      if (isMobileViewport) {
+        setMobileControlsOpen(openPanel);
+      }
+      setActiveRightPanel("tool");
+    },
+    [isMobileViewport, selectSingleLayer, toggleLayerSelection],
   );
 
   useEffect(() => {
@@ -2802,6 +3362,65 @@ export default function XrayCalibrationWorkspace() {
     });
   }, []);
 
+  const appendLineMeasurement = useCallback(
+    (lineInput, options = {}) => {
+      if (!lineInput) return null;
+      const nextLine = {
+        ...lineInput,
+        id: nextLineIdRef.current,
+        labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
+        labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
+        labelOpacity: DEFAULT_LABEL_OPACITY,
+        strokeWidth: Number.isFinite(lineInput.strokeWidth)
+          ? lineInput.strokeWidth
+          : DEFAULT_LINE_STROKE_WIDTH,
+      };
+      nextLineIdRef.current += 1;
+      setLines((prev) => [...prev, nextLine]);
+      setSelectedLineId(nextLine.id);
+      setSelectedFreeLinePointIndex(null);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedCutLayerId(null);
+      setSelectedPlanningGuideId(null);
+      setActiveRightPanel("measure");
+      triggerSelectionPulse("line", nextLine.id);
+      if (options.mobileHandleAssistEnd && isCoarsePointer) {
+        setMobileHandleAssist({ lineId: nextLine.id, handleKey: "end" });
+      }
+      return nextLine;
+    },
+    [isCoarsePointer, triggerSelectionPulse],
+  );
+
+  const appendCenterFinderCircle = useCallback(
+    (circleInput) => {
+      if (!circleInput) return null;
+      const nextCircle = {
+        ...circleInput,
+        id: nextCircleIdRef.current,
+        strokeWidth: Number.isFinite(circleInput.strokeWidth)
+          ? circleInput.strokeWidth
+          : DEFAULT_CIRCLE_STROKE_WIDTH,
+        source: circleInput.source || "centerFinder",
+      };
+      nextCircleIdRef.current += 1;
+      setCircles((prev) => [...prev, nextCircle]);
+      setSelectedCircleId(nextCircle.id);
+      setSelectedFreeLinePointIndex(null);
+      setSelectedLineId(null);
+      setSelectedAngleId(null);
+      setSelectedHkaId(null);
+      setSelectedCutLayerId(null);
+      setSelectedPlanningGuideId(null);
+      setActiveRightPanel("measure");
+      triggerSelectionPulse("circle", nextCircle.id);
+      return nextCircle;
+    },
+    [triggerSelectionPulse],
+  );
+
   useEffect(() => {
     if (!selectionPulse) return undefined;
 
@@ -2834,6 +3453,7 @@ export default function XrayCalibrationWorkspace() {
     setSelectedCircleId(null);
     setSelectedHkaId(null);
     setSelectedCutLayerId(null);
+    setSelectedCutLayerExtraIds([]);
     setSelectedPlanningGuideId(null);
     setSelectionPulse(null);
     clearMobileHandleAssist();
@@ -3089,6 +3709,9 @@ export default function XrayCalibrationWorkspace() {
   const lineTypeLabel = useCallback((type) => {
     if (type === "hka") return "HKA";
     if (type === "ruler") return "RULER";
+    if (type === "axis") return "AXIS";
+    if (type === "parallelGuide") return "PARA";
+    if (type === "perpendicularGuide") return "PERP";
     if (type === "offset") return "OFFSET";
     if (type === "femoralOffset") return "FEM-OFF";
     if (type === "globalOffset") return "GLB-OFF";
@@ -3099,11 +3722,81 @@ export default function XrayCalibrationWorkspace() {
   const lineTypeColor = useCallback((type) => {
     if (type === "hka") return "#06b6d4";
     if (type === "ruler") return "#22c55e";
+    if (type === "axis") return "#0f766e";
+    if (type === "parallelGuide") return "#0ea5e9";
+    if (type === "perpendicularGuide") return "#f59e0b";
     if (type === "offset") return "#f43f5e";
     if (type === "femoralOffset") return "#10b981";
     if (type === "globalOffset") return "#8b5cf6";
     if (type === "lld") return "#f97316";
     return "#38bdf8";
+  }, []);
+
+  const getLineVisualStyle = useCallback(
+    (
+      line,
+      {
+        isSelected = false,
+        isPulsing = false,
+        isLocked = false,
+        isCalibration = false,
+        isCalibrationReference = false,
+      } = {},
+    ) => {
+      const baseStrokeWidth = Math.max(
+        1.2,
+        Number.isFinite(line?.strokeWidth)
+          ? line.strokeWidth
+          : DEFAULT_LINE_STROKE_WIDTH,
+      );
+      const type = line?.type || "normal";
+      let color = lineTypeColor(type);
+      let dashPattern = [];
+
+      if (type === "offset") {
+        dashPattern = [10, 4];
+      } else if (type === "femoralOffset") {
+        dashPattern = [8, 3, 2, 3];
+      } else if (type === "globalOffset") {
+        dashPattern = [4, 4];
+      } else if (type === "lld") {
+        dashPattern = [14, 4];
+      } else if (type === "axis") {
+        dashPattern = [2, 4];
+      } else if (type === "parallelGuide") {
+        dashPattern = [12, 4];
+      } else if (type === "perpendicularGuide") {
+        dashPattern = [4, 5];
+      }
+
+      if (isLocked) {
+        color = "#a855f7";
+        dashPattern = [6, 4];
+      } else if (isCalibration) {
+        color = "#16a34a";
+        dashPattern = [];
+      } else if (isCalibrationReference) {
+        color = "#0ea5e9";
+        dashPattern = [];
+      }
+
+      return {
+        color,
+        dashPattern,
+        width: baseStrokeWidth + (isSelected || isPulsing ? 0.45 : 0),
+      };
+    },
+    [lineTypeColor],
+  );
+
+  const getPlanningGuideVisualStyle = useCallback((guide) => {
+    if (guide?.kind === "valgusCut") {
+      return { anchorDash: [8, 4], baseDash: [3, 4] };
+    }
+    if (guide?.kind === "tibialSlope") {
+      return { anchorDash: [10, 4], baseDash: [2, 4] };
+    }
+    return { anchorDash: [6, 4], baseDash: [2, 3] };
   }, []);
 
   const getPlanningGuideLabelText = useCallback((guide, index) => {
@@ -3253,6 +3946,7 @@ export default function XrayCalibrationWorkspace() {
         displayHeight: layer.displayHeight,
         centerX: layer.centerX,
         centerY: layer.centerY,
+        groupId: layer.groupId || null,
         rotation: layer.rotation,
         flipX: layer.flipX,
         flipY: layer.flipY,
@@ -3310,11 +4004,13 @@ export default function XrayCalibrationWorkspace() {
       cropRect,
       cutLayers: serializeCutLayers(),
       selectedCutLayerId,
+      selectedCutLayerExtraIds,
       selectedTemplateId,
       selectedImplantType,
       selectedImplantLibraryId,
       templateLibrary,
       snapToLandmarks,
+      snapSettings,
       leftSidebarWidth,
       rightSidebarWidth,
       showLeftSidebar,
@@ -3378,6 +4074,7 @@ export default function XrayCalibrationWorkspace() {
       selectedAngleId,
       selectedCircleId,
       selectedCutLayerId,
+      selectedCutLayerExtraIds,
       selectedHkaId,
       selectedImplantLibraryId,
       selectedImplantType,
@@ -3385,6 +4082,7 @@ export default function XrayCalibrationWorkspace() {
       selectedTemplateId,
       serializeCutLayers,
       snapToLandmarks,
+      snapSettings,
       templateRealSizeAxis,
       templateRealSizeInput,
       templateRealSizeUnit,
@@ -3905,6 +4603,7 @@ export default function XrayCalibrationWorkspace() {
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
+        strokeWidth: DEFAULT_LINE_STROKE_WIDTH,
       };
       nextLineIdRef.current += 1;
 
@@ -3983,10 +4682,42 @@ export default function XrayCalibrationWorkspace() {
         setDraftFreeLine(null);
         setHistoryPaused(false);
       }
+      if (nextTool !== "centerFinder") {
+        setDraftCenterFinderPoints([]);
+      }
+      if (nextTool !== "axisBuilder") {
+        setDraftAxisBuilderPoints([]);
+      }
+      if (nextTool !== "guideBuilder") {
+        setGuideBuilderPreviewPoint(null);
+      }
+      if (
+        nextTool !== "centerFinder" &&
+        nextTool !== "axisBuilder" &&
+        nextTool !== "guideBuilder"
+      ) {
+        if (!toolConfigModal || !toolConfigModalPinned[toolConfigModal]) {
+          setToolConfigModal(null);
+        }
+      }
       setTool(nextTool);
       if (nextTool === "hkaAuto") {
         setDraftHkaPoints([]);
         setNotice(getHkaDraftNotice(hkaInputMode, 0));
+      } else if (nextTool === "centerFinder") {
+        setNotice(
+          "Center Finder aktif. Klik 3 titik di tepi kepala femur atau lingkaran target untuk menghitung center.",
+        );
+      } else if (nextTool === "axisBuilder") {
+        setNotice(
+          "Axis Builder aktif. Klik 2 titik proximal lalu 2 titik distal. Axis dibuat dari midpoint kedua segmen.",
+        );
+      } else if (nextTool === "guideBuilder") {
+        setNotice(
+          guideBuilderReference
+            ? `Guide Builder aktif. Acuan ${guideBuilderReference.label} siap. Klik canvas untuk menjatuhkan ${guideBuilderMode === "parallel" ? "parallel" : "perpendicular"} guide.`
+            : "Guide Builder aktif. Pilih satu line atau planning guide dulu sebagai acuan, lalu klik canvas.",
+        );
       }
       if (isMobileViewport) {
         setMobileControlsOpen(false);
@@ -3997,12 +4728,16 @@ export default function XrayCalibrationWorkspace() {
       clearMobileAngleHandleAssist,
       clearMobileHkaHandleAssist,
       clearMobilePlanningGuideHandleAssist,
+      guideBuilderMode,
+      guideBuilderReference,
       focusCalibrationStep,
       hasCalibration,
       hkaInputMode,
       isMobileViewport,
       resetMobileLineTapTarget,
       setDraftFreeLine,
+      toolConfigModal,
+      toolConfigModalPinned,
     ],
   );
 
@@ -4319,6 +5054,7 @@ export default function XrayCalibrationWorkspace() {
                   ) || 0,
                 centerX: Number(layer.centerX) || 0,
                 centerY: Number(layer.centerY) || 0,
+                groupId: layer.groupId || null,
                 rotation: Number(layer.rotation) || 0,
                 flipX: Boolean(layer.flipX),
                 flipY: Boolean(layer.flipY),
@@ -4422,6 +5158,11 @@ export default function XrayCalibrationWorkspace() {
         setFlipY(Boolean(payload.flipY));
         setCutLayers(restoredCutLayers);
         setSelectedCutLayerId(payload.selectedCutLayerId ?? null);
+        setSelectedCutLayerExtraIds(
+          Array.isArray(payload.selectedCutLayerExtraIds)
+            ? payload.selectedCutLayerExtraIds
+            : [],
+        );
         setSelectedTemplateId(payload.selectedTemplateId ?? null);
         setSelectedImplantType(
           payload.selectedImplantType ||
@@ -4442,6 +5183,7 @@ export default function XrayCalibrationWorkspace() {
           ),
         );
         setSnapToLandmarks(payload.snapToLandmarks ?? true);
+        setSnapSettings(normalizeSnapSettings(payload.snapSettings));
         setLeftSidebarWidth(
           clamp(
             Number(payload.leftSidebarWidth) || LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -4599,6 +5341,31 @@ export default function XrayCalibrationWorkspace() {
       // ignore localStorage limit
     }
   }, [templateLibrary]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(MEASURE_LEGEND_VISIBILITY_KEY);
+      setShowMeasureLegend(raw === null ? true : raw === "1");
+    } catch {
+      setShowMeasureLegend(true);
+    } finally {
+      measureLegendPreferenceLoadedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!measureLegendPreferenceLoadedRef.current) return;
+    try {
+      window.localStorage.setItem(
+        MEASURE_LEGEND_VISIBILITY_KEY,
+        showMeasureLegend ? "1" : "0",
+      );
+    } catch {
+      // ignore localStorage limit
+    }
+  }, [showMeasureLegend]);
 
   const syncTemplateLibraryFromAppwrite = useCallback(
     async ({ silent = false } = {}) => {
@@ -4859,6 +5626,7 @@ export default function XrayCalibrationWorkspace() {
           ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
       })),
+      selectedCutLayerExtraIds,
       calibrationLineId,
       lockedLineIds: [...lockedLineIds].sort((a, b) => a - b),
       mmPerPixel,
@@ -4886,6 +5654,7 @@ export default function XrayCalibrationWorkspace() {
       compareImageSrc,
       compareImageName,
       snapToLandmarks,
+      snapSettings,
     }),
     [
       actualMmInput,
@@ -4900,6 +5669,7 @@ export default function XrayCalibrationWorkspace() {
       contrast,
       cropRect,
       cutLayers,
+      selectedCutLayerExtraIds,
       flipX,
       flipY,
       hkaSets,
@@ -4913,6 +5683,7 @@ export default function XrayCalibrationWorkspace() {
       rotation,
       sourceZoomPercent,
       snapToLandmarks,
+      snapSettings,
     ],
   );
 
@@ -4969,6 +5740,11 @@ export default function XrayCalibrationWorkspace() {
           : null,
       })),
     );
+    setSelectedCutLayerExtraIds(
+      Array.isArray(snapshot.selectedCutLayerExtraIds)
+        ? snapshot.selectedCutLayerExtraIds
+        : [],
+    );
     setCalibrationLineId(snapshot.calibrationLineId);
     setLockedLineIds(new Set(snapshot.lockedLineIds));
     setMmPerPixel(snapshot.mmPerPixel);
@@ -4989,6 +5765,7 @@ export default function XrayCalibrationWorkspace() {
     setCompareImageSrc(snapshot.compareImageSrc || null);
     setCompareImageName(snapshot.compareImageName || "");
     setSnapToLandmarks(snapshot.snapToLandmarks ?? true);
+    setSnapSettings(normalizeSnapSettings(snapshot.snapSettings));
 
     setSelectedLineId(null);
     setSelectedAngleId(null);
@@ -5260,7 +6037,7 @@ export default function XrayCalibrationWorkspace() {
         const bounds = getTagBounds(
           labelX,
           labelY,
-          `ANGLE: ${getAngleDegrees(angle.p1, angle.p2, angle.p3).toFixed(1)}°`,
+          getAngleCanvasLabelText(angle, true),
           {
             fontSize: 9,
             radius: 4,
@@ -5427,6 +6204,59 @@ export default function XrayCalibrationWorkspace() {
     [circles, view.scale],
   );
 
+  const findClosestCircleId = useCallback(
+    (imagePoint) => {
+      const thresholdInImage = 14 / view.scale;
+      let pickedId = null;
+      let minDistance = Infinity;
+
+      for (let index = circles.length - 1; index >= 0; index -= 1) {
+        const circle = circles[index];
+        const centerDistance = Math.hypot(
+          imagePoint.x - circle.cx,
+          imagePoint.y - circle.cy,
+        );
+        const ringDistance = Math.abs(centerDistance - circle.radius);
+        const insideDistance = centerDistance <= circle.radius ? 0 : Infinity;
+        const distance = Math.min(ringDistance, insideDistance);
+        if (distance <= thresholdInImage && distance < minDistance) {
+          minDistance = distance;
+          pickedId = circle.id;
+        }
+      }
+
+      return pickedId;
+    },
+    [circles, view.scale],
+  );
+
+  const findCircleLabelByPoint = useCallback(
+    (screenPoint) => {
+      for (let index = circles.length - 1; index >= 0; index -= 1) {
+        const circle = circles[index];
+        const center = imageToScreenPoint(circle.cx, circle.cy);
+        const edge = imageToScreenPoint(circle.cx + circle.radius, circle.cy);
+        const radiusPx = Math.hypot(edge.x - center.x, edge.y - center.y);
+        const bounds = getTagBounds(
+          center.x,
+          center.y - radiusPx - 12,
+          getCircleCanvasLabelText(circle, mmPerPixel, measurementUnit, true),
+          { fontSize: 9, radius: 4 },
+        );
+        if (
+          screenPoint.x >= bounds.left &&
+          screenPoint.x <= bounds.right &&
+          screenPoint.y >= bounds.top &&
+          screenPoint.y <= bounds.bottom
+        ) {
+          return circle.id;
+        }
+      }
+      return null;
+    },
+    [circles, imageToScreenPoint, measurementUnit, mmPerPixel],
+  );
+
   const findClosestHkaHandle = useCallback(
     (imagePoint) => {
       const thresholdInImage = (isCoarsePointer ? 22 : 10) / view.scale;
@@ -5580,29 +6410,306 @@ export default function XrayCalibrationWorkspace() {
     [isCoarsePointer, selectedCutLayer, selectedFreeLinePointIndex, view.scale],
   );
 
-  const landmarkPoints = useMemo(() => {
-    const points = [];
+  const snapCandidates = useMemo(() => {
+    const candidates = [];
+    const segments = [];
 
-    for (const line of lines) {
-      points.push({ x: line.x1, y: line.y1 });
-      points.push({ x: line.x2, y: line.y2 });
-    }
-    for (const angle of angles) {
-      points.push({ x: angle.p1.x, y: angle.p1.y });
-      points.push({ x: angle.p2.x, y: angle.p2.y });
-      points.push({ x: angle.p3.x, y: angle.p3.y });
-    }
-    for (const circle of circles) {
-      points.push({ x: circle.cx, y: circle.cy });
-    }
-    for (const item of hkaSets) {
-      for (const entry of getHkaPointEntries(item)) {
-        points.push({ x: entry.point.x, y: entry.point.y });
+    const pushCandidate = (candidate) => {
+      if (
+        !Number.isFinite(candidate?.x) ||
+        !Number.isFinite(candidate?.y) ||
+        !candidate?.type
+      ) {
+        return;
+      }
+      const duplicate = candidates.some(
+        (item) =>
+          item.type === candidate.type &&
+          Math.hypot(item.x - candidate.x, item.y - candidate.y) <= 0.6,
+      );
+      if (duplicate) return;
+      candidates.push(candidate);
+    };
+
+    if (snapSettings.endpoint) {
+      for (const line of lines) {
+        pushCandidate({
+          type: "endpoint",
+          x: line.x1,
+          y: line.y1,
+          sourceRefs: [`line:${line.id}`],
+        });
+        pushCandidate({
+          type: "endpoint",
+          x: line.x2,
+          y: line.y2,
+          sourceRefs: [`line:${line.id}`],
+        });
+      }
+
+      for (const guide of planningGuides) {
+        pushCandidate({
+          type: "endpoint",
+          x: guide.anchorStart.x,
+          y: guide.anchorStart.y,
+          sourceRefs: [`guide:${guide.id}`],
+        });
+        pushCandidate({
+          type: "endpoint",
+          x: guide.anchorEnd.x,
+          y: guide.anchorEnd.y,
+          sourceRefs: [`guide:${guide.id}`],
+        });
+      }
+
+      for (const angle of angles) {
+        for (const entry of getAnglePointEntries(angle)) {
+          pushCandidate({
+            type: "endpoint",
+            x: entry.point.x,
+            y: entry.point.y,
+            sourceRefs: [`angle:${angle.id}`],
+          });
+        }
+      }
+
+      for (const item of hkaSets) {
+        for (const entry of getHkaPointEntries(item)) {
+          pushCandidate({
+            type: "endpoint",
+            x: entry.point.x,
+            y: entry.point.y,
+            sourceRefs: [`hka:${item.id}`],
+          });
+        }
       }
     }
 
-    return points;
-  }, [angles, circles, hkaSets, lines]);
+    if (snapSettings.midpoint || snapSettings.intersection) {
+      for (const line of lines) {
+        const segment = {
+          x1: line.x1,
+          y1: line.y1,
+          x2: line.x2,
+          y2: line.y2,
+          sourceRef: `line:${line.id}`,
+        };
+        segments.push(segment);
+        if (snapSettings.midpoint) {
+          const midpoint = getSegmentMidpoint(
+            { x: line.x1, y: line.y1 },
+            { x: line.x2, y: line.y2 },
+          );
+          pushCandidate({
+            type: "midpoint",
+            x: midpoint.x,
+            y: midpoint.y,
+            sourceRefs: [segment.sourceRef],
+          });
+        }
+      }
+
+      for (const guide of planningGuides) {
+        const segment = {
+          x1: guide.anchorStart.x,
+          y1: guide.anchorStart.y,
+          x2: guide.anchorEnd.x,
+          y2: guide.anchorEnd.y,
+          sourceRef: `guide:${guide.id}`,
+        };
+        segments.push(segment);
+        if (snapSettings.midpoint) {
+          const midpoint = getSegmentMidpoint(guide.anchorStart, guide.anchorEnd);
+          pushCandidate({
+            type: "midpoint",
+            x: midpoint.x,
+            y: midpoint.y,
+            sourceRefs: [segment.sourceRef],
+          });
+        }
+      }
+    }
+
+    if (snapSettings.center) {
+      for (const circle of circles) {
+        pushCandidate({
+          type: "center",
+          x: circle.cx,
+          y: circle.cy,
+          sourceRefs: [`circle:${circle.id}`],
+        });
+      }
+    }
+
+    if (snapSettings.intersection && segments.length > 1) {
+      for (let index = 0; index < segments.length; index += 1) {
+        for (let nextIndex = index + 1; nextIndex < segments.length; nextIndex += 1) {
+          const segmentA = segments[index];
+          const segmentB = segments[nextIndex];
+          if (segmentA.sourceRef === segmentB.sourceRef) continue;
+          const intersection = getSegmentIntersectionPoint(segmentA, segmentB);
+          if (!intersection) continue;
+          pushCandidate({
+            type: "intersection",
+            x: intersection.x,
+            y: intersection.y,
+            sourceRefs: [segmentA.sourceRef, segmentB.sourceRef],
+          });
+        }
+      }
+    }
+
+    return candidates;
+  }, [angles, circles, hkaSets, lines, planningGuides, snapSettings]);
+
+  const resolveSnappedImagePoint = useCallback(
+    (rawPoint, { excludeRefs = [], thresholdPx } = {}) => {
+      const allowSnapByModifier =
+        !snapSettings.shiftOnlyDesktop ||
+        isCoarsePointer ||
+        snapModifierPressedRef.current;
+
+      if (!snapToLandmarks || !allowSnapByModifier) {
+        return { point: rawPoint, candidate: null };
+      }
+
+      const thresholdInImage =
+        (thresholdPx ?? (isCoarsePointer ? 22 : 12)) / view.scale;
+      let nearest = null;
+      let nearestDistance = Infinity;
+
+      const evaluateCandidate = (candidate) => {
+        if (!candidate) return;
+        if (
+          excludeRefs.length > 0 &&
+          candidate.sourceRefs?.some((ref) => excludeRefs.includes(ref))
+        ) {
+          return;
+        }
+        const distance = Math.hypot(rawPoint.x - candidate.x, rawPoint.y - candidate.y);
+        if (distance <= thresholdInImage && distance < nearestDistance) {
+          nearest = candidate;
+          nearestDistance = distance;
+        }
+      };
+
+      for (const candidate of snapCandidates) {
+        evaluateCandidate(candidate);
+      }
+
+      if (snapSettings.perpendicular) {
+        for (const line of lines) {
+          const projection = projectPointToInfiniteLine(rawPoint, line);
+          if (!projection) continue;
+          evaluateCandidate({
+            type: "perpendicular",
+            x: projection.x,
+            y: projection.y,
+            sourceRefs: [`line:${line.id}`],
+            hintSegments: [
+              {
+                x1: rawPoint.x,
+                y1: rawPoint.y,
+                x2: projection.x,
+                y2: projection.y,
+              },
+            ],
+          });
+        }
+        for (const guide of planningGuides) {
+          const projection = projectPointToInfiniteLine(rawPoint, {
+            x1: guide.anchorStart.x,
+            y1: guide.anchorStart.y,
+            x2: guide.anchorEnd.x,
+            y2: guide.anchorEnd.y,
+          });
+          if (!projection) continue;
+          evaluateCandidate({
+            type: "perpendicular",
+            x: projection.x,
+            y: projection.y,
+            sourceRefs: [`guide:${guide.id}`],
+            hintSegments: [
+              {
+                x1: rawPoint.x,
+                y1: rawPoint.y,
+                x2: projection.x,
+                y2: projection.y,
+              },
+            ],
+          });
+        }
+      }
+
+      if (snapSettings.tangent) {
+        for (const circle of circles) {
+          const tangentPoints = getCircleTangentPointsFromExternalPoint(
+            rawPoint,
+            circle,
+          );
+          for (const tangentPoint of tangentPoints) {
+            evaluateCandidate({
+              type: "tangent",
+              x: tangentPoint.x,
+              y: tangentPoint.y,
+              sourceRefs: [`circle:${circle.id}`],
+              hintSegments: [
+                {
+                  x1: rawPoint.x,
+                  y1: rawPoint.y,
+                  x2: tangentPoint.x,
+                  y2: tangentPoint.y,
+                },
+                {
+                  x1: circle.cx,
+                  y1: circle.cy,
+                  x2: tangentPoint.x,
+                  y2: tangentPoint.y,
+                },
+              ],
+            });
+          }
+        }
+      }
+
+      if (!nearest) {
+        return { point: rawPoint, candidate: null };
+      }
+
+      return {
+        point: { x: nearest.x, y: nearest.y },
+        candidate: {
+          ...nearest,
+          label: getSnapTypeShortLabel(nearest.type),
+        },
+      };
+    },
+    [
+      circles,
+      isCoarsePointer,
+      lines,
+      planningGuides,
+      snapCandidates,
+      snapSettings.perpendicular,
+      snapSettings.shiftOnlyDesktop,
+      snapSettings.tangent,
+      snapToLandmarks,
+      view.scale,
+    ],
+  );
+
+  const resolveSnapWithPreview = useCallback(
+    (rawPoint, options = {}) => {
+      const result = resolveSnappedImagePoint(rawPoint, options);
+      setActiveSnapTarget(result.candidate);
+      return result;
+    },
+    [resolveSnappedImagePoint],
+  );
+
+  const clearSnapPreview = useCallback(() => {
+    setActiveSnapTarget(null);
+  }, []);
 
   const findCutLayerHandle = useCallback(
     (imagePoint) => {
@@ -5796,10 +6903,18 @@ export default function XrayCalibrationWorkspace() {
           );
         }
 
-        if (layer.id === selectedCutLayerId) {
-          imageCtx.strokeStyle = getLayerPalette(layer.id).border;
-          imageCtx.lineWidth = Math.max(1 / view.scale, 0.8);
-          imageCtx.setLineDash([10 / view.scale, 6 / view.scale]);
+        if (selectedCutLayerIdsSet.has(layer.id)) {
+          const layerPalette = getLayerPalette(layer.id);
+          imageCtx.strokeStyle = layerPalette.border;
+          imageCtx.lineWidth = Math.max(
+            1 / view.scale,
+            layer.id === selectedCutLayerId ? 1.2 : 0.8,
+          );
+          imageCtx.setLineDash(
+            layer.id === selectedCutLayerId
+              ? [10 / view.scale, 6 / view.scale]
+              : [6 / view.scale, 5 / view.scale],
+          );
           imageCtx.strokeRect(
             -displaySize.width / 2,
             -displaySize.height / 2,
@@ -5886,6 +7001,17 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx.lineTo(end.x, end.y);
         overlayCtx.stroke();
       }
+      if (opts.calibrationReference) {
+        overlayCtx.strokeStyle = opts.calibrationSaved
+          ? "rgba(34, 197, 94, 0.2)"
+          : "rgba(14, 165, 233, 0.22)";
+        overlayCtx.lineWidth = (opts.width || 2) + 10;
+        overlayCtx.lineCap = "round";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.stroke();
+      }
       if (opts.pulse) {
         overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.4)";
         overlayCtx.lineWidth = (opts.width || 2) + 6;
@@ -5898,11 +7024,48 @@ export default function XrayCalibrationWorkspace() {
       overlayCtx.strokeStyle = opts.color;
       overlayCtx.lineWidth = opts.width || 2;
       overlayCtx.lineCap = "round";
-      overlayCtx.setLineDash(opts.dashed ? [6, 4] : []);
+      overlayCtx.setLineDash(
+        Array.isArray(opts.dashPattern)
+          ? opts.dashPattern
+          : opts.dashed
+            ? [6, 4]
+            : [],
+      );
       overlayCtx.beginPath();
       overlayCtx.moveTo(start.x, start.y);
       overlayCtx.lineTo(end.x, end.y);
       overlayCtx.stroke();
+
+      if (opts.calibrationReference) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.hypot(dx, dy);
+        if (length > 1) {
+          const nx = -dy / length;
+          const ny = dx / length;
+          const capLength = 12;
+          overlayCtx.strokeStyle = opts.color;
+          overlayCtx.lineWidth = Math.max(1.2, (opts.width || 2) * 0.85);
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(
+            start.x - nx * (capLength * 0.5),
+            start.y - ny * (capLength * 0.5),
+          );
+          overlayCtx.lineTo(
+            start.x + nx * (capLength * 0.5),
+            start.y + ny * (capLength * 0.5),
+          );
+          overlayCtx.moveTo(
+            end.x - nx * (capLength * 0.5),
+            end.y - ny * (capLength * 0.5),
+          );
+          overlayCtx.lineTo(
+            end.x + nx * (capLength * 0.5),
+            end.y + ny * (capLength * 0.5),
+          );
+          overlayCtx.stroke();
+        }
+      }
 
       if (line.type === "ruler" && Number.isFinite(line.presetMm)) {
         const dx = end.x - start.x;
@@ -5950,23 +7113,37 @@ export default function XrayCalibrationWorkspace() {
 
       overlayCtx.fillStyle = opts.color;
       fillCircleMarkers(overlayCtx, [
-        { x: start.x, y: start.y, radius: opts.handleRadius || 3 },
-        { x: end.x, y: end.y, radius: opts.handleRadius || 3 },
+        {
+          x: start.x,
+          y: start.y,
+          radius: (opts.handleRadius || 3) + (opts.calibrationReference ? 0.7 : 0),
+        },
+        {
+          x: end.x,
+          y: end.y,
+          radius: (opts.handleRadius || 3) + (opts.calibrationReference ? 0.7 : 0),
+        },
       ]);
 
       if (opts.highlightHandles) {
         overlayCtx.strokeStyle = "#f8fafc";
-        overlayCtx.lineWidth = 1.5;
+        overlayCtx.lineWidth = opts.calibrationReference ? 1.9 : 1.5;
         strokeCircleMarkers(overlayCtx, [
           {
             x: start.x,
             y: start.y,
-            radius: (opts.handleRadius || 3) + 1.2,
+            radius:
+              (opts.handleRadius || 3) +
+              1.2 +
+              (opts.calibrationReference ? 0.8 : 0),
           },
           {
             x: end.x,
             y: end.y,
-            radius: (opts.handleRadius || 3) + 1.2,
+            radius:
+              (opts.handleRadius || 3) +
+              1.2 +
+              (opts.calibrationReference ? 0.8 : 0),
           },
         ]);
       }
@@ -5994,6 +7171,23 @@ export default function XrayCalibrationWorkspace() {
         paddingY: 2,
         radius: 4,
       });
+      if (opts.calibrationReference) {
+        drawTag(
+          overlayCtx,
+          midX,
+          midY - 18,
+          opts.calibrationSaved ? "CAL AKTIF" : "REF KALIBRASI",
+          opts.color,
+          {
+            bgOpacity: opts.calibrationSaved ? 0.8 : 0.68,
+            borderOpacity: 0.98,
+            fontSize: 8,
+            paddingX: 4,
+            paddingY: 1.5,
+            radius: 999,
+          },
+        );
+      }
     };
 
     for (const line of lines) {
@@ -6001,19 +7195,21 @@ export default function XrayCalibrationWorkspace() {
       const isPulsing =
         selectionPulse?.type === "line" && selectionPulse.id === line.id;
       const isCalibration = line.id === calibrationLineId;
+      const isCalibrationReference =
+        calibrationMode === "line" && calibrationReferenceLine?.id === line.id;
       const isLocked = isLineLocked(line.id);
-      const typeColor = lineTypeColor(line.type);
-      const color = isCalibration
-        ? "#22c55e"
-        : isLocked
-          ? "#a855f7"
-          : isSelected
-            ? "#f59e0b"
-            : typeColor;
+      const style = getLineVisualStyle(line, {
+        isSelected,
+        isPulsing,
+        isLocked,
+        isCalibration,
+        isCalibrationReference,
+      });
 
       drawLine(line, {
-        color,
-        width: isSelected || isPulsing ? 2.6 : 2,
+        color: style.color,
+        width: style.width,
+        dashPattern: style.dashPattern,
         handleRadius:
           (isSelected || isPulsing) && !isLocked
             ? isCoarsePointer
@@ -6024,6 +7220,8 @@ export default function XrayCalibrationWorkspace() {
         dashed: isLocked,
         showTouchHalo: isSelected && !isLocked && isCoarsePointer,
         pulse: isPulsing,
+        calibrationReference: isCalibrationReference,
+        calibrationSaved: isCalibration,
         assistHandleKey:
           mobileHandleAssist?.lineId === line.id
             ? mobileHandleAssist.handleKey
@@ -6037,9 +7235,13 @@ export default function XrayCalibrationWorkspace() {
       const p3 = imageToScreenPoint(angle.p3.x, angle.p3.y);
       const value = getAngleDegrees(angle.p1, angle.p2, angle.p3);
       const isSelected = angle.id === selectedAngleId;
+      const isHovered =
+        hoveredMeasurementInfo?.type === "angle" &&
+        hoveredMeasurementInfo.id === angle.id;
       const isPulsing =
         selectionPulse?.type === "angle" && selectionPulse.id === angle.id;
       const isEmphasized = isSelected || isPulsing;
+      const showExpandedInfo = isSelected || isHovered;
       const color = angle.color || DEFAULT_ANGLE_COLOR;
       const strokeWidth = Math.max(
         1.5,
@@ -6136,13 +7338,21 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx,
         p2.x + labelOffsetX,
         p2.y + labelOffsetY,
-        `ANGLE: ${value.toFixed(1)}°`,
+        getAngleCanvasLabelText(angle, showExpandedInfo),
         color,
         {
-          bgOpacity: Math.max(0.08, Math.min(1, resultOpacity)),
+          bgOpacity: Math.max(
+            0.08,
+            Math.min(1, resultOpacity + (showExpandedInfo ? 0.14 : 0)),
+          ),
           borderOpacity: Math.max(
             0.42,
-            Math.min(0.96, resultOpacity + (isEmphasized ? 0.28 : 0.2)),
+            Math.min(
+              0.96,
+              resultOpacity +
+                (isEmphasized ? 0.28 : 0.2) +
+                (isHovered ? 0.08 : 0),
+            ),
           ),
           fontSize: 9,
           paddingX: 4,
@@ -6157,14 +7367,20 @@ export default function XrayCalibrationWorkspace() {
       const edge = imageToScreenPoint(circle.cx + circle.radius, circle.cy);
       const radiusPx = Math.hypot(edge.x - center.x, edge.y - center.y);
       const isSelected = circle.id === selectedCircleId;
+      const isHovered =
+        hoveredMeasurementInfo?.type === "circle" &&
+        hoveredMeasurementInfo.id === circle.id;
       const isPulsing =
         selectionPulse?.type === "circle" && selectionPulse.id === circle.id;
       const isEmphasized = isSelected || isPulsing;
+      const showExpandedInfo = isSelected || isHovered;
       const color = isSelected ? "#a78bfa" : "#8b5cf6";
-      const diameterText =
-        mmPerPixel !== null
-          ? `${measurementUnit === "cm" ? ((circle.radius * 2 * mmPerPixel) / 10).toFixed(2) : (circle.radius * 2 * mmPerPixel).toFixed(2)} ${measurementUnit}`
-          : `${(circle.radius * 2).toFixed(1)} px`;
+      const strokeWidth = Math.max(
+        1.2,
+        Number.isFinite(circle.strokeWidth)
+          ? circle.strokeWidth
+          : DEFAULT_CIRCLE_STROKE_WIDTH,
+      );
 
       overlayCtx.save();
       if (isPulsing) {
@@ -6175,7 +7391,7 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx.stroke();
       }
       overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = isEmphasized ? 2.6 : 2;
+      overlayCtx.lineWidth = strokeWidth + (isEmphasized ? 0.6 : 0);
       overlayCtx.beginPath();
       overlayCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
       overlayCtx.stroke();
@@ -6214,8 +7430,21 @@ export default function XrayCalibrationWorkspace() {
         overlayCtx,
         center.x,
         center.y - radiusPx - 12,
-        `DIA: ${diameterText}`,
+        getCircleCanvasLabelText(
+          circle,
+          mmPerPixel,
+          measurementUnit,
+          showExpandedInfo,
+        ),
         color,
+        {
+          bgOpacity: showExpandedInfo ? 0.72 : 0.34,
+          borderOpacity: showExpandedInfo ? 0.96 : 0.82,
+          fontSize: 9,
+          paddingX: 4,
+          paddingY: 2,
+          radius: 4,
+        },
       );
     }
 
@@ -6256,7 +7485,13 @@ export default function XrayCalibrationWorkspace() {
           item.tibiaMidshaft10cm.x,
           item.tibiaMidshaft10cm.y,
         );
-        const strokeWidth = isEmphasized ? 2.45 : 1.9;
+        const baseStrokeWidth = Math.max(
+          1.2,
+          Number.isFinite(item.strokeWidth)
+            ? item.strokeWidth
+            : DEFAULT_HKA_STROKE_WIDTH,
+        );
+        const strokeWidth = baseStrokeWidth + (isEmphasized ? 0.55 : 0);
         const labelAnchor = {
           x: (notch.x + tibia4.x) / 2,
           y: (notch.y + tibia4.y) / 2,
@@ -6331,7 +7566,13 @@ export default function XrayCalibrationWorkspace() {
       const labelOffsetY = Number.isFinite(item.labelOffsetY)
         ? item.labelOffsetY
         : DEFAULT_HKA_LABEL_OFFSET_Y;
-      const strokeWidth = isEmphasized ? 2.45 : 1.9;
+      const baseStrokeWidth = Math.max(
+        1.2,
+        Number.isFinite(item.strokeWidth)
+          ? item.strokeWidth
+          : DEFAULT_HKA_STROKE_WIDTH,
+      );
+      const strokeWidth = baseStrokeWidth + (isEmphasized ? 0.55 : 0);
       const kneeGap = isEmphasized ? 10 : 7;
       const hipVector = { x: hip.x - knee.x, y: hip.y - knee.y };
       const ankleVector = { x: ankle.x - knee.x, y: ankle.y - knee.y };
@@ -6492,12 +7733,20 @@ export default function XrayCalibrationWorkspace() {
         selectionPulse?.type === "planning" &&
         selectionPulse.id === guide.id;
       const isEmphasizedGuide = isSelectedGuide || isPulsingGuide;
+      const guideStyle = getPlanningGuideVisualStyle(guide);
+      const baseStrokeWidth = Math.max(
+        1.2,
+        Number.isFinite(guide.strokeWidth)
+          ? guide.strokeWidth
+          : DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
+      );
+      const strokeWidth = baseStrokeWidth + (isEmphasizedGuide ? 0.6 : 0);
 
       overlayCtx.save();
       if (isPulsingGuide) {
         overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.34)";
-        overlayCtx.lineWidth = 7;
-        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.lineWidth = strokeWidth + 4.4;
+        overlayCtx.setLineDash(guideStyle.anchorDash);
         overlayCtx.beginPath();
         overlayCtx.moveTo(anchorStart.x, anchorStart.y);
         overlayCtx.lineTo(anchorEnd.x, anchorEnd.y);
@@ -6505,21 +7754,22 @@ export default function XrayCalibrationWorkspace() {
       }
       overlayCtx.strokeStyle = color;
       overlayCtx.fillStyle = color;
-      overlayCtx.lineWidth = isEmphasizedGuide ? 2.6 : 2;
-      overlayCtx.setLineDash([6, 4]);
+      overlayCtx.lineWidth = strokeWidth;
+      overlayCtx.setLineDash(guideStyle.anchorDash);
       overlayCtx.beginPath();
       overlayCtx.moveTo(anchorStart.x, anchorStart.y);
       overlayCtx.lineTo(anchorEnd.x, anchorEnd.y);
       overlayCtx.stroke();
 
-      overlayCtx.setLineDash([4, 4]);
+      overlayCtx.setLineDash(guideStyle.baseDash);
       overlayCtx.beginPath();
       overlayCtx.moveTo(baseA.x, baseA.y);
       overlayCtx.lineTo(baseB.x, baseB.y);
+      overlayCtx.lineWidth = Math.max(1.1, strokeWidth - 0.2);
       overlayCtx.stroke();
 
       overlayCtx.setLineDash([]);
-      overlayCtx.lineWidth = 2.5;
+      overlayCtx.lineWidth = strokeWidth + 0.35;
       overlayCtx.beginPath();
       overlayCtx.moveTo(cutA.x, cutA.y);
       overlayCtx.lineTo(cutB.x, cutB.y);
@@ -6601,6 +7851,31 @@ export default function XrayCalibrationWorkspace() {
       selectedCutLayerId !== null
         ? cutLayers.find((layer) => layer.id === selectedCutLayerId) || null
         : null;
+    const secondarySelectedCutLayers = cutLayers.filter(
+      (layer) =>
+        selectedCutLayerIdsSet.has(layer.id) && layer.id !== selectedCutLayerId,
+    );
+    for (const layer of secondarySelectedCutLayers) {
+      const corners = getLayerCorners(layer);
+      const layerPalette = getLayerPalette(layer.id);
+      overlayCtx.save();
+      overlayCtx.strokeStyle = `${layerPalette.border}cc`;
+      overlayCtx.lineWidth = 1.35;
+      overlayCtx.setLineDash([6, 4]);
+      overlayCtx.beginPath();
+      const firstCorner = imageToScreenPoint(corners[0].x, corners[0].y);
+      overlayCtx.moveTo(firstCorner.x, firstCorner.y);
+      for (let index = 1; index < corners.length; index += 1) {
+        const nextCorner = imageToScreenPoint(
+          corners[index].x,
+          corners[index].y,
+        );
+        overlayCtx.lineTo(nextCorner.x, nextCorner.y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.stroke();
+      overlayCtx.restore();
+    }
     if (activeCutLayer) {
       const isPulsingLayer =
         selectionPulse?.type === "layer" &&
@@ -6767,6 +8042,65 @@ export default function XrayCalibrationWorkspace() {
           }
         }
       }
+      overlayCtx.restore();
+    }
+
+    if (snapToLandmarks && activeSnapTarget) {
+      const snapPoint = imageToScreenPoint(activeSnapTarget.x, activeSnapTarget.y);
+      overlayCtx.save();
+      if (Array.isArray(activeSnapTarget.hintSegments)) {
+        overlayCtx.strokeStyle = "rgba(245, 158, 11, 0.72)";
+        overlayCtx.lineWidth = 1;
+        overlayCtx.setLineDash(
+          activeSnapTarget.type === "tangent" ? [5, 4] : [3, 4],
+        );
+        for (const segment of activeSnapTarget.hintSegments) {
+          if (
+            !Number.isFinite(segment?.x1) ||
+            !Number.isFinite(segment?.y1) ||
+            !Number.isFinite(segment?.x2) ||
+            !Number.isFinite(segment?.y2)
+          ) {
+            continue;
+          }
+          const start = imageToScreenPoint(segment.x1, segment.y1);
+          const end = imageToScreenPoint(segment.x2, segment.y2);
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(start.x, start.y);
+          overlayCtx.lineTo(end.x, end.y);
+          overlayCtx.stroke();
+        }
+      }
+      overlayCtx.strokeStyle = "#f59e0b";
+      overlayCtx.fillStyle = "rgba(245, 158, 11, 0.14)";
+      overlayCtx.lineWidth = 1.4;
+      overlayCtx.setLineDash([4, 4]);
+      overlayCtx.beginPath();
+      overlayCtx.arc(snapPoint.x, snapPoint.y, isCoarsePointer ? 16 : 12, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(snapPoint.x - 10, snapPoint.y);
+      overlayCtx.lineTo(snapPoint.x + 10, snapPoint.y);
+      overlayCtx.moveTo(snapPoint.x, snapPoint.y - 10);
+      overlayCtx.lineTo(snapPoint.x, snapPoint.y + 10);
+      overlayCtx.stroke();
+      drawTag(
+        overlayCtx,
+        snapPoint.x,
+        snapPoint.y - (isCoarsePointer ? 22 : 18),
+        `SNAP ${activeSnapTarget.label}`,
+        "#f59e0b",
+        {
+          bgOpacity: 0.78,
+          borderOpacity: 0.96,
+          fontSize: 8,
+          paddingX: 4,
+          paddingY: 1.5,
+          radius: 999,
+        },
+      );
       overlayCtx.restore();
     }
 
@@ -6945,6 +8279,106 @@ export default function XrayCalibrationWorkspace() {
       overlayCtx.restore();
     }
 
+    if (draftCenterFinderPoints.length > 0) {
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "#0f766e";
+      overlayCtx.fillStyle = "#0f766e";
+      overlayCtx.lineWidth = 1.8;
+      for (let i = 0; i < draftCenterFinderPoints.length; i += 1) {
+        const pointItem = imageToScreenPoint(
+          draftCenterFinderPoints[i].x,
+          draftCenterFinderPoints[i].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.arc(pointItem.x, pointItem.y, 3.8, 0, Math.PI * 2);
+        overlayCtx.fill();
+        if (i > 0) {
+          const prev = imageToScreenPoint(
+            draftCenterFinderPoints[i - 1].x,
+            draftCenterFinderPoints[i - 1].y,
+          );
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(prev.x, prev.y);
+          overlayCtx.lineTo(pointItem.x, pointItem.y);
+          overlayCtx.stroke();
+        }
+      }
+      overlayCtx.restore();
+
+      const anchor = draftCenterFinderPoints[draftCenterFinderPoints.length - 1];
+      const screenAnchor = imageToScreenPoint(anchor.x, anchor.y);
+      drawTag(
+        overlayCtx,
+        screenAnchor.x,
+        screenAnchor.y - 16,
+        `Center Finder: ${draftCenterFinderPoints.length}/3 titik`,
+        "#0f766e",
+      );
+    }
+
+    if (draftAxisBuilderPoints.length > 0) {
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "#0ea5e9";
+      overlayCtx.fillStyle = "#0ea5e9";
+      overlayCtx.lineWidth = 1.8;
+      for (let i = 0; i < draftAxisBuilderPoints.length; i += 1) {
+        const pointItem = imageToScreenPoint(
+          draftAxisBuilderPoints[i].x,
+          draftAxisBuilderPoints[i].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.arc(pointItem.x, pointItem.y, 3.8, 0, Math.PI * 2);
+        overlayCtx.fill();
+      }
+      if (draftAxisBuilderPoints.length >= 2) {
+        const a = imageToScreenPoint(
+          draftAxisBuilderPoints[0].x,
+          draftAxisBuilderPoints[0].y,
+        );
+        const b = imageToScreenPoint(
+          draftAxisBuilderPoints[1].x,
+          draftAxisBuilderPoints[1].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(a.x, a.y);
+        overlayCtx.lineTo(b.x, b.y);
+        overlayCtx.stroke();
+      }
+      if (draftAxisBuilderPoints.length >= 4) {
+        const c = imageToScreenPoint(
+          draftAxisBuilderPoints[2].x,
+          draftAxisBuilderPoints[2].y,
+        );
+        const d = imageToScreenPoint(
+          draftAxisBuilderPoints[3].x,
+          draftAxisBuilderPoints[3].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(c.x, c.y);
+        overlayCtx.lineTo(d.x, d.y);
+        overlayCtx.stroke();
+      } else if (draftAxisBuilderPoints.length === 3) {
+        const c = imageToScreenPoint(
+          draftAxisBuilderPoints[2].x,
+          draftAxisBuilderPoints[2].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.arc(c.x, c.y, 4.4, 0, Math.PI * 2);
+        overlayCtx.stroke();
+      }
+      overlayCtx.restore();
+
+      const anchor = draftAxisBuilderPoints[draftAxisBuilderPoints.length - 1];
+      const screenAnchor = imageToScreenPoint(anchor.x, anchor.y);
+      drawTag(
+        overlayCtx,
+        screenAnchor.x,
+        screenAnchor.y - 16,
+        `Axis Builder: ${draftAxisBuilderPoints.length}/4 titik`,
+        "#0ea5e9",
+      );
+    }
+
     if (draftHkaPoints.length > 0) {
       overlayCtx.save();
       overlayCtx.strokeStyle = "#0d9488";
@@ -6970,6 +8404,45 @@ export default function XrayCalibrationWorkspace() {
         }
       }
       overlayCtx.restore();
+    }
+
+    if (guideBuilderPreviewPoint && guideBuilderReference?.line) {
+      const previewLine = buildGuideLineFromReference(
+        guideBuilderReference.line,
+        guideBuilderPreviewPoint,
+        guideBuilderMode,
+      );
+      if (previewLine) {
+        const start = imageToScreenPoint(previewLine.x1, previewLine.y1);
+        const end = imageToScreenPoint(previewLine.x2, previewLine.y2);
+        const anchor = imageToScreenPoint(
+          guideBuilderPreviewPoint.x,
+          guideBuilderPreviewPoint.y,
+        );
+        overlayCtx.save();
+        overlayCtx.strokeStyle =
+          guideBuilderMode === "parallel" ? "#0ea5e9" : "#f59e0b";
+        overlayCtx.lineWidth = 1.6;
+        overlayCtx.setLineDash(guideBuilderMode === "parallel" ? [10, 4] : [4, 5]);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+        overlayCtx.fillStyle =
+          guideBuilderMode === "parallel" ? "#0ea5e9" : "#f59e0b";
+        overlayCtx.beginPath();
+        overlayCtx.arc(anchor.x, anchor.y, 4.2, 0, Math.PI * 2);
+        overlayCtx.fill();
+        overlayCtx.restore();
+        drawTag(
+          overlayCtx,
+          anchor.x,
+          anchor.y - 18,
+          `${guideBuilderMode === "parallel" ? "Parallel" : "Perpendicular"} Guide`,
+          guideBuilderMode === "parallel" ? "#0ea5e9" : "#f59e0b",
+        );
+      }
     }
 
     if (draftCut) {
@@ -7064,18 +8537,26 @@ export default function XrayCalibrationWorkspace() {
       );
     }
   }, [
+    activeSnapTarget,
     angles,
+    calibrationMode,
     calibrationLineId,
+    calibrationReferenceLine,
     circles,
     contrast,
     cropRect,
     draftAnglePoints,
+    draftAxisBuilderPoints,
+    draftCenterFinderPoints,
     draftCirclePoints,
     draftCut,
     draftFreeLine,
     draftHkaPoints,
     draftLine,
     freeLineMode,
+    guideBuilderMode,
+    guideBuilderPreviewPoint,
+    guideBuilderReference,
     flipX,
     flipY,
     hkaSets,
@@ -7095,6 +8576,8 @@ export default function XrayCalibrationWorkspace() {
     getMobileHandleAssistGeometry,
     getMobileHkaHandleAssistGeometry,
     getMobilePlanningGuideHandleAssistGeometry,
+    getLineVisualStyle,
+    getPlanningGuideVisualStyle,
     getPlanningGuideAutoColor,
     getPlanningGuideLabelText,
     isLineLocked,
@@ -7113,6 +8596,7 @@ export default function XrayCalibrationWorkspace() {
     selectedAngleId,
     selectedCircleId,
     selectedCutLayerId,
+    selectedCutLayerIdsSet,
     selectedHkaId,
     selectedLineId,
     selectedPlanningGuideId,
@@ -7270,8 +8754,12 @@ export default function XrayCalibrationWorkspace() {
       setHkaSets([]);
       setDraftAnglePoints([]);
       setDraftCirclePoints([]);
+      setDraftCenterFinderPoints([]);
+      setDraftAxisBuilderPoints([]);
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
+      setGuideBuilderPreviewPoint(null);
+      setGuideBuilderMode("parallel");
       setDraftLine(null);
       setDraftCut(null);
       setCutLayers([]);
@@ -7563,9 +9051,14 @@ export default function XrayCalibrationWorkspace() {
       const point = getLocalPoint(event);
       const imagePoint = screenToImagePoint(point.x, point.y);
       const boundedPoint = clampToImageBounds(imagePoint);
+      const snappedPlacementPoint =
+        resolveSnappedImagePoint(boundedPoint).point;
       const isTouchLikePointer =
         event.pointerType === "touch" ||
         (isCoarsePointer && event.button === 0);
+      const isAdditiveLayerSelection =
+        !isTouchLikePointer &&
+        (event.shiftKey || event.metaKey || event.ctrlKey);
 
       if (event.button === 1 || event.button === 2) {
         interactionRef.current = {
@@ -7796,7 +9289,7 @@ export default function XrayCalibrationWorkspace() {
           const startPoint = draftCut.points[0];
           if (
             draftCut.points.length < MIN_FREE_CUT_POINTS &&
-            getDistance(startPoint, boundedPoint) <= closeRadius
+            getDistance(startPoint, snappedPlacementPoint) <= closeRadius
           ) {
             setNotice(
               `Free cut: pilih ${MIN_FREE_CUT_POINTS - draftCut.points.length} titik lagi.`,
@@ -7805,21 +9298,21 @@ export default function XrayCalibrationWorkspace() {
           }
           if (
             draftCut.points.length >= MIN_FREE_CUT_POINTS &&
-            getDistance(startPoint, boundedPoint) <= closeRadius
+            getDistance(startPoint, snappedPlacementPoint) <= closeRadius
           ) {
             completeDraftCut();
             return;
           }
 
           const lastPoint = draftCut.points[draftCut.points.length - 1];
-          if (getDistance(lastPoint, boundedPoint) <= 1.5) {
+          if (getDistance(lastPoint, snappedPlacementPoint) <= 1.5) {
             return;
           }
 
-          const nextPoints = [...draftCut.points, boundedPoint];
+          const nextPoints = [...draftCut.points, snappedPlacementPoint];
           setDraftCut({
             points: nextPoints,
-            hoverPoint: boundedPoint,
+            hoverPoint: snappedPlacementPoint,
           });
           setHistoryPaused(true);
           setNotice(
@@ -7831,8 +9324,8 @@ export default function XrayCalibrationWorkspace() {
         }
 
         setDraftCut({
-          points: [boundedPoint],
-          hoverPoint: boundedPoint,
+          points: [snappedPlacementPoint],
+          hoverPoint: snappedPlacementPoint,
         });
         setHistoryPaused(true);
         setNotice(
@@ -7964,7 +9457,10 @@ export default function XrayCalibrationWorkspace() {
             (layer) => layer.id === hitCutLayerId,
           );
           if (!targetLayer) return;
-          focusLayerCanvas(hitCutLayerId);
+          selectLayerFromCanvas(hitCutLayerId, {
+            additive: isAdditiveLayerSelection,
+            includeGroup: !isAdditiveLayerSelection,
+          });
           setSelectedFreeLinePointIndex(null);
           setSelectedLineId(null);
           setSelectedAngleId(null);
@@ -7975,18 +9471,43 @@ export default function XrayCalibrationWorkspace() {
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
           syncMobileCanvasSelection("tool");
+          if (isAdditiveLayerSelection) {
+            setNotice(
+              selectedCutLayerIdsSet.has(targetLayer.id)
+                ? `Layer #${targetLayer.id} dilepas dari multi-select.`
+                : `Layer #${targetLayer.id} ditambahkan ke multi-select.`,
+            );
+            return;
+          }
           if (targetLayer.lockScale) {
+            setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+            return;
+          }
+          const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
+            ? selectedCutLayerIds
+            : getRelatedLayerIds(targetLayer.id, { includeGroup: true });
+          const movableLayerIds = selectedMoveLayerIds.filter((layerId) => {
+            const layer = cutLayers.find((item) => item.id === layerId);
+            return layer && !layer.lockScale;
+          });
+          if (!movableLayerIds.length) {
             setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
             return;
           }
           setHistoryPaused(true);
           interactionRef.current = {
             mode: "move-cut-layer",
-            layerId: hitCutLayerId,
+            layerIds: movableLayerIds,
             startImageX: imagePoint.x,
             startImageY: imagePoint.y,
-            originCenterX: targetLayer.centerX,
-            originCenterY: targetLayer.centerY,
+            origins: movableLayerIds.map((layerId) => {
+              const layer = cutLayers.find((item) => item.id === layerId);
+              return {
+                layerId,
+                originCenterX: Number(layer?.centerX || 0),
+                originCenterY: Number(layer?.centerY || 0),
+              };
+            }),
           };
           return;
         }
@@ -8449,6 +9970,27 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
+      const genericCircleId = findClosestCircleId(imagePoint);
+      if (genericCircleId !== null) {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedCircleId(genericCircleId);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("circle", genericCircleId);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        syncMobileCanvasSelection("measure", {
+          noticeText:
+            "Circle aktif. Drag area dalam untuk move atau tepi untuk resize.",
+        });
+        return;
+      }
+
       const genericHkaHandle = findClosestHkaHandle(boundedPoint);
       if (genericHkaHandle) {
         setMobilePanelMode("workspace");
@@ -8561,7 +10103,11 @@ export default function XrayCalibrationWorkspace() {
           (layer) => layer.id === genericCutLayerId,
         );
         if (!targetLayer) return;
-        focusLayerCanvas(genericCutLayerId, { openPanel: false });
+        selectLayerFromCanvas(genericCutLayerId, {
+          additive: isAdditiveLayerSelection,
+          includeGroup: !isAdditiveLayerSelection,
+          openPanel: false,
+        });
         triggerSelectionPulse("layer", genericCutLayerId);
         setSelectedFreeLinePointIndex(null);
         setSelectedLineId(null);
@@ -8574,15 +10120,40 @@ export default function XrayCalibrationWorkspace() {
         syncMobileCanvasSelection("tool", {
           noticeText: "Layer aktif. Geser layer atau pilih handle untuk edit.",
         });
+        if (isAdditiveLayerSelection) {
+          setNotice(
+            selectedCutLayerIdsSet.has(targetLayer.id)
+              ? `Layer #${targetLayer.id} dilepas dari multi-select.`
+              : `Layer #${targetLayer.id} ditambahkan ke multi-select.`,
+          );
+          return;
+        }
         if (!targetLayer.lockScale && tool === "pan") {
+          const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
+            ? selectedCutLayerIds
+            : getRelatedLayerIds(targetLayer.id, { includeGroup: true });
+          const movableLayerIds = selectedMoveLayerIds.filter((layerId) => {
+            const layer = cutLayers.find((item) => item.id === layerId);
+            return layer && !layer.lockScale;
+          });
+          if (!movableLayerIds.length) {
+            setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+            return;
+          }
           setHistoryPaused(true);
           interactionRef.current = {
             mode: "move-cut-layer",
-            layerId: genericCutLayerId,
+            layerIds: movableLayerIds,
             startImageX: imagePoint.x,
             startImageY: imagePoint.y,
-            originCenterX: targetLayer.centerX,
-            originCenterY: targetLayer.centerY,
+            origins: movableLayerIds.map((layerId) => {
+              const layer = cutLayers.find((item) => item.id === layerId);
+              return {
+                layerId,
+                originCenterX: Number(layer?.centerX || 0),
+                originCenterY: Number(layer?.centerY || 0),
+              };
+            }),
           };
         }
         return;
@@ -8620,6 +10191,136 @@ export default function XrayCalibrationWorkspace() {
         return;
       }
 
+      if (tool === "centerFinder") {
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        setDraftCenterFinderPoints((prev) => {
+          const next = [...prev, snappedPlacementPoint];
+          if (next.length < 3) {
+            setNotice(`Center Finder: pilih ${3 - next.length} titik lagi.`);
+            return next;
+          }
+          const circumcircle = getCircumcircleFromThreePoints(
+            next[0],
+            next[1],
+            next[2],
+          );
+          if (!circumcircle) {
+            setNotice(
+              "Center Finder gagal. Tiga titik terlalu segaris. Ulangi dengan titik tepi yang lebih menyebar.",
+            );
+            return [];
+          }
+          appendCenterFinderCircle({
+            cx: circumcircle.center.x,
+            cy: circumcircle.center.y,
+            radius: circumcircle.radius,
+            points: [
+              { ...circumcircle.center },
+              {
+                x: circumcircle.center.x + circumcircle.radius,
+                y: circumcircle.center.y,
+              },
+            ],
+            source: "centerFinder",
+          });
+          setNotice(
+            "Center Finder selesai. Center dan circle referensi berhasil dibuat.",
+          );
+          if (shouldUseMobileOneShotTool) {
+            setTool(MOBILE_IDLE_TOOL);
+            setMobileControlsOpen(false);
+          }
+          return [];
+        });
+        return;
+      }
+
+      if (tool === "axisBuilder") {
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        setDraftAxisBuilderPoints((prev) => {
+          const next = [...prev, snappedPlacementPoint];
+          if (next.length < 4) {
+            const phase =
+              next.length < 2
+                ? `proximal ${next.length}/2`
+                : `distal ${next.length - 2}/2`;
+            setNotice(
+              `Axis Builder: lanjutkan titik ${phase}. Axis dibuat dari midpoint kedua segmen.`,
+            );
+            return next;
+          }
+          const nextAxisLine = buildAxisLineFromPoints(next);
+          if (!nextAxisLine) {
+            setNotice(
+              "Axis Builder gagal. Pastikan dua segmen cukup terpisah agar midpoint membentuk axis.",
+            );
+            return [];
+          }
+          appendLineMeasurement(
+            {
+              ...nextAxisLine,
+              type: "axis",
+            },
+            { mobileHandleAssistEnd: true },
+          );
+          setNotice(
+            "Axis Builder selesai. Axis dibuat dari midpoint segmen proximal dan distal.",
+          );
+          if (shouldUseMobileOneShotTool) {
+            setTool(MOBILE_IDLE_TOOL);
+            setMobileControlsOpen(false);
+          }
+          return [];
+        });
+        return;
+      }
+
+      if (tool === "guideBuilder") {
+        if (!guideBuilderReference?.line) {
+          setNotice(
+            "Guide Builder butuh satu line atau planning guide terpilih sebagai acuan.",
+          );
+          return;
+        }
+        const nextGuideLine = buildGuideLineFromReference(
+          guideBuilderReference.line,
+          snappedPlacementPoint,
+          guideBuilderMode,
+        );
+        if (!nextGuideLine) {
+          setNotice("Guide Builder gagal. Acuan guide tidak valid.");
+          return;
+        }
+        appendLineMeasurement(
+          {
+            ...nextGuideLine,
+            type:
+              guideBuilderMode === "parallel"
+                ? "parallelGuide"
+                : "perpendicularGuide",
+          },
+          { mobileHandleAssistEnd: true },
+        );
+        setNotice(
+          `${guideBuilderMode === "parallel" ? "Parallel" : "Perpendicular"} guide dibuat dari ${guideBuilderReference.label}.`,
+        );
+        if (shouldUseMobileOneShotTool) {
+          setTool(MOBILE_IDLE_TOOL);
+          setMobileControlsOpen(false);
+        }
+        return;
+      }
+
       if (tool === "freeLine") {
         setSelectedLineId(null);
         setSelectedAngleId(null);
@@ -8635,7 +10336,7 @@ export default function XrayCalibrationWorkspace() {
             const startPoint = draftFreeLine.points[0];
             if (
               draftFreeLine.points.length < MIN_FREE_CUT_POINTS &&
-              getDistance(startPoint, boundedPoint) <= closeRadius
+              getDistance(startPoint, snappedPlacementPoint) <= closeRadius
             ) {
               setNotice(
                 `Free Line: pilih ${MIN_FREE_CUT_POINTS - draftFreeLine.points.length} titik lagi.`,
@@ -8644,7 +10345,7 @@ export default function XrayCalibrationWorkspace() {
             }
             if (
               draftFreeLine.points.length >= MIN_FREE_CUT_POINTS &&
-              getDistance(startPoint, boundedPoint) <= closeRadius
+              getDistance(startPoint, snappedPlacementPoint) <= closeRadius
             ) {
               completeDraftFreeLine();
               return;
@@ -8652,17 +10353,17 @@ export default function XrayCalibrationWorkspace() {
 
             const lastPoint =
               draftFreeLine.points[draftFreeLine.points.length - 1];
-            if (getDistance(lastPoint, boundedPoint) <= 1.5) {
+            if (getDistance(lastPoint, snappedPlacementPoint) <= 1.5) {
               return;
             }
 
-            const nextPoints = [...draftFreeLine.points, boundedPoint];
+            const nextPoints = [...draftFreeLine.points, snappedPlacementPoint];
             setDraftFreeLine((prev) =>
               prev
                 ? {
                     ...prev,
                     points: nextPoints,
-                    hoverPoint: boundedPoint,
+                    hoverPoint: snappedPlacementPoint,
                   }
                 : prev,
             );
@@ -8676,8 +10377,8 @@ export default function XrayCalibrationWorkspace() {
           }
 
           setDraftFreeLine({
-            points: [boundedPoint],
-            hoverPoint: boundedPoint,
+            points: [snappedPlacementPoint],
+            hoverPoint: snappedPlacementPoint,
             fillColor: DEFAULT_FREE_LINE_COLOR,
             drawMode: "point",
           });
@@ -8688,7 +10389,7 @@ export default function XrayCalibrationWorkspace() {
           return;
         }
 
-        const startPoint = boundedPoint;
+        const startPoint = snappedPlacementPoint;
         setDraftFreeLine({
           points: [startPoint],
           fillColor: DEFAULT_FREE_LINE_COLOR,
@@ -8738,7 +10439,10 @@ export default function XrayCalibrationWorkspace() {
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
         setDraftAnglePoints((prev) => {
-          const next = [...prev, { x: boundedPoint.x, y: boundedPoint.y }];
+          const next = [
+            ...prev,
+            { x: snappedPlacementPoint.x, y: snappedPlacementPoint.y },
+          ];
           if (next.length < 3) {
             setNotice(`Angle: pilih ${3 - next.length} titik lagi.`);
             return next;
@@ -8810,13 +10514,13 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCutLayerId(null);
         setHistoryPaused(true);
         setDraftCirclePoints([
-          { x: boundedPoint.x, y: boundedPoint.y },
-          { x: boundedPoint.x, y: boundedPoint.y },
+          { x: snappedPlacementPoint.x, y: snappedPlacementPoint.y },
+          { x: snappedPlacementPoint.x, y: snappedPlacementPoint.y },
         ]);
         interactionRef.current = {
           mode: "draw-circle-radius",
-          centerX: boundedPoint.x,
-          centerY: boundedPoint.y,
+          centerX: snappedPlacementPoint.x,
+          centerY: snappedPlacementPoint.y,
         };
         setNotice("Circle: klik/drag dari pusat ke tepi diameter, lalu lepas.");
         return;
@@ -8858,7 +10562,10 @@ export default function XrayCalibrationWorkspace() {
         setSelectedCircleId(null);
         setSelectedCutLayerId(null);
         setDraftHkaPoints((prev) => {
-          const next = [...prev, { x: boundedPoint.x, y: boundedPoint.y }];
+          const next = [
+            ...prev,
+            { x: snappedPlacementPoint.x, y: snappedPlacementPoint.y },
+          ];
           const definition = getHkaModeDefinition(hkaInputMode);
           if (next.length < definition.points.length) {
             setNotice(getHkaDraftNotice(hkaInputMode, next.length));
@@ -8875,6 +10582,7 @@ export default function XrayCalibrationWorkspace() {
               direction: "varus",
               side: "right",
               lineColor: DEFAULT_HKA_LINE_COLOR,
+              strokeWidth: DEFAULT_HKA_STROKE_WIDTH,
               labelOffsetX: DEFAULT_HKA_LABEL_OFFSET_X,
               labelOffsetY: DEFAULT_HKA_LABEL_OFFSET_Y,
               showArc: hkaInputMode === "full",
@@ -8901,7 +10609,7 @@ export default function XrayCalibrationWorkspace() {
       setSelectedHkaId(null);
       setSelectedCutLayerId(null);
 
-      const start = boundedPoint;
+      const start = snappedPlacementPoint;
       setDraftLine({
         x1: start.x,
         y1: start.y,
@@ -8932,13 +10640,17 @@ export default function XrayCalibrationWorkspace() {
       draftCut,
       draftFreeLine,
       angles,
+      appendCenterFinderCircle,
+      appendLineMeasurement,
       findClosestAngleHandle,
       findClosestAngleId,
       findAngleLabelByPoint,
       findClosestCircleHandle,
+      findClosestCircleId,
       findClosestHandle,
       findClosestHkaHandle,
       findClosestHkaId,
+      findCircleLabelByPoint,
       findHkaLabelByPoint,
       findClosestLineId,
       findMobileHandleAssistHit,
@@ -8960,10 +10672,13 @@ export default function XrayCalibrationWorkspace() {
       findCutLayerHandle,
       focusLayerCanvas,
       focusPlanningGuideCanvas,
+      getRelatedLayerIds,
       getLocalPoint,
       image,
       focusCalibrationStep,
       freeLineMode,
+      guideBuilderMode,
+      guideBuilderReference,
       hasCalibration,
       isCoarsePointer,
       isMobileViewport,
@@ -8973,7 +10688,11 @@ export default function XrayCalibrationWorkspace() {
       lines,
       planningGuides,
       linePreset,
+      resolveSnappedImagePoint,
+      selectLayerFromCanvas,
       selectPlanningGuideForEdit,
+      selectedCutLayerIds,
+      selectedCutLayerIdsSet,
       setHistoryPaused,
       screenToImagePoint,
       syncMobileCanvasSelection,
@@ -8996,25 +10715,58 @@ export default function XrayCalibrationWorkspace() {
         const moveImagePoint = clampToImageBounds(
           screenToImagePoint(point.x, point.y),
         );
+        let shouldKeepSnapPreview = false;
         if (!isCoarsePointer) {
           const hoveredHkaLabelId = findHkaLabelByPoint(point);
           const hoveredHkaId =
             hoveredHkaLabelId ?? findClosestHkaId(moveImagePoint);
+          const hoveredAngleLabelId = findAngleLabelByPoint(point);
+          const hoveredAngleId =
+            hoveredAngleLabelId ?? findClosestAngleId(moveImagePoint);
+          const hoveredCircleLabelId = findCircleLabelByPoint(point);
+          const hoveredCircleId =
+            hoveredCircleLabelId ?? findClosestCircleId(moveImagePoint);
           setHoveredMeasurementInfo((current) => {
-            if (hoveredHkaId === null) {
+            if (hoveredHkaId !== null) {
+              if (current?.type === "hka" && current.id === hoveredHkaId) {
+                return current;
+              }
+              return { type: "hka", id: hoveredHkaId };
+            }
+            if (hoveredAngleId !== null) {
+              if (
+                current?.type === "angle" &&
+                current.id === hoveredAngleId
+              ) {
+                return current;
+              }
+              return { type: "angle", id: hoveredAngleId };
+            }
+            if (hoveredCircleId !== null) {
+              if (
+                current?.type === "circle" &&
+                current.id === hoveredCircleId
+              ) {
+                return current;
+              }
+              return { type: "circle", id: hoveredCircleId };
+            }
+            if (
+              hoveredHkaId === null &&
+              hoveredAngleId === null &&
+              hoveredCircleId === null
+            ) {
               return current ? null : current;
             }
-            if (current?.type === "hka" && current.id === hoveredHkaId) {
-              return current;
-            }
-            return { type: "hka", id: hoveredHkaId };
+            return current;
           });
         } else if (hoveredMeasurementInfo) {
           setHoveredMeasurementInfo(null);
         }
 
         if (tool === "cut" && draftCut?.points?.length) {
-          const movePoint = moveImagePoint;
+          shouldKeepSnapPreview = true;
+          const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
           setDraftCut((prev) =>
             prev
               ? {
@@ -9029,7 +10781,8 @@ export default function XrayCalibrationWorkspace() {
           freeLineMode === "point" &&
           draftFreeLine?.points?.length
         ) {
-          const movePoint = moveImagePoint;
+          shouldKeepSnapPreview = true;
+          const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
           setDraftFreeLine((prev) =>
             prev
               ? {
@@ -9038,6 +10791,28 @@ export default function XrayCalibrationWorkspace() {
                 }
               : prev,
           );
+        } else if (
+          tool === "draw" ||
+          tool === "centerFinder" ||
+          tool === "axisBuilder" ||
+          tool === "angle" ||
+          tool === "circle" ||
+          tool === "hkaAuto" ||
+          (tool === "freeLine" && freeLineMode === "point")
+        ) {
+          shouldKeepSnapPreview = true;
+          resolveSnapWithPreview(moveImagePoint);
+        } else if (tool === "guideBuilder" && guideBuilderReference?.line) {
+          shouldKeepSnapPreview = true;
+          const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
+          setGuideBuilderPreviewPoint(movePoint);
+        }
+
+        if (!shouldKeepSnapPreview) {
+          clearSnapPreview();
+          if (guideBuilderPreviewPoint) {
+            setGuideBuilderPreviewPoint(null);
+          }
         }
         return;
       }
@@ -9056,9 +10831,10 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "draw") {
-        const movePoint = clampToImageBounds(
+        const rawMovePoint = clampToImageBounds(
           screenToImagePoint(point.x, point.y),
         );
+        const { point: movePoint } = resolveSnapWithPreview(rawMovePoint);
         setDraftLine((prev) => {
           if (!prev) return prev;
           return { ...prev, x2: movePoint.x, y2: movePoint.y };
@@ -9067,6 +10843,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "draw-free-line") {
+        clearSnapPreview();
         const movePoint = clampToImageBounds(
           screenToImagePoint(point.x, point.y),
         );
@@ -9174,9 +10951,10 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "draw-circle-radius") {
-        const movePoint = clampToImageBounds(
+        const rawMovePoint = clampToImageBounds(
           screenToImagePoint(point.x, point.y),
         );
+        const { point: movePoint } = resolveSnapWithPreview(rawMovePoint);
         const { centerX, centerY } = interactionRef.current;
         setDraftCirclePoints([
           { x: centerX, y: centerY },
@@ -9186,45 +10964,41 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-cut-layer") {
-        const {
-          layerId,
-          startImageX,
-          startImageY,
-          originCenterX,
-          originCenterY,
-        } = interactionRef.current;
+        const { layerIds = [], origins = [], startImageX, startImageY } =
+          interactionRef.current;
+        if (!layerIds.length) return;
         const nextImagePoint = screenToImagePoint(point.x, point.y);
         const dx = nextImagePoint.x - startImageX;
         const dy = nextImagePoint.y - startImageY;
-        let nextCenterX = originCenterX + dx;
-        let nextCenterY = originCenterY + dy;
+        const firstOrigin = origins[0];
+        let nextCenterX = Number(firstOrigin?.originCenterX || 0) + dx;
+        let nextCenterY = Number(firstOrigin?.originCenterY || 0) + dy;
 
-        if (snapToLandmarks && landmarkPoints.length > 0) {
-          const threshold = 14 / view.scale;
-          let nearest = null;
-          let nearestDist = Infinity;
-          for (const landmark of landmarkPoints) {
-            const dist = Math.hypot(
-              landmark.x - nextCenterX,
-              landmark.y - nextCenterY,
-            );
-            if (dist < nearestDist) {
-              nearest = landmark;
-              nearestDist = dist;
-            }
-          }
-          if (nearest && nearestDist <= threshold) {
-            nextCenterX = nearest.x;
-            nextCenterY = nearest.y;
-          }
-        }
+        const snapResult = resolveSnapWithPreview({
+          x: nextCenterX,
+          y: nextCenterY,
+        });
+        const snappedDx =
+          snapResult.point.x - Number(firstOrigin?.originCenterX || 0);
+        const snappedDy =
+          snapResult.point.y - Number(firstOrigin?.originCenterY || 0);
 
         setCutLayers((prev) =>
           prev.map((layer) =>
-            layer.id === layerId
-              ? layer.lockScale
-                ? layer
-                : { ...layer, centerX: nextCenterX, centerY: nextCenterY }
+            layerIds.includes(layer.id)
+              ? {
+                  ...layer,
+                  centerX:
+                    Number(
+                      origins.find((item) => item.layerId === layer.id)
+                        ?.originCenterX || layer.centerX || 0,
+                    ) + snappedDx,
+                  centerY:
+                    Number(
+                      origins.find((item) => item.layerId === layer.id)
+                        ?.originCenterY || layer.centerY || 0,
+                    ) + snappedDy,
+                }
               : layer,
           ),
         );
@@ -9239,10 +11013,16 @@ export default function XrayCalibrationWorkspace() {
           pointerOffsetX = 0,
           pointerOffsetY = 0,
         } = interactionRef.current;
-        const adjustedPoint = clampToImageBounds({
+        const rawAdjustedPoint = clampToImageBounds({
           x: movePoint.x + pointerOffsetX,
           y: movePoint.y + pointerOffsetY,
         });
+        const { point: adjustedPoint } = resolveSnapWithPreview(
+          rawAdjustedPoint,
+          {
+            excludeRefs: [`guide:${guideId}`],
+          },
+        );
         setPlanningGuides((prev) =>
           prev.map((guide) => {
             if (guide.id !== guideId) return guide;
@@ -9262,6 +11042,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-planning-guide") {
+        clearSnapPreview();
         const { guideId, startImageX, startImageY, origin } =
           interactionRef.current;
         const nextImagePoint = screenToImagePoint(point.x, point.y);
@@ -9291,6 +11072,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-planning-guide-label") {
+        clearSnapPreview();
         const { guideId, startX, startY, originOffsetX, originOffsetY } =
           interactionRef.current;
         const dx = point.x - startX;
@@ -9310,6 +11092,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "resize-cut-layer") {
+        clearSnapPreview();
         const {
           layerId,
           centerX,
@@ -9442,6 +11225,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "rotate-cut-layer") {
+        clearSnapPreview();
         const { layerId, startPointerAngle, startRotation } =
           interactionRef.current;
         const targetLayer =
@@ -9476,10 +11260,16 @@ export default function XrayCalibrationWorkspace() {
           pointerOffsetY = 0,
         } = interactionRef.current;
         if (isLineLocked(lineId)) return;
-        const adjustedPoint = clampToImageBounds({
+        const rawAdjustedPoint = clampToImageBounds({
           x: movePoint.x + pointerOffsetX,
           y: movePoint.y + pointerOffsetY,
         });
+        const { point: adjustedPoint } = resolveSnapWithPreview(
+          rawAdjustedPoint,
+          {
+            excludeRefs: [`line:${lineId}`],
+          },
+        );
 
         setLines((prev) =>
           prev.map((line) => {
@@ -9494,6 +11284,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-line") {
+        clearSnapPreview();
         const { lineId, startImageX, startImageY, origin } =
           interactionRef.current;
         if (isLineLocked(lineId)) return;
@@ -9526,6 +11317,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-line-label") {
+        clearSnapPreview();
         const { lineId, startX, startY, originOffsetX, originOffsetY } =
           interactionRef.current;
         if (isLineLocked(lineId)) return;
@@ -9553,10 +11345,16 @@ export default function XrayCalibrationWorkspace() {
           pointerOffsetX = 0,
           pointerOffsetY = 0,
         } = interactionRef.current;
-        const adjustedPoint = clampToImageBounds({
+        const rawAdjustedPoint = clampToImageBounds({
           x: movePoint.x + pointerOffsetX,
           y: movePoint.y + pointerOffsetY,
         });
+        const { point: adjustedPoint } = resolveSnapWithPreview(
+          rawAdjustedPoint,
+          {
+            excludeRefs: [`angle:${angleId}`],
+          },
+        );
         setAngles((prev) =>
           prev.map((item) => {
             if (item.id !== angleId) return item;
@@ -9571,6 +11369,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-angle-label") {
+        clearSnapPreview();
         const { angleId, startX, startY, originOffsetX, originOffsetY } =
           interactionRef.current;
         const dx = point.x - startX;
@@ -9590,6 +11389,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-hka-label") {
+        clearSnapPreview();
         const { hkaId, startX, startY, originOffsetX, originOffsetY } =
           interactionRef.current;
         const dx = point.x - startX;
@@ -9619,10 +11419,20 @@ export default function XrayCalibrationWorkspace() {
         const nextImagePoint = screenToImagePoint(point.x, point.y);
         const dx = nextImagePoint.x - startImageX;
         const dy = nextImagePoint.y - startImageY;
+        const rawCenterPoint = {
+          x: originCenterX + dx,
+          y: originCenterY + dy,
+        };
+        const { point: nextCenterPoint } = resolveSnapWithPreview(
+          rawCenterPoint,
+          {
+            excludeRefs: [`circle:${circleId}`],
+          },
+        );
         setCircles((prev) =>
           prev.map((item) =>
             item.id === circleId
-              ? { ...item, cx: originCenterX + dx, cy: originCenterY + dy }
+              ? { ...item, cx: nextCenterPoint.x, cy: nextCenterPoint.y }
               : item,
           ),
         );
@@ -9631,7 +11441,13 @@ export default function XrayCalibrationWorkspace() {
 
       if (interactionRef.current.mode === "move-circle-radius") {
         const { circleId } = interactionRef.current;
-        const nextImagePoint = screenToImagePoint(point.x, point.y);
+        const rawNextImagePoint = screenToImagePoint(point.x, point.y);
+        const { point: nextImagePoint } = resolveSnapWithPreview(
+          clampToImageBounds(rawNextImagePoint),
+          {
+            excludeRefs: [`circle:${circleId}`],
+          },
+        );
         setCircles((prev) =>
           prev.map((item) => {
             if (item.id !== circleId) return item;
@@ -9657,10 +11473,16 @@ export default function XrayCalibrationWorkspace() {
           pointerOffsetX = 0,
           pointerOffsetY = 0,
         } = interactionRef.current;
-        const adjustedPoint = clampToImageBounds({
+        const rawAdjustedPoint = clampToImageBounds({
           x: movePoint.x + pointerOffsetX,
           y: movePoint.y + pointerOffsetY,
         });
+        const { point: adjustedPoint } = resolveSnapWithPreview(
+          rawAdjustedPoint,
+          {
+            excludeRefs: [`hka:${hkaId}`],
+          },
+        );
         setHkaSets((prev) =>
           prev.map((item) => {
             if (item.id !== hkaId) return item;
@@ -9677,23 +11499,29 @@ export default function XrayCalibrationWorkspace() {
       angles,
       clampToImageBounds,
       circles,
+      clearSnapPreview,
       cutLayers,
       draftCut,
       draftFreeLine,
+      findClosestAngleId,
+      findClosestCircleId,
       findClosestHkaId,
+      findAngleLabelByPoint,
+      findCircleLabelByPoint,
       findHkaLabelByPoint,
       freeLineMode,
+      guideBuilderPreviewPoint,
+      guideBuilderReference,
       getLocalPoint,
       hoveredMeasurementInfo,
       image,
       isLineLocked,
-      landmarkPoints,
       setHoveredMeasurementInfo,
       modelHeight,
       modelWidth,
+      resolveSnapWithPreview,
       setPlanningGuides,
       screenToImagePoint,
-      snapToLandmarks,
       tool,
       view.scale,
     ],
@@ -9709,6 +11537,7 @@ export default function XrayCalibrationWorkspace() {
           labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
           labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
           labelOpacity: DEFAULT_LABEL_OPACITY,
+          strokeWidth: DEFAULT_LINE_STROKE_WIDTH,
         };
         nextLineIdRef.current += 1;
         setLines((prev) => [...prev, nextLine]);
@@ -9773,6 +11602,7 @@ export default function XrayCalibrationWorkspace() {
           cy: center.y,
           radius,
           points: [center, edge],
+          strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
         };
         nextCircleIdRef.current += 1;
         setCircles((prev) => [...prev, nextCircle]);
@@ -9793,7 +11623,10 @@ export default function XrayCalibrationWorkspace() {
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     resetMobileLineTapTarget();
     setHistoryPaused(false);
+    setGuideBuilderPreviewPoint(null);
+    clearSnapPreview();
   }, [
+    clearSnapPreview,
     completeDraftFreeLine,
     draftCirclePoints,
     draftFreeLine,
@@ -9802,6 +11635,7 @@ export default function XrayCalibrationWorkspace() {
     hasCalibration,
     isCoarsePointer,
     resetMobileLineTapTarget,
+    setGuideBuilderPreviewPoint,
     shouldUseMobileOneShotTool,
   ]);
 
@@ -10484,54 +12318,210 @@ export default function XrayCalibrationWorkspace() {
   }, []);
 
   const moveCutLayerInStack = useCallback((layerId, placement) => {
-    setCutLayers((prev) => {
-      const currentIndex = prev.findIndex((layer) => layer.id === layerId);
-      if (currentIndex < 0) return prev;
-
-      let targetIndex = currentIndex;
-      if (placement === "back") targetIndex = 0;
-      if (placement === "down") targetIndex = Math.max(0, currentIndex - 1);
-      if (placement === "up")
-        targetIndex = Math.min(prev.length - 1, currentIndex + 1);
-      if (placement === "front") targetIndex = prev.length - 1;
-      if (targetIndex === currentIndex) return prev;
-
-      const next = [...prev];
-      const [layer] = next.splice(currentIndex, 1);
-      next.splice(targetIndex, 0, layer);
-      return next;
-    });
+    setCutLayers((prev) => reorderLayerStack(prev, [layerId], placement));
     setNotice("Urutan layer diperbarui.");
   }, []);
 
+  const moveSelectedCutLayersInStack = useCallback(
+    (placement) => {
+      if (!selectedCutLayerIds.length) {
+        setNotice("Pilih layer dulu untuk mengubah urutan.");
+        return;
+      }
+      setCutLayers((prev) =>
+        reorderLayerStack(prev, selectedCutLayerIds, placement),
+      );
+      setNotice(
+        selectedCutLayerIds.length > 1
+          ? `Urutan ${selectedCutLayerIds.length} layer diperbarui.`
+          : "Urutan layer diperbarui.",
+      );
+    },
+    [selectedCutLayerIds],
+  );
+
+  const alignSelectedCutLayers = useCallback(
+    (mode) => {
+      if (selectedCutLayers.length < 2 || !selectedCutLayer) {
+        setNotice("Pilih minimal 2 layer untuk align.");
+        return;
+      }
+
+      const referenceBounds = getLayerBounds(selectedCutLayer);
+      setCutLayers((prev) =>
+        prev.map((layer) => {
+          if (
+            !selectedCutLayerIdsSet.has(layer.id) ||
+            layer.id === selectedCutLayer.id ||
+            layer.lockScale
+          ) {
+            return layer;
+          }
+          const layerBounds = getLayerBounds(layer);
+          let dx = 0;
+          let dy = 0;
+          if (mode === "left") dx = referenceBounds.left - layerBounds.left;
+          if (mode === "center")
+            dx = referenceBounds.centerX - layerBounds.centerX;
+          if (mode === "right") dx = referenceBounds.right - layerBounds.right;
+          if (mode === "top") dy = referenceBounds.top - layerBounds.top;
+          if (mode === "middle")
+            dy = referenceBounds.centerY - layerBounds.centerY;
+          if (mode === "bottom")
+            dy = referenceBounds.bottom - layerBounds.bottom;
+          return {
+            ...layer,
+            centerX: Number(layer.centerX || 0) + dx,
+            centerY: Number(layer.centerY || 0) + dy,
+          };
+        }),
+      );
+      setNotice(`Align ${mode} diterapkan ke ${selectedCutLayers.length} layer.`);
+    },
+    [selectedCutLayer, selectedCutLayerIdsSet, selectedCutLayers.length],
+  );
+
+  const distributeSelectedCutLayers = useCallback(
+    (axis) => {
+      if (selectedCutLayers.length < 3) {
+        setNotice("Pilih minimal 3 layer untuk distribute.");
+        return;
+      }
+
+      const sorted = [...selectedCutLayers].sort((left, right) => {
+        const leftBounds = getLayerBounds(left);
+        const rightBounds = getLayerBounds(right);
+        return axis === "horizontal"
+          ? leftBounds.centerX - rightBounds.centerX
+          : leftBounds.centerY - rightBounds.centerY;
+      });
+
+      const firstBounds = getLayerBounds(sorted[0]);
+      const lastBounds = getLayerBounds(sorted[sorted.length - 1]);
+      const start = axis === "horizontal" ? firstBounds.centerX : firstBounds.centerY;
+      const end = axis === "horizontal" ? lastBounds.centerX : lastBounds.centerY;
+      const step = (end - start) / Math.max(1, sorted.length - 1);
+      const targets = new Map(
+        sorted.map((layer, index) => [layer.id, start + step * index]),
+      );
+
+      setCutLayers((prev) =>
+        prev.map((layer) => {
+          const target = targets.get(layer.id);
+          if (target === undefined || layer.lockScale) return layer;
+          const bounds = getLayerBounds(layer);
+          if (axis === "horizontal") {
+            return {
+              ...layer,
+              centerX: Number(layer.centerX || 0) + (target - bounds.centerX),
+            };
+          }
+          return {
+            ...layer,
+            centerY: Number(layer.centerY || 0) + (target - bounds.centerY),
+          };
+        }),
+      );
+      setNotice(
+        `Distribusi ${axis === "horizontal" ? "horizontal" : "vertikal"} diterapkan.`,
+      );
+    },
+    [selectedCutLayers],
+  );
+
+  const groupSelectedCutLayers = useCallback(() => {
+    if (selectedCutLayerIds.length < 2) {
+      setNotice("Pilih minimal 2 layer untuk digroup.");
+      return;
+    }
+    const nextGroupId = createTemplatingId();
+    setCutLayers((prev) =>
+      prev.map((layer) =>
+        selectedCutLayerIdsSet.has(layer.id)
+          ? { ...layer, groupId: nextGroupId }
+          : layer,
+      ),
+    );
+    setNotice(`Group dibuat untuk ${selectedCutLayerIds.length} layer.`);
+  }, [selectedCutLayerIds.length, selectedCutLayerIdsSet]);
+
+  const ungroupSelectedCutLayers = useCallback(() => {
+    if (!selectedCutLayerIds.length) {
+      setNotice("Pilih layer dulu untuk ungroup.");
+      return;
+    }
+    const targetGroupIds = new Set(
+      selectedCutLayers
+        .map((layer) => layer.groupId)
+        .filter((groupId) => Boolean(groupId)),
+    );
+    if (!targetGroupIds.size) {
+      setNotice("Layer terpilih belum punya group.");
+      return;
+    }
+    setCutLayers((prev) =>
+      prev.map((layer) =>
+        targetGroupIds.has(layer.groupId)
+          ? { ...layer, groupId: null }
+          : layer,
+      ),
+    );
+    setNotice("Group layer dibuka.");
+  }, [selectedCutLayerIds.length, selectedCutLayers]);
+
   const duplicateSelectedCutLayer = useCallback(() => {
-    if (!selectedCutLayer) {
+    if (!selectedCutLayerIds.length) {
       setNotice("Pilih layer dulu untuk diduplikasi.");
       return;
     }
-    const nextLayer = {
-      ...selectedCutLayer,
-      id: nextCutLayerIdRef.current,
-      name: `${selectedCutLayer.name || `Layer #${selectedCutLayer.id}`} Copy`,
-      centerX: Number(selectedCutLayer.centerX || 0) + 18,
-      centerY: Number(selectedCutLayer.centerY || 0) + 18,
-    };
-    nextCutLayerIdRef.current += 1;
-    setCutLayers((prev) => [...prev, nextLayer]);
-    setSelectedCutLayerId(nextLayer.id);
-    setNotice(`Layer #${selectedCutLayer.id} berhasil diduplikasi.`);
-  }, [selectedCutLayer]);
+
+    const orderedSelection = cutLayers.filter((layer) =>
+      selectedCutLayerIdsSet.has(layer.id),
+    );
+    const nextGroupId =
+      orderedSelection.length > 1 ? createTemplatingId() : null;
+    const duplicatedLayers = orderedSelection.map((layer, index) => {
+      const nextId = nextCutLayerIdRef.current + index;
+      return {
+        ...layer,
+        id: nextId,
+        groupId: orderedSelection.length > 1 ? nextGroupId : null,
+        name: `${layer.name || `Layer #${layer.id}`} Copy`,
+        centerX: Number(layer.centerX || 0) + DEFAULT_LAYER_DUPLICATE_OFFSET,
+        centerY: Number(layer.centerY || 0) + DEFAULT_LAYER_DUPLICATE_OFFSET,
+      };
+    });
+    nextCutLayerIdRef.current += duplicatedLayers.length;
+    setCutLayers((prev) => [...prev, ...duplicatedLayers]);
+    if (duplicatedLayers.length) {
+      setSelectedCutLayerId(duplicatedLayers[0].id);
+      setSelectedCutLayerExtraIds(
+        duplicatedLayers.slice(1).map((layer) => layer.id),
+      );
+    }
+    setNotice(
+      duplicatedLayers.length > 1
+        ? `${duplicatedLayers.length} layer berhasil diduplikasi dengan offset.`
+        : `Layer #${orderedSelection[0].id} berhasil diduplikasi dengan offset.`,
+    );
+  }, [cutLayers, selectedCutLayerIds.length, selectedCutLayerIdsSet]);
 
   const removeSelectedCutLayer = useCallback(() => {
-    if (!selectedCutLayer) {
+    if (!selectedCutLayerIds.length) {
       setNotice("Pilih layer dulu untuk dihapus.");
       return;
     }
-    const deletedLayerId = selectedCutLayer.id;
-    setCutLayers((prev) => prev.filter((layer) => layer.id !== deletedLayerId));
+    const deletedLayerIds = [...selectedCutLayerIds];
+    const deletedIdSet = new Set(deletedLayerIds);
+    setCutLayers((prev) => prev.filter((layer) => !deletedIdSet.has(layer.id)));
     setSelectedCutLayerId(null);
-    setNotice(`Layer #${deletedLayerId} dihapus.`);
-  }, [selectedCutLayer]);
+    setSelectedCutLayerExtraIds([]);
+    setNotice(
+      deletedLayerIds.length > 1
+        ? `${deletedLayerIds.length} layer dihapus.`
+        : `Layer #${deletedLayerIds[0]} dihapus.`,
+    );
+  }, [selectedCutLayerIds]);
 
   const resetCutArea = useCallback(() => {
     setDraftCut(null);
@@ -10555,8 +12545,12 @@ export default function XrayCalibrationWorkspace() {
       setHkaSets([]);
       setDraftAnglePoints([]);
       setDraftCirclePoints([]);
+      setDraftCenterFinderPoints([]);
+      setDraftAxisBuilderPoints([]);
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
+      setGuideBuilderPreviewPoint(null);
+      setGuideBuilderMode("parallel");
       setDraftLine(null);
       setDraftCut(null);
       setCutLayers([]);
@@ -11318,6 +13312,7 @@ export default function XrayCalibrationWorkspace() {
         lineLengthPx: valgusCutLineLengthPx,
         offsetPx: valgusCutOffsetPx,
         side: valgusCutSide,
+        strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
         labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -11341,6 +13336,7 @@ export default function XrayCalibrationWorkspace() {
         lineLengthPx: tibialSlopeLineLengthPx,
         offsetPx: tibialSlopeOffsetPx,
         posteriorSide: tibialPosteriorSide,
+        strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
         labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -11363,6 +13359,7 @@ export default function XrayCalibrationWorkspace() {
       hidden: false,
       lineLengthPx: tibialCutLineLengthPx,
       offsetPx: tibialCutOffsetPx,
+      strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
       labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
       labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
       labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -11590,19 +13587,44 @@ export default function XrayCalibrationWorkspace() {
         redoHistory();
         return;
       }
+      if (isMeta && key === "d" && selectedCutLayerIds.length > 0) {
+        event.preventDefault();
+        duplicateSelectedCutLayer();
+        return;
+      }
+      if (key === "[" && selectedCutLayerIds.length > 0) {
+        event.preventDefault();
+        moveSelectedCutLayersInStack(event.shiftKey ? "back" : "down");
+        return;
+      }
+      if (key === "]" && selectedCutLayerIds.length > 0) {
+        event.preventDefault();
+        moveSelectedCutLayersInStack(event.shiftKey ? "front" : "up");
+        return;
+      }
 
       if (
         key === "escape" &&
-        (draftCut?.points?.length || draftFreeLine?.points?.length)
+        (draftCut?.points?.length ||
+          draftFreeLine?.points?.length ||
+          draftCenterFinderPoints.length ||
+          draftAxisBuilderPoints.length)
       ) {
         event.preventDefault();
         setDraftCut(null);
         setDraftFreeLine(null);
+        setDraftCenterFinderPoints([]);
+        setDraftAxisBuilderPoints([]);
+        setGuideBuilderPreviewPoint(null);
         setHistoryPaused(false);
         setNotice(
           draftFreeLine?.points?.length
             ? "Free Line dibatalkan."
-            : "Free cut dibatalkan.",
+            : draftCenterFinderPoints.length
+              ? "Center Finder dibatalkan."
+              : draftAxisBuilderPoints.length
+                ? "Axis Builder dibatalkan."
+                : "Free cut dibatalkan.",
         );
         return;
       }
@@ -11630,6 +13652,9 @@ export default function XrayCalibrationWorkspace() {
       if (key === "a") handleToolChange("angle");
       if (key === "o") handleToolChange("circle");
       if (key === "k") handleToolChange("hkaAuto");
+      if (key === "j") handleToolChange("centerFinder");
+      if (key === "b") handleToolChange("axisBuilder");
+      if (key === "q") handleToolChange("guideBuilder");
       if (key === "f") fitImageToViewport();
       if ((key === "delete" || key === "backspace") && !isMeta) {
         event.preventDefault();
@@ -11642,13 +13667,18 @@ export default function XrayCalibrationWorkspace() {
   }, [
     completeDraftCut,
     completeDraftFreeLine,
+    draftAxisBuilderPoints,
+    draftCenterFinderPoints,
     draftCut,
     draftFreeLine,
+    duplicateSelectedCutLayer,
     freeLineMode,
     fitImageToViewport,
     handleToolChange,
+    moveSelectedCutLayersInStack,
     redoHistory,
     removeSelectedLine,
+    selectedCutLayerIds.length,
     undoHistory,
   ]);
 
@@ -11784,11 +13814,17 @@ export default function XrayCalibrationWorkspace() {
           ? "Move"
           : tool === "cut"
             ? "Free Cut"
+            : tool === "centerFinder"
+              ? "Center"
+              : tool === "axisBuilder"
+                ? "Axis"
+                : tool === "guideBuilder"
+                  ? "Guide"
             : tool === "angle"
               ? "Angle"
-              : tool === "circle"
+                : tool === "circle"
                 ? "Circle"
-                : " HKA";
+                : "HKA";
   const activeToolIcon =
     tool === "draw"
       ? "draw"
@@ -11798,11 +13834,228 @@ export default function XrayCalibrationWorkspace() {
           ? "pan"
           : tool === "cut"
             ? "cut"
+            : tool === "centerFinder"
+              ? "centerFinder"
+              : tool === "axisBuilder"
+                ? "axisBuilder"
+                : tool === "guideBuilder"
+                  ? "guideBuilder"
             : tool === "angle"
               ? "angle"
               : tool === "circle"
-                ? "circle"
-                : "hka";
+              ? "circle"
+              : "hka";
+  const activeOrthoBuilderMeta =
+    tool === "centerFinder"
+      ? {
+          key: "centerFinder",
+          title: "Center Finder",
+          icon: "centerFinder",
+          status: `${draftCenterFinderPoints.length}/3 titik`,
+          info:
+            "Klik tiga titik di tepi struktur melingkar. Sistem menghitung center dan membuat circle referensi yang langsung bisa dipilih dan diedit.",
+        }
+      : tool === "axisBuilder"
+        ? {
+            key: "axisBuilder",
+            title: "Axis Builder",
+            icon: "axisBuilder",
+            status:
+              draftAxisBuilderPoints.length < 2
+                ? `${draftAxisBuilderPoints.length}/2 proximal`
+                : `${Math.max(0, draftAxisBuilderPoints.length - 2)}/2 distal`,
+            info:
+              "Klik dua titik pada segmen proximal lalu dua titik pada segmen distal. Sistem mengambil midpoint kedua segmen dan membuat satu garis axis.",
+          }
+        : tool === "guideBuilder"
+          ? {
+              key: "guideBuilder",
+              title: "Guide Builder",
+              icon: "guideBuilder",
+              status: guideBuilderReference
+                ? `${guideBuilderMode === "parallel" ? "Parallel" : "Perp"} | ${guideBuilderReference.label}`
+                : "Pilih acuan",
+              info:
+              "Pilih dulu satu line atau planning guide sebagai acuan. Setelah itu pilih mode Parallel atau Perpendicular, lalu klik canvas untuk menjatuhkan guide baru.",
+            }
+          : null;
+  const activeSnapModeCount = [
+    "endpoint",
+    "midpoint",
+    "intersection",
+    "center",
+    "tangent",
+    "perpendicular",
+  ].filter((key) => snapSettings[key]).length;
+  const snapSummaryLabel = snapToLandmarks
+    ? `${activeSnapModeCount} mode aktif${snapSettings.shiftOnlyDesktop ? " • Shift" : ""}`
+    : "Snap nonaktif";
+  const layerMoveSummaryLabel =
+    selectedCutLayerIds.length > 0
+      ? `${selectedCutLayerIds.length} layer terpilih${selectedCutLayerGroupId ? " • group aktif" : ""}`
+      : cutLayers.length > 0
+        ? `${cutLayers.length} layer siap diatur`
+        : "Belum ada layer";
+  const hasLayerContentControls = Boolean(
+    selectedCutLayer &&
+      (isImageBackedLayerKind(selectedCutLayer.kind) ||
+        selectedCutLayer.kind === "free-line"),
+  );
+  const getToolConfigModalDefaultFrame = useCallback(
+    (modalKey) => {
+      const viewportWidth =
+        viewport.width ||
+        (typeof window !== "undefined" ? window.innerWidth : 1440);
+      const viewportHeight =
+        viewport.height ||
+        (typeof window !== "undefined" ? window.innerHeight : 900);
+      const preset =
+        TOOL_CONFIG_MODAL_DEFAULT_SIZES[modalKey] ||
+        TOOL_CONFIG_MODAL_DEFAULT_SIZES.snapTool;
+
+      return {
+        width: clamp(
+          preset.width,
+          TOOL_CONFIG_MODAL_MIN_WIDTH,
+          Math.max(
+            TOOL_CONFIG_MODAL_MIN_WIDTH,
+            viewportWidth - (viewportWidth < 768 ? 24 : 64),
+          ),
+        ),
+        height: clamp(
+          preset.height,
+          TOOL_CONFIG_MODAL_MIN_HEIGHT,
+          Math.max(
+            TOOL_CONFIG_MODAL_MIN_HEIGHT,
+            viewportHeight - (viewportHeight < 768 ? 24 : 72),
+          ),
+        ),
+        x: 0,
+        y: 0,
+      };
+    },
+    [viewport.height, viewport.width],
+  );
+  const activeToolConfigModalFrame = useMemo(() => {
+    if (!toolConfigModal) return null;
+    return (
+      toolConfigModalFrames[toolConfigModal] ||
+      getToolConfigModalDefaultFrame(toolConfigModal)
+    );
+  }, [getToolConfigModalDefaultFrame, toolConfigModal, toolConfigModalFrames]);
+  const activeToolConfigModalPinned = Boolean(
+    toolConfigModal && toolConfigModalPinned[toolConfigModal],
+  );
+  const beginToolConfigModalDrag = useCallback(
+    (kind) => (event) => {
+      if (isMobileViewport || !toolConfigModal) return;
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toolConfigModalInteractionRef.current = {
+        kind,
+        modalKey: toolConfigModal,
+        startX: event.clientX,
+        startY: event.clientY,
+        startFrame:
+          toolConfigModalFrames[toolConfigModal] ||
+          getToolConfigModalDefaultFrame(toolConfigModal),
+      };
+    },
+    [
+      getToolConfigModalDefaultFrame,
+      isMobileViewport,
+      toolConfigModal,
+      toolConfigModalFrames,
+    ],
+  );
+
+  useEffect(() => {
+    if (!toolConfigModal || isMobileViewport) return;
+    setToolConfigModalFrames((prev) => {
+      if (prev[toolConfigModal]) return prev;
+      return {
+        ...prev,
+        [toolConfigModal]: getToolConfigModalDefaultFrame(toolConfigModal),
+      };
+    });
+  }, [getToolConfigModalDefaultFrame, isMobileViewport, toolConfigModal]);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const activeInteraction = toolConfigModalInteractionRef.current;
+      if (!activeInteraction) return;
+
+      const viewportWidth =
+        typeof window !== "undefined" ? window.innerWidth : 1440;
+      const viewportHeight =
+        typeof window !== "undefined" ? window.innerHeight : 900;
+      const deltaX = event.clientX - activeInteraction.startX;
+      const deltaY = event.clientY - activeInteraction.startY;
+
+      setToolConfigModalFrames((prev) => {
+        const startFrame = activeInteraction.startFrame;
+        const nextFrame = { ...startFrame };
+
+        if (activeInteraction.kind === "drag") {
+          const maxOffsetX = Math.max(0, (viewportWidth - nextFrame.width) / 2 - 12);
+          const maxOffsetY = Math.max(
+            0,
+            (viewportHeight - nextFrame.height) / 2 - 12,
+          );
+          nextFrame.x = clamp(startFrame.x + deltaX, -maxOffsetX, maxOffsetX);
+          nextFrame.y = clamp(startFrame.y + deltaY, -maxOffsetY, maxOffsetY);
+        } else {
+          const nextWidth = clamp(
+            startFrame.width + deltaX,
+            TOOL_CONFIG_MODAL_MIN_WIDTH,
+            Math.max(
+              TOOL_CONFIG_MODAL_MIN_WIDTH,
+              viewportWidth - 24 - Math.max(0, startFrame.x),
+            ),
+          );
+          const nextHeight = clamp(
+            startFrame.height + deltaY,
+            TOOL_CONFIG_MODAL_MIN_HEIGHT,
+            Math.max(
+              TOOL_CONFIG_MODAL_MIN_HEIGHT,
+              viewportHeight - 24 - Math.max(0, startFrame.y),
+            ),
+          );
+          nextFrame.width = nextWidth;
+          nextFrame.height = nextHeight;
+          nextFrame.x = clamp(
+            startFrame.x,
+            -Math.max(0, (viewportWidth - nextWidth) / 2 - 12),
+            Math.max(0, (viewportWidth - nextWidth) / 2 - 12),
+          );
+          nextFrame.y = clamp(
+            startFrame.y,
+            -Math.max(0, (viewportHeight - nextHeight) / 2 - 12),
+            Math.max(0, (viewportHeight - nextHeight) / 2 - 12),
+          );
+        }
+
+        return {
+          ...prev,
+          [activeInteraction.modalKey]: nextFrame,
+        };
+      });
+    };
+
+    const handlePointerUp = () => {
+      toolConfigModalInteractionRef.current = null;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, []);
 
   return (
     <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
@@ -11875,6 +14128,1408 @@ export default function XrayCalibrationWorkspace() {
             }`}
           >
             {actionToast.text}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {toolConfigModal ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={`fixed inset-0 z-[94] p-4 ${
+              activeToolConfigModalPinned
+                ? "pointer-events-none bg-transparent"
+                : "bg-slate-950/35"
+            }`}
+            onClick={(event) => {
+              if (
+                !activeToolConfigModalPinned &&
+                event.target === event.currentTarget
+              ) {
+                setToolConfigModal(null);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={PANEL_SPRING}
+              transformTemplate={({ scale }) =>
+                `translate(-50%, -50%) scale(${scale || 1})`
+              }
+              className={`pointer-events-auto absolute flex w-full max-w-[calc(100vw-24px)] flex-col overflow-hidden ${SOFT_PANEL_CLASS}`}
+              style={{
+                left: isMobileViewport
+                  ? "50%"
+                  : `calc(50% + ${(activeToolConfigModalFrame?.x || 0).toFixed(2)}px)`,
+                top: isMobileViewport
+                  ? "50%"
+                  : `calc(50% + ${(activeToolConfigModalFrame?.y || 0).toFixed(2)}px)`,
+                width: isMobileViewport
+                  ? undefined
+                  : activeToolConfigModalFrame?.width,
+                height: isMobileViewport
+                  ? undefined
+                  : activeToolConfigModalFrame?.height,
+                maxHeight: isMobileViewport
+                  ? "calc(100vh - 24px)"
+                  : activeToolConfigModalFrame?.height,
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div
+                  className="flex min-w-0 flex-1 items-center gap-2"
+                  onPointerDown={beginToolConfigModalDrag("drag")}
+                  style={{ cursor: isMobileViewport ? "default" : "grab" }}
+                >
+                  {!isMobileViewport ? (
+                    <span
+                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center ${SOFT_RAISED_CLASS} text-slate-500`}
+                      title="Drag window"
+                    >
+                      <Icon name="pan" className="h-4 w-4" />
+                    </span>
+                  ) : null}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Icon
+                      name={
+                        toolConfigModal === "snapTool"
+                          ? "lock"
+                          : toolConfigModal === "layerSettings"
+                            ? "settings"
+                          : toolConfigModal === "centerFinder"
+                          ? "centerFinder"
+                          : toolConfigModal === "axisBuilder"
+                            ? "axisBuilder"
+                            : toolConfigModal === "layerMove" ||
+                                toolConfigModal === "layerLayout"
+                              ? "package"
+                              : "guideBuilder"
+                      }
+                      className="h-4 w-4 shrink-0 text-cyan-700"
+                    />
+                    <div className="truncate text-sm font-semibold text-slate-900">
+                      {toolConfigModal === "snapTool"
+                        ? "Snap Tool"
+                        : toolConfigModal === "layerSettings"
+                          ? "Layer Settings"
+                        : toolConfigModal === "centerFinder"
+                        ? "Center Finder"
+                        : toolConfigModal === "axisBuilder"
+                          ? "Axis Builder"
+                          : toolConfigModal === "layerMove" ||
+                              toolConfigModal === "layerLayout"
+                            ? "Layer Move"
+                            : "Parallel / Perpendicular Guide"}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {!isMobileViewport ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setToolConfigModalPinned((prev) => ({
+                          ...prev,
+                          [toolConfigModal]: !prev[toolConfigModal],
+                        }))
+                      }
+                      className={`px-2 py-1 text-[10px] ${
+                        activeToolConfigModalPinned
+                          ? SOFT_DARK_BUTTON_CLASS
+                          : SOFT_TEXT_BUTTON_CLASS
+                      }`}
+                      title={
+                        activeToolConfigModalPinned
+                          ? "Lepas pin window"
+                          : "Pin window agar tetap terbuka"
+                      }
+                    >
+                      {activeToolConfigModalPinned ? "Pinned" : "Pin"}
+                    </button>
+                  ) : null}
+                  {!isMobileViewport ? (
+                    <span
+                      className={`inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium text-slate-500 ${SOFT_INSET_CLASS}`}
+                    >
+                      {Math.round(activeToolConfigModalFrame?.width || 0)} ×{" "}
+                      {Math.round(activeToolConfigModalFrame?.height || 0)}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setToolConfigModal(null)}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`}
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+
+              {toolConfigModal === "snapTool" ? (
+                <div className="flex flex-col gap-2">
+                  <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                    Snap membantu titik baru atau handle menempel ke kandidat geometris terdekat saat draw dan edit. Gunakan Shift Only bila snap hanya ingin aktif saat tombol Shift ditahan di desktop.
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr] gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setSnapToLandmarks((prev) => !prev)}
+                      className={
+                        snapToLandmarks
+                          ? `${SOFT_DARK_BUTTON_CLASS} px-3 py-2`
+                          : `${SOFT_TEXT_BUTTON_CLASS} text-slate-700`
+                      }
+                    >
+                      {snapToLandmarks ? "ON" : "OFF"}
+                    </button>
+                    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}>
+                      {snapSummaryLabel} • Kandidat {snapCandidates.length}
+                    </div>
+                  </div>
+                  <div className="grid gap-1.5 sm:grid-cols-3">
+                    {[
+                      { key: "endpoint", label: "End" },
+                      { key: "midpoint", label: "Mid" },
+                      { key: "intersection", label: "X" },
+                      { key: "center", label: "Ctr" },
+                      { key: "tangent", label: "Tan" },
+                      { key: "perpendicular", label: "Perp" },
+                    ].map((item) => (
+                      <button
+                        key={`snap-modal-${item.key}`}
+                        type="button"
+                        onClick={() =>
+                          setSnapSettings((prev) => ({
+                            ...prev,
+                            [item.key]: !prev[item.key],
+                          }))
+                        }
+                        disabled={!snapToLandmarks}
+                        className={
+                          snapToLandmarks && snapSettings[item.key]
+                            ? `${SOFT_PRESSED_CLASS} px-2 py-2 text-xs font-medium text-cyan-800`
+                            : `${SOFT_RAISED_CLASS} px-2 py-2 text-xs font-medium text-slate-500 disabled:opacity-45`
+                        }
+                        title={`Snap ${item.label}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSnapSettings((prev) => ({
+                          ...prev,
+                          shiftOnlyDesktop: !prev.shiftOnlyDesktop,
+                        }))
+                      }
+                      disabled={!snapToLandmarks}
+                      className={
+                        snapToLandmarks && snapSettings.shiftOnlyDesktop
+                          ? `${SOFT_PRESSED_CLASS} px-2 py-2 text-xs font-medium text-cyan-800`
+                          : `${SOFT_RAISED_CLASS} px-2 py-2 text-xs font-medium text-slate-500 disabled:opacity-45`
+                      }
+                    >
+                      Shift Only
+                    </button>
+                    <div
+                      className={`inline-flex items-center justify-center px-3 py-2 text-[10px] font-semibold ${
+                        snapSettings.shiftOnlyDesktop && snapModifierPressed
+                          ? `${SOFT_DARK_BUTTON_CLASS} text-white`
+                          : `${SOFT_RAISED_CLASS} text-slate-500`
+                      }`}
+                    >
+                      {snapModifierPressed ? "SHIFT" : "free"}
+                    </div>
+                  </div>
+                  <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-slate-600`}>
+                    {activeSnapTarget
+                      ? `Snap aktif sekarang: ${activeSnapTarget.label}`
+                      : "Belum ada target snap aktif di canvas."}
+                  </div>
+                </div>
+              ) : null}
+
+              {toolConfigModal === "layerSettings" ? (
+                <div className="flex flex-col gap-2">
+                  {!selectedCutLayer || !selectedLayerMetrics ? (
+                    <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                      Pilih satu layer dulu untuk membuka pengaturan detail.
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
+                        style={{
+                          color: selectedLayerPalette?.text || "#334155",
+                        }}
+                      >
+                        {selectedCutLayer.name ||
+                          getLayerDefaultName(selectedCutLayer)}{" "}
+                        | {selectedCutLayerIndex + 1}/{cutLayers.length}
+                        {hasLayerMultiSelection
+                          ? ` • primary dari ${selectedCutLayerIds.length} layer`
+                          : ""}
+                      </div>
+                      <div className={`grid gap-1 p-1 ${SOFT_INSET_CLASS} ${hasLayerContentControls ? "grid-cols-3" : "grid-cols-2"}`}>
+                        <button
+                          type="button"
+                          onClick={() => setLayerSettingsTab("transform")}
+                          className={`px-2 py-2 text-xs font-semibold transition ${
+                            layerSettingsTab === "transform"
+                              ? SOFT_DARK_BUTTON_CLASS
+                              : `${SOFT_RAISED_CLASS} text-cyan-700`
+                          }`}
+                        >
+                          Transform
+                        </button>
+                        {hasLayerContentControls ? (
+                          <button
+                            type="button"
+                            onClick={() => setLayerSettingsTab("content")}
+                            className={`px-2 py-2 text-xs font-semibold transition ${
+                              layerSettingsTab === "content"
+                                ? SOFT_DARK_BUTTON_CLASS
+                                : `${SOFT_RAISED_CLASS} text-cyan-700`
+                            }`}
+                          >
+                            Content
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setLayerSettingsTab("view")}
+                          className={`px-2 py-2 text-xs font-semibold transition ${
+                            layerSettingsTab === "view"
+                              ? SOFT_DARK_BUTTON_CLASS
+                              : `${SOFT_RAISED_CLASS} text-cyan-700`
+                          }`}
+                        >
+                          View
+                        </button>
+                      </div>
+
+                      {layerSettingsTab === "transform" ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <IconButton
+                              icon="target"
+                              label="Center Layer"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  centerX: modelWidth / 2,
+                                  centerY: modelHeight / 2,
+                                })
+                              }
+                              className="h-9 w-full"
+                            />
+                            <IconButton
+                              icon="fit"
+                              label="Fit Rasio Layer"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => {
+                                  const srcW = Math.max(
+                                    1,
+                                    Number(
+                                      item.sourceWidth || item.displayWidth || 1,
+                                    ),
+                                  );
+                                  const srcH = Math.max(
+                                    1,
+                                    Number(
+                                      item.sourceHeight || item.displayHeight || 1,
+                                    ),
+                                  );
+                                  const scale = Math.max(
+                                    0.02,
+                                    Math.min(modelWidth / srcW, modelHeight / srcH),
+                                  );
+                                  return {
+                                    ...item,
+                                    displayWidth: clamp(
+                                      srcW * scale,
+                                      16,
+                                      modelWidth * 2,
+                                    ),
+                                    displayHeight: clamp(
+                                      srcH * scale,
+                                      16,
+                                      modelHeight * 2,
+                                    ),
+                                    centerX: modelWidth / 2,
+                                    centerY: modelHeight / 2,
+                                  };
+                                })
+                              }
+                              disabled={
+                                !modelWidth ||
+                                !modelHeight ||
+                                selectedCutLayer.lockScale
+                              }
+                              className="h-9 w-full"
+                            />
+                            <IconButton
+                              icon="resetCrop"
+                              label="Samakan Dengan Background"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  displayWidth: clamp(modelWidth, 16, modelWidth * 2),
+                                  displayHeight: clamp(
+                                    modelHeight,
+                                    16,
+                                    modelHeight * 2,
+                                  ),
+                                  centerX: modelWidth / 2,
+                                  centerY: modelHeight / 2,
+                                })
+                              }
+                              disabled={
+                                !modelWidth ||
+                                !modelHeight ||
+                                selectedCutLayer.lockScale
+                              }
+                              className="h-9 w-full"
+                            />
+                          </div>
+                          <div className="grid gap-1.5 md:grid-cols-2">
+                            <CompactSliderField
+                              label="Width"
+                              valueText={`${Math.round(selectedLayerMetrics.width)}`}
+                              min={16}
+                              max={selectedLayerMetrics.widthMax}
+                              step={1}
+                              value={selectedLayerMetrics.width}
+                              onChange={(event) => {
+                                const nextWidth = clamp(
+                                  Number(event.target.value),
+                                  16,
+                                  selectedLayerMetrics.widthMax,
+                                );
+                                updateLayerById(selectedCutLayer.id, {
+                                  displayWidth: nextWidth,
+                                });
+                              }}
+                              onDecrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  displayWidth: clamp(
+                                    Number(item.displayWidth || 16) - 2,
+                                    16,
+                                    selectedLayerMetrics.widthMax,
+                                  ),
+                                }))
+                              }
+                              onIncrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  displayWidth: clamp(
+                                    Number(item.displayWidth || 16) + 2,
+                                    16,
+                                    selectedLayerMetrics.widthMax,
+                                  ),
+                                }))
+                              }
+                              decreaseIcon="zoomOut"
+                              increaseIcon="zoomIn"
+                              disabled={selectedCutLayer.lockScale}
+                              controlStyle="knob"
+                            />
+                            <CompactSliderField
+                              label="Height"
+                              valueText={`${Math.round(selectedLayerMetrics.height)}`}
+                              min={16}
+                              max={selectedLayerMetrics.heightMax}
+                              step={1}
+                              value={selectedLayerMetrics.height}
+                              onChange={(event) => {
+                                const nextHeight = clamp(
+                                  Number(event.target.value),
+                                  16,
+                                  selectedLayerMetrics.heightMax,
+                                );
+                                updateLayerById(selectedCutLayer.id, {
+                                  displayHeight: nextHeight,
+                                });
+                              }}
+                              onDecrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  displayHeight: clamp(
+                                    Number(item.displayHeight || 16) - 2,
+                                    16,
+                                    selectedLayerMetrics.heightMax,
+                                  ),
+                                }))
+                              }
+                              onIncrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  displayHeight: clamp(
+                                    Number(item.displayHeight || 16) + 2,
+                                    16,
+                                    selectedLayerMetrics.heightMax,
+                                  ),
+                                }))
+                              }
+                              decreaseIcon="zoomOut"
+                              increaseIcon="zoomIn"
+                              disabled={selectedCutLayer.lockScale}
+                              controlStyle="knob"
+                            />
+                            <CompactSliderField
+                              label="Pos X"
+                              valueText={`${Math.round(selectedLayerMetrics.centerX)}`}
+                              min={0}
+                              max={selectedLayerMetrics.centerXMax}
+                              step={1}
+                              value={clamp(
+                                selectedLayerMetrics.centerX,
+                                0,
+                                selectedLayerMetrics.centerXMax,
+                              )}
+                              onChange={(event) => {
+                                const nextCenterX = clamp(
+                                  Number(event.target.value),
+                                  0,
+                                  selectedLayerMetrics.centerXMax,
+                                );
+                                updateLayerById(selectedCutLayer.id, {
+                                  centerX: nextCenterX,
+                                });
+                              }}
+                              onDecrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  centerX: clamp(
+                                    Number(item.centerX || 0) - 2,
+                                    0,
+                                    selectedLayerMetrics.centerXMax,
+                                  ),
+                                }))
+                              }
+                              onIncrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  centerX: clamp(
+                                    Number(item.centerX || 0) + 2,
+                                    0,
+                                    selectedLayerMetrics.centerXMax,
+                                  ),
+                                }))
+                              }
+                              decreaseIcon="moveLeft"
+                              increaseIcon="moveRight"
+                              controlStyle="knob"
+                            />
+                            <CompactSliderField
+                              label="Pos Y"
+                              valueText={`${Math.round(selectedLayerMetrics.centerY)}`}
+                              min={0}
+                              max={selectedLayerMetrics.centerYMax}
+                              step={1}
+                              value={clamp(
+                                selectedLayerMetrics.centerY,
+                                0,
+                                selectedLayerMetrics.centerYMax,
+                              )}
+                              onChange={(event) => {
+                                const nextCenterY = clamp(
+                                  Number(event.target.value),
+                                  0,
+                                  selectedLayerMetrics.centerYMax,
+                                );
+                                updateLayerById(selectedCutLayer.id, {
+                                  centerY: nextCenterY,
+                                });
+                              }}
+                              onDecrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  centerY: clamp(
+                                    Number(item.centerY || 0) - 2,
+                                    0,
+                                    selectedLayerMetrics.centerYMax,
+                                  ),
+                                }))
+                              }
+                              onIncrease={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  centerY: clamp(
+                                    Number(item.centerY || 0) + 2,
+                                    0,
+                                    selectedLayerMetrics.centerYMax,
+                                  ),
+                                }))
+                              }
+                              decreaseIcon="moveUp"
+                              increaseIcon="moveDown"
+                              controlStyle="knob"
+                            />
+                            <div className="md:col-span-2">
+                              <CompactSliderField
+                                label="Rotate"
+                                valueText={`${selectedLayerMetrics.rotation}°`}
+                                min={-180}
+                                max={180}
+                                step={1}
+                                value={selectedLayerMetrics.rotation}
+                                onChange={(event) => {
+                                  const nextDeg = Number(event.target.value);
+                                  updateLayerById(selectedCutLayer.id, {
+                                    rotation: (nextDeg + 360) % 360,
+                                  });
+                                }}
+                                onDecrease={() =>
+                                  updateLayerById(selectedCutLayer.id, (item) => ({
+                                    ...item,
+                                    rotation: ((item.rotation || 0) - 2 + 360) % 360,
+                                  }))
+                                }
+                                onIncrease={() =>
+                                  updateLayerById(selectedCutLayer.id, (item) => ({
+                                    ...item,
+                                    rotation: ((item.rotation || 0) + 2 + 360) % 360,
+                                  }))
+                                }
+                                decreaseIcon="rotateLeft"
+                                increaseIcon="rotateRight"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {layerSettingsTab === "content" ? (
+                        <div className="flex flex-col gap-2">
+                          {isImageBackedLayerKind(selectedCutLayer.kind) ? (
+                            <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
+                              <div className="flex items-center justify-between gap-2 text-[13px] text-slate-700">
+                                <span>
+                                  Real: W{" "}
+                                  {formatTemplateLayerRealSize(
+                                    selectedLayerMetrics.widthMm,
+                                  )}{" "}
+                                  | H{" "}
+                                  {formatTemplateLayerRealSize(
+                                    selectedLayerMetrics.heightMm,
+                                  )}
+                                </span>
+                                {mmPerPixel === null ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setHighlightCalibrationPanel(true);
+                                      setNotice(
+                                        "Buat garis kalibrasi real dulu, lalu isi ukuran template.",
+                                      );
+                                    }}
+                                    className={`${SOFT_TEXT_BUTTON_CLASS} shrink-0 px-2 py-1 text-[10px] text-slate-700`}
+                                  >
+                                    Kalibrasi
+                                  </button>
+                                ) : null}
+                              </div>
+                              <div
+                                className={`mt-1.5 grid gap-1.5 ${
+                                  rightSidebarWidth <= 220
+                                    ? "grid-cols-1"
+                                    : "grid-cols-[1fr_auto_auto]"
+                                }`}
+                              >
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={templateRealSizeInput}
+                                  onChange={(event) =>
+                                    setTemplateRealSizeInput(event.target.value)
+                                  }
+                                  placeholder="Ukuran real"
+                                  className={`min-w-0 ${SOFT_INPUT_CLASS}`}
+                                />
+                                <select
+                                  value={templateRealSizeAxis}
+                                  onChange={(event) =>
+                                    setTemplateRealSizeAxis(event.target.value)
+                                  }
+                                  className={SOFT_SELECT_CLASS}
+                                >
+                                  <option value="height">Tinggi</option>
+                                  <option value="width">Lebar</option>
+                                </select>
+                                <select
+                                  value={templateRealSizeUnit}
+                                  onChange={(event) =>
+                                    setTemplateRealSizeUnit(event.target.value)
+                                  }
+                                  className={SOFT_SELECT_CLASS}
+                                >
+                                  <option value="mm">mm</option>
+                                  <option value="cm">cm</option>
+                                </select>
+                              </div>
+                              <div
+                                className={`mt-1.5 ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={trimSelectedTemplateLayer}
+                                  disabled={!selectedLayerCanTrim}
+                                  className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                                >
+                                  Trim
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={applyTemplateRulerScale}
+                                  disabled={!selectedLayerCanApplyRulerScale}
+                                  className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                                >
+                                  Ruler
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={applyTemplateRealSize}
+                                  disabled={!selectedLayerCanApplyRealSize}
+                                  className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                                >
+                                  Scale
+                                </button>
+                              </div>
+                              <div
+                                className={`mt-1.5 ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={copySelectedTemplateScale}
+                                  className={SOFT_TEXT_BUTTON_CLASS}
+                                >
+                                  Copy Scale
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={pasteTemplateScaleToSelected}
+                                  disabled={!selectedLayerCanPasteScale}
+                                  className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                                >
+                                  Paste Scale
+                                </button>
+                              </div>
+                              {copiedTemplateScale ? (
+                                <div className="mt-1 text-[10px] text-slate-500">
+                                  Scale siap di-paste
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {selectedCutLayer.kind === "free-line" ? (
+                            <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
+                              <div className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
+                                Shape Edit
+                              </div>
+                              <div className="mt-2 text-[10px] text-slate-500">
+                                Drag titik ungu di canvas untuk edit shape. Saat satu
+                                titik aktif, menu melayang akan muncul untuk tambah /
+                                hapus point. Dua handle oranye bisa digeser bebas 360
+                                derajat untuk mencari rounded yang paling pas.
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                <div
+                                  className={`${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-600`}
+                                >
+                                  {selectedFreeLinePointIndex !== null
+                                    ? `Titik aktif: #${selectedFreeLinePointIndex + 1}`
+                                    : "Pilih titik ungu untuk edit / hapus"}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={deleteSelectedFreeLinePoint}
+                                  disabled={selectedFreeLinePointIndex === null}
+                                  className={`${SOFT_DANGER_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                                >
+                                  Delete Point
+                                </button>
+                              </div>
+                              <div className="mt-1 grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => {
+                                      if (
+                                        item.kind !== "free-line" ||
+                                        selectedFreeLinePointIndex === null ||
+                                        !Array.isArray(item.maskPoints)
+                                      ) {
+                                        return item;
+                                      }
+                                      return {
+                                        ...item,
+                                        maskPoints: item.maskPoints.map(
+                                          (point, index) => {
+                                            if (index !== selectedFreeLinePointIndex) {
+                                              return point;
+                                            }
+                                            const nextPoint = { ...point };
+                                            delete nextPoint.handleInX;
+                                            delete nextPoint.handleInY;
+                                            delete nextPoint.handleOutX;
+                                            delete nextPoint.handleOutY;
+                                            return nextPoint;
+                                          },
+                                        ),
+                                      };
+                                    })
+                                  }
+                                  disabled={selectedFreeLinePointIndex === null}
+                                  className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                                >
+                                  Reset Handle
+                                </button>
+                                <div
+                                  className={`${SOFT_INSET_CLASS} px-3 py-2 text-center text-[10px] text-slate-500`}
+                                >
+                                  Handle 360°
+                                </div>
+                              </div>
+                              <div className="mt-2 grid gap-1.5">
+                                <CompactSliderField
+                                  label="Curve"
+                                  valueText={`${selectedLayerMetrics.curveStrength}%`}
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={selectedLayerMetrics.curveStrength}
+                                  onChange={(event) =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      curveStrength: Number(event.target.value) / 100,
+                                    })
+                                  }
+                                  onDecrease={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => ({
+                                      ...item,
+                                      curveStrength: clamp(
+                                        getFreeLineCurveStrength(item) - 0.05,
+                                        0,
+                                        1,
+                                      ),
+                                    }))
+                                  }
+                                  onIncrease={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => ({
+                                      ...item,
+                                      curveStrength: clamp(
+                                        getFreeLineCurveStrength(item) + 0.05,
+                                        0,
+                                        1,
+                                      ),
+                                    }))
+                                  }
+                                />
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateLayerById(selectedCutLayer.id, {
+                                        curveStrength: 0,
+                                      })
+                                    }
+                                    className={SOFT_TEXT_BUTTON_CLASS}
+                                  >
+                                    Lurus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateLayerById(selectedCutLayer.id, {
+                                        curveStrength:
+                                          selectedCutLayer.drawMode === "point"
+                                            ? DEFAULT_FREE_LINE_CURVE_POINT
+                                            : DEFAULT_FREE_LINE_CURVE_FREEHAND,
+                                      })
+                                    }
+                                    className={SOFT_TEXT_BUTTON_CLASS}
+                                  >
+                                    Lengkung
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {!hasLayerContentControls ? (
+                            <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                              Layer ini tidak punya pengaturan konten tambahan.
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {layerSettingsTab === "view" ? (
+                        <div className="flex flex-col gap-2">
+                          {selectedCutLayer.kind === "free-line" ? (
+                            <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
+                              <div className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
+                                Shape Color
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
+                                  <ColorSwatchButton
+                                    key={color}
+                                    color={color}
+                                    active={
+                                      (selectedCutLayer.fillColor ||
+                                        DEFAULT_FREE_LINE_COLOR) === color
+                                    }
+                                    label={`Warna shape ${color}`}
+                                    onClick={() =>
+                                      updateLayerById(selectedCutLayer.id, {
+                                        fillColor: color,
+                                      })
+                                    }
+                                  />
+                                ))}
+                                <label
+                                  className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
+                                  title="Warna custom shape"
+                                >
+                                  <span
+                                    className="h-4 w-4 rounded-full border border-dashed border-slate-400"
+                                    style={{
+                                      background:
+                                        "conic-gradient(from 180deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ef4444)",
+                                    }}
+                                  />
+                                  <input
+                                    type="color"
+                                    value={
+                                      selectedCutLayer.fillColor ||
+                                      DEFAULT_FREE_LINE_COLOR
+                                    }
+                                    onChange={(event) =>
+                                      updateLayerById(selectedCutLayer.id, {
+                                        fillColor: event.target.value,
+                                      })
+                                    }
+                                    className="absolute inset-0 cursor-pointer opacity-0"
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          ) : null}
+                          <CompactSliderField
+                            label="Opacity"
+                            valueText={`${selectedLayerMetrics.opacity}%`}
+                            min={10}
+                            max={100}
+                            step={1}
+                            value={selectedLayerMetrics.opacity}
+                            onChange={(event) => {
+                              const nextOpacity = clamp(
+                                Number(event.target.value) / 100,
+                                0.05,
+                                1,
+                              );
+                              updateLayerById(selectedCutLayer.id, {
+                                opacity: nextOpacity,
+                              });
+                            }}
+                            onDecrease={() =>
+                              updateLayerById(selectedCutLayer.id, (item) => ({
+                                ...item,
+                                opacity: clamp(
+                                  Number(item.opacity ?? 1) - 0.05,
+                                  0.05,
+                                  1,
+                                ),
+                              }))
+                            }
+                            onIncrease={() =>
+                              updateLayerById(selectedCutLayer.id, (item) => ({
+                                ...item,
+                                opacity: clamp(
+                                  Number(item.opacity ?? 1) + 0.05,
+                                  0.05,
+                                  1,
+                                ),
+                              }))
+                            }
+                          />
+                          <div className="grid grid-cols-4 gap-1.5">
+                            <IconButton
+                              icon="flipH"
+                              label="Flip Layer Horizontal"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  flipX: !item.flipX,
+                                }))
+                              }
+                              className="h-9 w-full"
+                            />
+                            <IconButton
+                              icon="flipV"
+                              label="Flip Layer Vertical"
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  flipY: !item.flipY,
+                                }))
+                              }
+                              className="h-9 w-full"
+                            />
+                            <IconButton
+                              icon={selectedCutLayer.lockScale ? "lock" : "unlock"}
+                              label={
+                                selectedCutLayer.lockScale
+                                  ? "Unlock Scale"
+                                  : "Lock Scale"
+                              }
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  lockScale: !item.lockScale,
+                                }))
+                              }
+                              tone="amber"
+                              className="h-9 w-full"
+                            />
+                            <IconButton
+                              icon="trash"
+                              label="Hapus Layer"
+                              onClick={() => {
+                                const deletedLayerId = selectedCutLayer.id;
+                                setCutLayers((prev) =>
+                                  prev.filter((item) => item.id !== deletedLayerId),
+                                );
+                                setSelectedCutLayerId(null);
+                                setToolConfigModal(null);
+                              }}
+                              tone="rose"
+                              className="h-9 w-full"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              {toolConfigModal === "centerFinder" ? (
+                <div className="flex flex-col gap-2">
+                  <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                    Klik 3 titik di tepi kepala femur atau struktur melingkar lain. Sistem menghitung center dan langsung membuat circle referensi.
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}>
+                      Progres: {draftCenterFinderPoints.length}/3 titik
+                    </div>
+                    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}>
+                      Hasil: center + circle siap edit
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setDraftCenterFinderPoints([])}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Reset Titik
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToolChange("pan")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Pindah ke Move
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {toolConfigModal === "axisBuilder" ? (
+                <div className="flex flex-col gap-2">
+                  <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                    Klik 2 titik pada segmen proximal lalu 2 titik pada segmen distal. Sistem mengambil midpoint dari kedua segmen lalu membangun satu garis axis.
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}>
+                      Proximal: {Math.min(draftAxisBuilderPoints.length, 2)}/2
+                    </div>
+                    <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}>
+                      Distal: {Math.max(0, draftAxisBuilderPoints.length - 2)}/2
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setDraftAxisBuilderPoints([])}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Reset Titik
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToolChange("pan")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Pindah ke Move
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {toolConfigModal === "guideBuilder" ? (
+                <div className="flex flex-col gap-2">
+                  <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                    Pilih satu line atau planning guide sebagai acuan. Pilih mode guide, lalu klik canvas untuk membuat guide baru yang sejajar atau tegak lurus.
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setGuideBuilderMode("parallel")}
+                      className={
+                        guideBuilderMode === "parallel"
+                          ? SOFT_DARK_BUTTON_CLASS
+                          : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                      }
+                    >
+                      Parallel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGuideBuilderMode("perpendicular")}
+                      className={
+                        guideBuilderMode === "perpendicular"
+                          ? SOFT_DARK_BUTTON_CLASS
+                          : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                      }
+                    >
+                      Perpendicular
+                    </button>
+                  </div>
+                  <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-slate-700`}>
+                    {guideBuilderReference
+                      ? `Acuan aktif: ${guideBuilderReference.label}`
+                      : "Acuan belum dipilih. Klik dulu satu line atau planning guide di canvas."}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setGuideBuilderPreviewPoint(null)}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Reset Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToolChange("pan")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Pindah ke Move
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {toolConfigModal === "layerMove" ||
+              toolConfigModal === "layerLayout" ? (
+                <div className="flex flex-col gap-2">
+                  <div
+                    className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
+                  >
+                    Multi-select layer dari daftar kanan. Klik body row untuk
+                    pilih tunggal atau group aktif. Gunakan tombol `Sel` untuk
+                    tambah/kurangi layer dari multi-select. Shortcut desktop:
+                    `[` turun, `]` naik, `Shift+[` paling bawah, `Shift+]`
+                    paling atas, `Ctrl/Cmd+D` duplicate dengan offset.
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div
+                      className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}
+                    >
+                      Terpilih: {selectedCutLayerIds.length}
+                    </div>
+                    <div
+                      className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-slate-700`}
+                    >
+                      Group: {selectedCutLayerGroupId ? "aktif" : "-"}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleToolChange("pan");
+                        if (selectedCutLayer && !hasLayerMultiSelection) {
+                          focusLayerCanvas(selectedCutLayer.id);
+                        }
+                      }}
+                      className={`px-2 py-2 text-xs font-medium transition ${
+                        tool === "pan"
+                          ? SOFT_DARK_BUTTON_CLASS
+                          : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                      }`}
+                    >
+                      Aktifkan Move
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        selectedCutLayer &&
+                        openLayerSettingsModal(selectedCutLayer.id)
+                      }
+                      disabled={!selectedCutLayer}
+                      className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    >
+                      Layer Settings
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => moveSelectedCutLayersInStack("back")}
+                      disabled={!selectedCutLayerIds.length}
+                      className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    >
+                      Paling Bawah
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveSelectedCutLayersInStack("front")}
+                      disabled={!selectedCutLayerIds.length}
+                      className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    >
+                      Paling Atas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveSelectedCutLayersInStack("down")}
+                      disabled={!selectedCutLayerIds.length}
+                      className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    >
+                      Turun 1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveSelectedCutLayersInStack("up")}
+                      disabled={!selectedCutLayerIds.length}
+                      className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    >
+                      Naik 1
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => alignSelectedCutLayers("left")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Left
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alignSelectedCutLayers("center")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Center X
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alignSelectedCutLayers("right")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Right
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alignSelectedCutLayers("top")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Top
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alignSelectedCutLayers("middle")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Center Y
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alignSelectedCutLayers("bottom")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Bottom
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => distributeSelectedCutLayers("horizontal")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Distribusi H
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => distributeSelectedCutLayers("vertical")}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Distribusi V
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={groupSelectedCutLayers}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Group
+                    </button>
+                    <button
+                      type="button"
+                      onClick={ungroupSelectedCutLayers}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Ungroup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={duplicateSelectedCutLayer}
+                      className={SOFT_TEXT_BUTTON_CLASS}
+                    >
+                      Duplicate +
+                    </button>
+                  </div>
+                  <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                    {cutLayers.length === 0 ? (
+                      <span className="text-[10px] text-slate-500">
+                        Belum ada layer.
+                      </span>
+                    ) : (
+                      cutLayers
+                        .slice()
+                        .reverse()
+                        .map((layer) => {
+                          const layerPalette = getLayerPalette(layer.id);
+                          const isLayerActive = layer.id === selectedCutLayerId;
+                          const isLayerSelected = selectedCutLayerIdsSet.has(
+                            layer.id,
+                          );
+                          return (
+                            <motion.div
+                              layout
+                              key={`modal-tool-layer-${layer.id}`}
+                              className={`${SOFT_TINT_CARD_CLASS} flex items-center gap-2 px-2 py-1.5 text-[10px] transition-all duration-300 ${
+                                isLayerSelected ? "scale-[1.01]" : ""
+                              }`}
+                              style={{
+                                borderColor: isLayerSelected
+                                  ? layerPalette.border
+                                  : `${layerPalette.border}66`,
+                                color: layerPalette.text,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleToolChange("pan");
+                                  setSelectedFreeLinePointIndex(null);
+                                  selectLayerFromCanvas(layer.id, {
+                                    includeGroup: true,
+                                    openPanel: false,
+                                  });
+                                  setNotice(
+                                    `Layer #${layer.id} aktif. Gunakan Move untuk drag, resize, rotate, atau edit titik.`,
+                                  );
+                                }}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <span
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                    style={{
+                                      backgroundColor: layerPalette.border,
+                                    }}
+                                  />
+                                  <span className="truncate font-medium">
+                                    #{layer.id}{" "}
+                                    {layer.name || getLayerDefaultName(layer)}
+                                  </span>
+                                </span>
+                                <span className="mt-0.5 block truncate text-[9px] text-slate-500">
+                                  {getLayerDefaultName(layer)} | urutan{" "}
+                                  {cutLayers.findIndex(
+                                    (item) => item.id === layer.id,
+                                  ) + 1}
+                                </span>
+                              </button>
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] ${
+                                  isLayerActive
+                                    ? SOFT_DARK_BUTTON_CLASS
+                                    : isLayerSelected
+                                      ? `${SOFT_PRESSED_CLASS} text-cyan-700`
+                                      : `${SOFT_RAISED_CLASS} text-slate-500`
+                                }`}
+                              >
+                                {isLayerActive
+                                  ? "Aktif"
+                                  : isLayerSelected
+                                    ? "Sel"
+                                    : "Pilih"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleLayerSelection(layer.id);
+                                  setNotice(
+                                    selectedCutLayerIdsSet.has(layer.id)
+                                      ? `Layer #${layer.id} dilepas dari multi-select.`
+                                      : `Layer #${layer.id} ditambahkan ke multi-select.`,
+                                  );
+                                }}
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] ${
+                                  selectedCutLayerIdsSet.has(layer.id)
+                                    ? `${SOFT_PRESSED_CLASS} text-cyan-700`
+                                    : `${SOFT_RAISED_CLASS} text-slate-500`
+                                }`}
+                                title="Tambah atau lepas dari multi-select"
+                                aria-label="Tambah atau lepas dari multi-select"
+                              >
+                                Sel
+                              </button>
+                            </motion.div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              </div>
+              {!isMobileViewport ? (
+                <button
+                  type="button"
+                  onPointerDown={beginToolConfigModalDrag("resize")}
+                  className={`absolute right-3 bottom-3 inline-flex h-8 w-8 items-center justify-center ${SOFT_RAISED_CLASS} text-slate-500`}
+                  title="Resize window"
+                  aria-label="Resize window"
+                >
+                  <Icon name="fit" className="h-4 w-4" />
+                </button>
+              ) : null}
+            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -12386,9 +16041,7 @@ export default function XrayCalibrationWorkspace() {
               />
               <IconButton
                 icon={snapToLandmarks ? "lock" : "unlock"}
-                label={
-                  snapToLandmarks ? "Snap Landmark ON" : "Snap Landmark OFF"
-                }
+                label={snapToLandmarks ? "Snap Tool ON" : "Snap Tool OFF"}
                 onClick={() => setSnapToLandmarks((prev) => !prev)}
                 active={snapToLandmarks}
                 tone="amber"
@@ -12397,7 +16050,7 @@ export default function XrayCalibrationWorkspace() {
             </div>
             {!isLeftSidebarCompact ? (
               <div className="text-[11px] text-slate-500">
-                Snap landmark: {snapToLandmarks ? "ON" : "OFF"} | Template
+                Snap tool: {snapToLandmarks ? "ON" : "OFF"} | Template
                 library: {templateLibrary.length}
               </div>
             ) : null}
@@ -12520,7 +16173,7 @@ export default function XrayCalibrationWorkspace() {
                     >
                       <button
                         type="button"
-                        onClick={() => focusLayerSettings(layer.id)}
+                        onClick={() => openLayerSettingsModal(layer.id)}
                         className="flex w-full items-center gap-1.5 text-left text-[11px]"
                         style={{ color: layerPalette.text }}
                       >
@@ -12539,7 +16192,7 @@ export default function XrayCalibrationWorkspace() {
                         <div
                           className={`mt-1 ${SOFT_INSET_CLASS} px-2 py-1 text-[10px] text-slate-600`}
                         >
-                          Setting layer aktif berada di tab TOOL sebelah kanan.
+                          Detail layer aktif dibuka lewat modal Layer Settings.
                         </div>
                       ) : null}
 
@@ -13085,6 +16738,27 @@ export default function XrayCalibrationWorkspace() {
                 </div>
               </div>
             ) : null}
+            {calibrationMode === "line" && calibrationReferenceLine ? (
+              <div
+                className={`${SOFT_TINT_CARD_CLASS} px-3 py-2 text-[11px]`}
+                style={{
+                  color:
+                    calibrationLineId === calibrationReferenceLine.id
+                      ? "#166534"
+                      : "#0f766e",
+                }}
+              >
+                <div className="font-medium">
+                  {calibrationLineId === calibrationReferenceLine.id
+                    ? "Calibration ruler aktif"
+                    : "Ruler referensi aktif"}
+                </div>
+                <div className="mt-0.5">
+                  Line #{calibrationReferenceLine.id} |{" "}
+                  {lineTypeLabel(calibrationReferenceLine.type)}
+                </div>
+              </div>
+            ) : null}
             <div
               className={`grid gap-1.5 ${isLeftSidebarNarrow ? "grid-cols-1" : "grid-cols-2"}`}
             >
@@ -13289,6 +16963,75 @@ export default function XrayCalibrationWorkspace() {
                     canvas dan bisa di-adjust sebelum disimpan.
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+            {calibrationMode === "line" && calibrationReferenceLine ? (
+              <div className={`${SOFT_INSET_CLASS} px-2 py-2`}>
+                {!isLeftSidebarCompact ? (
+                  <div className="mb-1 text-[10px] font-medium tracking-wide text-emerald-700 uppercase">
+                    Stroke Width Ruler
+                  </div>
+                ) : null}
+                <CompactSliderField
+                  label="Stroke"
+                  valueText={`${(
+                    Number.isFinite(calibrationReferenceLine.strokeWidth)
+                      ? calibrationReferenceLine.strokeWidth
+                      : DEFAULT_LINE_STROKE_WIDTH
+                  ).toFixed(1)}x`}
+                  min={1}
+                  max={8}
+                  step={0.1}
+                  value={
+                    Number.isFinite(calibrationReferenceLine.strokeWidth)
+                      ? calibrationReferenceLine.strokeWidth
+                      : DEFAULT_LINE_STROKE_WIDTH
+                  }
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value);
+                    setLines((prev) =>
+                      prev.map((line) =>
+                        line.id === calibrationReferenceLine.id
+                          ? { ...line, strokeWidth: nextValue }
+                          : line,
+                      ),
+                    );
+                  }}
+                  onDecrease={() =>
+                    setLines((prev) =>
+                      prev.map((line) =>
+                        line.id === calibrationReferenceLine.id
+                          ? {
+                              ...line,
+                              strokeWidth: clamp(
+                                (Number(line.strokeWidth) ||
+                                  DEFAULT_LINE_STROKE_WIDTH) - 0.2,
+                                1,
+                                8,
+                              ),
+                            }
+                          : line,
+                      ),
+                    )
+                  }
+                  onIncrease={() =>
+                    setLines((prev) =>
+                      prev.map((line) =>
+                        line.id === calibrationReferenceLine.id
+                          ? {
+                              ...line,
+                              strokeWidth: clamp(
+                                (Number(line.strokeWidth) ||
+                                  DEFAULT_LINE_STROKE_WIDTH) + 0.2,
+                                1,
+                                8,
+                              ),
+                            }
+                          : line,
+                      ),
+                    )
+                  }
+                />
               </div>
             ) : null}
             <div
@@ -13952,7 +17695,7 @@ export default function XrayCalibrationWorkspace() {
                     Tool
                   </span>
                 ) : null}
-                <InfoTooltip text="Shortcut: L, G Free Line, H, C Free Cut, A, O, K, F, Delete, Ctrl/Cmd+Z/Y." />
+                <InfoTooltip text="Shortcut: L draw, G free line, H move, C free cut, A angle, O circle, K HKA, J center finder, B axis builder, Q guide builder, F fit, Delete, Ctrl/Cmd+Z/Y." />
               </div>
               <div className={SIDEBAR_ICON_GRID_CLASS}>
                 <ToolIconButton
@@ -14005,6 +17748,27 @@ export default function XrayCalibrationWorkspace() {
                   className="h-9 w-full"
                 />
                 <ToolIconButton
+                  icon="centerFinder"
+                  label="Center Finder (J)"
+                  onClick={() => handleToolChange("centerFinder")}
+                  active={tool === "centerFinder"}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
+                  icon="axisBuilder"
+                  label="Axis Builder (B)"
+                  onClick={() => handleToolChange("axisBuilder")}
+                  active={tool === "axisBuilder"}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
+                  icon="guideBuilder"
+                  label="Parallel / Perpendicular Guide (Q)"
+                  onClick={() => handleToolChange("guideBuilder")}
+                  active={tool === "guideBuilder"}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
                   icon="undo"
                   label="Undo (Ctrl/Cmd+Z)"
                   onClick={undoHistory}
@@ -14019,6 +17783,75 @@ export default function XrayCalibrationWorkspace() {
                   className="h-9 w-full"
                 />
               </div>
+              <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
+                <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
+                  <span>Snap Tool</span>
+                  <span className="tracking-normal text-cyan-700 normal-case">
+                    {snapToLandmarks ? "Aktif" : "Off"}
+                  </span>
+                </div>
+                <div
+                  className={`${SOFT_INSET_CLASS} mb-2 px-3 py-2 text-[11px] text-slate-600`}
+                >
+                  {snapSummaryLabel}
+                  {activeSnapTarget ? ` • ${activeSnapTarget.label}` : ""}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSnapToLandmarks((prev) => !prev);
+                      if (!snapToLandmarks) {
+                        setToolConfigModal("snapTool");
+                      }
+                    }}
+                    className={
+                      snapToLandmarks
+                        ? `${SOFT_DARK_BUTTON_CLASS} text-white`
+                        : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-700`
+                    }
+                  >
+                    {snapToLandmarks ? "Snap ON" : "Snap OFF"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setToolConfigModal("snapTool")}
+                    className={SOFT_TEXT_BUTTON_CLASS}
+                  >
+                    Atur Snap
+                  </button>
+                </div>
+              </div>
+              {activeOrthoBuilderMeta ? (
+                <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Icon
+                        name={activeOrthoBuilderMeta.icon}
+                        className="h-4 w-4 shrink-0 text-cyan-700"
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-[11px] font-semibold tracking-wide text-cyan-900 uppercase">
+                          {activeOrthoBuilderMeta.title}
+                        </div>
+                        <div className="truncate text-[10px] text-slate-500">
+                          {activeOrthoBuilderMeta.status}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <InfoTooltip text={activeOrthoBuilderMeta.info} />
+                      <button
+                        type="button"
+                        onClick={() => setToolConfigModal(activeOrthoBuilderMeta.key)}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`}
+                      >
+                        Settings
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {tool === "freeLine" ? (
                 <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
@@ -14113,27 +17946,27 @@ export default function XrayCalibrationWorkspace() {
               </div>
               <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
                 <div className="mb-1.5 flex items-center justify-between gap-2 p-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
-                  <span>Layer Move</span>
+                  <span className="flex items-center gap-1.5">
+                    <span>Layer Move</span>
+                    <InfoTooltip text="Klik row untuk pilih layer aktif. Gunakan tombol Sel untuk multi-select. Shortcut desktop: [ turun, ] naik, Shift+[ paling bawah, Shift+] paling atas, Ctrl/Cmd+D duplicate offset." />
+                  </span>
                   <span className="p-1 tracking-normal text-cyan-700 normal-case">
-                    {selectedCutLayer
-                      ? `#${selectedCutLayer.id} (${selectedCutLayerIndex + 1}/${cutLayers.length})`
-                      : "-"}
+                    {selectedLayerStackRangeLabel}
                   </span>
                 </div>
                 <div
-                  className={`${SOFT_INSET_CLASS} mb-1.5 px-3 py-2 text-[10px] text-slate-600`}
+                  className={`${SOFT_INSET_CLASS} mb-2 px-3 py-2 text-[11px] text-slate-600`}
                 >
-                  Edit drag, resize, rotate, insert point, dan delete point
-                  layer berjalan saat tool{" "}
-                  <span className="font-semibold text-slate-800">Move</span>{" "}
-                  aktif.
+                  {selectedCutLayerIds.length > 0
+                    ? `${layerMoveSummaryLabel}. Drag batch berjalan saat tool Move aktif.`
+                    : `${layerMoveSummaryLabel}. Edit drag, resize, rotate, insert point, dan delete point layer berjalan saat tool Move aktif.`}
                 </div>
-                <div className="mb-1.5 grid grid-cols-2 gap-1.5 p-1">
+                <div className="grid grid-cols-2 gap-1.5 p-1">
                   <button
                     type="button"
                     onClick={() => {
                       handleToolChange("pan");
-                      if (selectedCutLayer) {
+                      if (selectedCutLayer && !hasLayerMultiSelection) {
                         focusLayerCanvas(selectedCutLayer.id);
                       }
                     }}
@@ -14149,138 +17982,30 @@ export default function XrayCalibrationWorkspace() {
                     type="button"
                     onClick={() =>
                       selectedCutLayer &&
-                      focusLayerSettings(selectedCutLayer.id)
+                      openLayerSettingsModal(selectedCutLayer.id)
                     }
                     disabled={!selectedCutLayer}
                     className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                  >
-                    Layer Settings
-                  </button>
+                    >
+                      Layer Settings
+                    </button>
                 </div>
-                <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
-                    onClick={() =>
-                      selectedCutLayer &&
-                      moveCutLayerInStack(selectedCutLayer.id, "back")
-                    }
-                    disabled={!selectedCutLayer || selectedCutLayerIndex <= 0}
-                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    onClick={() => setToolConfigModal("layerMove")}
+                    className={SOFT_TEXT_BUTTON_CLASS}
                   >
-                    Paling Bawah
+                    Kelola Layer
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      selectedCutLayer &&
-                      moveCutLayerInStack(selectedCutLayer.id, "front")
-                    }
-                    disabled={
-                      !selectedCutLayer ||
-                      selectedCutLayerIndex >= cutLayers.length - 1
-                    }
+                    onClick={() => setToolConfigModal("layerMove")}
+                    disabled={!cutLayers.length}
                     className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
                   >
-                    Paling Atas
+                    Urutan & Group
                   </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      selectedCutLayer &&
-                      moveCutLayerInStack(selectedCutLayer.id, "down")
-                    }
-                    disabled={!selectedCutLayer || selectedCutLayerIndex <= 0}
-                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                  >
-                    Turun 1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      selectedCutLayer &&
-                      moveCutLayerInStack(selectedCutLayer.id, "up")
-                    }
-                    disabled={
-                      !selectedCutLayer ||
-                      selectedCutLayerIndex >= cutLayers.length - 1
-                    }
-                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                  >
-                    Naik 1
-                  </button>
-                </div>
-                <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
-                  {cutLayers.length === 0 ? (
-                    <span className="text-[10px] text-slate-500">
-                      Belum ada layer.
-                    </span>
-                  ) : (
-                    cutLayers
-                      .slice()
-                      .reverse()
-                      .map((layer) => {
-                        const layerPalette = getLayerPalette(layer.id);
-                        const isLayerActive = layer.id === selectedCutLayerId;
-                        return (
-                          <motion.button
-                            layout
-                            key={`tool-layer-${layer.id}`}
-                            type="button"
-                            onClick={() => {
-                              handleToolChange("pan");
-                              setSelectedFreeLinePointIndex(null);
-                              focusLayerCanvas(layer.id, { openPanel: false });
-                              setNotice(
-                                `Layer #${layer.id} aktif. Gunakan Move untuk drag, resize, rotate, atau edit titik.`,
-                              );
-                            }}
-                            className={`${SOFT_TINT_CARD_CLASS} flex items-center justify-between gap-2 px-2 py-1.5 text-left text-[10px] transition-all duration-300 ${
-                              isLayerActive ? "scale-[1.01]" : ""
-                            }`}
-                            style={{
-                              borderColor: isLayerActive
-                                ? layerPalette.border
-                                : `${layerPalette.border}66`,
-                              color: layerPalette.text,
-                            }}
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-1.5">
-                                <span
-                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{
-                                    backgroundColor: layerPalette.border,
-                                  }}
-                                />
-                                <span className="truncate font-medium">
-                                  #{layer.id}{" "}
-                                  {isRightSidebarCompact
-                                    ? null
-                                    : layer.name || getLayerDefaultName(layer)}
-                                </span>
-                              </span>
-                              {!isRightSidebarCompact ? (
-                                <span className="mt-0.5 block truncate text-[9px] text-slate-500">
-                                  {getLayerDefaultName(layer)} | urutan{" "}
-                                  {cutLayers.findIndex(
-                                    (item) => item.id === layer.id,
-                                  ) + 1}
-                                </span>
-                              ) : null}
-                            </span>
-                            <span
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] ${
-                                isLayerActive
-                                  ? SOFT_DARK_BUTTON_CLASS
-                                  : `${SOFT_RAISED_CLASS} text-slate-500`
-                              }`}
-                            >
-                              {isLayerActive ? "Aktif" : "Pilih"}
-                            </span>
-                          </motion.button>
-                        );
-                      })
-                  )}
                 </div>
               </div>
               <div
@@ -14312,7 +18037,7 @@ export default function XrayCalibrationWorkspace() {
                     Pilih layer untuk membuka setting.
                   </span>
                 ) : (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-2">
                     <div
                       className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
                       style={{
@@ -14322,685 +18047,46 @@ export default function XrayCalibrationWorkspace() {
                       {selectedCutLayer.name ||
                         getLayerDefaultName(selectedCutLayer)}{" "}
                       | {selectedCutLayerIndex + 1}/{cutLayers.length}
+                      {hasLayerMultiSelection
+                        ? ` • primary dari ${selectedCutLayerIds.length} layer`
+                        : ""}
                     </div>
-
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <IconButton
-                        icon="target"
-                        label="Center Layer"
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, {
-                            centerX: modelWidth / 2,
-                            centerY: modelHeight / 2,
-                          })
-                        }
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon="fit"
-                        label="Fit Rasio Layer"
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => {
-                            const srcW = Math.max(
-                              1,
-                              Number(
-                                item.sourceWidth || item.displayWidth || 1,
-                              ),
-                            );
-                            const srcH = Math.max(
-                              1,
-                              Number(
-                                item.sourceHeight || item.displayHeight || 1,
-                              ),
-                            );
-                            const scale = Math.max(
-                              0.02,
-                              Math.min(modelWidth / srcW, modelHeight / srcH),
-                            );
-                            return {
-                              ...item,
-                              displayWidth: clamp(
-                                srcW * scale,
-                                16,
-                                modelWidth * 2,
-                              ),
-                              displayHeight: clamp(
-                                srcH * scale,
-                                16,
-                                modelHeight * 2,
-                              ),
-                              centerX: modelWidth / 2,
-                              centerY: modelHeight / 2,
-                            };
-                          })
-                        }
-                        disabled={
-                          !modelWidth ||
-                          !modelHeight ||
-                          selectedCutLayer.lockScale
-                        }
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon="resetCrop"
-                        label="Samakan Dengan Background"
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, {
-                            displayWidth: clamp(modelWidth, 16, modelWidth * 2),
-                            displayHeight: clamp(
-                              modelHeight,
-                              16,
-                              modelHeight * 2,
-                            ),
-                            centerX: modelWidth / 2,
-                            centerY: modelHeight / 2,
-                          })
-                        }
-                        disabled={
-                          !modelWidth ||
-                          !modelHeight ||
-                          selectedCutLayer.lockScale
-                        }
-                        className="h-8 w-full"
-                      />
-                    </div>
-
-                    {isImageBackedLayerKind(selectedCutLayer.kind) ? (
-                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
-                        <div className="flex items-center justify-between gap-2 text-[13px] text-slate-700">
-                          <span>
-                            Real: W{" "}
-                            {formatTemplateLayerRealSize(
-                              selectedLayerMetrics.widthMm,
-                            )}{" "}
-                            | H{" "}
-                            {formatTemplateLayerRealSize(
-                              selectedLayerMetrics.heightMm,
-                            )}
-                          </span>
-                          {mmPerPixel === null ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setHighlightCalibrationPanel(true);
-                                setNotice(
-                                  "Buat garis kalibrasi real dulu, lalu isi ukuran template.",
-                                );
-                              }}
-                              className={`${SOFT_TEXT_BUTTON_CLASS} shrink-0 px-2 py-1 text-[10px] text-slate-700`}
-                            >
-                              Kalibrasi
-                            </button>
-                          ) : null}
-                        </div>
-                        <div
-                          className={`mt-1.5 grid gap-1.5 ${
-                            rightSidebarWidth <= 220
-                              ? "grid-cols-1"
-                              : "grid-cols-[1fr_auto_auto]"
-                          }`}
-                        >
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={templateRealSizeInput}
-                            onChange={(event) =>
-                              setTemplateRealSizeInput(event.target.value)
-                            }
-                            placeholder="Ukuran real"
-                            className={`min-w-0 ${SOFT_INPUT_CLASS}`}
-                          />
-                          <select
-                            value={templateRealSizeAxis}
-                            onChange={(event) =>
-                              setTemplateRealSizeAxis(event.target.value)
-                            }
-                            className={SOFT_SELECT_CLASS}
-                          >
-                            <option value="height">Tinggi</option>
-                            <option value="width">Lebar</option>
-                          </select>
-                          <select
-                            value={templateRealSizeUnit}
-                            onChange={(event) =>
-                              setTemplateRealSizeUnit(event.target.value)
-                            }
-                            className={SOFT_SELECT_CLASS}
-                          >
-                            <option value="mm">mm</option>
-                            <option value="cm">cm</option>
-                          </select>
-                        </div>
-                        <div
-                          className={`mt-1.5 ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}
-                        >
-                          <button
-                            type="button"
-                            onClick={trimSelectedTemplateLayer}
-                            disabled={!selectedLayerCanTrim}
-                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            Trim
-                          </button>
-                          <button
-                            type="button"
-                            onClick={applyTemplateRulerScale}
-                            disabled={!selectedLayerCanApplyRulerScale}
-                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            Ruler
-                          </button>
-                          <button
-                            type="button"
-                            onClick={applyTemplateRealSize}
-                            disabled={!selectedLayerCanApplyRealSize}
-                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            Scale
-                          </button>
-                        </div>
-                        <div
-                          className={`mt-1.5 ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}
-                        >
-                          <button
-                            type="button"
-                            onClick={copySelectedTemplateScale}
-                            className={SOFT_TEXT_BUTTON_CLASS}
-                          >
-                            Copy Scale
-                          </button>
-                          <button
-                            type="button"
-                            onClick={pasteTemplateScaleToSelected}
-                            disabled={!selectedLayerCanPasteScale}
-                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            Paste Scale
-                          </button>
-                        </div>
-                        {copiedTemplateScale ? (
-                          <div className="mt-1 text-[10px] text-slate-500">
-                            Scale siap di-paste
-                          </div>
-                        ) : null}
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-600">
+                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                        {Math.round(selectedLayerMetrics.width)} ×{" "}
+                        {Math.round(selectedLayerMetrics.height)}
                       </div>
-                    ) : null}
-
-                    {selectedCutLayer.kind === "free-line" ? (
-                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
-                        <div className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
-                          Shape Color
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
-                            <ColorSwatchButton
-                              key={color}
-                              color={color}
-                              active={
-                                (selectedCutLayer.fillColor ||
-                                  DEFAULT_FREE_LINE_COLOR) === color
-                              }
-                              label={`Warna shape ${color}`}
-                              onClick={() =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  fillColor: color,
-                                })
-                              }
-                            />
-                          ))}
-                          <label
-                            className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
-                            title="Warna custom shape"
-                          >
-                            <span
-                              className="h-4 w-4 rounded-full border border-dashed border-slate-400"
-                              style={{
-                                background:
-                                  "conic-gradient(from 180deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ef4444)",
-                              }}
-                            />
-                            <input
-                              type="color"
-                              value={
-                                selectedCutLayer.fillColor ||
-                                DEFAULT_FREE_LINE_COLOR
-                              }
-                              onChange={(event) =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  fillColor: event.target.value,
-                                })
-                              }
-                              className="absolute inset-0 cursor-pointer opacity-0"
-                            />
-                          </label>
-                        </div>
-                        <div className="mt-2 text-[10px] text-slate-500">
-                          Drag titik ungu di canvas untuk edit shape. Saat satu
-                          titik aktif, menu melayang akan muncul untuk tambah /
-                          hapus point. Dua handle oranye bisa digeser bebas 360
-                          derajat untuk mencari rounded yang paling pas.
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-1.5">
-                          <div
-                            className={`${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-600`}
-                          >
-                            {selectedFreeLinePointIndex !== null
-                              ? `Titik aktif: #${selectedFreeLinePointIndex + 1}`
-                              : "Pilih titik ungu untuk edit / hapus"}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={deleteSelectedFreeLinePoint}
-                            disabled={selectedFreeLinePointIndex === null}
-                            className={`${SOFT_DANGER_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            Delete Point
-                          </button>
-                        </div>
-                        <div className="mt-1 grid grid-cols-2 gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateLayerById(selectedCutLayer.id, (item) => {
-                                if (
-                                  item.kind !== "free-line" ||
-                                  selectedFreeLinePointIndex === null ||
-                                  !Array.isArray(item.maskPoints)
-                                ) {
-                                  return item;
-                                }
-                                return {
-                                  ...item,
-                                  maskPoints: item.maskPoints.map(
-                                    (point, index) => {
-                                      if (
-                                        index !== selectedFreeLinePointIndex
-                                      ) {
-                                        return point;
-                                      }
-                                      const nextPoint = { ...point };
-                                      delete nextPoint.handleInX;
-                                      delete nextPoint.handleInY;
-                                      delete nextPoint.handleOutX;
-                                      delete nextPoint.handleOutY;
-                                      return nextPoint;
-                                    },
-                                  ),
-                                };
-                              })
-                            }
-                            disabled={selectedFreeLinePointIndex === null}
-                            className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            Reset Handle
-                          </button>
-                          <div
-                            className={`${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-500`}
-                          >
-                            Handle 360°
-                          </div>
-                        </div>
-                        <div className="mt-2 grid gap-1.5">
-                          <CompactSliderField
-                            label="Curve"
-                            valueText={`${selectedLayerMetrics.curveStrength}%`}
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={selectedLayerMetrics.curveStrength}
-                            onChange={(event) =>
-                              updateLayerById(selectedCutLayer.id, {
-                                curveStrength: Number(event.target.value) / 100,
-                              })
-                            }
-                            onDecrease={() =>
-                              updateLayerById(selectedCutLayer.id, (item) => ({
-                                ...item,
-                                curveStrength: clamp(
-                                  getFreeLineCurveStrength(item) - 0.05,
-                                  0,
-                                  1,
-                                ),
-                              }))
-                            }
-                            onIncrease={() =>
-                              updateLayerById(selectedCutLayer.id, (item) => ({
-                                ...item,
-                                curveStrength: clamp(
-                                  getFreeLineCurveStrength(item) + 0.05,
-                                  0,
-                                  1,
-                                ),
-                              }))
-                            }
-                          />
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  curveStrength: 0,
-                                })
-                              }
-                              className={SOFT_TEXT_BUTTON_CLASS}
-                            >
-                              Lurus
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  curveStrength:
-                                    selectedCutLayer.drawMode === "point"
-                                      ? DEFAULT_FREE_LINE_CURVE_POINT
-                                      : DEFAULT_FREE_LINE_CURVE_FREEHAND,
-                                })
-                              }
-                              className={SOFT_TEXT_BUTTON_CLASS}
-                            >
-                              Lengkung
-                            </button>
-                          </div>
-                        </div>
+                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                        Pos {Math.round(selectedLayerMetrics.centerX)} /{" "}
+                        {Math.round(selectedLayerMetrics.centerY)}
                       </div>
-                    ) : null}
-
-                    <div className="grid gap-1.5">
-                      <CompactSliderField
-                        label="Width"
-                        valueText={`${Math.round(selectedLayerMetrics.width)}`}
-                        min={16}
-                        max={selectedLayerMetrics.widthMax}
-                        step={1}
-                        value={selectedLayerMetrics.width}
-                        onChange={(event) => {
-                          const nextWidth = clamp(
-                            Number(event.target.value),
-                            16,
-                            selectedLayerMetrics.widthMax,
-                          );
-                          updateLayerById(selectedCutLayer.id, {
-                            displayWidth: nextWidth,
-                          });
-                        }}
-                        onDecrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            displayWidth: clamp(
-                              Number(item.displayWidth || 16) - 2,
-                              16,
-                              selectedLayerMetrics.widthMax,
-                            ),
-                          }))
-                        }
-                        onIncrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            displayWidth: clamp(
-                              Number(item.displayWidth || 16) + 2,
-                              16,
-                              selectedLayerMetrics.widthMax,
-                            ),
-                          }))
-                        }
-                        decreaseIcon="zoomOut"
-                        increaseIcon="zoomIn"
-                        disabled={selectedCutLayer.lockScale}
-                        controlStyle="knob"
-                      />
-                      <CompactSliderField
-                        label="Height"
-                        valueText={`${Math.round(selectedLayerMetrics.height)}`}
-                        min={16}
-                        max={selectedLayerMetrics.heightMax}
-                        step={1}
-                        value={selectedLayerMetrics.height}
-                        onChange={(event) => {
-                          const nextHeight = clamp(
-                            Number(event.target.value),
-                            16,
-                            selectedLayerMetrics.heightMax,
-                          );
-                          updateLayerById(selectedCutLayer.id, {
-                            displayHeight: nextHeight,
-                          });
-                        }}
-                        onDecrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            displayHeight: clamp(
-                              Number(item.displayHeight || 16) - 2,
-                              16,
-                              selectedLayerMetrics.heightMax,
-                            ),
-                          }))
-                        }
-                        onIncrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            displayHeight: clamp(
-                              Number(item.displayHeight || 16) + 2,
-                              16,
-                              selectedLayerMetrics.heightMax,
-                            ),
-                          }))
-                        }
-                        decreaseIcon="zoomOut"
-                        increaseIcon="zoomIn"
-                        disabled={selectedCutLayer.lockScale}
-                        controlStyle="knob"
-                      />
-                      <CompactSliderField
-                        label="Pos X"
-                        valueText={`${Math.round(selectedLayerMetrics.centerX)}`}
-                        min={0}
-                        max={selectedLayerMetrics.centerXMax}
-                        step={1}
-                        value={clamp(
-                          selectedLayerMetrics.centerX,
-                          0,
-                          selectedLayerMetrics.centerXMax,
-                        )}
-                        onChange={(event) => {
-                          const nextCenterX = clamp(
-                            Number(event.target.value),
-                            0,
-                            selectedLayerMetrics.centerXMax,
-                          );
-                          updateLayerById(selectedCutLayer.id, {
-                            centerX: nextCenterX,
-                          });
-                        }}
-                        onDecrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            centerX: clamp(
-                              Number(item.centerX || 0) - 2,
-                              0,
-                              selectedLayerMetrics.centerXMax,
-                            ),
-                          }))
-                        }
-                        onIncrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            centerX: clamp(
-                              Number(item.centerX || 0) + 2,
-                              0,
-                              selectedLayerMetrics.centerXMax,
-                            ),
-                          }))
-                        }
-                        decreaseIcon="moveLeft"
-                        increaseIcon="moveRight"
-                        controlStyle="knob"
-                      />
-                      <CompactSliderField
-                        label="Pos Y"
-                        valueText={`${Math.round(selectedLayerMetrics.centerY)}`}
-                        min={0}
-                        max={selectedLayerMetrics.centerYMax}
-                        step={1}
-                        value={clamp(
-                          selectedLayerMetrics.centerY,
-                          0,
-                          selectedLayerMetrics.centerYMax,
-                        )}
-                        onChange={(event) => {
-                          const nextCenterY = clamp(
-                            Number(event.target.value),
-                            0,
-                            selectedLayerMetrics.centerYMax,
-                          );
-                          updateLayerById(selectedCutLayer.id, {
-                            centerY: nextCenterY,
-                          });
-                        }}
-                        onDecrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            centerY: clamp(
-                              Number(item.centerY || 0) - 2,
-                              0,
-                              selectedLayerMetrics.centerYMax,
-                            ),
-                          }))
-                        }
-                        onIncrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            centerY: clamp(
-                              Number(item.centerY || 0) + 2,
-                              0,
-                              selectedLayerMetrics.centerYMax,
-                            ),
-                          }))
-                        }
-                        decreaseIcon="moveUp"
-                        increaseIcon="moveDown"
-                        controlStyle="knob"
-                      />
-                      <CompactSliderField
-                        label="Opacity"
-                        valueText={`${selectedLayerMetrics.opacity}%`}
-                        min={10}
-                        max={100}
-                        step={1}
-                        value={selectedLayerMetrics.opacity}
-                        onChange={(event) => {
-                          const nextOpacity = clamp(
-                            Number(event.target.value) / 100,
-                            0.05,
-                            1,
-                          );
-                          updateLayerById(selectedCutLayer.id, {
-                            opacity: nextOpacity,
-                          });
-                        }}
-                        onDecrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            opacity: clamp(
-                              Number(item.opacity ?? 1) - 0.05,
-                              0.05,
-                              1,
-                            ),
-                          }))
-                        }
-                        onIncrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            opacity: clamp(
-                              Number(item.opacity ?? 1) + 0.05,
-                              0.05,
-                              1,
-                            ),
-                          }))
-                        }
-                      />
-                      <CompactSliderField
-                        label="Rotate"
-                        valueText={`${selectedLayerMetrics.rotation}°`}
-                        min={-180}
-                        max={180}
-                        step={1}
-                        value={selectedLayerMetrics.rotation}
-                        onChange={(event) => {
-                          const nextDeg = Number(event.target.value);
-                          updateLayerById(selectedCutLayer.id, {
-                            rotation: (nextDeg + 360) % 360,
-                          });
-                        }}
-                        onDecrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            rotation: ((item.rotation || 0) - 2 + 360) % 360,
-                          }))
-                        }
-                        onIncrease={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            rotation: ((item.rotation || 0) + 2 + 360) % 360,
-                          }))
-                        }
-                        decreaseIcon="rotateLeft"
-                        increaseIcon="rotateRight"
-                      />
+                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                        Opacity {selectedLayerMetrics.opacity}%
+                      </div>
+                      <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                        Rotate {selectedLayerMetrics.rotation}°
+                      </div>
                     </div>
-
-                    <div className="grid grid-cols-4 gap-1.5">
-                      <IconButton
-                        icon="flipH"
-                        label="Flip Layer Horizontal"
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openLayerSettingsModal(selectedCutLayer.id)}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-cyan-700`}
+                      >
+                        Buka Settings
+                      </button>
+                      <button
+                        type="button"
                         onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            flipX: !item.flipX,
-                          }))
+                          openLayerSettingsModal(
+                            selectedCutLayer.id,
+                            hasLayerContentControls ? "content" : "view",
+                          )
                         }
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon="flipV"
-                        label="Flip Layer Vertical"
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            flipY: !item.flipY,
-                          }))
-                        }
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon={selectedCutLayer.lockScale ? "lock" : "unlock"}
-                        label={
-                          selectedCutLayer.lockScale
-                            ? "Unlock Scale"
-                            : "Lock Scale"
-                        }
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            lockScale: !item.lockScale,
-                          }))
-                        }
-                        tone="amber"
-                        className="h-8 w-full"
-                      />
-                      <IconButton
-                        icon="trash"
-                        label="Hapus Layer"
-                        onClick={() => {
-                          const deletedLayerId = selectedCutLayer.id;
-                          setCutLayers((prev) =>
-                            prev.filter((item) => item.id !== deletedLayerId),
-                          );
-                          setSelectedCutLayerId(null);
-                        }}
-                        tone="rose"
-                        className="h-8 w-full"
-                      />
+                        className={SOFT_TEXT_BUTTON_CLASS}
+                      >
+                        {hasLayerContentControls ? "Content" : "View"}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -15200,6 +18286,101 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 </div>
               ) : null}
+              <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-semibold tracking-wide text-emerald-900 uppercase">
+                    Legend
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowMeasureLegend((prev) => !prev)}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-emerald-900`}
+                  >
+                    {showMeasureLegend ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {showMeasureLegend ? (
+                  <div className="mt-2 grid gap-1.5">
+                    {[
+                      { key: "normal", label: "LINE" },
+                      { key: "axis", label: "AXIS" },
+                      { key: "parallelGuide", label: "PARA" },
+                      { key: "perpendicularGuide", label: "PERP" },
+                      { key: "offset", label: "OFFSET" },
+                      { key: "femoralOffset", label: "FEM-OFF" },
+                      { key: "globalOffset", label: "GLB-OFF" },
+                      { key: "lld", label: "LLD" },
+                      { key: "ruler", label: "RULER" },
+                      { key: "hka", label: "HKA" },
+                    ].map((item) => {
+                      const style = getLineVisualStyle(
+                        {
+                          type: item.key,
+                          strokeWidth:
+                            item.key === "hka"
+                              ? DEFAULT_HKA_STROKE_WIDTH
+                              : DEFAULT_LINE_STROKE_WIDTH,
+                        },
+                        {},
+                      );
+                      return (
+                        <div
+                          key={item.key}
+                          className={`${SOFT_INSET_CLASS} flex items-center justify-between gap-2 px-2 py-1.5 text-[10px] text-slate-600`}
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="font-medium text-slate-700">
+                              {item.label}
+                            </span>
+                            <span
+                              className="block h-0 w-12 shrink-0 border-t-2"
+                              style={{
+                                borderTopColor: style.color,
+                                borderTopStyle:
+                                  style.dashPattern?.length ? "dashed" : "solid",
+                              }}
+                            />
+                          </div>
+                          {!isRightSidebarCompact ? (
+                            <span className="shrink-0 text-[9px] text-slate-500">
+                              {item.key === "ruler"
+                                ? "ref"
+                                : item.key === "hka"
+                                  ? "axis"
+                                  : "measure"}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                    <div
+                      className={`${SOFT_INSET_CLASS} flex items-center justify-between gap-2 px-2 py-1.5 text-[10px] text-slate-600`}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="font-medium text-slate-700">GUIDE</span>
+                        <span
+                          className="block h-0 w-12 shrink-0 border-t-2 border-dashed"
+                          style={{
+                            borderTopColor: getPlanningGuideAutoColor({
+                              kind: "valgusCut",
+                              side: "Right",
+                            }),
+                          }}
+                        />
+                      </div>
+                      {!isRightSidebarCompact ? (
+                        <span className="shrink-0 text-[9px] text-slate-500">
+                          planning
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    LINE, AXIS, PARA, PERP, OFFSET, FEM-OFF, GLB-OFF, LLD, RULER, HKA, GUIDE
+                  </div>
+                )}
+              </div>
               {selectedLine ? (
                 <div
                   className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-emerald-900`}
@@ -15213,6 +18394,66 @@ export default function XrayCalibrationWorkspace() {
                       : "Drag titik ujung, geser garis, atau drag label langsung di canvas."}
                   </div>
                   <div className="mt-1.5 grid gap-1.5">
+                    <CompactSliderField
+                      label="Stroke Width"
+                      valueText={`${(
+                        Number.isFinite(selectedLine.strokeWidth)
+                          ? selectedLine.strokeWidth
+                          : DEFAULT_LINE_STROKE_WIDTH
+                      ).toFixed(1)}x`}
+                      min={1}
+                      max={8}
+                      step={0.1}
+                      value={
+                        Number.isFinite(selectedLine.strokeWidth)
+                          ? selectedLine.strokeWidth
+                          : DEFAULT_LINE_STROKE_WIDTH
+                      }
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, strokeWidth: nextValue }
+                              : line,
+                          ),
+                        );
+                      }}
+                      onDecrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  strokeWidth: clamp(
+                                    (Number(line.strokeWidth) ||
+                                      DEFAULT_LINE_STROKE_WIDTH) - 0.2,
+                                    1,
+                                    8,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                      onIncrease={() =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? {
+                                  ...line,
+                                  strokeWidth: clamp(
+                                    (Number(line.strokeWidth) ||
+                                      DEFAULT_LINE_STROKE_WIDTH) + 0.2,
+                                    1,
+                                    8,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
+                    />
                     <CompactSliderField
                       label="Label X"
                       valueText={`${Math.round(
@@ -15818,6 +19059,43 @@ export default function XrayCalibrationWorkspace() {
                       </label>
                     </div>
                   </div>
+                  <div className="mt-1.5 grid gap-1.5">
+                    <CompactSliderField
+                      label="Stroke"
+                      valueText={`${selectedHkaMetrics.strokeWidth.toFixed(1)}x`}
+                      min={1}
+                      max={8}
+                      step={0.1}
+                      value={selectedHkaMetrics.strokeWidth}
+                      onChange={(event) =>
+                        updateHkaById(selectedHka.id, {
+                          strokeWidth: Number(event.target.value),
+                        })
+                      }
+                      onDecrease={() =>
+                        updateHkaById(selectedHka.id, (item) => ({
+                          ...item,
+                          strokeWidth: clamp(
+                            (Number(item.strokeWidth) ||
+                              DEFAULT_HKA_STROKE_WIDTH) - 0.2,
+                            1,
+                            8,
+                          ),
+                        }))
+                      }
+                      onIncrease={() =>
+                        updateHkaById(selectedHka.id, (item) => ({
+                          ...item,
+                          strokeWidth: clamp(
+                            (Number(item.strokeWidth) ||
+                              DEFAULT_HKA_STROKE_WIDTH) + 0.2,
+                            1,
+                            8,
+                          ),
+                        }))
+                      }
+                    />
+                  </div>
                   {selectedHkaMetrics.mode === "full" ? (
                     <>
                       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
@@ -15894,6 +19172,7 @@ export default function XrayCalibrationWorkspace() {
                           onClick={() =>
                             updateHkaById(selectedHka.id, {
                               lineColor: DEFAULT_HKA_LINE_COLOR,
+                              strokeWidth: DEFAULT_HKA_STROKE_WIDTH,
                               showArc: true,
                             })
                           }
@@ -16055,6 +19334,70 @@ export default function XrayCalibrationWorkspace() {
                             </button>
                           </div>
                         </div>
+                        <CompactSliderField
+                          label="Stroke"
+                          valueText={`${(
+                            Number.isFinite(selectedPlanningGuide.strokeWidth)
+                              ? selectedPlanningGuide.strokeWidth
+                              : DEFAULT_PLANNING_GUIDE_STROKE_WIDTH
+                          ).toFixed(1)}x`}
+                          min={1}
+                          max={8}
+                          step={0.1}
+                          value={
+                            Number.isFinite(selectedPlanningGuide.strokeWidth)
+                              ? selectedPlanningGuide.strokeWidth
+                              : DEFAULT_PLANNING_GUIDE_STROKE_WIDTH
+                          }
+                          onChange={(event) =>
+                            setPlanningGuides((prev) =>
+                              prev.map((guide) =>
+                                guide.id === selectedPlanningGuide.id
+                                  ? {
+                                      ...guide,
+                                      strokeWidth: Number(event.target.value),
+                                    }
+                                  : guide,
+                              ),
+                            )
+                          }
+                          onDecrease={() =>
+                            setPlanningGuides((prev) =>
+                              prev.map((guide) =>
+                                guide.id === selectedPlanningGuide.id
+                                  ? {
+                                      ...guide,
+                                      strokeWidth: clamp(
+                                        (Number(guide.strokeWidth) ||
+                                          DEFAULT_PLANNING_GUIDE_STROKE_WIDTH) -
+                                          0.2,
+                                        1,
+                                        8,
+                                      ),
+                                    }
+                                  : guide,
+                              ),
+                            )
+                          }
+                          onIncrease={() =>
+                            setPlanningGuides((prev) =>
+                              prev.map((guide) =>
+                                guide.id === selectedPlanningGuide.id
+                                  ? {
+                                      ...guide,
+                                      strokeWidth: clamp(
+                                        (Number(guide.strokeWidth) ||
+                                          DEFAULT_PLANNING_GUIDE_STROKE_WIDTH) +
+                                          0.2,
+                                        1,
+                                        8,
+                                      ),
+                                    }
+                                  : guide,
+                              ),
+                            )
+                          }
+                        />
                         <CompactSliderField
                           label="Label X"
                           valueText={`${Math.round(planningGuideLabelOffsetX)}`}
@@ -16490,8 +19833,74 @@ export default function XrayCalibrationWorkspace() {
                   className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-slate-700`}
                 >
                   <div className="mb-1 font-medium text-violet-800">
-                    Adjust Circle Diameter
+                    {selectedCircle.source === "centerFinder"
+                      ? "Adjust Center Finder"
+                      : "Adjust Circle Diameter"}
                   </div>
+                  <div className="mb-1 text-[10px] text-violet-700">
+                    Hover di desktop atau pilih circle di mobile untuk melihat
+                    info diameter lengkap.
+                  </div>
+                  <CompactSliderField
+                    label="Stroke Width"
+                    valueText={`${(
+                      Number.isFinite(selectedCircle.strokeWidth)
+                        ? selectedCircle.strokeWidth
+                        : DEFAULT_CIRCLE_STROKE_WIDTH
+                    ).toFixed(1)}x`}
+                    min={1}
+                    max={8}
+                    step={0.1}
+                    value={
+                      Number.isFinite(selectedCircle.strokeWidth)
+                        ? selectedCircle.strokeWidth
+                        : DEFAULT_CIRCLE_STROKE_WIDTH
+                    }
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      setCircles((prev) =>
+                        prev.map((item) =>
+                          item.id === selectedCircle.id
+                            ? { ...item, strokeWidth: nextValue }
+                            : item,
+                        ),
+                      );
+                    }}
+                    onDecrease={() =>
+                      setCircles((prev) =>
+                        prev.map((item) =>
+                          item.id === selectedCircle.id
+                            ? {
+                                ...item,
+                                strokeWidth: clamp(
+                                  (Number(item.strokeWidth) ||
+                                    DEFAULT_CIRCLE_STROKE_WIDTH) - 0.2,
+                                  1,
+                                  8,
+                                ),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                    onIncrease={() =>
+                      setCircles((prev) =>
+                        prev.map((item) =>
+                          item.id === selectedCircle.id
+                            ? {
+                                ...item,
+                                strokeWidth: clamp(
+                                  (Number(item.strokeWidth) ||
+                                    DEFAULT_CIRCLE_STROKE_WIDTH) + 0.2,
+                                  1,
+                                  8,
+                                ),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
                   <div className="mb-1">
                     Diameter:{" "}
                     {mmPerPixel !== null
@@ -16874,7 +20283,7 @@ export default function XrayCalibrationWorkspace() {
                         <button
                           type="button"
                           onClick={() =>
-                            focusLayerSettings(selectedCutLayer.id)
+                            openLayerSettingsModal(selectedCutLayer.id)
                           }
                           className={`flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                             showLayerToolbarName ? "gap-1.5 pr-2" : "pr-1.5"
@@ -16889,8 +20298,10 @@ export default function XrayCalibrationWorkspace() {
                           </span>
                           {showLayerToolbarName ? (
                             <span className="max-w-[84px] truncate text-[9px] leading-none font-semibold text-slate-700">
-                              {selectedCutLayer.name ||
-                                `Layer #${selectedCutLayer.id}`}
+                              {selectedCutLayerIds.length > 1
+                                ? `${selectedCutLayerIds.length} Layers`
+                                : selectedCutLayer.name ||
+                                  `Layer #${selectedCutLayer.id}`}
                             </span>
                           ) : null}
                         </button>
@@ -16910,7 +20321,7 @@ export default function XrayCalibrationWorkspace() {
                           icon="settings"
                           label="Buka layer settings"
                           onClick={() =>
-                            focusLayerSettings(selectedCutLayer.id)
+                            openLayerSettingsModal(selectedCutLayer.id)
                           }
                         />
                       </div>
@@ -16921,7 +20332,7 @@ export default function XrayCalibrationWorkspace() {
                     >
                       <button
                         type="button"
-                        onClick={() => focusLayerSettings(selectedCutLayer.id)}
+                        onClick={() => openLayerSettingsModal(selectedCutLayer.id)}
                         className={`mr-1 flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                           showLayerToolbarName ? "gap-2 pr-2" : "pr-1.5"
                         }`}
@@ -16935,8 +20346,10 @@ export default function XrayCalibrationWorkspace() {
                         </span>
                         {showLayerToolbarName ? (
                           <span className="max-w-[100px] truncate text-[10px] font-semibold text-slate-700">
-                            {selectedCutLayer.name ||
-                              `Layer #${selectedCutLayer.id}`}
+                            {selectedCutLayerIds.length > 1
+                              ? `${selectedCutLayerIds.length} Layers`
+                              : selectedCutLayer.name ||
+                                `Layer #${selectedCutLayer.id}`}
                           </span>
                         ) : null}
                       </button>
@@ -16979,7 +20392,7 @@ export default function XrayCalibrationWorkspace() {
                       <LayerToolbarActionButton
                         icon="settings"
                         label="Buka layer settings"
-                        onClick={() => focusLayerSettings(selectedCutLayer.id)}
+                        onClick={() => openLayerSettingsModal(selectedCutLayer.id)}
                       />
                     </div>
                   )}
