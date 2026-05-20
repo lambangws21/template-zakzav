@@ -249,13 +249,13 @@ const PLANNING_GUIDE_COLOR_OPTIONS = [
 ];
 const MOBILE_PANEL_PREVIEW_EVENT = "xray-mobile-panel-preview";
 const TOOL_CONFIG_MODAL_DEFAULT_SIZES = {
-  snapTool: { width: 517, height: 808 },
-  centerFinder: { width: 517, height: 808 },
-  axisBuilder: { width: 517, height: 808 },
-  guideBuilder: { width: 517, height: 808 },
-  layerMove: { width: 517, height: 808 },
-  layerLayout: { width: 517, height: 808 },
-  layerSettings: { width: 517, height: 808 },
+  snapTool: { width: 560, height: 420 },
+  centerFinder: { width: 520, height: 320 },
+  axisBuilder: { width: 520, height: 320 },
+  guideBuilder: { width: 560, height: 360 },
+  layerMove: { width: 980, height: 760 },
+  layerLayout: { width: 980, height: 760 },
+  layerSettings: { width: 1120, height: 820 },
 };
 const TOOL_CONFIG_MODAL_MIN_WIDTH = 420;
 const TOOL_CONFIG_MODAL_MIN_HEIGHT = 260;
@@ -2616,6 +2616,8 @@ export default function XrayCalibrationWorkspace() {
   const layerSettingsPanelRef = useRef(null);
   const exportPanelRef = useRef(null);
   const interactionRef = useRef({ mode: null, startX: 0, startY: 0 });
+  const interactionCanvasRectRef = useRef(null);
+  const activePointerIdRef = useRef(null);
   const objectUrlRef = useRef(null);
   const compareObjectUrlRef = useRef(null);
   const saveDebounceRef = useRef(null);
@@ -2623,7 +2625,6 @@ export default function XrayCalibrationWorkspace() {
   const skipNextAutosaveRef = useRef(false);
   const restoredRef = useRef(false);
   const sidebarResizeRef = useRef(null);
-  const toolConfigModalInteractionRef = useRef(null);
   const templateSyncingRef = useRef(false);
   const sheetImageSyncingRef = useRef(false);
   const mobileLineTapRef = useRef({
@@ -2643,6 +2644,7 @@ export default function XrayCalibrationWorkspace() {
   const historyApplyingRef = useRef(false);
   const measureLegendPreferenceLoadedRef = useRef(false);
   const snapModifierPressedRef = useRef(false);
+  const autoFitSignatureRef = useRef("");
 
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [compareViewport, setCompareViewport] = useState({
@@ -2670,8 +2672,6 @@ export default function XrayCalibrationWorkspace() {
   const [guideBuilderPreviewPoint, setGuideBuilderPreviewPoint] =
     useState(null);
   const [toolConfigModal, setToolConfigModal] = useState(null);
-  const [toolConfigModalFrames, setToolConfigModalFrames] = useState({});
-  const [toolConfigModalPinned, setToolConfigModalPinned] = useState({});
   const [layerSettingsTab, setLayerSettingsTab] = useState("transform");
   const [hkaSets, setHkaSets] = useState([]);
   const [draftHkaPoints, setDraftHkaPoints] = useState([]);
@@ -3415,6 +3415,7 @@ export default function XrayCalibrationWorkspace() {
       setSelectedCutLayerId(null);
       setSelectedPlanningGuideId(null);
       setActiveRightPanel("measure");
+      setTool("circle");
       triggerSelectionPulse("circle", nextCircle.id);
       return nextCircle;
     },
@@ -3625,7 +3626,7 @@ export default function XrayCalibrationWorkspace() {
       }
       return {
         status: safeZoomPercent === 100 ? "warn" : "warn",
-        title: "QC: Mode zoom hanya estimasi",
+        title: "QC: Mode zoom",
         detail:
           safeZoomPercent === null
             ? "Isi zoom source yang valid untuk menghindari mismatch skala."
@@ -3637,7 +3638,7 @@ export default function XrayCalibrationWorkspace() {
     if (!referenceLine) {
       return {
         status: "bad",
-        title: "QC: Belum ada garis referensi",
+        title: "QC: Garis referensi",
         detail:
           "Tarik garis pada ruler X-ray (semakin panjang semakin stabil).",
       };
@@ -4513,6 +4514,97 @@ export default function XrayCalibrationWorkspace() {
     viewport.width,
   ]);
 
+  const clampViewToViewport = useCallback(
+    (nextView) => {
+      if (
+        !nextView ||
+        !viewport.width ||
+        !viewport.height ||
+        !orientedSize.width ||
+        !orientedSize.height
+      ) {
+        return nextView;
+      }
+
+      const corners = [
+        orientPoint(
+          0,
+          0,
+          modelWidth,
+          modelHeight,
+          rotation,
+          flipX,
+          flipY,
+        ),
+        orientPoint(
+          modelWidth,
+          0,
+          modelWidth,
+          modelHeight,
+          rotation,
+          flipX,
+          flipY,
+        ),
+        orientPoint(
+          0,
+          modelHeight,
+          modelWidth,
+          modelHeight,
+          rotation,
+          flipX,
+          flipY,
+        ),
+        orientPoint(
+          modelWidth,
+          modelHeight,
+          modelWidth,
+          modelHeight,
+          rotation,
+          flipX,
+          flipY,
+        ),
+      ].map((point) => ({
+        x: point.x * nextView.scale + nextView.panX,
+        y: point.y * nextView.scale + nextView.panY,
+      }));
+
+      const minX = Math.min(...corners.map((point) => point.x));
+      const maxX = Math.max(...corners.map((point) => point.x));
+      const minY = Math.min(...corners.map((point) => point.y));
+      const maxY = Math.max(...corners.map((point) => point.y));
+      const boundsWidth = maxX - minX;
+      const boundsHeight = maxY - minY;
+
+      let nextPanX = nextView.panX;
+      let nextPanY = nextView.panY;
+
+      if (boundsWidth <= viewport.width) {
+        nextPanX += (viewport.width - boundsWidth) / 2 - minX;
+      } else {
+        if (minX > 0) nextPanX -= minX;
+        if (maxX < viewport.width) nextPanX += viewport.width - maxX;
+      }
+
+      if (boundsHeight <= viewport.height) {
+        nextPanY += (viewport.height - boundsHeight) / 2 - minY;
+      } else {
+        if (minY > 0) nextPanY -= minY;
+        if (maxY < viewport.height) nextPanY += viewport.height - maxY;
+      }
+
+      if (nextPanX === nextView.panX && nextPanY === nextView.panY) {
+        return nextView;
+      }
+
+      return {
+        ...nextView,
+        panX: nextPanX,
+        panY: nextPanY,
+      };
+    },
+    [orientedSize.height, orientedSize.width, viewport.height, viewport.width],
+  );
+
   const scrollToPanel = useCallback((panelRef) => {
     setTimeout(() => {
       const panel = panelRef.current;
@@ -4696,9 +4788,7 @@ export default function XrayCalibrationWorkspace() {
         nextTool !== "axisBuilder" &&
         nextTool !== "guideBuilder"
       ) {
-        if (!toolConfigModal || !toolConfigModalPinned[toolConfigModal]) {
-          setToolConfigModal(null);
-        }
+        setToolConfigModal(null);
       }
       setTool(nextTool);
       if (nextTool === "hkaAuto") {
@@ -4736,8 +4826,6 @@ export default function XrayCalibrationWorkspace() {
       isMobileViewport,
       resetMobileLineTapTarget,
       setDraftFreeLine,
-      toolConfigModal,
-      toolConfigModalPinned,
     ],
   );
 
@@ -4949,8 +5037,37 @@ export default function XrayCalibrationWorkspace() {
   }, [compareMode]);
 
   useEffect(() => {
-    fitImageToViewport();
-  }, [fitImageToViewport]);
+    if (!image || !viewport.width || !viewport.height) return;
+
+    const nextSignature = [
+      imageName || image?.src || "image",
+      modelWidth,
+      modelHeight,
+      rotation,
+      flipX ? 1 : 0,
+      flipY ? 1 : 0,
+    ].join("|");
+
+    if (autoFitSignatureRef.current !== nextSignature) {
+      autoFitSignatureRef.current = nextSignature;
+      fitImageToViewport();
+      return;
+    }
+
+    setView((prev) => clampViewToViewport(prev));
+  }, [
+    clampViewToViewport,
+    fitImageToViewport,
+    flipX,
+    flipY,
+    image,
+    imageName,
+    modelHeight,
+    modelWidth,
+    rotation,
+    viewport.height,
+    viewport.width,
+  ]);
 
   useEffect(
     () => () => {
@@ -5486,7 +5603,7 @@ export default function XrayCalibrationWorkspace() {
       const endpoint = String(sheetMainImageEndpoint || "").trim();
       if (!endpoint) {
         if (!silent) {
-          setNotice("URL endpoint Google Sheet / Apps Script belum diisi.");
+          setNotice("URL Google Sheet");
         }
         return;
       }
@@ -5595,7 +5712,9 @@ export default function XrayCalibrationWorkspace() {
   }, [sheetMainImages, selectedSheetMainImageId]);
 
   const getLocalPoint = useCallback((event) => {
-    const rect = overlayCanvasRef.current?.getBoundingClientRect();
+    const rect =
+      interactionCanvasRectRef.current ||
+      overlayCanvasRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
 
     return {
@@ -9048,6 +9167,20 @@ export default function XrayCalibrationWorkspace() {
       if (!image) return;
 
       event.preventDefault();
+      if (
+        overlayCanvasRef.current &&
+        Number.isFinite(event.pointerId) &&
+        !overlayCanvasRef.current.hasPointerCapture?.(event.pointerId)
+      ) {
+        try {
+          overlayCanvasRef.current.setPointerCapture(event.pointerId);
+          activePointerIdRef.current = event.pointerId;
+        } catch {
+          activePointerIdRef.current = null;
+        }
+      }
+      interactionCanvasRectRef.current =
+        overlayCanvasRef.current?.getBoundingClientRect() || null;
       const point = getLocalPoint(event);
       const imagePoint = screenToImagePoint(point.x, point.y);
       const boundedPoint = clampToImageBounds(imagePoint);
@@ -10822,11 +10955,13 @@ export default function XrayCalibrationWorkspace() {
       if (interactionRef.current.mode === "pan") {
         const dx = point.x - interactionRef.current.startX;
         const dy = point.y - interactionRef.current.startY;
-        setView((prev) => ({
-          ...prev,
-          panX: interactionRef.current.startPanX + dx,
-          panY: interactionRef.current.startPanY + dy,
-        }));
+        setView((prev) =>
+          clampViewToViewport({
+            ...prev,
+            panX: interactionRef.current.startPanX + dx,
+            panY: interactionRef.current.startPanY + dy,
+          }),
+        );
         return;
       }
 
@@ -10964,24 +11099,13 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-cut-layer") {
+        clearSnapPreview();
         const { layerIds = [], origins = [], startImageX, startImageY } =
           interactionRef.current;
         if (!layerIds.length) return;
         const nextImagePoint = screenToImagePoint(point.x, point.y);
         const dx = nextImagePoint.x - startImageX;
         const dy = nextImagePoint.y - startImageY;
-        const firstOrigin = origins[0];
-        let nextCenterX = Number(firstOrigin?.originCenterX || 0) + dx;
-        let nextCenterY = Number(firstOrigin?.originCenterY || 0) + dy;
-
-        const snapResult = resolveSnapWithPreview({
-          x: nextCenterX,
-          y: nextCenterY,
-        });
-        const snappedDx =
-          snapResult.point.x - Number(firstOrigin?.originCenterX || 0);
-        const snappedDy =
-          snapResult.point.y - Number(firstOrigin?.originCenterY || 0);
 
         setCutLayers((prev) =>
           prev.map((layer) =>
@@ -10992,12 +11116,12 @@ export default function XrayCalibrationWorkspace() {
                     Number(
                       origins.find((item) => item.layerId === layer.id)
                         ?.originCenterX || layer.centerX || 0,
-                    ) + snappedDx,
+                    ) + dx,
                   centerY:
                     Number(
                       origins.find((item) => item.layerId === layer.id)
                         ?.originCenterY || layer.centerY || 0,
-                    ) + snappedDy,
+                    ) + dy,
                 }
               : layer,
           ),
@@ -11409,6 +11533,7 @@ export default function XrayCalibrationWorkspace() {
       }
 
       if (interactionRef.current.mode === "move-circle-center") {
+        clearSnapPreview();
         const {
           circleId,
           startImageX,
@@ -11419,16 +11544,10 @@ export default function XrayCalibrationWorkspace() {
         const nextImagePoint = screenToImagePoint(point.x, point.y);
         const dx = nextImagePoint.x - startImageX;
         const dy = nextImagePoint.y - startImageY;
-        const rawCenterPoint = {
+        const nextCenterPoint = clampToImageBounds({
           x: originCenterX + dx,
           y: originCenterY + dy,
-        };
-        const { point: nextCenterPoint } = resolveSnapWithPreview(
-          rawCenterPoint,
-          {
-            excludeRefs: [`circle:${circleId}`],
-          },
-        );
+        });
         setCircles((prev) =>
           prev.map((item) =>
             item.id === circleId
@@ -11621,6 +11740,21 @@ export default function XrayCalibrationWorkspace() {
     }
 
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
+    interactionCanvasRectRef.current = null;
+    if (
+      overlayCanvasRef.current &&
+      activePointerIdRef.current !== null &&
+      overlayCanvasRef.current.hasPointerCapture?.(activePointerIdRef.current)
+    ) {
+      try {
+        overlayCanvasRef.current.releasePointerCapture(
+          activePointerIdRef.current,
+        );
+      } catch {
+        // ignore release failure
+      }
+    }
+    activePointerIdRef.current = null;
     resetMobileLineTapTarget();
     setHistoryPaused(false);
     setGuideBuilderPreviewPoint(null);
@@ -11656,14 +11790,14 @@ export default function XrayCalibrationWorkspace() {
           y: (point.y - prev.panY) / prev.scale,
         };
 
-        return {
+        return clampViewToViewport({
           scale: nextScale,
           panX: point.x - anchor.x * nextScale,
           panY: point.y - anchor.y * nextScale,
-        };
+        });
       });
     },
-    [getLocalPoint, image],
+    [clampViewToViewport, getLocalPoint, image],
   );
 
   useEffect(() => {
@@ -13695,14 +13829,14 @@ export default function XrayCalibrationWorkspace() {
         const anchorX = (centerX - prev.panX) / prev.scale;
         const anchorY = (centerY - prev.panY) / prev.scale;
 
-        return {
+        return clampViewToViewport({
           scale: nextScale,
           panX: centerX - anchorX * nextScale,
           panY: centerY - anchorY * nextScale,
-        };
+        });
       });
     },
-    [viewport.height, viewport.width],
+    [clampViewToViewport, viewport.height, viewport.width],
   );
 
   const goToCalibrationPanel = useCallback(() => {
@@ -13901,161 +14035,6 @@ export default function XrayCalibrationWorkspace() {
       (isImageBackedLayerKind(selectedCutLayer.kind) ||
         selectedCutLayer.kind === "free-line"),
   );
-  const getToolConfigModalDefaultFrame = useCallback(
-    (modalKey) => {
-      const viewportWidth =
-        viewport.width ||
-        (typeof window !== "undefined" ? window.innerWidth : 1440);
-      const viewportHeight =
-        viewport.height ||
-        (typeof window !== "undefined" ? window.innerHeight : 900);
-      const preset =
-        TOOL_CONFIG_MODAL_DEFAULT_SIZES[modalKey] ||
-        TOOL_CONFIG_MODAL_DEFAULT_SIZES.snapTool;
-
-      return {
-        width: clamp(
-          preset.width,
-          TOOL_CONFIG_MODAL_MIN_WIDTH,
-          Math.max(
-            TOOL_CONFIG_MODAL_MIN_WIDTH,
-            viewportWidth - (viewportWidth < 768 ? 24 : 64),
-          ),
-        ),
-        height: clamp(
-          preset.height,
-          TOOL_CONFIG_MODAL_MIN_HEIGHT,
-          Math.max(
-            TOOL_CONFIG_MODAL_MIN_HEIGHT,
-            viewportHeight - (viewportHeight < 768 ? 24 : 72),
-          ),
-        ),
-        x: 0,
-        y: 0,
-      };
-    },
-    [viewport.height, viewport.width],
-  );
-  const activeToolConfigModalFrame = useMemo(() => {
-    if (!toolConfigModal) return null;
-    return (
-      toolConfigModalFrames[toolConfigModal] ||
-      getToolConfigModalDefaultFrame(toolConfigModal)
-    );
-  }, [getToolConfigModalDefaultFrame, toolConfigModal, toolConfigModalFrames]);
-  const activeToolConfigModalPinned = Boolean(
-    toolConfigModal && toolConfigModalPinned[toolConfigModal],
-  );
-  const beginToolConfigModalDrag = useCallback(
-    (kind) => (event) => {
-      if (isMobileViewport || !toolConfigModal) return;
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      toolConfigModalInteractionRef.current = {
-        kind,
-        modalKey: toolConfigModal,
-        startX: event.clientX,
-        startY: event.clientY,
-        startFrame:
-          toolConfigModalFrames[toolConfigModal] ||
-          getToolConfigModalDefaultFrame(toolConfigModal),
-      };
-    },
-    [
-      getToolConfigModalDefaultFrame,
-      isMobileViewport,
-      toolConfigModal,
-      toolConfigModalFrames,
-    ],
-  );
-
-  useEffect(() => {
-    if (!toolConfigModal || isMobileViewport) return;
-    setToolConfigModalFrames((prev) => {
-      if (prev[toolConfigModal]) return prev;
-      return {
-        ...prev,
-        [toolConfigModal]: getToolConfigModalDefaultFrame(toolConfigModal),
-      };
-    });
-  }, [getToolConfigModalDefaultFrame, isMobileViewport, toolConfigModal]);
-
-  useEffect(() => {
-    const handlePointerMove = (event) => {
-      const activeInteraction = toolConfigModalInteractionRef.current;
-      if (!activeInteraction) return;
-
-      const viewportWidth =
-        typeof window !== "undefined" ? window.innerWidth : 1440;
-      const viewportHeight =
-        typeof window !== "undefined" ? window.innerHeight : 900;
-      const deltaX = event.clientX - activeInteraction.startX;
-      const deltaY = event.clientY - activeInteraction.startY;
-
-      setToolConfigModalFrames((prev) => {
-        const startFrame = activeInteraction.startFrame;
-        const nextFrame = { ...startFrame };
-
-        if (activeInteraction.kind === "drag") {
-          const maxOffsetX = Math.max(0, (viewportWidth - nextFrame.width) / 2 - 12);
-          const maxOffsetY = Math.max(
-            0,
-            (viewportHeight - nextFrame.height) / 2 - 12,
-          );
-          nextFrame.x = clamp(startFrame.x + deltaX, -maxOffsetX, maxOffsetX);
-          nextFrame.y = clamp(startFrame.y + deltaY, -maxOffsetY, maxOffsetY);
-        } else {
-          const nextWidth = clamp(
-            startFrame.width + deltaX,
-            TOOL_CONFIG_MODAL_MIN_WIDTH,
-            Math.max(
-              TOOL_CONFIG_MODAL_MIN_WIDTH,
-              viewportWidth - 24 - Math.max(0, startFrame.x),
-            ),
-          );
-          const nextHeight = clamp(
-            startFrame.height + deltaY,
-            TOOL_CONFIG_MODAL_MIN_HEIGHT,
-            Math.max(
-              TOOL_CONFIG_MODAL_MIN_HEIGHT,
-              viewportHeight - 24 - Math.max(0, startFrame.y),
-            ),
-          );
-          nextFrame.width = nextWidth;
-          nextFrame.height = nextHeight;
-          nextFrame.x = clamp(
-            startFrame.x,
-            -Math.max(0, (viewportWidth - nextWidth) / 2 - 12),
-            Math.max(0, (viewportWidth - nextWidth) / 2 - 12),
-          );
-          nextFrame.y = clamp(
-            startFrame.y,
-            -Math.max(0, (viewportHeight - nextHeight) / 2 - 12),
-            Math.max(0, (viewportHeight - nextHeight) / 2 - 12),
-          );
-        }
-
-        return {
-          ...prev,
-          [activeInteraction.modalKey]: nextFrame,
-        };
-      });
-    };
-
-    const handlePointerUp = () => {
-      toolConfigModalInteractionRef.current = null;
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, []);
 
   return (
     <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
@@ -14088,7 +14067,7 @@ export default function XrayCalibrationWorkspace() {
                 sebelum melakukan measurement.
               </p>
               <div
-                className={`mt-3 ${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
+                className={`mt-3 ${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-700`}
               >
                 Langkah cepat: Upload gambar, tarik garis di ruler, simpan
                 kalibrasi, lalu mulai ukur.
@@ -14137,138 +14116,70 @@ export default function XrayCalibrationWorkspace() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className={`fixed inset-0 z-[94] p-4 ${
-              activeToolConfigModalPinned
-                ? "pointer-events-none bg-transparent"
-                : "bg-slate-950/35"
-            }`}
+            className="fixed inset-0 z-[94] flex items-center justify-center bg-slate-950/35 p-4"
             onClick={(event) => {
-              if (
-                !activeToolConfigModalPinned &&
-                event.target === event.currentTarget
-              ) {
+              if (event.target === event.currentTarget) {
                 setToolConfigModal(null);
               }
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
+              initial={{ opacity: 0, scale: 0.96, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 14 }}
               transition={PANEL_SPRING}
-              transformTemplate={({ scale }) =>
-                `translate(-50%, -50%) scale(${scale || 1})`
-              }
-              className={`pointer-events-auto absolute flex w-full max-w-[calc(100vw-24px)] flex-col overflow-hidden ${SOFT_PANEL_CLASS}`}
-              style={{
-                left: isMobileViewport
-                  ? "50%"
-                  : `calc(50% + ${(activeToolConfigModalFrame?.x || 0).toFixed(2)}px)`,
-                top: isMobileViewport
-                  ? "50%"
-                  : `calc(50% + ${(activeToolConfigModalFrame?.y || 0).toFixed(2)}px)`,
-                width: isMobileViewport
-                  ? undefined
-                  : activeToolConfigModalFrame?.width,
-                height: isMobileViewport
-                  ? undefined
-                  : activeToolConfigModalFrame?.height,
-                maxHeight: isMobileViewport
-                  ? "calc(100vh - 24px)"
-                  : activeToolConfigModalFrame?.height,
-              }}
-              onClick={(event) => event.stopPropagation()}
+              className={`w-full ${
+                toolConfigModal === "layerSettings"
+                  ? "max-w-3xl"
+                  : toolConfigModal === "layerMove" || toolConfigModal === "layerLayout"
+                  ? "max-w-2xl"
+                  : toolConfigModal === "snapTool"
+                    ? "max-w-lg"
+                    : "max-w-md"
+              } ${SOFT_PANEL_CLASS}`}
             >
               <div className="mb-2 flex items-center justify-between gap-3">
-                <div
-                  className="flex min-w-0 flex-1 items-center gap-2"
-                  onPointerDown={beginToolConfigModalDrag("drag")}
-                  style={{ cursor: isMobileViewport ? "default" : "grab" }}
-                >
-                  {!isMobileViewport ? (
-                    <span
-                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center ${SOFT_RAISED_CLASS} text-slate-500`}
-                      title="Drag window"
-                    >
-                      <Icon name="pan" className="h-4 w-4" />
-                    </span>
-                  ) : null}
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Icon
-                      name={
-                        toolConfigModal === "snapTool"
-                          ? "lock"
-                          : toolConfigModal === "layerSettings"
-                            ? "settings"
-                          : toolConfigModal === "centerFinder"
-                          ? "centerFinder"
-                          : toolConfigModal === "axisBuilder"
-                            ? "axisBuilder"
-                            : toolConfigModal === "layerMove" ||
-                                toolConfigModal === "layerLayout"
-                              ? "package"
-                              : "guideBuilder"
-                      }
-                      className="h-4 w-4 shrink-0 text-cyan-700"
-                    />
-                    <div className="truncate text-sm font-semibold text-slate-900">
-                      {toolConfigModal === "snapTool"
-                        ? "Snap Tool"
+                <div className="flex items-center gap-2">
+                  <Icon
+                    name={
+                      toolConfigModal === "snapTool"
+                        ? "lock"
                         : toolConfigModal === "layerSettings"
-                          ? "Layer Settings"
+                          ? "settings"
                         : toolConfigModal === "centerFinder"
-                        ? "Center Finder"
+                        ? "centerFinder"
                         : toolConfigModal === "axisBuilder"
-                          ? "Axis Builder"
+                          ? "axisBuilder"
                           : toolConfigModal === "layerMove" ||
                               toolConfigModal === "layerLayout"
-                            ? "Layer Move"
-                            : "Parallel / Perpendicular Guide"}
-                    </div>
+                            ? "package"
+                            : "guideBuilder"
+                    }
+                    className="h-4 w-4 text-cyan-700"
+                  />
+                  <div className="text-sm font-semibold text-slate-900">
+                    {toolConfigModal === "snapTool"
+                      ? "Snap Tool"
+                      : toolConfigModal === "layerSettings"
+                        ? "Layer Settings"
+                      : toolConfigModal === "centerFinder"
+                      ? "Center Finder"
+                      : toolConfigModal === "axisBuilder"
+                        ? "Axis Builder"
+                        : toolConfigModal === "layerMove" ||
+                            toolConfigModal === "layerLayout"
+                          ? "Layer Move"
+                          : "Parallel / Perpendicular Guide"}
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  {!isMobileViewport ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setToolConfigModalPinned((prev) => ({
-                          ...prev,
-                          [toolConfigModal]: !prev[toolConfigModal],
-                        }))
-                      }
-                      className={`px-2 py-1 text-[10px] ${
-                        activeToolConfigModalPinned
-                          ? SOFT_DARK_BUTTON_CLASS
-                          : SOFT_TEXT_BUTTON_CLASS
-                      }`}
-                      title={
-                        activeToolConfigModalPinned
-                          ? "Lepas pin window"
-                          : "Pin window agar tetap terbuka"
-                      }
-                    >
-                      {activeToolConfigModalPinned ? "Pinned" : "Pin"}
-                    </button>
-                  ) : null}
-                  {!isMobileViewport ? (
-                    <span
-                      className={`inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium text-slate-500 ${SOFT_INSET_CLASS}`}
-                    >
-                      {Math.round(activeToolConfigModalFrame?.width || 0)} ×{" "}
-                      {Math.round(activeToolConfigModalFrame?.height || 0)}
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setToolConfigModal(null)}
-                    className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`}
-                  >
-                    Tutup
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setToolConfigModal(null)}
+                  className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`}
+                >
+                  Tutup
+                </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
 
               {toolConfigModal === "snapTool" ? (
                 <div className="flex flex-col gap-2">
@@ -14296,7 +14207,7 @@ export default function XrayCalibrationWorkspace() {
                       { key: "endpoint", label: "End" },
                       { key: "midpoint", label: "Mid" },
                       { key: "intersection", label: "X" },
-                      { key: "center", label: "Ctr" },
+                      { key: "center", label: "Center" },
                       { key: "tangent", label: "Tan" },
                       { key: "perpendicular", label: "Perp" },
                     ].map((item) => (
@@ -15245,7 +15156,7 @@ export default function XrayCalibrationWorkspace() {
               toolConfigModal === "layerLayout" ? (
                 <div className="flex flex-col gap-2">
                   <div
-                    className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
+                    className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700 text-[10px]`}
                   >
                     Multi-select layer dari daftar kanan. Klik body row untuk
                     pilih tunggal atau group aktif. Gunakan tombol `Sel` untuk
@@ -15517,18 +15428,6 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 </div>
               ) : null}
-              </div>
-              {!isMobileViewport ? (
-                <button
-                  type="button"
-                  onPointerDown={beginToolConfigModalDrag("resize")}
-                  className={`absolute right-3 bottom-3 inline-flex h-8 w-8 items-center justify-center ${SOFT_RAISED_CLASS} text-slate-500`}
-                  title="Resize window"
-                  aria-label="Resize window"
-                >
-                  <Icon name="fit" className="h-4 w-4" />
-                </button>
-              ) : null}
             </motion.div>
           </motion.div>
         ) : null}
@@ -15710,9 +15609,9 @@ export default function XrayCalibrationWorkspace() {
               className={`block w-full cursor-pointer ${SOFT_INPUT_CLASS}`}
             />
             {!isLeftSidebarCompact ? (
-              <p className="text-xs text-slate-500">
+              <p className="text-[9px] text-slate-500">
                 {imageName
-                  ? `Background aktif: ${imageName}. Upload di sini untuk mengganti gambar yang diukur.`
+                  ? `Background aktif: ${imageName}.`
                   : "Upload gambar background utama yang akan diukur."}
               </p>
             ) : null}
@@ -15788,7 +15687,7 @@ export default function XrayCalibrationWorkspace() {
                 <p className="text-[11px] text-slate-500">
                   {compareImageName
                     ? `Compare: ${compareImageName}`
-                    : "Belum ada gambar compare."}
+                    : "Belum compare."}
                 </p>
               ) : null}
             </motion.div>
@@ -15832,7 +15731,7 @@ export default function XrayCalibrationWorkspace() {
                 <div
                   className={`${SOFT_INSET_CLASS} px-2 py-1.5 text-[11px] text-slate-600`}
                 >
-                  Total row report: {measurementRows.length}
+                  Total report: {measurementRows.length}
                 </div>
               ) : null}
             </motion.div>
@@ -16957,7 +16856,7 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 </div>
                 {!isLeftSidebarCompact ? (
-                  <div className="mt-1 text-[10px] text-slate-500">
+                  <div className="mt-1 text-[9px] text-slate-500">
                     Pakai jika X-ray tidak punya ruler fisik. Isi nilai lalu
                     buat ruler, atau pilih preset cepat. Garis akan muncul di
                     canvas dan bisa di-adjust sebelum disimpan.
@@ -17087,7 +16986,7 @@ export default function XrayCalibrationWorkspace() {
               ) : null}
               <InfoTooltip text="Urutan: Upload, kalibrasi, ukur, lalu export." />
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5 text-[9px]">
               {[
                 {
                   id: 1,
@@ -17203,7 +17102,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => handleToolChange("hkaAuto")}
-                className={`rounded-md border px-2 py-1 text-xs ${
+                className={`rounded-md border px-2 py-1 text-[9px] ${
                   tool === "hkaAuto"
                     ? "border-cyan-600 bg-cyan-600 text-white"
                     : "border-slate-300 bg-white text-slate-700"
@@ -17214,7 +17113,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => handleLinePresetChange("offset")}
-                className={`rounded-md border px-2 py-1 text-xs ${
+                className={`rounded-md border px-2 py-1 text-[10px] ${
                   linePreset === "offset"
                     ? "border-rose-600 bg-rose-600 text-white"
                     : "border-slate-300 bg-white text-slate-700"
@@ -17317,7 +17216,7 @@ export default function XrayCalibrationWorkspace() {
                         ),
                       )
                     }
-                    className="rounded border border-violet-300 bg-white px-2 py-1 text-xs text-violet-800"
+                    className="rounded border border-violet-300 bg-white px-2 py-1 text-[10px] text-violet-800"
                   >
                     - kecilkan
                   </button>
@@ -17338,7 +17237,7 @@ export default function XrayCalibrationWorkspace() {
                         ),
                       )
                     }
-                    className="rounded border border-violet-300 bg-white px-2 py-1 text-xs text-violet-800"
+                    className="rounded border border-violet-300 bg-white px-2 py-1 text-[10px] text-violet-800"
                   >
                     + besarkan
                   </button>
@@ -17589,7 +17488,7 @@ export default function XrayCalibrationWorkspace() {
               : ""
           } ${showRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
-          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
+          <div className="sticky top-0 z-10 -ml-2 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
             <span
               className={`h-1.5 w-12 justify-self-center ${SOFT_INSET_CLASS} bg-slate-300/70`}
@@ -17601,7 +17500,7 @@ export default function XrayCalibrationWorkspace() {
               aria-label="Tutup workspace panel"
               title="Tutup workspace panel"
             >
-              <Icon name="close" className="m-auto h-4 w-4" />
+              <Icon name="close" className="m-auto h-4 w-4 " />
             </button>
           </div>
           <div
@@ -17914,16 +17813,16 @@ export default function XrayCalibrationWorkspace() {
                 <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
                   <span>Canvas</span>
                   <span
-                    className={`tracking-normal text-cyan-700 normal-case ${isRightSidebarCompact ? "hidden" : ""}`}
+                    className={`tracking-normal text-cyan-700 normal-case text-xs ${isRightSidebarCompact ? "hidden" : ""}`}
                   >
                     {image ? "Background aktif" : "Kosong"}
                   </span>
                 </div>
-                <div className={SIDEBAR_TEXT_BUTTON_GRID_CLASS}>
+                <div className={`${SIDEBAR_TEXT_BUTTON_GRID_CLASS} flex items-center`}>
                   <button
                     type="button"
                     onClick={() => resetWorkspaceState()}
-                    className={`${SOFT_TEXT_BUTTON_CLASS} text-cyan-700`}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} text-cyan-700 text-[9px]`}
                     title="Reset measurement, compare, layer, dan planning"
                   >
                     {isRightSidebarCompact ? "Reset" : "Reset Workspace"}
@@ -17931,14 +17830,14 @@ export default function XrayCalibrationWorkspace() {
                   <button
                     type="button"
                     onClick={() => resetWorkspaceState({ clearImage: true })}
-                    className={SOFT_DANGER_BUTTON_CLASS}
+                    className={`${SOFT_DANGER_BUTTON_CLASS} text-[9px]`}
                     title="Reset total termasuk background"
                   >
                     {isRightSidebarCompact ? "Total" : "Reset Canvas Total"}
                   </button>
                 </div>
                 {!isRightSidebarCompact ? (
-                  <div className="mt-1 text-[10px] text-slate-500">
+                  <div className="mt-1 text-[9px] text-slate-500">
                     Reset total menghapus background, measurement, compare, dan
                     semua layer overlay.
                   </div>
@@ -17955,7 +17854,7 @@ export default function XrayCalibrationWorkspace() {
                   </span>
                 </div>
                 <div
-                  className={`${SOFT_INSET_CLASS} mb-2 px-3 py-2 text-[11px] text-slate-600`}
+                  className={`${SOFT_INSET_CLASS} mb-2 px-3 py-2 text-[9px] text-slate-600`}
                 >
                   {selectedCutLayerIds.length > 0
                     ? `${layerMoveSummaryLabel}. Drag batch berjalan saat tool Move aktif.`
@@ -17973,7 +17872,7 @@ export default function XrayCalibrationWorkspace() {
                     className={`px-2 py-2 text-xs font-medium transition ${
                       tool === "pan"
                         ? SOFT_DARK_BUTTON_CLASS
-                        : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                        : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900 text-[9px]`
                     }`}
                   >
                     Aktifkan Move
@@ -17985,7 +17884,7 @@ export default function XrayCalibrationWorkspace() {
                       openLayerSettingsModal(selectedCutLayer.id)
                     }
                     disabled={!selectedCutLayer}
-                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45 text-[9px]`}
                     >
                       Layer Settings
                     </button>
@@ -17994,7 +17893,7 @@ export default function XrayCalibrationWorkspace() {
                   <button
                     type="button"
                     onClick={() => setToolConfigModal("layerMove")}
-                    className={SOFT_TEXT_BUTTON_CLASS}
+                    className={`{SOFT_TEXT_BUTTON_CLASS} text-[10px]`}
                   >
                     Kelola Layer
                   </button>
@@ -18002,7 +17901,7 @@ export default function XrayCalibrationWorkspace() {
                     type="button"
                     onClick={() => setToolConfigModal("layerMove")}
                     disabled={!cutLayers.length}
-                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45 text-[9px]`}
                   >
                     Urutan & Group
                   </button>
@@ -18300,7 +18199,7 @@ export default function XrayCalibrationWorkspace() {
                   </button>
                 </div>
                 {showMeasureLegend ? (
-                  <div className="mt-2 grid gap-1.5">
+                  <div className="mt-2 grid gap-1.5 text-[10px]">
                     {[
                       { key: "normal", label: "LINE" },
                       { key: "axis", label: "AXIS" },
@@ -18376,7 +18275,7 @@ export default function XrayCalibrationWorkspace() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-1 text-[10px] text-slate-500">
+                  <div className="mt-1 text-[9px] text-slate-500">
                     LINE, AXIS, PARA, PERP, OFFSET, FEM-OFF, GLB-OFF, LLD, RULER, HKA, GUIDE
                   </div>
                 )}
@@ -19200,7 +19099,7 @@ export default function XrayCalibrationWorkspace() {
                 <div
                   className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-amber-900`}
                 >
-                  <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
+                  <div className="mb-1.5 flex items-center justify-between gap-2 text-[9px] font-semibold tracking-wide text-amber-900 uppercase">
                     <span>TKA Planning</span>
                     <span className="tracking-normal text-amber-700 normal-case">
                       {planningGuides.length} guide
@@ -19209,10 +19108,10 @@ export default function XrayCalibrationWorkspace() {
                   <div
                     className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
                   >
-                    <div className="font-medium text-amber-950">
+                    <div className="font-medium text-[9px] text-amber-950">
                       Acuan Planning
                     </div>
-                    <div className="mt-0.5">
+                    <div className="mt-0.5 text-[9px]">
                       {selectedLine
                         ? `Line #${selectedLine.id} | ${lineTypeLabel(selectedLine.type)}${
                             mmPerPixel !== null
@@ -19222,7 +19121,7 @@ export default function XrayCalibrationWorkspace() {
                         : "Pilih satu line dulu dari tab Measure."}
                     </div>
                   </div>
-                  <div className={`mt-1.5 ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}>
+                  <div className={`mt-1.5 text-[9px] ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}>
                     {[
                       {
                         id: "valgusCut",
@@ -19243,7 +19142,7 @@ export default function XrayCalibrationWorkspace() {
                           key={mode.id}
                           type="button"
                           onClick={() => setPlanningGuideMode(mode.id)}
-                          className={`${isActive ? SOFT_DARK_BUTTON_CLASS : `${SOFT_RAISED_CLASS} text-amber-900`} px-2 py-2 text-[11px] font-medium transition`}
+                          className={`${isActive ? SOFT_DARK_BUTTON_CLASS : `${SOFT_RAISED_CLASS} text-amber-900`} px-2 py-2 text-[9px] font-medium transition`}
                         >
                           {mode.label}
                         </button>

@@ -60,9 +60,9 @@ export default function HKAPlanner() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-5 rounded-2xl bg-slate-900 p-5 text-white shadow-sm">
           <h1 className="text-2xl font-bold md:text-3xl">HKA Planner</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-300">
+          <p className="mt-2 max-w-3xl text-sm text-slate-300 text-[9px]">
             Pengukuran mechanical Hip-Knee-Ankle dari full-length X-ray dan
-            estimasi HKAA dari FTA sesuai metode Fem2 + Tib1.
+            estimasi HKA dari FTA sesuai metode Fem2 + Tib1.
           </p>
         </div>
 
@@ -74,7 +74,7 @@ export default function HKAPlanner() {
             type="file"
             accept="image/*"
             onChange={(event) => setImageFile(event.target.files?.[0] || null)}
-            className="mt-2 block w-full rounded-xl border border-slate-200 bg-white p-2 text-sm"
+            className="mt-2 block w-full rounded-xl border border-slate-200 bg-white p-2 text-xs"
           />
         </div>
 
@@ -106,7 +106,7 @@ export default function HKAPlanner() {
               predictedHka={predictedHka}
             />
 
-            <div className="rounded-2xl border bg-white p-4 text-sm text-slate-700 shadow-sm">
+            <div className="rounded-2xl border bg-white p-4 text-xs text-slate-700 shadow-sm text-[10px]">
               <h2 className="font-semibold text-slate-900">Panduan Landmark</h2>
               <ol className="mt-2 list-decimal space-y-1 pl-5">
                 <li>
