@@ -24,7 +24,7 @@ import { extractDriveFileId, normalizeImageUrl } from "@/lib/googleSheetImageUti
 const GOOGLE_SHEET_ENDPOINT =
   process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
   process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL ||
-  "";
+  "https://script.google.com/macros/s/AKfycbzuQk2jdWiJT8ANVR3XdoFQiWInwMGnJM9ZtHUHIf6MipXdNs5moRMx4NV-nXzfJ_6q/exec";
 
 const ACTION_LIST_CANDIDATES = [
   "list_instrument_profiles",
