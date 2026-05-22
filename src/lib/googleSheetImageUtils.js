@@ -10,7 +10,7 @@ function isLikelyDriveId(value) {
 function driveIdToImageUrl(driveId) {
   const cleanId = String(driveId || "").trim();
   if (!cleanId) return "";
-  return `https://drive.google.com/uc?export=view&id=${cleanId}`;
+  return `https://lh3.googleusercontent.com/d/${cleanId}=w1600`;
 }
 
 function pickBestDriveId(primary, fallback) {
@@ -53,15 +53,22 @@ function buildDriveImageCandidates(raw, fallbackDriveId = "") {
   const driveIdFromFallback = extractDriveFileId(fallbackDriveId);
   const resolvedDriveId = pickBestDriveId(driveIdFromValue, driveIdFromFallback);
   if (resolvedDriveId) {
-    return [buildGoogleDriveImageProxyUrl(resolvedDriveId)];
+    const direct = driveIdToImageUrl(resolvedDriveId);
+    const size = 1600;
+    return [
+      buildGoogleDriveImageProxyUrl(resolvedDriveId, size),
+      direct,
+      `https://drive.google.com/thumbnail?id=${encodeURIComponent(resolvedDriveId)}&sz=w${size}`,
+      "/no-image.png",
+    ];
   }
-  if (!value) return [];
-  if (value.startsWith("data:")) return [value];
-  if (value.startsWith("blob:")) return [value];
-  if (value.startsWith("//")) return [`https:${value}`];
-  if (value.startsWith("/")) return [value];
-  if (/^https?:\/\//i.test(value)) return [value];
-  return [];
+  if (!value) return ["/no-image.png"];
+  if (value.startsWith("data:")) return [value, "/no-image.png"];
+  if (value.startsWith("blob:")) return [value, "/no-image.png"];
+  if (value.startsWith("//")) return [`https:${value}`, "/no-image.png"];
+  if (value.startsWith("/")) return [value, "/no-image.png"];
+  if (/^https?:\/\//i.test(value)) return [value, "/no-image.png"];
+  return ["/no-image.png"];
 }
 
 function normalizeImageUrl(raw, fallbackDriveId = "") {

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const REQUEST_TIMEOUT_MS = 90_000;
+const HTML_TAG_PATTERN = /^\s*<(?:!doctype\s+html|html)\b/i;
 
 function isAllowedRemote(url) {
   try {
@@ -18,30 +22,25 @@ function isAllowedRemote(url) {
   }
 }
 
-async function forwardGetToRemote(remoteUrl) {
-  const response = await fetch(remoteUrl, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json,text/csv,text/plain,*/*",
-    },
-    redirect: "follow",
-  });
-  if (!response.ok) {
-    return NextResponse.json(
-      { ok: false, error: `Remote HTTP ${response.status}` },
-      { status: response.status },
-    );
+function parseJsonSafe(raw) {
+  const cleaned = String(raw || "").trim().replace(/^\uFEFF/, "");
+  if (!cleaned) return null;
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}$/);
+    if (!jsonMatch) return null;
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      return null;
+    }
   }
-  const rawText = await response.text();
-  return NextResponse.json({
-    ok: true,
-    payload: rawText,
-    contentType: response.headers.get("content-type") || "",
-  });
 }
 
 async function forwardPostToRemote(remoteUrl, body) {
-  const response = await fetch(remoteUrl, {
+  const payloadBody = JSON.stringify(body || {});
+  let response = await fetch(remoteUrl, {
     method: "POST",
     cache: "no-store",
     redirect: "follow",
@@ -49,28 +48,70 @@ async function forwardPostToRemote(remoteUrl, body) {
       "Content-Type": "application/json",
       Accept: "application/json,text/plain,*/*",
     },
-    body: JSON.stringify(body || {}),
+    body: payloadBody,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
-  const rawText = await response.text();
-  if (!response.ok) {
+  let rawText = await response.text();
+  let parsed = parseJsonSafe(rawText);
+
+  if (!parsed && HTML_TAG_PATTERN.test(rawText)) {
+    const redirectProbe = await fetch(remoteUrl, {
+      method: "POST",
+      cache: "no-store",
+      redirect: "manual",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json,text/plain,*/*",
+      },
+      body: payloadBody,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    const location = redirectProbe.headers.get("location");
+    if (location) {
+      const redirectedUrl = new URL(location, remoteUrl).toString();
+      response = await fetch(redirectedUrl, {
+        method: "GET",
+        cache: "no-store",
+        redirect: "follow",
+        headers: {
+          Accept: "application/json,text/plain,*/*",
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      rawText = await response.text();
+      parsed = parseJsonSafe(rawText);
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") {
     return NextResponse.json(
-      { ok: false, error: `Remote HTTP ${response.status}`, payload: rawText },
-      { status: response.status },
+      {
+        ok: false,
+        status: response.status || 500,
+        remote: {
+          ok: false,
+          status: "error",
+          error: "Apps Script tidak mengembalikan JSON valid.",
+          rawPreview: String(rawText || "").slice(0, 500),
+        },
+      },
+      { status: 500 }
     );
   }
 
-  let parsed = null;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    parsed = { ok: true, payload: rawText };
-  }
+  const remoteStatus = String(parsed?.status || "").toLowerCase();
+  const remoteOk =
+    typeof parsed?.ok === "boolean"
+      ? parsed.ok
+      : remoteStatus
+      ? remoteStatus !== "error"
+      : true;
 
   return NextResponse.json({
-    ok: true,
+    ok: response.ok && remoteOk,
+    status: response.status,
     remote: parsed,
-    raw: rawText,
   });
 }
 
@@ -83,24 +124,58 @@ async function readRequestJson(request) {
 }
 
 export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const remoteUrl = String(searchParams.get("url") || "").trim();
-  if (!remoteUrl) {
-    return NextResponse.json({ ok: false, error: "Parameter url wajib diisi." }, { status: 400 });
-  }
-  if (!isAllowedRemote(remoteUrl)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "Host URL tidak diizinkan. Gunakan endpoint Google Apps Script / Google Sheets.",
-      },
-      { status: 400 },
-    );
-  }
-
   try {
-    return await forwardGetToRemote(remoteUrl);
+    const { searchParams } = new URL(request.url);
+    const remoteUrl = String(searchParams.get("url") || "").trim();
+    if (!remoteUrl) {
+      return NextResponse.json({ ok: false, error: "Parameter url wajib diisi." }, { status: 400 });
+    }
+    if (!isAllowedRemote(remoteUrl)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Host URL tidak diizinkan. Gunakan endpoint Google Apps Script / Google Sheets.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const queryWithoutUrl = new URLSearchParams(searchParams.toString());
+    queryWithoutUrl.delete("url");
+    const target = queryWithoutUrl.toString()
+      ? `${remoteUrl}${remoteUrl.includes("?") ? "&" : "?"}${queryWithoutUrl.toString()}`
+      : remoteUrl;
+
+    const response = await fetch(target, {
+      cache: "no-store",
+      redirect: "follow",
+      headers: {
+        Accept: "application/json,text/csv,text/plain,*/*",
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    const rawText = await response.text();
+    const parsed = parseJsonSafe(rawText);
+    if (!parsed || typeof parsed !== "object") {
+      return NextResponse.json(
+        {
+          ok: false,
+          status: response.status || 500,
+          remote: {
+            ok: false,
+            status: "error",
+            error: "Apps Script GET tidak mengembalikan JSON valid.",
+            rawPreview: String(rawText || "").slice(0, 500),
+          },
+        },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(
+      { ok: response.ok, status: response.status, remote: parsed },
+      { status: response.ok ? 200 : response.status || 500 }
+    );
   } catch (error) {
     return NextResponse.json(
       {

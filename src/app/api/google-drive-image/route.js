@@ -24,9 +24,10 @@ function buildDirectDriveCandidates({ id, url, size }) {
   if (driveId) {
     const safeSize = Math.max(256, Math.min(2400, Number.parseInt(String(size || 1600), 10) || 1600));
     return [
+      `https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}=w${safeSize}`,
       `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w${safeSize}`,
+      `https://drive.usercontent.google.com/uc?id=${encodeURIComponent(driveId)}&export=view`,
       `https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveId)}&export=view&authuser=0`,
-      `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`,
     ];
   }
 

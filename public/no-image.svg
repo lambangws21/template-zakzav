@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <!-- Background Placeholder Box -->
+  <rect width="200" height="200" rx="12" fill="#F3F4F6"/>
+  
+  <!-- Outer Placeholder Circle -->
+  <circle cx="100" cy="90" r="45" fill="#E5E7EB" />
+  
+  <!-- Orthopedic Knee Icon -->
+  <g fill="none" stroke="#9CA3AF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Femur (Upper Bone) -->
+    <path d="M100,55 L100,72 C94,72 88,75 88,80 C88,84 94,84 100,83 C106,84 112,84 112,80 C112,75 106,72 100,72 Z" fill="#E5E7EB" />
+    <!-- Tibia & Fibula (Lower Bones) -->
+    <path d="M100,125 L100,98 C92,98 88,96 88,92 C94,92 97,95 100,95 C103,95 106,92 112,92 C112,96 108,98 100,98 Z" fill="#E5E7EB" />
+    <path d="M116,98 L116,120" stroke-width="4" />
+    <!-- Joint Space / Implied Gap -->
+    <line x1="85" y1="87" x2="115" y2="87" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="1 5" />
+  </g>
+  
+  <!-- "No Image" Text -->
+  <text x="100" y="160" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#9CA3AF" text-anchor="middle">NO IMAGE</text>
+</svg>
