@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
+  CalendarDays,
   Camera,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   ClipboardCheck,
   Download,
@@ -49,7 +53,14 @@ const ACTION_LIST_INSTRUMENT_PROFILE_CANDIDATES = [
   "list",
   "read",
 ];
+const ACTION_LIST_IMPLANT_USAGE_CANDIDATES = [
+  "list_implant_usage",
+  "read_implant_usage",
+  "listimplantusage",
+  "readimplantusage",
+];
 const INSTRUMENT_PROFILE_SHEET_NAME = "InstrumentProfiles";
+const IMPLANT_USAGE_SHEET_NAME = "ImplantUsageSubmissions";
 
 const CHECKLISTS = [
   {
@@ -614,6 +625,48 @@ const PROCEDURE_GROUP_PRIORITY_RULES = {
   ],
 };
 
+const PROCEDURE_STAGE_RULES = {
+  tkr: [
+    { key: "femoral", label: "Femoral", keywords: ["femoral"] },
+    { key: "tibial", label: "Tibial", keywords: ["tibial", "tibia"] },
+    { key: "gap", label: "Gap", keywords: ["gap"] },
+    { key: "trial", label: "Trial", keywords: ["trial"] },
+  ],
+  thr: [
+    { key: "reamer", label: "Reamer", keywords: ["reamer"] },
+    { key: "cup", label: "Cup Trial", keywords: ["cup trial", "cup"] },
+    { key: "liner", label: "Trial Liner", keywords: ["trial liner", "liner"] },
+    { key: "impactor", label: "Impactor", keywords: ["impactor"] },
+  ],
+  bipolar: [
+    { key: "trial_cup", label: "Trial Cup", keywords: ["trial cup", "bipolar trial cup"] },
+    { key: "assembly", label: "Assembly", keywords: ["assembly", "segment"] },
+    { key: "impactor", label: "Impactor", keywords: ["impactor"] },
+    { key: "stem", label: "Stem", keywords: ["stem", "femoral"] },
+  ],
+  stem: [
+    { key: "trial_stem", label: "Trial Stem", keywords: ["trial stem"] },
+    { key: "trial_head", label: "Trial Head", keywords: ["trial head"] },
+    { key: "trial_reamer", label: "Trial Reamer", keywords: ["trial reamer"] },
+    { key: "impactor", label: "Impactor", keywords: ["impactor"] },
+  ],
+};
+
+const CRITICAL_ITEM_KEYWORDS = [
+  "impactor",
+  "drill",
+  "reamer",
+  "guide",
+  "cutting",
+  "chamfer",
+  "jig",
+  "punch",
+  "housing",
+  "alignment",
+  "trial stem",
+  "stem extraction",
+];
+
 const PROCEDURE_THEME_VARIANTS = {
   tkr: {
     iconBg: "bg-blue-100 text-blue-700",
@@ -675,6 +728,50 @@ function getGroupPriority(groupName, procedureKey = "") {
     if (matched) return index + 100;
   }
   return 999;
+}
+
+function parseBooleanLike(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return false;
+  return ["1", "true", "yes", "y", "ya", "ok", "critical", "kritikal"].includes(raw);
+}
+
+function isCriticalInstrument(item) {
+  if (!item || typeof item !== "object") return false;
+  if (Boolean(item.isCritical)) return true;
+  const source = `${item.catalogNo || ""} ${item.name || ""} ${item.category || ""}`.toLowerCase();
+  return CRITICAL_ITEM_KEYWORDS.some((keyword) => source.includes(keyword));
+}
+
+function resolveProcedureStages(procedureKey) {
+  const normalized = normalizeProcedureKey(procedureKey);
+  const base = PROCEDURE_STAGE_RULES[normalized] || [];
+  return base.length
+    ? base
+    : [{ key: "all", label: "Semua Tahap", keywords: [] }];
+}
+
+function matchesGroupStage(groupName, stage) {
+  const raw = String(groupName || "").trim().toLowerCase();
+  const keywords = Array.isArray(stage?.keywords) ? stage.keywords : [];
+  if (!keywords.length) return true;
+  return keywords.some((keyword) => raw.includes(String(keyword || "").toLowerCase()));
+}
+
+function getTodayKey(dateInput = new Date()) {
+  const sourceDate = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(sourceDate.getTime())) return "";
+  return sourceDate.toLocaleDateString("en-CA", { timeZone: "Asia/Makassar" });
+}
+
+function inferProcedureKeyFromText(value) {
+  const raw = String(value || "").toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("tkr") || raw.includes("gordion") || raw.includes("knee")) return "tkr";
+  if (raw.includes("bipolar")) return "bipolar";
+  if (raw.includes("stem")) return "stem";
+  if (raw.includes("thr") || raw.includes("acetabular") || raw.includes("hip")) return "thr";
+  return "";
 }
 
 function normalizeProcedureKey(value) {
@@ -780,6 +877,16 @@ function normalizeInstrumentProfileRows(rows) {
         meta.pieces ||
         1
     );
+    const isCritical =
+      parseBooleanLike(
+        rawRow.isCritical ||
+          rawRow.critical ||
+          rawRow.kritikal ||
+          rawRow.is_critical ||
+          meta.isCritical ||
+          meta.critical ||
+          meta.kritikal
+      ) || false;
     const driveId = extractDriveIdFromRecord({ ...(meta || {}), ...(rawRow || {}) });
     const imageSource =
       driveIdToImageUrl(driveId) ||
@@ -828,6 +935,7 @@ function normalizeInstrumentProfileRows(rows) {
         "Tray",
       imageUrl: toSafeImageSrc(imageSource, ""),
       driveId,
+      isCritical,
       updatedAt: String(rawRow.updatedAt || rawRow.updatedat || "").trim(),
       isRemote: true,
     };
@@ -903,6 +1011,32 @@ function extractProfileRowsFromRemote(remote) {
   return [];
 }
 
+function extractUsageSnapshotFromRemote(remote) {
+  if (!remote || typeof remote !== "object") {
+    return { submissions: [], items: [] };
+  }
+
+  const root = remote?.data && typeof remote.data === "object" ? remote.data : remote;
+  const submissions =
+    root?.submissions ||
+    root?.implantUsageSubmissions ||
+    root?.rows ||
+    root?.items ||
+    remote?.submissions ||
+    remote?.implantUsageSubmissions ||
+    [];
+  const items =
+    root?.itemsRows ||
+    root?.implantUsageItems ||
+    remote?.implantUsageItems ||
+    [];
+
+  return {
+    submissions: Array.isArray(submissions) ? submissions : [],
+    items: Array.isArray(items) ? items : [],
+  };
+}
+
 function mergeProcedureItemsWithProfiles(baseItems, procedureKey, profilesByProcedure) {
   const profileMap = profilesByProcedure?.[procedureKey] || {};
   const merged = [];
@@ -918,6 +1052,10 @@ function mergeProcedureItemsWithProfiles(baseItems, procedureKey, profilesByProc
       qty: Number(profile?.qty || item.qty || 1),
       category: profile?.category || item.category,
       imageUrl: profile?.imageUrl || item.imageUrl || "",
+      isCritical:
+        typeof profile?.isCritical === "boolean"
+          ? profile.isCritical
+          : Boolean(item.isCritical),
     });
   });
 
@@ -931,6 +1069,7 @@ function mergeProcedureItemsWithProfiles(baseItems, procedureKey, profilesByProc
       qty: Number(profile.qty || 1),
       category: profile.category || "Tray",
       imageUrl: profile.imageUrl || "",
+      isCritical: Boolean(profile.isCritical),
       isRemote: true,
     });
   });
@@ -1016,12 +1155,27 @@ export default function NormedInstrumentChecklistApp() {
   const [showOnlyUnchecked, setShowOnlyUnchecked] = useState(false);
   const [showMobilePhotos, setShowMobilePhotos] = useState(false);
   const [superCompactMobile, setSuperCompactMobile] = useState(true);
+  const [checklistMenuOpen, setChecklistMenuOpen] = useState(false);
+  const [operationControlModalOpen, setOperationControlModalOpen] = useState(false);
   const [checklistViewMode, setChecklistViewMode] = useState("group");
   const [activeGroupByProcedure, setActiveGroupByProcedure] = useState({});
   const [collapsedGroupsByProcedure, setCollapsedGroupsByProcedure] = useState({});
+  const [wizardStageByProcedure, setWizardStageByProcedure] = useState({});
   const [profilesByProcedure, setProfilesByProcedure] = useState({});
   const [syncingProfiles, setSyncingProfiles] = useState(false);
   const [profilesLoadedAt, setProfilesLoadedAt] = useState("");
+  const [dailyDashboard, setDailyDashboard] = useState({
+    loading: false,
+    at: "",
+    totalToday: 0,
+    completedToday: 0,
+    byProcedure: {
+      tkr: 0,
+      thr: 0,
+      bipolar: 0,
+      stem: 0,
+    },
+  });
 
   const selected = CHECKLISTS.find((item) => item.key === procedureKey) || CHECKLISTS[0];
   const baseSelectedItems = useMemo(
@@ -1087,6 +1241,9 @@ export default function NormedInstrumentChecklistApp() {
       if (parsed.activeGroupByProcedure && typeof parsed.activeGroupByProcedure === "object") {
         setActiveGroupByProcedure(parsed.activeGroupByProcedure);
       }
+      if (parsed.wizardStageByProcedure && typeof parsed.wizardStageByProcedure === "object") {
+        setWizardStageByProcedure(parsed.wizardStageByProcedure);
+      }
       setCustomInstrumentsByProcedure(sanitizeCustomInstruments(parsed.customInstrumentsByProcedure));
     } catch (error) {
       console.error("Gagal membaca localStorage", error);
@@ -1116,6 +1273,7 @@ export default function NormedInstrumentChecklistApp() {
         superCompactMobile,
         checklistViewMode,
         activeGroupByProcedure,
+        wizardStageByProcedure,
         collapsedGroupsByProcedure,
         customInstrumentsByProcedure,
       })
@@ -1135,6 +1293,7 @@ export default function NormedInstrumentChecklistApp() {
     superCompactMobile,
     checklistViewMode,
     activeGroupByProcedure,
+    wizardStageByProcedure,
     collapsedGroupsByProcedure,
     customInstrumentsByProcedure,
   ]);
@@ -1189,25 +1348,51 @@ export default function NormedInstrumentChecklistApp() {
     return String(activeGroupByProcedure[selected.key] || "all");
   }, [activeGroupByProcedure, selected.key]);
 
+  const procedureStages = useMemo(
+    () => resolveProcedureStages(selected.key),
+    [selected.key]
+  );
+  const activeWizardStageIndex = useMemo(() => {
+    const raw = Number(wizardStageByProcedure[selected.key] ?? 0);
+    if (!Number.isFinite(raw)) return 0;
+    if (!procedureStages.length) return 0;
+    return Math.max(0, Math.min(procedureStages.length - 1, Math.floor(raw)));
+  }, [procedureStages, selected.key, wizardStageByProcedure]);
+  const activeWizardStage = useMemo(
+    () => procedureStages[activeWizardStageIndex] || null,
+    [activeWizardStageIndex, procedureStages]
+  );
+
+  const stageScopedGroupedItems = useMemo(() => {
+    if (checklistViewMode !== "group") return groupedFilteredItems;
+    if (!activeWizardStage) return groupedFilteredItems;
+    const matched = groupedFilteredItems.filter((group) =>
+      matchesGroupStage(group.groupName, activeWizardStage)
+    );
+    return matched.length ? matched : groupedFilteredItems;
+  }, [activeWizardStage, checklistViewMode, groupedFilteredItems]);
+
   const displayedGroupedItems = useMemo(() => {
     if (checklistViewMode !== "group") return groupedFilteredItems;
-    if (activeGroupName === "all") return groupedFilteredItems;
-    return groupedFilteredItems.filter((group) => group.groupName === activeGroupName);
-  }, [activeGroupName, checklistViewMode, groupedFilteredItems]);
+    if (activeGroupName === "all") return stageScopedGroupedItems;
+    return stageScopedGroupedItems.filter((group) => group.groupName === activeGroupName);
+  }, [activeGroupName, checklistViewMode, groupedFilteredItems, stageScopedGroupedItems]);
 
   const visibleItems = useMemo(() => {
     if (checklistViewMode !== "group") return filteredItems;
-    if (activeGroupName === "all") return filteredItems;
-    const selectedGroup = groupedFilteredItems.find(
+    if (activeGroupName === "all") {
+      return stageScopedGroupedItems.flatMap((group) => group.items);
+    }
+    const selectedGroup = stageScopedGroupedItems.find(
       (group) => group.groupName === activeGroupName
     );
     return selectedGroup ? selectedGroup.items : [];
-  }, [activeGroupName, checklistViewMode, filteredItems, groupedFilteredItems]);
+  }, [activeGroupName, checklistViewMode, filteredItems, stageScopedGroupedItems]);
 
   const firstIncompleteGroupName = useMemo(() => {
-    const row = groupedFilteredItems.find((group) => group.completed < group.total);
+    const row = stageScopedGroupedItems.find((group) => group.completed < group.total);
     return row?.groupName || "";
-  }, [groupedFilteredItems]);
+  }, [stageScopedGroupedItems]);
 
   const selectedGroupItemIds = useMemo(() => {
     const map = {};
@@ -1229,6 +1414,32 @@ export default function NormedInstrumentChecklistApp() {
     },
     [selected.key]
   );
+
+  const setWizardStageIndex = useCallback(
+    (nextIndex) => {
+      const safeIndex = Math.max(
+        0,
+        Math.min(procedureStages.length - 1, Math.floor(Number(nextIndex) || 0))
+      );
+      setWizardStageByProcedure((prev) => ({
+        ...prev,
+        [selected.key]: safeIndex,
+      }));
+      setActiveGroupByProcedure((prev) => ({
+        ...prev,
+        [selected.key]: "all",
+      }));
+    },
+    [procedureStages.length, selected.key]
+  );
+
+  const goWizardPrev = useCallback(() => {
+    setWizardStageIndex(activeWizardStageIndex - 1);
+  }, [activeWizardStageIndex, setWizardStageIndex]);
+
+  const goWizardNext = useCallback(() => {
+    setWizardStageIndex(activeWizardStageIndex + 1);
+  }, [activeWizardStageIndex, setWizardStageIndex]);
 
   const previewSourceItems = useMemo(() => {
     if (!previewItem) return visibleItems;
@@ -1278,6 +1489,34 @@ export default function NormedInstrumentChecklistApp() {
     return selected.title;
   }, [selected.key, selected.title, bipolarIncludeStem, thrIncludeStem]);
 
+  const criticalItems = useMemo(
+    () => selectedItems.filter((item) => isCriticalInstrument(item)),
+    [selectedItems]
+  );
+  const checkedCriticalItems = useMemo(
+    () => criticalItems.filter((item) => Boolean(checked[item.id])),
+    [checked, criticalItems]
+  );
+  const mandatoryPhotoPending =
+    checkedCriticalItems.length > 0 && !documentationPhoto && !documentationPreview;
+  const isOperationInfoComplete =
+    Boolean(operatorName.trim()) && Boolean(hospitalName.trim());
+  const stageTotalItems = useMemo(
+    () => stageScopedGroupedItems.reduce((totalCount, group) => totalCount + group.total, 0),
+    [stageScopedGroupedItems]
+  );
+  const stageCompletedItems = useMemo(
+    () =>
+      stageScopedGroupedItems.reduce(
+        (totalCount, group) => totalCount + group.completed,
+        0
+      ),
+    [stageScopedGroupedItems]
+  );
+  const stageProgressPercent = stageTotalItems
+    ? Math.round((stageCompletedItems / stageTotalItems) * 100)
+    : 0;
+
   useEffect(() => {
     const groupEntries = Object.entries(selectedGroupItemIds);
     if (!groupEntries.length) return;
@@ -1306,15 +1545,15 @@ export default function NormedInstrumentChecklistApp() {
   useEffect(() => {
     if (checklistViewMode !== "group") return;
     if (activeGroupName === "all") return;
-    const exists = groupedFilteredItems.some(
+    const exists = stageScopedGroupedItems.some(
       (group) => group.groupName === activeGroupName
     );
     if (!exists) {
       setActiveGroupFilter("all");
     }
-  }, [activeGroupName, checklistViewMode, groupedFilteredItems, setActiveGroupFilter]);
+  }, [activeGroupName, checklistViewMode, setActiveGroupFilter, stageScopedGroupedItems]);
 
-async function refreshInstrumentProfiles(options = {}) {
+  const refreshInstrumentProfiles = useCallback(async (options = {}) => {
     if (!GOOGLE_SHEET_ENDPOINT) return;
     const silent = Boolean(options.silent);
     if (!silent) setMessage("");
@@ -1412,11 +1651,112 @@ async function refreshInstrumentProfiles(options = {}) {
     } finally {
       setSyncingProfiles(false);
     }
-  }
+  }, []);
+
+  const refreshDailyDashboard = useCallback(async (options = {}) => {
+    if (!GOOGLE_SHEET_ENDPOINT) return;
+    const silent = Boolean(options.silent);
+    setDailyDashboard((prev) => ({ ...prev, loading: true }));
+
+    try {
+      let snapshot = { submissions: [], items: [] };
+      let lastError = "";
+
+      for (const actionName of ACTION_LIST_IMPLANT_USAGE_CANDIDATES) {
+        const response = await fetch("/api/google-sheet-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: GOOGLE_SHEET_ENDPOINT,
+            action: actionName,
+            sheet: IMPLANT_USAGE_SHEET_NAME,
+            sheetName: IMPLANT_USAGE_SHEET_NAME,
+            table: IMPLANT_USAGE_SHEET_NAME,
+          }),
+        });
+
+        const result = await response.json();
+        const remote = result?.remote || result || {};
+        const remoteStatus = String(remote?.status || "").toLowerCase();
+        const remoteOk =
+          typeof remote?.ok === "boolean"
+            ? remote.ok
+            : remoteStatus
+              ? remoteStatus !== "error"
+              : true;
+
+        if (!response.ok || !result?.ok || !remoteOk) {
+          lastError = String(
+            remote?.error || remote?.message || result?.error || `HTTP ${response.status}`
+          );
+          continue;
+        }
+
+        snapshot = extractUsageSnapshotFromRemote(remote);
+        if (snapshot.submissions.length) break;
+      }
+
+      if (!snapshot.submissions.length && lastError && !silent) {
+        setMessage(lastError);
+      }
+
+      const todayKey = getTodayKey(new Date());
+      const byProcedure = { tkr: 0, thr: 0, bipolar: 0, stem: 0 };
+      let completedToday = 0;
+      let totalToday = 0;
+
+      snapshot.submissions.forEach((submission) => {
+        const dateValue =
+          submission?.operationDate ||
+          submission?.createdAt ||
+          submission?.timestamp ||
+          submission?.created_at ||
+          "";
+        if (getTodayKey(dateValue) !== todayKey) return;
+        totalToday += 1;
+
+        const procedureKey =
+          normalizeProcedureKey(submission?.procedureKey) ||
+          inferProcedureKeyFromText(submission?.systemName || submission?.procedureTitle || "");
+        if (procedureKey && Object.prototype.hasOwnProperty.call(byProcedure, procedureKey)) {
+          byProcedure[procedureKey] += 1;
+        }
+
+        const completionPercent = Number(submission?.progress || 0);
+        if (
+          completionPercent >= 100 ||
+          String(submission?.status || "").toLowerCase().includes("lengkap")
+        ) {
+          completedToday += 1;
+        }
+      });
+
+      setDailyDashboard({
+        loading: false,
+        at: new Date().toISOString(),
+        totalToday,
+        completedToday,
+        byProcedure,
+      });
+    } catch (error) {
+      setDailyDashboard((prev) => ({ ...prev, loading: false }));
+      if (!silent) {
+        setMessage(error?.message || "Gagal memuat dashboard harian.");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     refreshInstrumentProfiles({ silent: true });
-  }, []);
+    refreshDailyDashboard({ silent: true });
+  }, [refreshDailyDashboard, refreshInstrumentProfiles]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      refreshDailyDashboard({ silent: true });
+    }, 60000);
+    return () => window.clearInterval(interval);
+  }, [refreshDailyDashboard]);
 
   const openPreview = useCallback((item) => {
     if (!item) return;
@@ -1458,7 +1798,55 @@ async function refreshInstrumentProfiles(options = {}) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [previewItem, closePreview, goToPreviousPreviewItem, goToNextPreviewItem]);
 
+  useEffect(() => {
+    if (!checklistMenuOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setChecklistMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [checklistMenuOpen]);
+
+  useEffect(() => {
+    if (!operationControlModalOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      setOperationControlModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [operationControlModalOpen, isOperationInfoComplete]);
+
+  const openOperationControlModal = useCallback(() => {
+    setOperationControlModalOpen(true);
+  }, []);
+
+  const closeOperationControlModal = useCallback(() => {
+    setOperationControlModalOpen(false);
+  }, []);
+
+  const handleProcedureChange = useCallback(
+    (nextProcedureKey) => {
+      if (!nextProcedureKey || nextProcedureKey === procedureKey) return;
+      setProcedureKey(nextProcedureKey);
+      setOperationControlModalOpen(true);
+    },
+    [procedureKey]
+  );
+
+  const ensureChecklistUnlocked = useCallback(() => {
+    if (isOperationInfoComplete) return true;
+    setOperationControlModalOpen(true);
+    setMessage(
+      "Lengkapi Nama TS/operator dan rumah sakit di Operasi & Kontrol Tambahan sebelum mulai checklist."
+    );
+    return false;
+  }, [isOperationInfoComplete]);
+
   function toggleItem(id) {
+    if (!ensureChecklistUnlocked()) return;
     setChecked((prev) => {
       const next = { ...prev };
       if (next[id]) {
@@ -1471,6 +1859,7 @@ async function refreshInstrumentProfiles(options = {}) {
   }
 
   function setCheckedForItems(items, shouldCheck) {
+    if (!ensureChecklistUnlocked()) return;
     if (!Array.isArray(items) || !items.length) return;
     setChecked((prev) => {
       const next = { ...prev };
@@ -1486,10 +1875,12 @@ async function refreshInstrumentProfiles(options = {}) {
   }
 
   function checkAllVisibleItems() {
+    if (!ensureChecklistUnlocked()) return;
     setCheckedForItems(visibleItems, true);
   }
 
   function uncheckAllVisibleItems() {
+    if (!ensureChecklistUnlocked()) return;
     setCheckedForItems(visibleItems, false);
   }
 
@@ -1529,7 +1920,7 @@ async function refreshInstrumentProfiles(options = {}) {
 
   function setAllGroupsCollapsed(shouldCollapse) {
     const targetGroups =
-      activeGroupName === "all" ? groupedFilteredItems : displayedGroupedItems;
+      activeGroupName === "all" ? stageScopedGroupedItems : displayedGroupedItems;
     setCollapsedGroupsByProcedure((prev) => {
       const byProcedure = { ...(prev[selected.key] || {}) };
       targetGroups.forEach((group) => {
@@ -1581,6 +1972,7 @@ async function refreshInstrumentProfiles(options = {}) {
       qty: Math.round(qty),
       category: "Tambahan",
       imageUrl: "",
+      isCritical: false,
       isCustom: true,
     };
 
@@ -1661,6 +2053,7 @@ async function refreshInstrumentProfiles(options = {}) {
         category: item.category,
         qty: item.qty,
         isCustom: Boolean(item.isCustom),
+        isCritical: isCriticalInstrument(item),
         checked: Boolean(checked[item.id]),
       })),
     };
@@ -1680,6 +2073,7 @@ async function refreshInstrumentProfiles(options = {}) {
         `CAT:${item.catalogNo}`,
         `QTY:${item.qty}`,
         `GROUP:${item.category}`,
+        `CRITICAL:${isCriticalInstrument(item) ? "YES" : "NO"}`,
         `CHECKED:${checked[item.id] ? "YES" : "NO"}`,
       ].join(" | "),
       imageUpload: null,
@@ -1703,6 +2097,7 @@ async function refreshInstrumentProfiles(options = {}) {
         category: item.category,
         qty: item.qty,
         isCustom: Boolean(item.isCustom),
+        isCritical: isCriticalInstrument(item),
         checked: Boolean(checked[item.id]),
       })),
       patientStickerUpload: photoBase64
@@ -1749,6 +2144,13 @@ async function refreshInstrumentProfiles(options = {}) {
       return;
     }
 
+    if (mandatoryPhotoPending) {
+      setMessage(
+        `Upload foto dokumentasi wajib karena ada ${checkedCriticalItems.length} item kritikal yang sudah dicentang.`
+      );
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -1789,6 +2191,7 @@ async function refreshInstrumentProfiles(options = {}) {
           ? `Checklist berhasil disimpan ke Google Sheet. ID: ${remote.submissionId}`
           : "Checklist berhasil disimpan ke Google Sheet."
       );
+      refreshDailyDashboard({ silent: true });
     } catch (error) {
       console.error(error);
       setMessage(error.message || "Terjadi kesalahan saat menyimpan.");
@@ -1933,6 +2336,11 @@ async function refreshInstrumentProfiles(options = {}) {
                   Tambahan
                 </p>
               ) : null}
+              {isCriticalInstrument(item) ? (
+                <p className="mt-1 inline-flex rounded-md bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                  Kritikal · Wajib Foto
+                </p>
+              ) : null}
               <p className={`${superCompactMobile ? "mt-0.5 text-[11px]" : "mt-1 text-xs"} text-slate-500`}>
                 Piece: {item.qty}
               </p>
@@ -1989,6 +2397,11 @@ async function refreshInstrumentProfiles(options = {}) {
                 Tambahan
               </p>
             ) : null}
+            {isCriticalInstrument(item) ? (
+              <p className="mt-1 inline-flex rounded-md bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                Kritikal · Wajib Foto
+              </p>
+            ) : null}
           </div>
           <p className="text-sm text-slate-600">{item.qty}</p>
           <div className="flex items-center justify-end gap-2">
@@ -2015,6 +2428,128 @@ async function refreshInstrumentProfiles(options = {}) {
       </motion.div>
     );
   };
+
+  const checklistControlPanel = (
+    <div className="rounded-[24px] border border-slate-200/90 bg-white/95 p-3 shadow-[0_18px_35px_rgba(15,23,42,0.12)] backdrop-blur md:p-4">
+      <div className="inline-flex w-full rounded-[20px] bg-slate-200/80 p-1.5">
+        <button
+          type="button"
+          onClick={() => setChecklistViewMode("group")}
+          className={`flex-1 rounded-[16px] px-4 py-2 text-sm font-semibold transition ${
+            checklistViewMode === "group"
+              ? "bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Group Checklist
+        </button>
+        <button
+          type="button"
+          onClick={() => setChecklistViewMode("all")}
+          className={`flex-1 rounded-[16px] px-4 py-2 text-sm font-semibold transition ${
+            checklistViewMode === "all"
+              ? "bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          All Checklist
+        </button>
+      </div>
+
+      <div className="my-3 h-px bg-slate-200" />
+
+      {checklistViewMode === "group" ? (
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="relative">
+            <FloatingSelectField
+              value={activeGroupName}
+              onChange={(event) => setActiveGroupFilter(event.target.value)}
+              label="Group Checklist"
+              selectClassName="h-12 appearance-none rounded-2xl border-2 border-blue-200 bg-blue-50/50 pr-10 text-sm font-medium text-slate-800 focus:border-blue-300"
+            >
+              <option value="all">Semua Group</option>
+              {stageScopedGroupedItems.map((group) => (
+                <option key={group.groupName} value={group.groupName}>
+                  {group.groupName} ({group.completed}/{group.total})
+                </option>
+              ))}
+            </FloatingSelectField>
+            <ChevronDown
+              size={18}
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={focusFirstIncompleteGroup}
+            disabled={!firstIncompleteGroupName}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Eye size={18} />
+            Fokus Belum Selesai
+          </button>
+        </div>
+      ) : null}
+
+      <div className={`mt-2 grid gap-2 ${checklistViewMode === "group" ? "md:grid-cols-2" : ""}`}>
+        <button
+          type="button"
+          onClick={checkAllVisibleItems}
+          disabled={!visibleItems.length}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Check size={20} />
+          Centang Semua Item
+        </button>
+        <button
+          type="button"
+          onClick={uncheckAllVisibleItems}
+          disabled={!visibleItems.length}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-rose-600 bg-rose-50 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <X size={20} />
+          Batal Semua Item
+        </button>
+      </div>
+
+      {checklistViewMode === "group" ? (
+        <div className="mt-2 grid gap-2 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setAllGroupsCollapsed(true)}
+            disabled={!displayedGroupedItems.length}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-500 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <MinusCircle size={19} />
+            Tutup Semua Group
+          </button>
+          <button
+            type="button"
+            onClick={() => setAllGroupsCollapsed(false)}
+            disabled={!displayedGroupedItems.length}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-500 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Expand size={19} />
+            Buka Semua Group
+          </button>
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-sm text-slate-600">
+        Tercentang <span className="font-semibold text-slate-900">{visibleCompletedCount}/{visibleItems.length}</span>{" "}
+        item terlihat
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        Item kritikal tercentang:{" "}
+        <span className="font-semibold text-rose-700">{checkedCriticalItems.length}</span>
+      </p>
+      <div className="mt-3 h-px bg-slate-200" />
+      <p className="mt-3 text-sm font-medium text-slate-700">
+        Total: <span className="font-bold text-slate-900">{visibleItems.length} Instrument</span>
+      </p>
+    </div>
+  );
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50/40 to-indigo-100/40 px-4 py-6 text-slate-900 md:px-8">
@@ -2068,7 +2603,7 @@ async function refreshInstrumentProfiles(options = {}) {
               return (
                 <button
                   key={procedure.key}
-                  onClick={() => setProcedureKey(procedure.key)}
+                  onClick={() => handleProcedureChange(procedure.key)}
                   className={`shrink-0 rounded-xl border px-3 py-2 text-left shadow-sm ${
                     active
                       ? `${theme.active} text-slate-900`
@@ -2101,7 +2636,7 @@ async function refreshInstrumentProfiles(options = {}) {
             return (
               <button
                 key={procedure.key}
-                onClick={() => setProcedureKey(procedure.key)}
+                onClick={() => handleProcedureChange(procedure.key)}
                 className={`rounded-3xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${
                   active ? theme.active : theme.inactive
                 }`}
@@ -2125,170 +2660,212 @@ async function refreshInstrumentProfiles(options = {}) {
           })}
         </section>
 
-        <section className="rounded-3xl border border-white/80 bg-gradient-to-r from-white via-slate-50 to-blue-50 px-4 py-4 shadow-[0_10px_24px_rgba(30,41,59,0.12)] md:px-6">
-          <h3 className="text-2xl font-bold text-slate-900">Operasi &amp; Kontrol Tambahan</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Atur mode tray, tambah instrument, dan isi informasi operasi dengan cepat.
-          </p>
-        </section>
-
-        {procedureKey === "bipolar" ? (
-          <section className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 p-3 shadow-sm">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-800">Mode Tray Bipolar</p>
-                <p className="text-xs text-slate-500">
-                  Pilih sumber list: hanya tray bipolar atau gabung tray stem + bipolar.
-                </p>
-              </div>
-              <div className="inline-flex rounded-xl border border-violet-200 bg-white/80 p-1">
-                <button
-                  type="button"
-                  onClick={() => setBipolarIncludeStem(false)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                    !bipolarIncludeStem
-                      ? "bg-violet-700 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  Bipolar saja
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBipolarIncludeStem(true)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                    bipolarIncludeStem
-                      ? "bg-violet-700 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  Bipolar + Stem
-                </button>
-              </div>
+        <section className="rounded-3xl border border-white/80 bg-gradient-to-br from-white via-slate-50 to-blue-50 p-4 shadow-[0_14px_30px_rgba(30,41,59,0.12)] md:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Wizard Per Tahap
+              </p>
+              <h3 className="text-lg font-bold text-slate-900 md:text-xl">
+                {selected.key.toUpperCase()} · {activeWizardStage?.label || "Tahap"}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {stageCompletedItems}/{stageTotalItems} item tahap ini selesai ({stageProgressPercent}%)
+              </p>
             </div>
-          </section>
-        ) : null}
-
-        {procedureKey === "thr" ? (
-          <section className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3 shadow-sm">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-800">Mode Tray THR</p>
-                <p className="text-xs text-slate-500">
-                  Pilih list THR acetabular saja atau gabung THR + Stem.
-                </p>
-              </div>
-              <div className="inline-flex rounded-xl border border-emerald-200 bg-white/80 p-1">
-                <button
-                  type="button"
-                  onClick={() => setThrIncludeStem(false)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                    !thrIncludeStem
-                      ? "bg-emerald-700 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  THR Acetabular
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setThrIncludeStem(true)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                    thrIncludeStem
-                      ? "bg-emerald-700 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  THR + Stem
-                </button>
-              </div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">
+              Step {activeWizardStageIndex + 1}/{procedureStages.length}
             </div>
-          </section>
-        ) : null}
-
-        <details className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm md:hidden">
-          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-800">
-            Instrument Tambahan
-            <ChevronDown size={16} className="text-slate-500" />
-          </summary>
-          <div className="mt-3">{extraInstrumentContent}</div>
-        </details>
-
-        <section className="hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm md:block">
-          {extraInstrumentContent}
-        </section>
-
-        <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm md:hidden">
-          <div className="grid gap-3">
-            <FloatingInputField
-              value={operatorName}
-              onChange={(event) => setOperatorName(event.target.value)}
-              label="Nama TS / operator checklist"
-              required
-            />
-            <FloatingInputField
-              value={hospitalName}
-              onChange={(event) => setHospitalName(event.target.value)}
-              label="Rumah sakit / lokasi"
-              required
-            />
           </div>
-          <details className="mt-3 rounded-xl border border-indigo-200 bg-white/80 px-3 py-2">
-            <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Data Tambahan
-              <ChevronDown size={14} className="text-slate-500" />
-            </summary>
-            <div className="mt-3 grid gap-3">
-              <FloatingInputField
-                value={doctorName}
-                onChange={(event) => setDoctorName(event.target.value)}
-                label="Dokter operator"
-              />
-              <FloatingInputField
-                value={patientCode}
-                onChange={(event) => setPatientCode(event.target.value)}
-                label="Kode pasien / MRN"
-              />
-              <FloatingInputField
-                value={caseNote}
-                onChange={(event) => setCaseNote(event.target.value)}
-                label="Catatan khusus"
-              />
+          <div className="mt-3 flex flex-wrap gap-2">
+            {procedureStages.map((stage, index) => {
+              const active = index === activeWizardStageIndex;
+              return (
+                <button
+                  key={stage.key}
+                  type="button"
+                  onClick={() => setWizardStageIndex(index)}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                    active
+                      ? "border-blue-700 bg-blue-900 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {stage.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={goWizardPrev}
+              disabled={activeWizardStageIndex <= 0}
+              className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <ChevronLeft size={14} /> Prev
+            </button>
+            <button
+              type="button"
+              onClick={goWizardNext}
+              disabled={activeWizardStageIndex >= procedureStages.length - 1}
+              className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <CalendarDays size={14} /> Dashboard Harian
+              </p>
+              <p className="text-sm font-semibold text-slate-900">
+                Submission hari ini ({getTodayKey(new Date())})
+              </p>
             </div>
-          </details>
+            <button
+              type="button"
+              onClick={() => refreshDailyDashboard()}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {dailyDashboard.loading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCcw size={14} />
+              )}
+              Refresh
+            </button>
+          </div>
+          <div className="mt-3 space-y-2 md:hidden">
+            <div className="grid grid-cols-2 gap-2">
+              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase text-slate-500">Total</p>
+                <p className="text-base font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+              </article>
+              <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase text-emerald-700">Lengkap</p>
+                <p className="text-base font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+              </article>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-blue-700">TKR: {dailyDashboard.byProcedure.tkr}</span>
+                <span className="font-semibold text-violet-700">Bipolar: {dailyDashboard.byProcedure.bipolar}</span>
+                <span className="font-semibold text-teal-700">
+                  THR/Stem: {dailyDashboard.byProcedure.thr + dailyDashboard.byProcedure.stem}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 hidden gap-2 sm:grid-cols-2 xl:grid-cols-5 md:grid">
+            <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-slate-500">Total Hari Ini</p>
+              <p className="text-lg font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+            </article>
+            <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-emerald-700">Lengkap</p>
+              <p className="text-lg font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+            </article>
+            <article className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-blue-700">TKR</p>
+              <p className="text-lg font-bold text-blue-900">{dailyDashboard.byProcedure.tkr}</p>
+            </article>
+            <article className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-violet-700">Bipolar</p>
+              <p className="text-lg font-bold text-violet-900">{dailyDashboard.byProcedure.bipolar}</p>
+            </article>
+            <article className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-teal-700">THR / Stem</p>
+              <p className="text-lg font-bold text-teal-900">
+                {dailyDashboard.byProcedure.thr + dailyDashboard.byProcedure.stem}
+              </p>
+            </article>
+          </div>
         </section>
 
-        <section className="hidden gap-4 rounded-3xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-4 shadow-sm md:grid md:grid-cols-2 xl:grid-cols-5">
-          <FloatingInputField
-            value={operatorName}
-            onChange={(event) => setOperatorName(event.target.value)}
-            label="Nama TS / operator checklist"
-            required
-          />
-          <FloatingInputField
-            value={hospitalName}
-            onChange={(event) => setHospitalName(event.target.value)}
-            label="Rumah sakit / lokasi"
-            required
-          />
-          <FloatingInputField
-            value={doctorName}
-            onChange={(event) => setDoctorName(event.target.value)}
-            label="Dokter operator"
-          />
-          <FloatingInputField
-            value={patientCode}
-            onChange={(event) => setPatientCode(event.target.value)}
-            label="Kode pasien / MRN"
-          />
-          <FloatingInputField
-            value={caseNote}
-            onChange={(event) => setCaseNote(event.target.value)}
-            label="Catatan khusus"
-          />
+        <section className="rounded-3xl border border-white/80 bg-gradient-to-r from-white via-slate-50 to-blue-50 px-4 py-4 shadow-[0_10px_24px_rgba(30,41,59,0.12)] md:px-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-2xl font-bold text-slate-900">Operasi &amp; Kontrol Tambahan</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Form mode tray, instrument tambahan, dan informasi operasi sekarang ada di modal popup.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-xl px-3 py-2 text-xs font-semibold ${
+                  isOperationInfoComplete
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-amber-100 text-amber-800"
+                }`}
+              >
+                {isOperationInfoComplete ? "Data wajib lengkap" : "Lengkapi data wajib dulu"}
+              </span>
+              <button
+                type="button"
+                onClick={openOperationControlModal}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Buka Form Operasi
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-slate-500">Prosedur Aktif</p>
+              <p className="text-sm font-bold text-slate-900">{selected.key.toUpperCase()}</p>
+            </article>
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-slate-500">Mode Tray</p>
+              <p className="text-sm font-bold text-slate-900">
+                {selected.key === "bipolar"
+                  ? bipolarIncludeStem
+                    ? "Bipolar + Stem"
+                    : "Bipolar saja"
+                  : selected.key === "thr"
+                    ? thrIncludeStem
+                      ? "THR + Stem"
+                      : "THR Acetabular"
+                    : "Default"}
+              </p>
+            </article>
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-slate-500">Operator</p>
+              <p className="truncate text-sm font-bold text-slate-900">{operatorName || "-"}</p>
+            </article>
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase text-slate-500">Rumah Sakit</p>
+              <p className="truncate text-sm font-bold text-slate-900">{hospitalName || "-"}</p>
+            </article>
+          </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+        {!isOperationInfoComplete ? (
+          <section className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold">
+                Lengkapi Nama TS/operator dan Rumah Sakit dulu sebelum checklist.
+              </p>
+              <button
+                type="button"
+                onClick={openOperationControlModal}
+                className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+              >
+                Lengkapi Sekarang
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        <section
+          className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6 ${
+            isOperationInfoComplete ? "" : "pointer-events-none opacity-60"
+          }`}
+        >
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-xl font-bold md:text-2xl">{selected.title}</h2>
@@ -2365,6 +2942,27 @@ async function refreshInstrumentProfiles(options = {}) {
           {message ? (
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               {message}
+            </div>
+          ) : null}
+
+          {checkedCriticalItems.length > 0 ? (
+            <div
+              className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
+                mandatoryPhotoPending
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-emerald-300 bg-emerald-50 text-emerald-800"
+              }`}
+            >
+              <p className="inline-flex items-center gap-2 font-semibold">
+                <AlertTriangle size={15} />
+                Mandatory Foto Item Kritikal
+              </p>
+              <p className="mt-1 text-xs">
+                {checkedCriticalItems.length} item kritikal sudah dicentang.
+                {mandatoryPhotoPending
+                  ? " Upload foto dokumentasi sebelum Simpan ke Sheet."
+                  : " Foto dokumentasi sudah valid."}
+              </p>
             </div>
           ) : null}
 
@@ -2502,120 +3100,26 @@ async function refreshInstrumentProfiles(options = {}) {
             </div>
           ) : null}
 
-          <div className="mt-4 rounded-[24px] border border-slate-200/90 bg-white/90 p-3 shadow-[0_18px_35px_rgba(15,23,42,0.12)] backdrop-blur md:p-4">
-            <div className="inline-flex w-full rounded-[20px] bg-slate-200/80 p-1.5">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Menu Checklist
+                </p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {checklistViewMode === "group" ? "Group Checklist" : "All Checklist"} ·{" "}
+                  {visibleCompletedCount}/{visibleItems.length} item tercentang
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => setChecklistViewMode("group")}
-                className={`flex-1 rounded-[16px] px-4 py-2 text-sm font-semibold transition ${
-                  checklistViewMode === "group"
-                    ? "bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+                onClick={() => setChecklistMenuOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
               >
-                Group Checklist
-              </button>
-              <button
-                type="button"
-                onClick={() => setChecklistViewMode("all")}
-                className={`flex-1 rounded-[16px] px-4 py-2 text-sm font-semibold transition ${
-                  checklistViewMode === "all"
-                    ? "bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                All Checklist
+                <SlidersHorizontal size={14} />
+                Buka Menu
               </button>
             </div>
-
-            <div className="my-3 h-px bg-slate-200" />
-
-            {checklistViewMode === "group" ? (
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="relative">
-                  <FloatingSelectField
-                    value={activeGroupName}
-                    onChange={(event) => setActiveGroupFilter(event.target.value)}
-                    label="Group Checklist"
-                    selectClassName="h-12 appearance-none rounded-2xl border-2 border-blue-200 bg-blue-50/50 pr-10 text-sm font-medium text-slate-800 focus:border-blue-300"
-                  >
-                    <option value="all">Semua Group</option>
-                    {groupedFilteredItems.map((group) => (
-                      <option key={group.groupName} value={group.groupName}>
-                        {group.groupName} ({group.completed}/{group.total})
-                      </option>
-                    ))}
-                  </FloatingSelectField>
-                  <ChevronDown
-                    size={18}
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={focusFirstIncompleteGroup}
-                  disabled={!firstIncompleteGroupName}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Eye size={18} />
-                  Fokus Belum Selesai
-                </button>
-              </div>
-            ) : null}
-
-            <div className={`mt-2 grid gap-2 ${checklistViewMode === "group" ? "md:grid-cols-2" : ""}`}>
-              <button
-                type="button"
-                onClick={checkAllVisibleItems}
-                disabled={!visibleItems.length}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Check size={20} />
-                Centang Semua Item
-              </button>
-              <button
-                type="button"
-                onClick={uncheckAllVisibleItems}
-                disabled={!visibleItems.length}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-rose-600 bg-rose-50 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <X size={20} />
-                Batal Semua Item
-              </button>
-            </div>
-
-            {checklistViewMode === "group" ? (
-              <div className="mt-2 grid gap-2 md:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setAllGroupsCollapsed(true)}
-                  disabled={!displayedGroupedItems.length}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-500 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <MinusCircle size={19} />
-                  Tutup Semua Group
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAllGroupsCollapsed(false)}
-                  disabled={!displayedGroupedItems.length}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-500 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Expand size={19} />
-                  Buka Semua Group
-                </button>
-              </div>
-            ) : null}
-
-            <p className="mt-3 text-sm text-slate-600">
-              Tercentang <span className="font-semibold text-slate-900">{visibleCompletedCount}/{visibleItems.length}</span>{" "}
-              item terlihat
-            </p>
-            <div className="mt-3 h-px bg-slate-200" />
-            <p className="mt-3 text-sm font-medium text-slate-700">
-              Total: <span className="font-bold text-slate-900">{visibleItems.length} Instrument</span>
-            </p>
           </div>
 
           <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
@@ -2731,6 +3235,238 @@ async function refreshInstrumentProfiles(options = {}) {
         </section>
 
         <AnimatePresence>
+          {operationControlModalOpen ? (
+            <motion.div
+              key="operation-control-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+              onClick={closeOperationControlModal}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Operasi & Kontrol Tambahan
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {selected.title}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeOperationControlModal}
+                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-white"
+                    aria-label="Tutup form operasi"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="max-h-[calc(90vh-126px)] space-y-4 overflow-y-auto p-4">
+                  {!isOperationInfoComplete ? (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                      Isi minimal <span className="font-bold">Nama TS/operator</span> dan{" "}
+                      <span className="font-bold">Rumah sakit/lokasi</span> untuk lanjut checklist.
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                      Data wajib sudah lengkap. Checklist siap dilanjutkan.
+                    </div>
+                  )}
+
+                  {procedureKey === "bipolar" ? (
+                    <section className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 p-3">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">Mode Tray Bipolar</p>
+                          <p className="text-xs text-slate-500">
+                            Pilih sumber list: hanya tray bipolar atau gabung tray stem + bipolar.
+                          </p>
+                        </div>
+                        <div className="inline-flex rounded-xl border border-violet-200 bg-white/80 p-1">
+                          <button
+                            type="button"
+                            onClick={() => setBipolarIncludeStem(false)}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              !bipolarIncludeStem
+                                ? "bg-violet-700 text-white shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            Bipolar saja
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBipolarIncludeStem(true)}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              bipolarIncludeStem
+                                ? "bg-violet-700 text-white shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            Bipolar + Stem
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {procedureKey === "thr" ? (
+                    <section className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">Mode Tray THR</p>
+                          <p className="text-xs text-slate-500">
+                            Pilih list THR acetabular saja atau gabung THR + Stem.
+                          </p>
+                        </div>
+                        <div className="inline-flex rounded-xl border border-emerald-200 bg-white/80 p-1">
+                          <button
+                            type="button"
+                            onClick={() => setThrIncludeStem(false)}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              !thrIncludeStem
+                                ? "bg-emerald-700 text-white shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            THR Acetabular
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setThrIncludeStem(true)}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                              thrIncludeStem
+                                ? "bg-emerald-700 text-white shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            THR + Stem
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4">
+                    <p className="mb-3 text-sm font-semibold text-slate-800">Informasi Operasi</p>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                      <FloatingInputField
+                        value={operatorName}
+                        onChange={(event) => setOperatorName(event.target.value)}
+                        label="Nama TS / operator checklist"
+                        required
+                      />
+                      <FloatingInputField
+                        value={hospitalName}
+                        onChange={(event) => setHospitalName(event.target.value)}
+                        label="Rumah sakit / lokasi"
+                        required
+                      />
+                      <FloatingInputField
+                        value={doctorName}
+                        onChange={(event) => setDoctorName(event.target.value)}
+                        label="Dokter operator"
+                      />
+                      <FloatingInputField
+                        value={patientCode}
+                        onChange={(event) => setPatientCode(event.target.value)}
+                        label="Kode pasien / MRN"
+                      />
+                      <FloatingInputField
+                        value={caseNote}
+                        onChange={(event) => setCaseNote(event.target.value)}
+                        label="Catatan khusus"
+                      />
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4">
+                    {extraInstrumentContent}
+                  </section>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={closeOperationControlModal}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Tutup
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isOperationInfoComplete) {
+                        setMessage(
+                          "Lengkapi Nama TS/operator dan rumah sakit dulu sebelum mulai checklist."
+                        );
+                        return;
+                      }
+                      closeOperationControlModal();
+                    }}
+                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                  >
+                    Simpan & Mulai Checklist
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {checklistMenuOpen ? (
+            <motion.div
+              key="checklist-menu-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4"
+              onClick={() => setChecklistMenuOpen(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl md:p-4"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Checklist Menu
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Aksi cepat checklist dan filter group
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setChecklistMenuOpen(false)}
+                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+                    aria-label="Tutup menu checklist"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                {checklistControlPanel}
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence>
           {previewCurrentItem ? (
             <motion.div
               key="instrument-preview-backdrop"
@@ -2822,6 +3558,11 @@ async function refreshInstrumentProfiles(options = {}) {
                     {previewCurrentItem.isCustom ? (
                       <p className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
                         Instrument Tambahan
+                      </p>
+                    ) : null}
+                    {isCriticalInstrument(previewCurrentItem) ? (
+                      <p className="inline-flex rounded-md bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+                        Item Kritikal · Wajib Foto
                       </p>
                     ) : null}
                     <p className="text-[11px] text-slate-500">
