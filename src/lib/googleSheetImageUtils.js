@@ -1,288 +1,235 @@
-const DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT =
+import {
+  buildGoogleDriveDirectImageUrl,
+  buildGoogleDriveImageCandidates,
+  extractDriveIdFromRecord,
+  extractGoogleDriveId,
+  normalizeImageUrl,
+  toSafeImageSrc,
+} from "@/lib/googleDriveImage";
+
+export const DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT =
   process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
-  process.env.VITE_GOOGLE_SHEET_IMAGE_ENDPOINT ||
-  "https://script.google.com/macros/s/AKfycbzuQk2jdWiJT8ANVR3XdoFQiWInwMGnJM9ZtHUHIf6MipXdNs5moRMx4NV-nXzfJ_6q/exec";
+  process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL ||
+  "";
 
-function isLikelyDriveId(value) {
-  return /^[a-zA-Z0-9_-]{20,}$/.test(String(value || "").trim());
+function asText(value) {
+  return String(value ?? "").trim();
 }
 
-function driveIdToImageUrl(driveId) {
-  const cleanId = String(driveId || "").trim();
-  if (!cleanId) return "";
-  return `https://lh3.googleusercontent.com/d/${cleanId}=w1600`;
-}
-
-function pickBestDriveId(primary, fallback) {
-  const first = String(primary || "").trim();
-  const second = String(fallback || "").trim();
-  if (isLikelyDriveId(first)) return first;
-  if (isLikelyDriveId(second)) return second;
-  return first || second;
-}
-
-function extractDriveFileId(url) {
-  const value = String(url || "");
-  if (isLikelyDriveId(value)) return value.trim();
-  const patterns = [
-    /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,
-    /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/,
-    /docs\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/,
-    /[?&]id=([a-zA-Z0-9_-]+)/,
-  ];
-  for (const pattern of patterns) {
-    const match = value.match(pattern);
-    if (match?.[1]) return match[1];
+function pickFirst(record, keys) {
+  if (!record || typeof record !== "object") return "";
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    const value = asText(record[key]);
+    if (value) return value;
   }
   return "";
 }
 
-function buildGoogleDriveImageProxyUrl(driveId, size = 1600) {
-  const cleanId = String(driveId || "").trim();
-  if (!cleanId) return "";
-  const params = new URLSearchParams({
-    id: cleanId,
-    size: String(size),
-  });
-  return `/api/google-drive-image?${params.toString()}`;
-}
-
-function buildDriveImageCandidates(raw, fallbackDriveId = "") {
-  const value = String(raw || "").trim();
-  const driveIdFromValue = extractDriveFileId(value);
-  const driveIdFromFallback = extractDriveFileId(fallbackDriveId);
-  const resolvedDriveId = pickBestDriveId(driveIdFromValue, driveIdFromFallback);
-  if (resolvedDriveId) {
-    const direct = driveIdToImageUrl(resolvedDriveId);
-    const size = 1600;
-    return [
-      buildGoogleDriveImageProxyUrl(resolvedDriveId, size),
-      direct,
-      `https://drive.google.com/thumbnail?id=${encodeURIComponent(resolvedDriveId)}&sz=w${size}`,
-      "/no-image.png",
-    ];
+function parseJsonSafe(raw) {
+  const cleaned = asText(raw).replace(/^\uFEFF/, "");
+  if (!cleaned) return null;
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
   }
-  if (!value) return ["/no-image.png"];
-  if (value.startsWith("data:")) return [value, "/no-image.png"];
-  if (value.startsWith("blob:")) return [value, "/no-image.png"];
-  if (value.startsWith("//")) return [`https:${value}`, "/no-image.png"];
-  if (value.startsWith("/")) return [value, "/no-image.png"];
-  if (/^https?:\/\//i.test(value)) return [value, "/no-image.png"];
-  return ["/no-image.png"];
 }
 
-function normalizeImageUrl(raw, fallbackDriveId = "") {
-  const candidates = buildDriveImageCandidates(raw, fallbackDriveId);
-  return Array.isArray(candidates) ? candidates[0] || "" : candidates || "";
-}
-
-function parseCsvLine(line) {
-  const out = [];
+function splitCsvLine(line) {
+  const cells = [];
   let current = "";
   let inQuotes = false;
   for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
-    const next = line[i + 1];
-
-    if (char === '"' && inQuotes && next === '"') {
-      current += '"';
-      i += 1;
-      continue;
-    }
     if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+        continue;
+      }
       inQuotes = !inQuotes;
       continue;
     }
     if (char === "," && !inQuotes) {
-      out.push(current);
+      cells.push(current.trim());
       current = "";
       continue;
     }
-
     current += char;
   }
-  out.push(current);
-  return out.map((item) => item.trim());
+  cells.push(current.trim());
+  return cells;
 }
 
-function parseCsvRows(text) {
-  const lines = String(text || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return [];
+function normalizeSheetItem(input, index = 0) {
+  if (!input || typeof input !== "object") return null;
+  const driveId = extractDriveFileId(input);
+  const rawImage =
+    pickFirst(input, [
+      "imageSrc",
+      "imageURL",
+      "imageUrl",
+      "image",
+      "photo",
+      "photoUrl",
+      "url",
+      "link",
+    ]) || (driveId ? buildGoogleDriveDirectImageUrl(driveId) : "");
 
-  const headers = parseCsvLine(lines[0]);
-  if (headers.length === 0) return [];
+  const imageSrc = normalizeImageUrl(rawImage);
+  const id =
+    pickFirst(input, ["id", "ID", "submissionId", "catalogNo", "catalogno", "code", "kode"]) ||
+    `${index + 1}`;
+  const name =
+    pickFirst(input, ["name", "Name", "title", "Title", "instrument", "description"]) ||
+    `Item ${index + 1}`;
 
-  return lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line);
-    const row = {};
-    headers.forEach((header, index) => {
-      row[header] = cells[index] || "";
-    });
-    return row;
-  });
-}
-
-function pickImageField(row) {
-  if (!row || typeof row !== "object") return "";
-  const keys = Object.keys(row);
-  const priority = [
-    "imageSrc",
-    "image_url",
-    "imageUrl",
-    "photoUrl",
-    "photo",
-    "url",
-    "link",
-    "driveUrl",
-    "drive_url",
-    "src",
-  ];
-  for (const key of priority) {
-    if (row[key]) return row[key];
-  }
-  const fallbackKey = keys.find((key) => /image|photo|url|link|drive|src/i.test(key));
-  return fallbackKey ? row[fallbackKey] : "";
-}
-
-function pickDriveIdField(row) {
-  if (!row || typeof row !== "object") return "";
-  const keys = Object.keys(row);
-  const priority = [
-    "driveId",
-    "drive_id",
-    "fileId",
-    "file_id",
-    "googleDriveId",
-    "gdriveId",
-    "imageId",
-    "image_id",
-  ];
-  for (const key of priority) {
-    if (row[key]) return row[key];
-  }
-  const fallbackKey = keys.find((key) => /drive.*id|file.*id|gdrive/i.test(key));
-  return fallbackKey ? row[fallbackKey] : "";
-}
-
-function pickNameField(row, fallback) {
-  if (!row || typeof row !== "object") return fallback;
-  const keys = Object.keys(row);
-  const priority = ["name", "title", "label", "filename", "fileName"];
-  for (const key of priority) {
-    if (row[key]) return String(row[key]);
-  }
-  const fallbackKey = keys.find((key) => /name|title|label/i.test(key));
-  return fallbackKey ? String(row[fallbackKey]) : fallback;
-}
-
-function toItem(rawRow, index) {
-  if (typeof rawRow === "string") {
-    const driveId = extractDriveFileId(rawRow);
-    const imageSrc = normalizeImageUrl(rawRow, driveId);
-    if (!imageSrc) return null;
-    return {
-      id: driveId || `sheet-${index}-${imageSrc.slice(-12)}`,
-      name: `Sheet Image ${index + 1}`,
-      imageSrc,
-      driveId,
-      sourceWidth: 0,
-      sourceHeight: 0,
-    };
-  }
-
-  if (Array.isArray(rawRow)) {
-    const firstValid = rawRow.find(
-      (value) => normalizeImageUrl(value) || isLikelyDriveId(value),
-    );
-    const driveId = extractDriveFileId(firstValid);
-    const imageSrc = normalizeImageUrl(firstValid, driveId);
-    if (!imageSrc) return null;
-    return {
-      id: driveId || `sheet-${index}-${imageSrc.slice(-12)}`,
-      name: `Sheet Image ${index + 1}`,
-      imageSrc,
-      driveId,
-      sourceWidth: 0,
-      sourceHeight: 0,
-    };
-  }
-
-  if (!rawRow || typeof rawRow !== "object") return null;
-  const driveId = extractDriveFileId(pickDriveIdField(rawRow));
-  const imageSrc = normalizeImageUrl(pickImageField(rawRow), driveId);
-  if (!imageSrc) return null;
-  const name = pickNameField(rawRow, `Sheet Image ${index + 1}`);
-  const rowId = rawRow.id || rawRow.ID || rawRow.rowId || rawRow.row_id || "";
   return {
-    id: String(rowId || driveId || `sheet-${index}-${imageSrc.slice(-12)}`),
+    ...input,
+    id,
     name,
-    imageSrc,
+    tags: pickFirst(input, ["tags", "Tags"]),
     driveId,
-    tags: String(rawRow.tags || rawRow.tag || ""),
-    fileName: String(rawRow.fileName || rawRow.filename || ""),
-    sourceWidth: Number(rawRow.sourceWidth || rawRow.width || 0) || 0,
-    sourceHeight: Number(rawRow.sourceHeight || rawRow.height || 0) || 0,
-    createdAt: String(rawRow.createdAt || rawRow.date || ""),
-    updatedAt: String(rawRow.updatedAt || ""),
+    imageSrc,
+    createdAt: pickFirst(input, ["createdAt", "created_at"]),
+    updatedAt: pickFirst(input, ["updatedAt", "updated_at"]),
   };
 }
 
-function normalizeSheetPayload(payload) {
-  let rows = [];
+function normalizeItemList(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item, index) => normalizeSheetItem(item, index))
+    .filter((item) => item && (item.imageSrc || item.driveId || item.name));
+}
 
-  if (Array.isArray(payload)) {
-    rows = payload;
-  } else if (payload && typeof payload === "object") {
-    if (Array.isArray(payload.items)) rows = payload.items;
-    else if (Array.isArray(payload.data)) rows = payload.data;
-    else if (Array.isArray(payload.values)) rows = payload.values;
-    else if (Array.isArray(payload.rows)) rows = payload.rows;
+function parseCsvText(raw) {
+  const lines = String(raw || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return [];
+
+  const headers = splitCsvLine(lines[0]);
+  if (!headers.length) return [];
+
+  const rows = [];
+  for (let rowIndex = 1; rowIndex < lines.length; rowIndex += 1) {
+    const cells = splitCsvLine(lines[rowIndex]);
+    const row = {};
+    for (let colIndex = 0; colIndex < headers.length; colIndex += 1) {
+      const key = String(headers[colIndex] || "").trim();
+      if (!key) continue;
+      row[key] = cells[colIndex] ?? "";
+    }
+    rows.push(row);
+  }
+  return normalizeItemList(rows);
+}
+
+function parseFromObject(input) {
+  if (!input) return [];
+  if (Array.isArray(input)) return normalizeItemList(input);
+
+  const payloadString = asText(input.payload);
+  if (payloadString) {
+    const fromPayload = parseSheetRawText(payloadString);
+    if (fromPayload.length) return fromPayload;
   }
 
-  if (rows.length === 0) return [];
+  const itemArrays = [
+    input.items,
+    input.data,
+    input.rows,
+    input.values,
+    input.remote?.items,
+    input.remote?.data,
+    input.remote?.rows,
+    input.remote?.values,
+  ];
+  for (let i = 0; i < itemArrays.length; i += 1) {
+    const normalized = normalizeItemList(itemArrays[i]);
+    if (normalized.length) return normalized;
+  }
 
-  if (Array.isArray(rows[0])) {
-    const headerCells = rows[0].map((cell) => String(cell || "").trim());
-    const mappedRows = rows.slice(1).map((cells) => {
-      const rowObj = {};
-      headerCells.forEach((header, index) => {
-        rowObj[header || `col_${index}`] = cells[index] || "";
-      });
-      return rowObj;
+  return [];
+}
+
+export function extractDriveFileId(input) {
+  if (!input) return "";
+  if (typeof input === "object") {
+    const fromRecord = extractDriveIdFromRecord(input);
+    if (fromRecord) return fromRecord;
+
+    const candidates = [
+      input.driveId,
+      input.drive_id,
+      input.fileId,
+      input.file_id,
+      input.imageSrc,
+      input.imageUrl,
+      input.url,
+      input.link,
+    ];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const id = extractGoogleDriveId(candidates[i]);
+      if (id) return id;
+    }
+    return "";
+  }
+
+  const id = extractGoogleDriveId(input);
+  return id || "";
+}
+
+export function parseSheetRawText(raw) {
+  if (!raw) return [];
+  if (typeof raw === "object") {
+    return parseFromObject(raw);
+  }
+
+  const text = asText(raw).replace(/^\uFEFF/, "");
+  if (!text) return [];
+
+  const jsonParsed = parseJsonSafe(text);
+  if (jsonParsed && typeof jsonParsed === "object") {
+    return parseFromObject(jsonParsed);
+  }
+
+  return parseCsvText(text);
+}
+
+export function buildDriveImageCandidates(src = "", driveId = "") {
+  const list = [];
+  const add = (value) => {
+    const next = asText(value);
+    if (!next) return;
+    if (!list.includes(next)) list.push(next);
+  };
+
+  const normalizedSrc = normalizeImageUrl(src);
+  const resolvedDriveId =
+    extractDriveFileId({ driveId, imageSrc: normalizedSrc, src }) ||
+    extractGoogleDriveId(driveId) ||
+    extractGoogleDriveId(src);
+
+  if (normalizedSrc) {
+    add(toSafeImageSrc(normalizedSrc, ""));
+    add(normalizedSrc);
+  }
+
+  if (resolvedDriveId) {
+    add(`/api/google-drive-image?driveId=${encodeURIComponent(resolvedDriveId)}`);
+    const driveCandidates = buildGoogleDriveImageCandidates(resolvedDriveId);
+    driveCandidates.forEach((candidate) => {
+      add(toSafeImageSrc(candidate, ""));
+      add(candidate);
     });
-    return mappedRows
-      .map((row, index) => toItem(row, index))
-      .filter(Boolean)
-      .slice(0, 300);
   }
 
-  return rows
-    .map((row, index) => toItem(row, index))
-    .filter(Boolean)
-    .slice(0, 300);
+  if (!list.length) add("/no-image.png");
+  return list;
 }
 
-function parseSheetRawText(rawText) {
-  let parsed = null;
-  try {
-    parsed = JSON.parse(String(rawText || ""));
-  } catch {
-    parsed = parseCsvRows(rawText);
-  }
-  return normalizeSheetPayload(parsed);
-}
-
-export {
-  buildDriveImageCandidates,
-  buildGoogleDriveImageProxyUrl,
-  DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
-  driveIdToImageUrl,
-  extractDriveFileId,
-  normalizeImageUrl,
-  normalizeSheetPayload,
-  parseCsvRows,
-  parseSheetRawText,
-};
+export { normalizeImageUrl };

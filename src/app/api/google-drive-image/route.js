@@ -1,110 +1,104 @@
 import { NextResponse } from "next/server";
-import { extractDriveFileId } from "@/lib/googleSheetImageUtils";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  buildGoogleDriveImageCandidates,
+  extractGoogleDriveId,
+  isGoogleDriveUrl,
+} from "@/lib/googleDriveImage";
 
 export const runtime = "nodejs";
 
-const ALLOWED_HOSTS = new Set([
-  "drive.google.com",
-  "docs.google.com",
-  "drive.usercontent.google.com",
-  "lh3.googleusercontent.com",
-]);
-
-function isAllowedGoogleImageUrl(value) {
+async function buildNoImageResponse(status = 200) {
   try {
-    const parsed = new URL(value);
-    return /^https?:$/i.test(parsed.protocol) && ALLOWED_HOSTS.has(parsed.hostname.toLowerCase());
+    const fallbackPath = join(process.cwd(), "public", "no-image.png");
+    const bytes = await readFile(fallbackPath);
+    return new NextResponse(Buffer.from(bytes), {
+      status,
+      headers: {
+        "Content-Type": "image/png",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=1800",
+        "X-Drive-Image-Fallback": "1",
+      },
+    });
   } catch {
-    return false;
+    return new NextResponse("Image not available", { status: 502 });
   }
 }
 
-function buildDirectDriveCandidates({ id, url, size }) {
-  const driveId = extractDriveFileId(id || url);
-  if (driveId) {
-    const safeSize = Math.max(256, Math.min(2400, Number.parseInt(String(size || 1600), 10) || 1600));
-    return [
-      `https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}=w${safeSize}`,
-      `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w${safeSize}`,
-      `https://drive.usercontent.google.com/uc?id=${encodeURIComponent(driveId)}&export=view`,
-      `https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveId)}&export=view&authuser=0`,
-    ];
+function buildCandidates({ driveId, id, src, url }) {
+  const effectiveDriveId =
+    String(driveId || "").trim() || String(id || "").trim();
+  if (effectiveDriveId) {
+    return buildGoogleDriveImageCandidates(effectiveDriveId);
   }
 
-  const rawUrl = String(url || "").trim();
-  return rawUrl && isAllowedGoogleImageUrl(rawUrl) ? [rawUrl] : [];
-}
+  const effectiveSrc = String(src || "").trim() || String(url || "").trim();
+  if (!effectiveSrc) return [];
 
-function readFileNameFromResponse(response, fallback) {
-  const disposition = response.headers.get("content-disposition") || "";
-  const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
-  if (!match?.[1]) return fallback;
-  try {
-    return decodeURIComponent(match[1].replace(/^"|"$/g, ""));
-  } catch {
-    return match[1].replace(/^"|"$/g, "");
+  const srcDriveId = extractGoogleDriveId(effectiveSrc);
+  if (srcDriveId) {
+    return buildGoogleDriveImageCandidates(srcDriveId);
   }
+
+  if (isGoogleDriveUrl(effectiveSrc)) {
+    return buildGoogleDriveImageCandidates(effectiveSrc);
+  }
+
+  return [effectiveSrc];
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const candidates = buildDirectDriveCandidates({
+  const candidates = buildCandidates({
+    driveId: searchParams.get("driveId"),
     id: searchParams.get("id"),
+    src: searchParams.get("src"),
     url: searchParams.get("url"),
-    size: searchParams.get("size"),
   });
 
-  if (candidates.length === 0) {
-    return NextResponse.json(
-      { ok: false, error: "Parameter id/url Google Drive tidak valid." },
-      { status: 400 },
-    );
+  if (!candidates.length) {
+    return buildNoImageResponse(200);
   }
 
-  let lastError = "";
   for (const candidate of candidates) {
     try {
       const response = await fetch(candidate, {
         cache: "no-store",
         redirect: "follow",
         headers: {
-          Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
           "User-Agent":
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
         },
       });
 
+      if (!response.ok) continue;
+
       const contentType = response.headers.get("content-type") || "";
-      if (!response.ok) {
-        lastError = `HTTP ${response.status}`;
-        continue;
-      }
-      if (!contentType.toLowerCase().startsWith("image/")) {
-        lastError = `Content-Type ${contentType || "unknown"}`;
-        continue;
-      }
+      const isImage =
+        contentType.toLowerCase().startsWith("image/") ||
+        contentType === "application/octet-stream";
+      if (!isImage) continue;
 
       const body = await response.arrayBuffer();
-      const headers = new Headers({
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
-        "Access-Control-Allow-Origin": "*",
-        "X-Content-Type-Options": "nosniff",
-      });
-      const fileName = readFileNameFromResponse(response, "google-drive-image");
-      headers.set("Content-Disposition", `inline; filename="${fileName.replace(/"/g, "")}"`);
+      if (!body.byteLength) continue;
 
-      return new NextResponse(body, { status: 200, headers });
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : "unknown error";
+      return new NextResponse(body, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType || "image/jpeg",
+          "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+          "Access-Control-Allow-Origin": "*",
+          "X-Content-Type-Options": "nosniff",
+          "X-Drive-Image-Candidate": candidate,
+        },
+      });
+    } catch {
+      // try next candidate
     }
   }
 
-  return NextResponse.json(
-    {
-      ok: false,
-      error: `Gagal memuat gambar Google Drive.${lastError ? ` ${lastError}` : ""}`,
-    },
-    { status: 502 },
-  );
+  return buildNoImageResponse(200);
 }

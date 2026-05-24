@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ImageIcon, Loader2, RefreshCcw, Search } from "lucide-react";
+import { FloatingSelectField } from "@/components/FloatingFields";
+import DriveImageWithFallback from "@/components/DriveImageWithFallback.jsx";
+import {
+  buildGoogleDriveDirectImageUrl,
+  extractDriveIdFromRecord,
+  toSafeImageSrc,
+} from "@/lib/googleDriveImage";
 
 const GOOGLE_SHEET_ENDPOINT =
   process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
@@ -81,6 +88,8 @@ function extractRowsFromRemote(remote) {
   const direct =
     (Array.isArray(remote.items) && remote.items) ||
     (Array.isArray(remote.rows) && remote.rows) ||
+    (Array.isArray(remote.instrumentProfiles) && remote.instrumentProfiles) ||
+    (Array.isArray(remote?.data?.instrumentProfiles) && remote.data.instrumentProfiles) ||
     (Array.isArray(remote.data) && remote.data) ||
     [];
   if (direct.length) return direct;
@@ -124,7 +133,7 @@ function parseTagMetadata(value) {
 function driveIdToImageUrl(driveId) {
   const id = String(driveId || "").trim();
   if (!id) return "";
-  return `https://drive.google.com/uc?export=view&id=${id}`;
+  return buildGoogleDriveDirectImageUrl(id);
 }
 
 function normalizeRows(rows) {
@@ -158,7 +167,19 @@ function normalizeRows(rows) {
       const qtyRaw = Number(
         row?.qty || row?.piece || row?.pieces || row?.pcs || row?.jumlah || meta?.qty || 1
       );
-      const driveId = String(row?.driveId || row?.driveid || meta?.driveId || "").trim();
+      const driveId = extractDriveIdFromRecord({ ...(meta || {}), ...(row || {}) });
+      const imageSource =
+        driveIdToImageUrl(driveId) ||
+        String(
+          row?.imageSrc ||
+            row?.imageUrl ||
+            row?.photoUrl ||
+            row?.photourl ||
+            row?.image ||
+            meta?.imageSrc ||
+            meta?.imageUrl ||
+            ""
+        ).trim();
 
       return {
         id: String(row?.id || "").trim() || `${procedureKey}-${catalogNo}`,
@@ -185,17 +206,7 @@ function normalizeRows(rows) {
           ).trim() || "Tray",
         qty: Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 1,
         driveId,
-        imageUrl: String(
-          row?.imageSrc ||
-            row?.imageUrl ||
-            row?.photoUrl ||
-            row?.photourl ||
-            row?.image ||
-            meta?.imageSrc ||
-            meta?.imageUrl ||
-            driveIdToImageUrl(driveId) ||
-            ""
-        ).trim(),
+        imageUrl: toSafeImageSrc(imageSource, ""),
       };
     })
     .filter((row) => row.procedureKey && row.catalogNo && row.name)
@@ -418,10 +429,11 @@ export default function InstrumentProfilesPage() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-2 md:grid-cols-[200px_1fr]">
-            <select
+            <FloatingSelectField
               value={procedureFilter}
               onChange={(event) => setProcedureFilter(event.target.value)}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-900"
+              label="Procedure"
+              selectClassName="border-slate-200 focus:border-slate-900"
             >
               <option value="all">Semua Procedure</option>
               {PROCEDURES.map((item) => (
@@ -429,15 +441,18 @@ export default function InstrumentProfilesPage() {
                   {item.label}
                 </option>
               ))}
-            </select>
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-              <Search size={16} className="text-slate-400" />
+            </FloatingSelectField>
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Cari kode, nama, atau kategori..."
-                className="w-full bg-transparent text-sm outline-none"
+                placeholder=" "
+                className="peer h-12 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 pt-5 text-sm outline-none transition focus:border-slate-900"
               />
+              <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-0 peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-slate-700 peer-[&:not(:placeholder-shown)]:top-0 peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-slate-700">
+                Cari kode, nama, atau kategori
+              </span>
             </div>
           </div>
         </section>
@@ -474,20 +489,12 @@ export default function InstrumentProfilesPage() {
                           className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5"
                         >
                           <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                            {item.imageUrl ? (
-                              <>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.name}
-                                  className="h-full w-full object-cover"
-                                />
-                              </>
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                                <ImageIcon size={16} />
-                              </div>
-                            )}
+                            <DriveImageWithFallback
+                              src={item.imageUrl}
+                              driveId={item.driveId}
+                              alt={item.name}
+                              className="h-full w-full object-cover"
+                            />
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold uppercase text-slate-500">{item.catalogNo}</p>

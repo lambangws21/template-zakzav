@@ -1,16 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Camera,
-  ChevronDown,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Circle,
   ClipboardCheck,
   Download,
+  Expand,
+  Eye,
   ImageIcon,
   Loader2,
+  MinusCircle,
   RefreshCcw,
   RotateCcw,
   Save,
@@ -19,7 +23,17 @@ import {
   Stethoscope,
   X,
 } from "lucide-react";
-import DriveImageWithFallback from "@/components/DriveImageWithFallback";
+import DriveImageWithFallback from "@/components/DriveImageWithFallback.jsx";
+import {
+  FloatingInputField,
+  FloatingSelectField,
+} from "@/components/FloatingFields";
+import {
+  buildGoogleDriveDirectImageUrl,
+  extractDriveIdFromRecord,
+  toSafeImageSrc,
+} from "@/lib/googleDriveImage";
+import Image from "next/image";
 
 // Endpoint Web App Apps Script (yang sudah di-upgrade)
 const GOOGLE_SHEET_ENDPOINT =
@@ -27,10 +41,15 @@ const GOOGLE_SHEET_ENDPOINT =
   process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL ||
   "https://script.google.com/macros/s/AKfycbzuQk2jdWiJT8ANVR3XdoFQiWInwMGnJM9ZtHUHIf6MipXdNs5moRMx4NV-nXzfJ_6q/exec";
 
-const ACTION_LIST_INSTRUMENT_PROFILES = "list_instrument_profiles";
-const PREVIEW_ZOOM_MIN = 1;
-const PREVIEW_ZOOM_MAX = 3;
-const PREVIEW_ZOOM_STEP = 0.25;
+const ACTION_LIST_INSTRUMENT_PROFILE_CANDIDATES = [
+  "list_instrument_profiles",
+  "read_instrument_profiles",
+  "listinstrumentprofiles",
+  "readinstrumentprofiles",
+  "list",
+  "read",
+];
+const INSTRUMENT_PROFILE_SHEET_NAME = "InstrumentProfiles";
 
 const CHECKLISTS = [
   {
@@ -149,7 +168,7 @@ const CHECKLISTS = [
   },
   {
     key: "stem",
-    title: "THR Normed / Cementless & Cemented Stem System",
+    title: "Cementless & Cemented Stem System",
     subtitle: "Checklist Instrument Femoral Stem",
     description:
       "Daftar instrumen stem system (kode, deskripsi, piece) dari dokumen surgical technique.",
@@ -482,73 +501,180 @@ function getProcedureItems(procedure, options = {}) {
 
 const STORAGE_KEY = "normed-instrument-checklist-v3";
 
-const PROCEDURE_GROUP_PRIORITY_RULES = {
-  tkr: [/femoral/i, /tibial/i, /gap/i, /trial/i, /impactor/i],
-  thr: [/reamer/i, /cup trial/i, /trial liner/i, /impactor/i],
-  bipolar: [/trial cup/i, /measurement|caliper/i, /assembly|segment/i, /impactor/i],
-  stem: [/stem basic/i, /trial stem/i, /trial reamer/i, /trial head/i, /impactor|extractor/i],
-  default: [/basic/i, /alignment/i, /preparation/i, /trial/i],
-};
-
-const GROUP_CARD_STYLES = [
+const GROUP_COLOR_VARIANTS = [
   {
-    card: "border-blue-200 bg-blue-50/40",
-    header: "bg-blue-100/70",
-    title: "text-blue-900",
-    meta: "text-blue-700",
-    badgeDone: "bg-emerald-100 text-emerald-700",
-    badgeProgress: "bg-amber-100 text-amber-700",
-    checkBtn: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-    uncheckBtn: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
+    card: "border-sky-200",
+    header: "bg-sky-50",
+    title: "text-sky-900",
+    meta: "text-sky-700",
+    badge: "bg-sky-100 text-sky-800",
+    quickCheck: "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100",
+    quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
   },
   {
-    card: "border-violet-200 bg-violet-50/40",
-    header: "bg-violet-100/70",
+    card: "border-emerald-200",
+    header: "bg-emerald-50",
+    title: "text-emerald-900",
+    meta: "text-emerald-700",
+    badge: "bg-emerald-100 text-emerald-800",
+    quickCheck: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+  },
+  {
+    card: "border-violet-200",
+    header: "bg-violet-50",
     title: "text-violet-900",
     meta: "text-violet-700",
-    badgeDone: "bg-emerald-100 text-emerald-700",
-    badgeProgress: "bg-amber-100 text-amber-700",
-    checkBtn: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-    uncheckBtn: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
+    badge: "bg-violet-100 text-violet-800",
+    quickCheck: "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100",
+    quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
   },
   {
-    card: "border-cyan-200 bg-cyan-50/40",
-    header: "bg-cyan-100/70",
-    title: "text-cyan-900",
-    meta: "text-cyan-700",
-    badgeDone: "bg-emerald-100 text-emerald-700",
-    badgeProgress: "bg-amber-100 text-amber-700",
-    checkBtn: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-    uncheckBtn: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
-  },
-  {
-    card: "border-amber-200 bg-amber-50/40",
-    header: "bg-amber-100/70",
+    card: "border-amber-200",
+    header: "bg-amber-50",
     title: "text-amber-900",
     meta: "text-amber-700",
-    badgeDone: "bg-emerald-100 text-emerald-700",
-    badgeProgress: "bg-amber-100 text-amber-700",
-    checkBtn: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-    uncheckBtn: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
+    badge: "bg-amber-100 text-amber-800",
+    quickCheck: "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100",
+    quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+  },
+  {
+    card: "border-rose-200",
+    header: "bg-rose-50",
+    title: "text-rose-900",
+    meta: "text-rose-700",
+    badge: "bg-rose-100 text-rose-800",
+    quickCheck: "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
+    quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
   },
 ];
 
-function getGroupPriority(groupName, procedureKey) {
-  const normalizedName = String(groupName || "").toLowerCase();
-  const rules =
-    PROCEDURE_GROUP_PRIORITY_RULES[procedureKey] ||
-    PROCEDURE_GROUP_PRIORITY_RULES.default;
+const DEFAULT_GROUP_PRIORITY_RULES = [
+  ["femoral"],
+  ["tibial", "tibia"],
+  ["trial"],
+  ["alignment"],
+  ["cutting", "chamfer"],
+  ["reamer"],
+  ["impactor"],
+  ["extractor"],
+  ["drill"],
+  ["gap"],
+  ["pin", "spike"],
+  ["tambahan", "custom"],
+];
 
-  for (let index = 0; index < rules.length; index += 1) {
-    if (rules[index].test(normalizedName)) return index;
-  }
+const PROCEDURE_GROUP_PRIORITY_RULES = {
+  tkr: [
+    ["femoral"],
+    ["tibial", "tibia"],
+    ["gap"],
+    ["trial"],
+    ["alignment"],
+    ["cutting", "chamfer"],
+    ["ps"],
+    ["drill"],
+    ["impactor"],
+    ["extractor"],
+    ["pin", "spike"],
+    ["tambahan", "custom"],
+  ],
+  thr: [
+    ["reamer"],
+    ["cup trial", "cup"],
+    ["trial liner", "liner"],
+    ["impactor"],
+    ["trial"],
+    ["alignment"],
+    ["drill"],
+    ["extractor"],
+    ["stem", "femoral"],
+    ["tambahan", "custom"],
+  ],
+  bipolar: [
+    ["bipolar trial cup", "trial cup"],
+    ["trial"],
+    ["measurement", "caliper"],
+    ["assembly"],
+    ["impactor"],
+    ["extractor"],
+    ["stem", "femoral"],
+    ["tambahan", "custom"],
+  ],
+  stem: [
+    ["trial stem"],
+    ["trial head"],
+    ["trial reamer"],
+    ["trial"],
+    ["reamer"],
+    ["impactor"],
+    ["extractor"],
+    ["stem basic", "stem"],
+    ["tambahan", "custom"],
+  ],
+};
 
-  return rules.length + 100;
+const PROCEDURE_THEME_VARIANTS = {
+  tkr: {
+    iconBg: "bg-blue-100 text-blue-700",
+    bar: "from-blue-500 to-cyan-500",
+    badge: "bg-blue-100 text-blue-700",
+    active: "border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 shadow-blue-100/70",
+    inactive: "border-slate-200 bg-white/90",
+  },
+  bipolar: {
+    iconBg: "bg-violet-100 text-violet-700",
+    bar: "from-violet-500 to-fuchsia-500",
+    badge: "bg-violet-100 text-violet-700",
+    active:
+      "border-violet-300 bg-gradient-to-br from-violet-50 to-fuchsia-50 shadow-violet-100/70",
+    inactive: "border-slate-200 bg-white/90",
+  },
+  thr: {
+    iconBg: "bg-emerald-100 text-emerald-700",
+    bar: "from-emerald-500 to-teal-500",
+    badge: "bg-emerald-100 text-emerald-700",
+    active:
+      "border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 shadow-emerald-100/70",
+    inactive: "border-slate-200 bg-white/90",
+  },
+  stem: {
+    iconBg: "bg-amber-100 text-amber-700",
+    bar: "from-amber-500 to-orange-500",
+    badge: "bg-amber-100 text-amber-700",
+    active: "border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 shadow-amber-100/70",
+    inactive: "border-slate-200 bg-white/90",
+  },
+};
+
+function getProcedureTheme(key) {
+  return PROCEDURE_THEME_VARIANTS[key] || PROCEDURE_THEME_VARIANTS.tkr;
 }
 
-function getGroupStyle(groupIndex) {
-  if (!GROUP_CARD_STYLES.length) return GROUP_CARD_STYLES[0];
-  return GROUP_CARD_STYLES[groupIndex % GROUP_CARD_STYLES.length];
+function getGroupColorVariant(groupName) {
+  const raw = String(groupName || "").trim().toLowerCase();
+  const hash = raw.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return GROUP_COLOR_VARIANTS[hash % GROUP_COLOR_VARIANTS.length];
+}
+
+function getGroupPriority(groupName, procedureKey = "") {
+  const raw = String(groupName || "").trim().toLowerCase();
+  if (!raw) return 999;
+  const normalizedProcedure = normalizeProcedureKey(procedureKey);
+  const procedureRules =
+    PROCEDURE_GROUP_PRIORITY_RULES[normalizedProcedure] ||
+    DEFAULT_GROUP_PRIORITY_RULES;
+  for (let index = 0; index < procedureRules.length; index += 1) {
+    const keywords = procedureRules[index];
+    const matched = keywords.some((keyword) => raw.includes(keyword));
+    if (matched) return index;
+  }
+  for (let index = 0; index < DEFAULT_GROUP_PRIORITY_RULES.length; index += 1) {
+    const keywords = DEFAULT_GROUP_PRIORITY_RULES[index];
+    const matched = keywords.some((keyword) => raw.includes(keyword));
+    if (matched) return index + 100;
+  }
+  return 999;
 }
 
 function normalizeProcedureKey(value) {
@@ -568,32 +694,141 @@ function normalizeCatalogNo(value) {
     .toUpperCase();
 }
 
+function driveIdToImageUrl(driveId) {
+  const id = String(driveId || "").trim();
+  if (!id) return "";
+  return buildGoogleDriveDirectImageUrl(id);
+}
+
+function parseTagMetadata(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return {};
+
+  const parsedJson = parseJsonSafe(raw);
+  if (parsedJson && typeof parsedJson === "object" && !Array.isArray(parsedJson)) {
+    return parsedJson;
+  }
+
+  const meta = {};
+  raw.split(/[;|]/).forEach((segment) => {
+    const entry = String(segment || "").trim();
+    if (!entry) return;
+    const equalIndex = entry.indexOf("=");
+    const colonIndex = entry.indexOf(":");
+    const dividerIndex =
+      equalIndex >= 0 && colonIndex >= 0
+        ? Math.min(equalIndex, colonIndex)
+        : Math.max(equalIndex, colonIndex);
+    if (dividerIndex <= 0) return;
+    const key = entry.slice(0, dividerIndex).trim();
+    const val = entry.slice(dividerIndex + 1).trim();
+    if (!key || !val) return;
+    meta[key] = val;
+  });
+  return meta;
+}
+
 function normalizeInstrumentProfileRows(rows) {
   const next = {};
   if (!Array.isArray(rows)) return next;
 
   rows.forEach((rawRow) => {
     if (!rawRow || typeof rawRow !== "object") return;
-    const procedureKey = normalizeProcedureKey(
-      rawRow.procedureKey || rawRow.procedure || rawRow.systemKey
+    const meta = parseTagMetadata(
+      rawRow.tags || rawRow.tag || rawRow.metadata || rawRow.meta
     );
-    const catalogNo = normalizeCatalogNo(rawRow.catalogNo || rawRow.code);
+    const procedureKey = normalizeProcedureKey(
+      rawRow.procedureKey ||
+        rawRow.procedure ||
+        rawRow.systemKey ||
+        rawRow.procedurekey ||
+        rawRow.systemkey ||
+        rawRow.system ||
+        rawRow.system_name ||
+        rawRow.tindakan ||
+        rawRow.operation ||
+        rawRow.profil ||
+        meta.procedureKey ||
+        meta.procedure ||
+        meta.systemKey ||
+        meta.system ||
+        meta.operation
+    );
+    const catalogNo = normalizeCatalogNo(
+      rawRow.catalogNo ||
+        rawRow.code ||
+        rawRow.catalogno ||
+        rawRow.kode ||
+        rawRow.katalog ||
+        rawRow.itemCode ||
+        rawRow.itemcode ||
+        meta.catalogNo ||
+        meta.code ||
+        meta.kode ||
+        meta.itemCode
+    );
     if (!procedureKey || !catalogNo) return;
 
-    const qtyValue = Number(rawRow.qty || rawRow.piece || 1);
+    const qtyValue = Number(
+      rawRow.qty ||
+        rawRow.piece ||
+        rawRow.pieces ||
+        rawRow.pcs ||
+        rawRow.jumlah ||
+        meta.qty ||
+        meta.piece ||
+        meta.pieces ||
+        1
+    );
+    const driveId = extractDriveIdFromRecord({ ...(meta || {}), ...(rawRow || {}) });
+    const imageSource =
+      driveIdToImageUrl(driveId) ||
+      String(
+        rawRow.imageSrc ||
+          rawRow.imageUrl ||
+          rawRow.image ||
+          rawRow.photourl ||
+          rawRow.photoUrl ||
+          rawRow.foto ||
+          rawRow.thumbnail ||
+          meta.imageSrc ||
+          meta.imageUrl ||
+          meta.photoUrl ||
+          ""
+      ).trim();
     const normalizedRow = {
       id:
         String(rawRow.id || "").trim() ||
         `${procedureKey}-remote-${catalogNo.toLowerCase()}`,
       procedureKey,
       catalogNo,
-      name: String(rawRow.name || "").trim(),
+      name: String(
+        rawRow.name ||
+          rawRow.description ||
+          rawRow.deskripsi ||
+          rawRow.instrument ||
+          rawRow.title ||
+          meta.name ||
+          meta.description ||
+          ""
+      ).trim(),
       qty: Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1,
-      category: String(rawRow.category || "Tray").trim() || "Tray",
-      imageUrl:
-        String(rawRow.imageSrc || rawRow.imageUrl || rawRow.photoUrl || "").trim(),
-      driveId: String(rawRow.driveId || "").trim(),
-      updatedAt: String(rawRow.updatedAt || "").trim(),
+      category:
+        String(
+          rawRow.category ||
+            rawRow.group ||
+            rawRow.kategori ||
+            rawRow.groupName ||
+            rawRow.subgroup ||
+            meta.category ||
+            meta.group ||
+            meta.kategori ||
+            "Tray"
+        ).trim() ||
+        "Tray",
+      imageUrl: toSafeImageSrc(imageSource, ""),
+      driveId,
+      updatedAt: String(rawRow.updatedAt || rawRow.updatedat || "").trim(),
       isRemote: true,
     };
 
@@ -602,6 +837,70 @@ function normalizeInstrumentProfileRows(rows) {
   });
 
   return next;
+}
+
+function parseJsonSafe(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function parseCsvRows(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const splitCsv = (line) =>
+    line
+      .split(",")
+      .map((item) => String(item || "").trim().replace(/^"|"$/g, ""));
+
+  const headers = splitCsv(lines[0]).map((header) => header.toLowerCase());
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = splitCsv(lines[i]);
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = cols[index] || "";
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function extractProfileRowsFromRemote(remote) {
+  if (!remote || typeof remote !== "object") return [];
+
+  const direct =
+    (Array.isArray(remote.items) && remote.items) ||
+    (Array.isArray(remote.rows) && remote.rows) ||
+    (Array.isArray(remote.instrumentProfiles) && remote.instrumentProfiles) ||
+    (Array.isArray(remote?.data?.instrumentProfiles) && remote.data.instrumentProfiles) ||
+    (Array.isArray(remote.data) && remote.data) ||
+    [];
+  if (direct.length) return direct;
+
+  if (Array.isArray(remote.payload)) return remote.payload;
+
+  const parsedPayload = parseJsonSafe(remote.payload);
+  if (parsedPayload && typeof parsedPayload === "object") {
+    return extractProfileRowsFromRemote(parsedPayload);
+  }
+
+  if (typeof remote.payload === "string") {
+    return parseCsvRows(remote.payload);
+  }
+
+  return [];
 }
 
 function mergeProcedureItemsWithProfiles(baseItems, procedureKey, profilesByProcedure) {
@@ -637,109 +936,6 @@ function mergeProcedureItemsWithProfiles(baseItems, procedureKey, profilesByProc
   });
 
   return merged;
-}
-
-function buildChecklistItemId(procedureKey, catalogNo) {
-  const normalizedCode = String(catalogNo || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `${procedureKey}-${normalizedCode || "item"}`;
-}
-
-function toChecklistItemFromProfile(procedureKey, profile) {
-  const catalogNo = normalizeCatalogNo(profile?.catalogNo || profile?.code);
-  const qtyValue = Number(profile?.qty || profile?.piece || 1);
-  return {
-    id: String(profile?.id || "").trim() || buildChecklistItemId(procedureKey, catalogNo),
-    catalogNo,
-    name: String(profile?.name || catalogNo || "").trim(),
-    qty: Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1,
-    category: String(profile?.category || "Tray").trim() || "Tray",
-    imageUrl: String(profile?.imageUrl || profile?.imageSrc || "").trim(),
-    isRemote: true,
-  };
-}
-
-function buildRemoteItemsByProcedure(profilesByProcedure) {
-  const next = { tkr: [], thr: [], bipolar: [], stem: [] };
-  if (!profilesByProcedure || typeof profilesByProcedure !== "object") return next;
-
-  Object.keys(next).forEach((procedureKey) => {
-    const profileMap = profilesByProcedure?.[procedureKey] || {};
-    const rows = Object.values(profileMap)
-      .map((profile) => toChecklistItemFromProfile(procedureKey, profile))
-      .filter((item) => item.catalogNo && item.name);
-    rows.sort((a, b) => a.catalogNo.localeCompare(b.catalogNo));
-    next[procedureKey] = rows;
-  });
-  return next;
-}
-
-function mergeRowsByCatalogNo(rows) {
-  const merged = new Map();
-  rows.forEach((row) => {
-    const catalogNo = normalizeCatalogNo(row?.catalogNo);
-    if (!catalogNo || merged.has(catalogNo)) return;
-    merged.set(catalogNo, row);
-  });
-  return Array.from(merged.values());
-}
-
-function getRemoteProcedureItems(procedureKey, remoteItemsByProcedure, options = {}) {
-  const {
-    bipolarIncludeStem = false,
-    thrIncludeStem = false,
-  } = options || {};
-
-  if (procedureKey === "bipolar") {
-    const rows = bipolarIncludeStem
-      ? [...(remoteItemsByProcedure.bipolar || []), ...(remoteItemsByProcedure.stem || [])]
-      : [...(remoteItemsByProcedure.bipolar || [])];
-    return mergeRowsByCatalogNo(rows);
-  }
-
-  if (procedureKey === "thr") {
-    const rows = thrIncludeStem
-      ? [...(remoteItemsByProcedure.thr || []), ...(remoteItemsByProcedure.stem || [])]
-      : [...(remoteItemsByProcedure.thr || [])];
-    return mergeRowsByCatalogNo(rows);
-  }
-
-  return [...(remoteItemsByProcedure[procedureKey] || [])];
-}
-
-function buildMasterSeedRows() {
-  const sourceRowsByProcedure = {
-    tkr: TKR_TRAY_ROWS,
-    thr: THR_TRAY_ROWS,
-    bipolar: BIPOLAR_TRAY_ROWS,
-    stem: STEM_TRAY_ROWS,
-  };
-
-  const merged = [];
-  Object.entries(sourceRowsByProcedure).forEach(([procedureKey, rows]) => {
-    buildChecklistItems(procedureKey, rows).forEach((item) => {
-      merged.push({
-        id: buildChecklistItemId(procedureKey, item.catalogNo),
-        procedureKey,
-        catalogNo: normalizeCatalogNo(item.catalogNo),
-        name: String(item.name || "").trim(),
-        category: String(item.category || "Tray").trim() || "Tray",
-        qty: Number(item.qty || 1),
-        imageUrl: String(item.imageUrl || "").trim(),
-      });
-    });
-  });
-
-  const dedup = new Map();
-  merged.forEach((row) => {
-    const key = `${row.procedureKey}::${row.catalogNo}`;
-    if (!row.procedureKey || !row.catalogNo || !row.name || dedup.has(key)) return;
-    dedup.set(key, row);
-  });
-  return Array.from(dedup.values());
 }
 
 function createCustomInstrumentId(procedureKey, catalogNo) {
@@ -817,45 +1013,25 @@ export default function NormedInstrumentChecklistApp() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [previewItem, setPreviewItem] = useState(null);
-  const [previewZoom, setPreviewZoom] = useState(PREVIEW_ZOOM_MIN);
-  const previewSwipeRef = useRef({ x: 0, y: 0, active: false });
   const [showOnlyUnchecked, setShowOnlyUnchecked] = useState(false);
   const [showMobilePhotos, setShowMobilePhotos] = useState(false);
   const [superCompactMobile, setSuperCompactMobile] = useState(true);
   const [checklistViewMode, setChecklistViewMode] = useState("group");
-  const [collapsedGroupsByProcedure, setCollapsedGroupsByProcedure] = useState(
-    {}
-  );
+  const [activeGroupByProcedure, setActiveGroupByProcedure] = useState({});
+  const [collapsedGroupsByProcedure, setCollapsedGroupsByProcedure] = useState({});
   const [profilesByProcedure, setProfilesByProcedure] = useState({});
   const [syncingProfiles, setSyncingProfiles] = useState(false);
-  const [seedingProfiles, setSeedingProfiles] = useState(false);
   const [profilesLoadedAt, setProfilesLoadedAt] = useState("");
 
   const selected = CHECKLISTS.find((item) => item.key === procedureKey) || CHECKLISTS[0];
-  const remoteItemsByProcedure = useMemo(
-    () => buildRemoteItemsByProcedure(profilesByProcedure),
-    [profilesByProcedure]
-  );
-  const getBaseItemsForProcedure = useCallback(
-    (procedure) => {
-      if (!procedure?.key) return [];
-      const remoteItems = getRemoteProcedureItems(procedure.key, remoteItemsByProcedure, {
+  const baseSelectedItems = useMemo(
+    () =>
+      getProcedureItems(selected, {
         bipolarIncludeStem,
         thrIncludeStem,
-      });
-      if (remoteItems.length) return remoteItems;
-      if (GOOGLE_SHEET_ENDPOINT) return [];
-      return getProcedureItems(procedure, {
-        bipolarIncludeStem,
-        thrIncludeStem,
-      });
-    },
-    [bipolarIncludeStem, remoteItemsByProcedure, thrIncludeStem]
+      }),
+    [selected, bipolarIncludeStem, thrIncludeStem]
   );
-  const baseSelectedItems = useMemo(() => getBaseItemsForProcedure(selected), [
-    getBaseItemsForProcedure,
-    selected,
-  ]);
   const selectedCustomItems = useMemo(
     () => customInstrumentsByProcedure[selected.key] || [],
     [customInstrumentsByProcedure, selected.key]
@@ -868,6 +1044,10 @@ export default function NormedInstrumentChecklistApp() {
         profilesByProcedure
       ),
     [baseSelectedItems, selectedCustomItems, selected.key, profilesByProcedure]
+  );
+  const selectedProfileCount = useMemo(
+    () => Object.keys(profilesByProcedure?.[selected.key] || {}).length,
+    [profilesByProcedure, selected.key]
   );
 
   useEffect(() => {
@@ -901,11 +1081,11 @@ export default function NormedInstrumentChecklistApp() {
       if (parsed.checklistViewMode === "group" || parsed.checklistViewMode === "all") {
         setChecklistViewMode(parsed.checklistViewMode);
       }
-      if (
-        parsed.collapsedGroupsByProcedure &&
-        typeof parsed.collapsedGroupsByProcedure === "object"
-      ) {
+      if (parsed.collapsedGroupsByProcedure && typeof parsed.collapsedGroupsByProcedure === "object") {
         setCollapsedGroupsByProcedure(parsed.collapsedGroupsByProcedure);
+      }
+      if (parsed.activeGroupByProcedure && typeof parsed.activeGroupByProcedure === "object") {
+        setActiveGroupByProcedure(parsed.activeGroupByProcedure);
       }
       setCustomInstrumentsByProcedure(sanitizeCustomInstruments(parsed.customInstrumentsByProcedure));
     } catch (error) {
@@ -935,6 +1115,7 @@ export default function NormedInstrumentChecklistApp() {
         showMobilePhotos,
         superCompactMobile,
         checklistViewMode,
+        activeGroupByProcedure,
         collapsedGroupsByProcedure,
         customInstrumentsByProcedure,
       })
@@ -953,6 +1134,7 @@ export default function NormedInstrumentChecklistApp() {
     showMobilePhotos,
     superCompactMobile,
     checklistViewMode,
+    activeGroupByProcedure,
     collapsedGroupsByProcedure,
     customInstrumentsByProcedure,
   ]);
@@ -975,14 +1157,14 @@ export default function NormedInstrumentChecklistApp() {
   const groupedFilteredItems = useMemo(() => {
     const groupedMap = new Map();
     filteredItems.forEach((item) => {
-      const groupName = String(item.category || "Lainnya").trim() || "Lainnya";
-      if (!groupedMap.has(groupName)) groupedMap.set(groupName, []);
-      groupedMap.get(groupName).push(item);
+      const groupKey = String(item.category || "Lainnya").trim() || "Lainnya";
+      if (!groupedMap.has(groupKey)) groupedMap.set(groupKey, []);
+      groupedMap.get(groupKey).push(item);
     });
 
-    const rows = Array.from(groupedMap.entries()).map(([groupName, items]) => {
+    const groupedRows = Array.from(groupedMap.entries()).map(([groupName, items]) => {
       const completedInGroup = items.reduce(
-        (totalDone, item) => totalDone + (checked[item.id] ? 1 : 0),
+        (total, item) => total + (checked[item.id] ? 1 : 0),
         0
       );
       return {
@@ -993,52 +1175,67 @@ export default function NormedInstrumentChecklistApp() {
       };
     });
 
-    rows.sort((a, b) => {
+    groupedRows.sort((a, b) => {
       const priorityA = getGroupPriority(a.groupName, selected.key);
       const priorityB = getGroupPriority(b.groupName, selected.key);
       if (priorityA !== priorityB) return priorityA - priorityB;
       return a.groupName.localeCompare(b.groupName, "id", { sensitivity: "base" });
     });
 
-    return rows;
+    return groupedRows;
   }, [checked, filteredItems, selected.key]);
 
+  const activeGroupName = useMemo(() => {
+    return String(activeGroupByProcedure[selected.key] || "all");
+  }, [activeGroupByProcedure, selected.key]);
+
+  const displayedGroupedItems = useMemo(() => {
+    if (checklistViewMode !== "group") return groupedFilteredItems;
+    if (activeGroupName === "all") return groupedFilteredItems;
+    return groupedFilteredItems.filter((group) => group.groupName === activeGroupName);
+  }, [activeGroupName, checklistViewMode, groupedFilteredItems]);
+
+  const visibleItems = useMemo(() => {
+    if (checklistViewMode !== "group") return filteredItems;
+    if (activeGroupName === "all") return filteredItems;
+    const selectedGroup = groupedFilteredItems.find(
+      (group) => group.groupName === activeGroupName
+    );
+    return selectedGroup ? selectedGroup.items : [];
+  }, [activeGroupName, checklistViewMode, filteredItems, groupedFilteredItems]);
+
+  const firstIncompleteGroupName = useMemo(() => {
+    const row = groupedFilteredItems.find((group) => group.completed < group.total);
+    return row?.groupName || "";
+  }, [groupedFilteredItems]);
+
   const selectedGroupItemIds = useMemo(() => {
-    const groupIdMap = {};
+    const map = {};
     selectedItems.forEach((item) => {
-      const groupName = String(item.category || "Lainnya").trim() || "Lainnya";
-      if (!groupIdMap[groupName]) groupIdMap[groupName] = [];
-      groupIdMap[groupName].push(item.id);
+      const groupKey = String(item.category || "Lainnya").trim() || "Lainnya";
+      if (!map[groupKey]) map[groupKey] = [];
+      map[groupKey].push(item.id);
     });
-    return groupIdMap;
+    return map;
   }, [selectedItems]);
 
-  useEffect(() => {
-    const entries = Object.entries(selectedGroupItemIds);
-    if (!entries.length) return;
-
-    setCollapsedGroupsByProcedure((prev) => {
-      const byProcedure = prev[selected.key] || {};
-      const nextByProcedure = { ...byProcedure };
-      let changed = false;
-
-      entries.forEach(([groupName, ids]) => {
-        if (typeof nextByProcedure[groupName] === "boolean") return;
-        nextByProcedure[groupName] = ids.every((id) => Boolean(checked[id]));
-        changed = true;
-      });
-
-      if (!changed) return prev;
-      return { ...prev, [selected.key]: nextByProcedure };
-    });
-  }, [checked, selected.key, selectedGroupItemIds]);
+  const setActiveGroupFilter = useCallback(
+    (groupName) => {
+      const nextValue = String(groupName || "all");
+      setActiveGroupByProcedure((prev) => ({
+        ...prev,
+        [selected.key]: nextValue,
+      }));
+    },
+    [selected.key]
+  );
 
   const previewSourceItems = useMemo(() => {
-    if (!previewItem) return filteredItems;
+    if (!previewItem) return visibleItems;
     const previewId = String(previewItem.id || "");
-    const existsInFiltered = filteredItems.some((item) => item.id === previewId);
-    return existsInFiltered ? filteredItems : selectedItems;
-  }, [filteredItems, previewItem, selectedItems]);
+    const existsInFiltered = visibleItems.some((item) => item.id === previewId);
+    return existsInFiltered ? visibleItems : selectedItems;
+  }, [previewItem, selectedItems, visibleItems]);
 
   const previewIndex = useMemo(() => {
     if (!previewItem) return -1;
@@ -1053,16 +1250,24 @@ export default function NormedInstrumentChecklistApp() {
   }, [previewIndex, previewItem, previewSourceItems, selectedItems]);
 
   const previewHasPrev = previewIndex > 0;
-  const previewHasNext = previewIndex >= 0 && previewIndex < previewSourceItems.length - 1;
+  const previewHasNext =
+    previewIndex >= 0 && previewIndex < previewSourceItems.length - 1;
 
-  useEffect(() => {
-    setPreviewZoom(PREVIEW_ZOOM_MIN);
-  }, [previewCurrentItem?.id]);
+  const visibleCompletedCount = useMemo(
+    () => visibleItems.reduce((total, item) => total + (checked[item.id] ? 1 : 0), 0),
+    [checked, visibleItems]
+  );
 
   const total = selectedItems.length;
   const completed = selectedItems.filter((item) => checked[item.id]).length;
   const missingItems = selectedItems.filter((item) => !checked[item.id]);
   const progress = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const progressRingStyle = useMemo(
+    () => ({
+      background: `conic-gradient(#2563eb ${progress}%, #e2e8f0 ${progress}% 100%)`,
+    }),
+    [progress]
+  );
   const selectedProcedureTitle = useMemo(() => {
     if (selected.key === "bipolar") {
       return bipolarIncludeStem ? `${selected.title} + Stem` : `${selected.title} (Bipolar Only)`;
@@ -1072,195 +1277,146 @@ export default function NormedInstrumentChecklistApp() {
     }
     return selected.title;
   }, [selected.key, selected.title, bipolarIncludeStem, thrIncludeStem]);
-  const activeCollapsedGroups = collapsedGroupsByProcedure[selected.key] || {};
 
-  async function runSheetAction(action, payload = {}) {
-    if (!GOOGLE_SHEET_ENDPOINT) {
-      throw new Error("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di .env.local");
-    }
+  useEffect(() => {
+    const groupEntries = Object.entries(selectedGroupItemIds);
+    if (!groupEntries.length) return;
+    setCollapsedGroupsByProcedure((prev) => {
+      const byProcedure = prev[selected.key] || {};
+      const nextByProcedure = { ...byProcedure };
+      let changed = false;
 
-    const response = await fetch("/api/google-sheet-images", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: GOOGLE_SHEET_ENDPOINT,
-        action,
-        ...payload,
-      }),
+      groupEntries.forEach(([groupName, ids]) => {
+        if (!Array.isArray(ids) || !ids.length) return;
+        const isDone = ids.every((id) => Boolean(checked[id]));
+        if (isDone && !nextByProcedure[groupName]) {
+          nextByProcedure[groupName] = true;
+          changed = true;
+        }
+      });
+
+      if (!changed) return prev;
+      return {
+        ...prev,
+        [selected.key]: nextByProcedure,
+      };
     });
+  }, [checked, selected.key, selectedGroupItemIds]);
 
-    const result = await response.json();
-    const remote = result?.remote || result || {};
-    const remoteStatus = String(remote?.status || "").toLowerCase();
-    const remoteOk =
-      typeof remote?.ok === "boolean"
-        ? remote.ok
-        : remoteStatus
-          ? remoteStatus !== "error"
-          : true;
-
-    if (!response.ok || !result?.ok || !remoteOk) {
-      throw new Error(
-        remote?.error ||
-          remote?.message ||
-          result?.error ||
-          `Request gagal (HTTP ${response.status}).`
-      );
+  useEffect(() => {
+    if (checklistViewMode !== "group") return;
+    if (activeGroupName === "all") return;
+    const exists = groupedFilteredItems.some(
+      (group) => group.groupName === activeGroupName
+    );
+    if (!exists) {
+      setActiveGroupFilter("all");
     }
+  }, [activeGroupName, checklistViewMode, groupedFilteredItems, setActiveGroupFilter]);
 
-    return remote;
-  }
-
-  async function refreshInstrumentProfiles(options = {}) {
+async function refreshInstrumentProfiles(options = {}) {
     if (!GOOGLE_SHEET_ENDPOINT) return;
     const silent = Boolean(options.silent);
     if (!silent) setMessage("");
     setSyncingProfiles(true);
 
     try {
-      const remote = await runSheetAction(ACTION_LIST_INSTRUMENT_PROFILES);
-      const rows = Array.isArray(remote?.items) ? remote.items : [];
-      setProfilesByProcedure(normalizeInstrumentProfileRows(rows));
+      let lastError = "";
+      let rows = [];
+
+      for (const actionName of ACTION_LIST_INSTRUMENT_PROFILE_CANDIDATES) {
+        const response = await fetch("/api/google-sheet-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: GOOGLE_SHEET_ENDPOINT,
+            action: actionName,
+            sheet: INSTRUMENT_PROFILE_SHEET_NAME,
+            sheetName: INSTRUMENT_PROFILE_SHEET_NAME,
+            table: INSTRUMENT_PROFILE_SHEET_NAME,
+          }),
+        });
+
+        const result = await response.json();
+        const remote = result?.remote || result || {};
+        const remoteStatus = String(remote?.status || "").toLowerCase();
+        const remoteOk =
+          typeof remote?.ok === "boolean"
+            ? remote.ok
+            : remoteStatus
+              ? remoteStatus !== "error"
+              : true;
+
+        if (!response.ok || !result?.ok || !remoteOk) {
+          const messageText =
+            remote?.error || remote?.message || result?.error || "";
+          lastError = messageText || `HTTP ${response.status}`;
+          continue;
+        }
+
+        rows = extractProfileRowsFromRemote(remote);
+        if (rows.length) {
+          break;
+        }
+      }
+
+      if (!rows.length) {
+        const query = new URLSearchParams({
+          sheet: INSTRUMENT_PROFILE_SHEET_NAME,
+          sheetName: INSTRUMENT_PROFILE_SHEET_NAME,
+          table: INSTRUMENT_PROFILE_SHEET_NAME,
+        });
+        const getResponse = await fetch(`/api/google-sheet-images?${query.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        const getResult = await getResponse.json();
+        const remoteGet = getResult?.remote || getResult || {};
+        const remoteGetStatus = String(remoteGet?.status || "").toLowerCase();
+        const remoteGetOk =
+          typeof remoteGet?.ok === "boolean"
+            ? remoteGet.ok
+            : remoteGetStatus
+              ? remoteGetStatus !== "error"
+              : true;
+
+        if (getResponse.ok && getResult?.ok && remoteGetOk) {
+          rows = extractProfileRowsFromRemote(remoteGet);
+        }
+      }
+
+      if (!rows.length && lastError) {
+        throw new Error(lastError);
+      }
+
+      const normalizedProfiles = normalizeInstrumentProfileRows(rows);
+      const normalizedCount = Object.values(normalizedProfiles).reduce(
+        (total, byCatalog) => total + Object.keys(byCatalog || {}).length,
+        0
+      );
+      setProfilesByProcedure(normalizedProfiles);
       setProfilesLoadedAt(new Date().toISOString());
       if (!silent) {
-        setMessage(`Sinkron profile instrument selesai (${rows.length} data).`);
+        if (rows.length > 0 && normalizedCount === 0) {
+          setMessage(
+            "Data dari endpoint ditemukan, tapi format belum cocok. Pastikan sheet InstrumentProfiles punya kolom: procedureKey, catalogNo, name, qty/piece, category, imageSrc/driveId."
+          );
+        } else {
+          setMessage(`Sinkron foto instrument selesai (${normalizedCount} data).`);
+        }
       }
     } catch (error) {
       if (!silent) {
-        setMessage(error?.message || "Gagal sinkron profile instrument.");
+        setMessage(error?.message || "Gagal sinkron foto instrument.");
       }
     } finally {
       setSyncingProfiles(false);
     }
   }
 
-  async function fetchLocalImageAsDataUrl(imageUrl) {
-    if (!imageUrl || !String(imageUrl).startsWith("/")) return "";
-    const response = await fetch(imageUrl);
-    if (!response.ok) return "";
-    const blob = await response.blob();
-    return await fileToBase64(blob);
-  }
-
-  async function seedMasterProfilesToSheet() {
-    setMessage("");
-
-    if (!GOOGLE_SHEET_ENDPOINT) {
-      setMessage("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di .env.local");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Sinkron semua data tray (TKR/THR/Bipolar/Stem) ke sheet InstrumentProfiles sekarang?"
-    );
-    if (!confirmed) return;
-
-    setSeedingProfiles(true);
-    try {
-      const masterRows = buildMasterSeedRows();
-      const imageCache = new Map();
-      let successCount = 0;
-      let photoUploadedCount = 0;
-      const errors = [];
-
-      for (const row of masterRows) {
-        const payloadItem = {
-          id: row.id,
-          procedureKey: row.procedureKey,
-          catalogNo: row.catalogNo,
-          name: row.name,
-          category: row.category || "Tray",
-          qty: Number(row.qty || 1),
-        };
-
-        const imageUrl = String(row.imageUrl || "").trim();
-        if (imageUrl.startsWith("/")) {
-          if (!imageCache.has(imageUrl)) {
-            const dataUrl = await fetchLocalImageAsDataUrl(imageUrl);
-            imageCache.set(imageUrl, dataUrl || "");
-          }
-          const dataUrl = imageCache.get(imageUrl) || "";
-          if (dataUrl) {
-            const ext = imageUrl.split(".").pop()?.toLowerCase() || "jpg";
-            payloadItem.imageDataUrl = dataUrl;
-            payloadItem.mimeType = ext === "png" ? "image/png" : "image/jpeg";
-            payloadItem.fileName = `${row.procedureKey}-${row.catalogNo}.${ext === "png" ? "png" : "jpg"}`;
-          }
-        }
-
-        try {
-          await runSheetAction("create_instrument_profile", {
-            id: payloadItem.id,
-            item: payloadItem,
-            deleteOldDriveFile: false,
-          });
-          successCount += 1;
-          if (payloadItem.imageDataUrl) photoUploadedCount += 1;
-        } catch (error) {
-          errors.push(`${row.procedureKey.toUpperCase()} ${row.catalogNo}: ${error?.message || "error"}`);
-        }
-      }
-
-      await refreshInstrumentProfiles({ silent: true });
-      const errorText = errors.length ? ` Gagal: ${errors.length} item.` : "";
-      setMessage(
-        `Seed selesai. Berhasil ${successCount}/${masterRows.length} item, upload foto ${photoUploadedCount} item.${errorText}`
-      );
-      if (errors.length) {
-        console.error("Seed instrument profile errors", errors.slice(0, 20));
-      }
-    } catch (error) {
-      setMessage(error?.message || "Gagal seed master profile ke Google Sheet.");
-    } finally {
-      setSeedingProfiles(false);
-    }
-  }
-
   useEffect(() => {
     refreshInstrumentProfiles({ silent: true });
   }, []);
-
-  function toggleItem(id) {
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
-
-  function setCheckedForItems(items, shouldCheck) {
-    if (!Array.isArray(items) || !items.length) return;
-    setChecked((prev) => {
-      const next = { ...prev };
-      items.forEach((item) => {
-        if (shouldCheck) {
-          next[item.id] = true;
-        } else {
-          delete next[item.id];
-        }
-      });
-      return next;
-    });
-  }
-
-  function checkAllVisibleItems() {
-    setCheckedForItems(filteredItems, true);
-  }
-
-  function uncheckAllVisibleItems() {
-    setCheckedForItems(filteredItems, false);
-  }
-
-  function toggleGroupCollapsed(groupName) {
-    const key = String(groupName || "").trim();
-    if (!key) return;
-    setCollapsedGroupsByProcedure((prev) => {
-      const byProcedure = prev[selected.key] || {};
-      return {
-        ...prev,
-        [selected.key]: {
-          ...byProcedure,
-          [key]: !Boolean(byProcedure[key]),
-        },
-      };
-    });
-  }
 
   const openPreview = useCallback((item) => {
     if (!item) return;
@@ -1280,74 +1436,6 @@ export default function NormedInstrumentChecklistApp() {
     if (!previewHasNext) return;
     setPreviewItem(previewSourceItems[previewIndex + 1]);
   }, [previewHasNext, previewIndex, previewSourceItems]);
-
-  const zoomInPreview = useCallback(() => {
-    setPreviewZoom((prev) =>
-      Math.min(PREVIEW_ZOOM_MAX, Number((prev + PREVIEW_ZOOM_STEP).toFixed(2)))
-    );
-  }, []);
-
-  const zoomOutPreview = useCallback(() => {
-    setPreviewZoom((prev) =>
-      Math.max(PREVIEW_ZOOM_MIN, Number((prev - PREVIEW_ZOOM_STEP).toFixed(2)))
-    );
-  }, []);
-
-  const resetPreviewZoom = useCallback(() => {
-    setPreviewZoom(PREVIEW_ZOOM_MIN);
-  }, []);
-
-  const onPreviewWheel = useCallback((event) => {
-    event.preventDefault();
-    const delta = event.deltaY < 0 ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP;
-    setPreviewZoom((prev) => {
-      const next = Number((prev + delta).toFixed(2));
-      return Math.min(PREVIEW_ZOOM_MAX, Math.max(PREVIEW_ZOOM_MIN, next));
-    });
-  }, []);
-
-  const onPreviewTouchStart = useCallback((event) => {
-    const touch = event.touches?.[0];
-    if (!touch) return;
-    previewSwipeRef.current = {
-      x: touch.clientX,
-      y: touch.clientY,
-      active: true,
-    };
-  }, []);
-
-  const onPreviewTouchEnd = useCallback(() => {
-    const swipe = previewSwipeRef.current;
-    if (!swipe.active) return;
-    previewSwipeRef.current.active = false;
-  }, []);
-
-  const onPreviewTouchMove = useCallback(
-    (event) => {
-      const swipe = previewSwipeRef.current;
-      if (!swipe.active) return;
-      const touch = event.touches?.[0];
-      if (!touch) return;
-
-      const deltaX = touch.clientX - swipe.x;
-      const deltaY = touch.clientY - swipe.y;
-      const absX = Math.abs(deltaX);
-      const absY = Math.abs(deltaY);
-      const SWIPE_THRESHOLD = 50;
-
-      if (previewZoom > PREVIEW_ZOOM_MIN) return;
-
-      if (absX < SWIPE_THRESHOLD || absX < absY * 1.15) return;
-      swipe.active = false;
-
-      if (deltaX < 0) {
-        goToNextPreviewItem();
-      } else {
-        goToPreviousPreviewItem();
-      }
-    },
-    [goToNextPreviewItem, goToPreviousPreviewItem, previewZoom]
-  );
 
   useEffect(() => {
     if (!previewItem) return undefined;
@@ -1369,6 +1457,90 @@ export default function NormedInstrumentChecklistApp() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [previewItem, closePreview, goToPreviousPreviewItem, goToNextPreviewItem]);
+
+  function toggleItem(id) {
+    setChecked((prev) => {
+      const next = { ...prev };
+      if (next[id]) {
+        delete next[id];
+      } else {
+        next[id] = true;
+      }
+      return next;
+    });
+  }
+
+  function setCheckedForItems(items, shouldCheck) {
+    if (!Array.isArray(items) || !items.length) return;
+    setChecked((prev) => {
+      const next = { ...prev };
+      items.forEach((item) => {
+        if (shouldCheck) {
+          next[item.id] = true;
+        } else {
+          delete next[item.id];
+        }
+      });
+      return next;
+    });
+  }
+
+  function checkAllVisibleItems() {
+    setCheckedForItems(visibleItems, true);
+  }
+
+  function uncheckAllVisibleItems() {
+    setCheckedForItems(visibleItems, false);
+  }
+
+  function focusFirstIncompleteGroup() {
+    if (!firstIncompleteGroupName) return;
+    setActiveGroupFilter(firstIncompleteGroupName);
+    setCollapsedGroupsByProcedure((prev) => {
+      const byProcedure = { ...(prev[selected.key] || {}) };
+      byProcedure[firstIncompleteGroupName] = false;
+      return {
+        ...prev,
+        [selected.key]: byProcedure,
+      };
+    });
+  }
+
+  function toggleGroupCollapsed(groupName) {
+    const key = String(groupName || "").trim();
+    if (!key) return;
+    setCollapsedGroupsByProcedure((prev) => {
+      const byProcedure = prev[selected.key] || {};
+      return {
+        ...prev,
+        [selected.key]: {
+          ...byProcedure,
+          [key]: !byProcedure[key],
+        },
+      };
+    });
+  }
+
+  function isGroupCollapsed(groupName) {
+    const key = String(groupName || "").trim();
+    if (!key) return false;
+    return Boolean(collapsedGroupsByProcedure[selected.key]?.[key]);
+  }
+
+  function setAllGroupsCollapsed(shouldCollapse) {
+    const targetGroups =
+      activeGroupName === "all" ? groupedFilteredItems : displayedGroupedItems;
+    setCollapsedGroupsByProcedure((prev) => {
+      const byProcedure = { ...(prev[selected.key] || {}) };
+      targetGroups.forEach((group) => {
+        byProcedure[group.groupName] = shouldCollapse;
+      });
+      return {
+        ...prev,
+        [selected.key]: byProcedure,
+      };
+    });
+  }
 
   function resetSelectedProcedure() {
     const next = { ...checked };
@@ -1634,29 +1806,31 @@ export default function NormedInstrumentChecklistApp() {
         </p>
       </div>
       <form onSubmit={addExtraInstrument} className="grid gap-3 md:grid-cols-[160px_1fr_120px_130px]">
-        <input
+        <FloatingInputField
           value={extraCatalogNo}
           onChange={(event) => setExtraCatalogNo(event.target.value)}
-          placeholder="Kode *"
-          className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-900"
+          label="Kode"
+          required
+          inputClassName="border-blue-200 focus:border-blue-400"
         />
-        <input
+        <FloatingInputField
           value={extraDescription}
           onChange={(event) => setExtraDescription(event.target.value)}
-          placeholder="Deskripsi *"
-          className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-900"
+          label="Deskripsi"
+          required
+          inputClassName="border-blue-200 focus:border-blue-400"
         />
-        <input
+        <FloatingInputField
           value={extraPiece}
           onChange={(event) => setExtraPiece(event.target.value)}
           type="number"
           min={1}
-          placeholder="Piece"
-          className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-900"
+          label="Piece"
+          inputClassName="border-blue-200 focus:border-blue-400"
         />
         <button
           type="submit"
-          className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800"
+          className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-800 px-4 py-3 text-sm font-semibold text-white hover:opacity-95"
         >
           Tambah Instrument
         </button>
@@ -1697,16 +1871,7 @@ export default function NormedInstrumentChecklistApp() {
       <motion.div
         key={item.id}
         layout
-        role="button"
-        tabIndex={0}
-        onClick={() => toggleItem(item.id)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            toggleItem(item.id);
-          }
-        }}
-        className={`w-full cursor-pointer px-4 py-3 text-left transition ${
+        className={`w-full px-4 py-3 text-left transition ${
           isChecked ? "bg-emerald-50/70" : "hover:bg-slate-50"
         } ${superCompactMobile ? "md:px-4 px-3 py-2" : ""}`}
       >
@@ -1715,24 +1880,28 @@ export default function NormedInstrumentChecklistApp() {
             superCompactMobile ? "gap-2" : "gap-3"
           }`}
         >
-          <div
-            className={`flex min-w-0 items-start ${
+          <button
+            type="button"
+            onClick={() => toggleItem(item.id)}
+            className={`flex min-w-0 flex-1 items-start text-left ${
               superCompactMobile ? "gap-2" : "gap-2.5"
             }`}
           >
             {showMobilePhotos ? (
               <div
                 className={`shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 ${
-                  superCompactMobile ? "h-12 w-12" : "h-16 w-16"
+                  superCompactMobile ? "h-9 w-9" : "h-12 w-12"
                 }`}
               >
                 {item.imageUrl ? (
-                  <DriveImageWithFallback
-                    src={item.imageUrl}
-                    driveId={item.driveId}
-                    alt={item.name}
-                    className="h-full w-full object-cover"
-                  />
+                  <>
+                    <DriveImageWithFallback
+                      src={item.imageUrl}
+                      driveId={item.driveId}
+                      alt={item.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </>
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-slate-400">
                     <ImageIcon size={16} />
@@ -1768,43 +1937,50 @@ export default function NormedInstrumentChecklistApp() {
                 Piece: {item.qty}
               </p>
             </div>
-          </div>
-          <div className="shrink-0 space-y-1">
+          </button>
+          <div className="ml-2 flex shrink-0 flex-col items-end gap-1">
             <button
               type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                openPreview(item);
-              }}
-              className="inline-flex w-full items-center justify-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => openPreview(item)}
+              className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
             >
               Preview
             </button>
-            <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => toggleItem(item.id)}
+              className="inline-flex rounded-full p-0.5"
+            >
               {isChecked ? (
-                <CheckCircle2 className="text-emerald-600" size={20} />
+                <CheckCircle2 className="shrink-0 text-emerald-600" size={20} />
               ) : (
-                <Circle className="text-slate-300" size={20} />
+                <Circle className="shrink-0 text-slate-300" size={20} />
               )}
-            </div>
+            </button>
           </div>
         </div>
 
-        <div className="hidden grid-cols-[64px_130px_1fr_90px_44px] items-center gap-3 md:grid">
-        <div className="h-14 w-14 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+        <div className="hidden grid-cols-[64px_130px_1fr_90px_110px] items-center gap-3 md:grid">
+          <button
+            type="button"
+            onClick={() => openPreview(item)}
+            className="h-10 w-10 overflow-hidden rounded-md border border-slate-200 bg-slate-50"
+          >
             {item.imageUrl ? (
-              <DriveImageWithFallback
-                src={item.imageUrl}
-                driveId={item.driveId}
-                alt={item.name}
-                className="h-full w-full object-cover"
-              />
+              <>
+                <DriveImageWithFallback
+                  src={item.imageUrl}
+                  driveId={item.driveId}
+                  alt={item.name}
+                  className="h-full w-full object-cover"
+                />
+              </>
             ) : (
               <div className="flex h-full w-full items-center justify-center text-slate-400">
                 <ImageIcon size={14} />
               </div>
             )}
-          </div>
+          </button>
           <p className="text-sm font-semibold text-slate-700">{item.catalogNo}</p>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
@@ -1815,22 +1991,25 @@ export default function NormedInstrumentChecklistApp() {
             ) : null}
           </div>
           <p className="text-sm text-slate-600">{item.qty}</p>
-          <div className="flex justify-end gap-2">
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                openPreview(item);
-              }}
-              className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => openPreview(item)}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
             >
               Preview
             </button>
-            {isChecked ? (
-              <CheckCircle2 className="text-emerald-600" size={20} />
-            ) : (
-              <Circle className="text-slate-300" size={20} />
-            )}
+            <button
+              type="button"
+              onClick={() => toggleItem(item.id)}
+              className="inline-flex rounded-full p-0.5"
+            >
+              {isChecked ? (
+                <CheckCircle2 className="text-emerald-600" size={20} />
+              ) : (
+                <Circle className="text-slate-300" size={20} />
+              )}
+            </button>
           </div>
         </div>
       </motion.div>
@@ -1838,40 +2017,51 @@ export default function NormedInstrumentChecklistApp() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 md:px-8">
+    <main className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50/40 to-indigo-100/40 px-4 py-6 text-slate-900 md:px-8">
       <section className="mx-auto max-w-7xl space-y-6">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:rounded-3xl md:p-6"
+          className="overflow-hidden rounded-3xl border border-white/80 bg-gradient-to-br from-white via-slate-50 to-blue-50 p-4 shadow-[0_14px_34px_rgba(30,41,59,0.14)] md:p-6"
         >
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 <ClipboardCheck size={14} /> Normed Instrument Checklist
               </div>
-              <h1 className="text-lg font-bold text-slate-900 md:text-3xl">Checklist Elektronik Instrument Operasi</h1>
-              <p className="mt-1 hidden max-w-3xl text-sm text-slate-500 md:block">
+              <h1 className="text-xl font-bold text-slate-900 md:text-5xl md:leading-tight">Checklist Elektronik Instrument Operasi</h1>
+              <p className="mt-2 hidden max-w-3xl text-sm text-slate-600 md:block">
                 Checklist TKR, Bipolar, dan THR dengan dokumentasi foto serta integrasi Google Sheet.
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
-              <p className="text-xs font-medium text-slate-500">Progress</p>
-              <p className="text-2xl font-bold text-slate-900 md:text-3xl">{progress}%</p>
-              <p className="text-[11px] text-slate-500">
-                {completed} dari {total} item selesai
-              </p>
+            <div className="flex items-center gap-4">
+              <div className="relative h-20 w-20 rounded-full p-2 md:h-24 md:w-24" style={progressRingStyle}>
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-sm font-bold text-slate-700 md:text-base">
+                  {progress}%
+                </div>
+              </div>
+              <div className="min-w-[135px] rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-center shadow-sm">
+                <p className="text-xs font-semibold text-slate-500">Progress</p>
+                <p className="text-3xl font-extrabold text-slate-900">{progress}%</p>
+                <p className="text-[11px] text-slate-500">
+                  {completed} dari {total} item selesai
+                </p>
+              </div>
             </div>
           </div>
         </motion.div>
 
         <section className="md:hidden">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Pilih Prosedur</div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pilih Prosedur</div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {CHECKLISTS.map((procedure) => {
               const active = procedure.key === procedureKey;
-              const baseProcedureItems = getBaseItemsForProcedure(procedure);
+              const theme = getProcedureTheme(procedure.key);
+              const baseProcedureItems = getProcedureItems(procedure, {
+                bipolarIncludeStem,
+                thrIncludeStem,
+              });
               const customProcedureItems = customInstrumentsByProcedure[procedure.key] || [];
               const procedureItems = [...baseProcedureItems, ...customProcedureItems];
               const done = procedureItems.filter((item) => checked[item.id]).length;
@@ -1879,14 +2069,14 @@ export default function NormedInstrumentChecklistApp() {
                 <button
                   key={procedure.key}
                   onClick={() => setProcedureKey(procedure.key)}
-                  className={`shrink-0 rounded-xl border px-3 py-2 text-left ${
+                  className={`shrink-0 rounded-xl border px-3 py-2 text-left shadow-sm ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                      ? `${theme.active} text-slate-900`
+                      : `${theme.inactive} text-slate-700`
                   }`}
                 >
                   <p className="text-xs font-semibold">{procedure.key.toUpperCase()}</p>
-                  <p className={`text-[11px] ${active ? "text-slate-200" : "text-slate-500"}`}>
+                  <p className="text-[11px] text-slate-500">
                     {done}/{procedureItems.length}
                   </p>
                 </button>
@@ -1895,10 +2085,14 @@ export default function NormedInstrumentChecklistApp() {
           </div>
         </section>
 
-        <section className="hidden gap-4 md:grid md:grid-cols-3">
+        <section className="hidden gap-4 md:grid md:grid-cols-2 xl:grid-cols-4">
           {CHECKLISTS.map((procedure) => {
             const active = procedure.key === procedureKey;
-            const baseProcedureItems = getBaseItemsForProcedure(procedure);
+            const theme = getProcedureTheme(procedure.key);
+            const baseProcedureItems = getProcedureItems(procedure, {
+              bipolarIncludeStem,
+              thrIncludeStem,
+            });
             const customProcedureItems = customInstrumentsByProcedure[procedure.key] || [];
             const procedureItems = [...baseProcedureItems, ...customProcedureItems];
             const done = procedureItems.filter((item) => checked[item.id]).length;
@@ -1908,26 +2102,38 @@ export default function NormedInstrumentChecklistApp() {
               <button
                 key={procedure.key}
                 onClick={() => setProcedureKey(procedure.key)}
-                className={`rounded-2xl border p-4 text-left shadow-sm transition hover:shadow-md ${
-                  active ? "border-slate-900 bg-white" : "border-slate-200 bg-white/80"
+                className={`rounded-3xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${
+                  active ? theme.active : theme.inactive
                 }`}
               >
-                <div className="mb-3 flex items-center justify-between">
-                  <Stethoscope className={active ? "text-slate-900" : "text-slate-400"} size={22} />
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className={`inline-flex h-11 w-11 items-center justify-center rounded-full ${theme.iconBg}`}>
+                    <Stethoscope size={22} />
+                  </span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                    <div className={`h-full rounded-full bg-gradient-to-r ${theme.bar}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${theme.badge}`}>
                     {pct}%
                   </span>
                 </div>
-                <h2 className="font-semibold">{procedure.title}</h2>
-                <p className="mt-1 text-sm text-slate-500">{procedure.subtitle}</p>
-                <p className="mt-2 text-xs text-slate-400">{done}/{procedureItems.length} item</p>
+                <h2 className="line-clamp-1 text-2xl font-bold text-slate-900">{procedure.title}</h2>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{procedure.subtitle}</p>
+                <p className="mt-2 text-xl font-semibold text-slate-800">{done}/{procedureItems.length} Item</p>
               </button>
             );
           })}
         </section>
 
+        <section className="rounded-3xl border border-white/80 bg-gradient-to-r from-white via-slate-50 to-blue-50 px-4 py-4 shadow-[0_10px_24px_rgba(30,41,59,0.12)] md:px-6">
+          <h3 className="text-2xl font-bold text-slate-900">Operasi &amp; Kontrol Tambahan</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Atur mode tray, tambah instrument, dan isi informasi operasi dengan cepat.
+          </p>
+        </section>
+
         {procedureKey === "bipolar" ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <section className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 p-3 shadow-sm">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-800">Mode Tray Bipolar</p>
@@ -1935,13 +2141,13 @@ export default function NormedInstrumentChecklistApp() {
                   Pilih sumber list: hanya tray bipolar atau gabung tray stem + bipolar.
                 </p>
               </div>
-              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <div className="inline-flex rounded-xl border border-violet-200 bg-white/80 p-1">
                 <button
                   type="button"
                   onClick={() => setBipolarIncludeStem(false)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                     !bipolarIncludeStem
-                      ? "bg-white text-slate-900 shadow-sm"
+                      ? "bg-violet-700 text-white shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
@@ -1952,7 +2158,7 @@ export default function NormedInstrumentChecklistApp() {
                   onClick={() => setBipolarIncludeStem(true)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                     bipolarIncludeStem
-                      ? "bg-white text-slate-900 shadow-sm"
+                      ? "bg-violet-700 text-white shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
@@ -1964,7 +2170,7 @@ export default function NormedInstrumentChecklistApp() {
         ) : null}
 
         {procedureKey === "thr" ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <section className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3 shadow-sm">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-800">Mode Tray THR</p>
@@ -1972,13 +2178,13 @@ export default function NormedInstrumentChecklistApp() {
                   Pilih list THR acetabular saja atau gabung THR + Stem.
                 </p>
               </div>
-              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <div className="inline-flex rounded-xl border border-emerald-200 bg-white/80 p-1">
                 <button
                   type="button"
                   onClick={() => setThrIncludeStem(false)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                     !thrIncludeStem
-                      ? "bg-white text-slate-900 shadow-sm"
+                      ? "bg-emerald-700 text-white shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
@@ -1989,7 +2195,7 @@ export default function NormedInstrumentChecklistApp() {
                   onClick={() => setThrIncludeStem(true)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                     thrIncludeStem
-                      ? "bg-white text-slate-900 shadow-sm"
+                      ? "bg-emerald-700 text-white shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
@@ -2000,7 +2206,7 @@ export default function NormedInstrumentChecklistApp() {
           </section>
         ) : null}
 
-        <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:hidden">
+        <details className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm md:hidden">
           <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-800">
             Instrument Tambahan
             <ChevronDown size={16} className="text-slate-500" />
@@ -2008,83 +2214,77 @@ export default function NormedInstrumentChecklistApp() {
           <div className="mt-3">{extraInstrumentContent}</div>
         </details>
 
-        <section className="hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:block">
+        <section className="hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm md:block">
           {extraInstrumentContent}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:hidden">
+        <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm md:hidden">
           <div className="grid gap-3">
-            <input
+            <FloatingInputField
               value={operatorName}
               onChange={(event) => setOperatorName(event.target.value)}
-              placeholder="Nama TS / operator checklist *"
-              className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-900"
+              label="Nama TS / operator checklist"
+              required
             />
-            <input
+            <FloatingInputField
               value={hospitalName}
               onChange={(event) => setHospitalName(event.target.value)}
-              placeholder="Rumah sakit / lokasi *"
-              className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-900"
+              label="Rumah sakit / lokasi"
+              required
             />
           </div>
-          <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <details className="mt-3 rounded-xl border border-indigo-200 bg-white/80 px-3 py-2">
             <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600">
               Data Tambahan
               <ChevronDown size={14} className="text-slate-500" />
             </summary>
             <div className="mt-3 grid gap-3">
-              <input
+              <FloatingInputField
                 value={doctorName}
                 onChange={(event) => setDoctorName(event.target.value)}
-                placeholder="Dokter operator"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-900"
+                label="Dokter operator"
               />
-              <input
+              <FloatingInputField
                 value={patientCode}
                 onChange={(event) => setPatientCode(event.target.value)}
-                placeholder="Kode pasien / MRN"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-900"
+                label="Kode pasien / MRN"
               />
-              <input
+              <FloatingInputField
                 value={caseNote}
                 onChange={(event) => setCaseNote(event.target.value)}
-                placeholder="Catatan kasus"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-900"
+                label="Catatan khusus"
               />
             </div>
           </details>
         </section>
 
-        <section className="hidden gap-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-5 md:grid">
-          <input
+        <section className="hidden gap-4 rounded-3xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-4 shadow-sm md:grid md:grid-cols-2 xl:grid-cols-5">
+          <FloatingInputField
             value={operatorName}
             onChange={(event) => setOperatorName(event.target.value)}
-            placeholder="Nama TS / operator checklist *"
-            className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-slate-900"
+            label="Nama TS / operator checklist"
+            required
           />
-          <input
+          <FloatingInputField
             value={hospitalName}
             onChange={(event) => setHospitalName(event.target.value)}
-            placeholder="Rumah sakit / lokasi *"
-            className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-slate-900"
+            label="Rumah sakit / lokasi"
+            required
           />
-          <input
+          <FloatingInputField
             value={doctorName}
             onChange={(event) => setDoctorName(event.target.value)}
-            placeholder="Dokter operator"
-            className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-slate-900"
+            label="Dokter operator"
           />
-          <input
+          <FloatingInputField
             value={patientCode}
             onChange={(event) => setPatientCode(event.target.value)}
-            placeholder="Kode pasien / MRN"
-            className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-slate-900"
+            label="Kode pasien / MRN"
           />
-          <input
+          <FloatingInputField
             value={caseNote}
             onChange={(event) => setCaseNote(event.target.value)}
-            placeholder="Catatan kasus"
-            className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-slate-900"
+            label="Catatan khusus"
           />
         </section>
 
@@ -2168,14 +2368,19 @@ export default function NormedInstrumentChecklistApp() {
             </div>
           ) : null}
 
-          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-            <Search size={18} className="text-slate-400" />
-            <input
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cari kode / deskripsi..."
-              className="w-full bg-transparent text-sm outline-none"
-            />
+              placeholder=" "
+              className="peer h-11 w-full rounded-xl border border-indigo-200 bg-white pl-9 pr-3 pt-5 text-sm outline-none transition focus:border-indigo-400"
+              />
+              <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-0 peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-indigo-600 peer-[&:not(:placeholder-shown)]:top-0 peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-indigo-600">
+                Cari kode / deskripsi
+              </span>
+            </div>
           </div>
 
           <div className="mt-3 md:hidden">
@@ -2236,15 +2441,9 @@ export default function NormedInstrumentChecklistApp() {
                   {syncingProfiles ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
                   Sync Foto Instrument
                 </button>
-                <button
-                  type="button"
-                  onClick={seedMasterProfilesToSheet}
-                  disabled={seedingProfiles}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {seedingProfiles ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                  Seed Master ke Sheet
-                </button>
+                <p className="text-[11px] text-slate-500">
+                  InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
+                </p>
               </div>
             </details>
           </div>
@@ -2275,20 +2474,14 @@ export default function NormedInstrumentChecklistApp() {
                 )}
                 Sync Foto Instrument
               </button>
-              <button
-                type="button"
-                onClick={seedMasterProfilesToSheet}
-                disabled={seedingProfiles}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {seedingProfiles ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Seed Master ke Sheet
-              </button>
               {profilesLoadedAt ? (
                 <span className="text-[11px] text-slate-400">
                   Sync terakhir: {new Date(profilesLoadedAt).toLocaleTimeString("id-ID")}
                 </span>
               ) : null}
+              <span className="text-[11px] text-slate-500">
+                InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
+              </span>
             </div>
             <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <Camera size={18} /> Ambil / Upload Foto Dokumentasi
@@ -2298,7 +2491,7 @@ export default function NormedInstrumentChecklistApp() {
 
           {documentationPreview ? (
             <div className="mt-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <img src={documentationPreview} alt="Preview dokumentasi" className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20" />
+              <Image src={documentationPreview} alt="Preview dokumentasi" className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-800">Foto dokumentasi siap disimpan</p>
                 <p className="truncate text-xs text-slate-500">{photoName}</p>
@@ -2309,9 +2502,125 @@ export default function NormedInstrumentChecklistApp() {
             </div>
           ) : null}
 
+          <div className="mt-4 rounded-[24px] border border-slate-200/90 bg-white/90 p-3 shadow-[0_18px_35px_rgba(15,23,42,0.12)] backdrop-blur md:p-4">
+            <div className="inline-flex w-full rounded-[20px] bg-slate-200/80 p-1.5">
+              <button
+                type="button"
+                onClick={() => setChecklistViewMode("group")}
+                className={`flex-1 rounded-[16px] px-4 py-2 text-sm font-semibold transition ${
+                  checklistViewMode === "group"
+                    ? "bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Group Checklist
+              </button>
+              <button
+                type="button"
+                onClick={() => setChecklistViewMode("all")}
+                className={`flex-1 rounded-[16px] px-4 py-2 text-sm font-semibold transition ${
+                  checklistViewMode === "all"
+                    ? "bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                All Checklist
+              </button>
+            </div>
+
+            <div className="my-3 h-px bg-slate-200" />
+
+            {checklistViewMode === "group" ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="relative">
+                  <FloatingSelectField
+                    value={activeGroupName}
+                    onChange={(event) => setActiveGroupFilter(event.target.value)}
+                    label="Group Checklist"
+                    selectClassName="h-12 appearance-none rounded-2xl border-2 border-blue-200 bg-blue-50/50 pr-10 text-sm font-medium text-slate-800 focus:border-blue-300"
+                  >
+                    <option value="all">Semua Group</option>
+                    {groupedFilteredItems.map((group) => (
+                      <option key={group.groupName} value={group.groupName}>
+                        {group.groupName} ({group.completed}/{group.total})
+                      </option>
+                    ))}
+                  </FloatingSelectField>
+                  <ChevronDown
+                    size={18}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={focusFirstIncompleteGroup}
+                  disabled={!firstIncompleteGroupName}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Eye size={18} />
+                  Fokus Belum Selesai
+                </button>
+              </div>
+            ) : null}
+
+            <div className={`mt-2 grid gap-2 ${checklistViewMode === "group" ? "md:grid-cols-2" : ""}`}>
+              <button
+                type="button"
+                onClick={checkAllVisibleItems}
+                disabled={!visibleItems.length}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check size={20} />
+                Centang Semua Item
+              </button>
+              <button
+                type="button"
+                onClick={uncheckAllVisibleItems}
+                disabled={!visibleItems.length}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-rose-600 bg-rose-50 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X size={20} />
+                Batal Semua Item
+              </button>
+            </div>
+
+            {checklistViewMode === "group" ? (
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setAllGroupsCollapsed(true)}
+                  disabled={!displayedGroupedItems.length}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-500 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <MinusCircle size={19} />
+                  Tutup Semua Group
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllGroupsCollapsed(false)}
+                  disabled={!displayedGroupedItems.length}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border-2 border-slate-500 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Expand size={19} />
+                  Buka Semua Group
+                </button>
+              </div>
+            ) : null}
+
+            <p className="mt-3 text-sm text-slate-600">
+              Tercentang <span className="font-semibold text-slate-900">{visibleCompletedCount}/{visibleItems.length}</span>{" "}
+              item terlihat
+            </p>
+            <div className="mt-3 h-px bg-slate-200" />
+            <p className="mt-3 text-sm font-medium text-slate-700">
+              Total: <span className="font-bold text-slate-900">{visibleItems.length} Instrument</span>
+            </p>
+          </div>
+
           <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
             <span>
-              Menampilkan {filteredItems.length} / {total} instrument
+              Menampilkan {visibleItems.length} / {total} instrument
             </span>
             {showOnlyUnchecked ? (
               <span className="rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-700">
@@ -2320,72 +2629,25 @@ export default function NormedInstrumentChecklistApp() {
             ) : null}
           </div>
 
-          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
-                <button
-                  type="button"
-                  onClick={() => setChecklistViewMode("group")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    checklistViewMode === "group"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  Group Checklist
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChecklistViewMode("all")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    checklistViewMode === "all"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  All Checklist
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={checkAllVisibleItems}
-                className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-              >
-                Centang Semua
-              </button>
-              <button
-                type="button"
-                onClick={uncheckAllVisibleItems}
-                className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-              >
-                Batal Semua
-              </button>
-            </div>
-          </div>
-
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-slate-900 transition-all" style={{ width: `${progress}%` }} />
           </div>
 
           {checklistViewMode === "group" ? (
             <div className="mt-6 space-y-3">
-              {groupedFilteredItems.map((group, groupIndex) => {
-                const style = getGroupStyle(groupIndex);
-                const collapsed = Boolean(activeCollapsedGroups[group.groupName]);
+              {displayedGroupedItems.map((group) => {
+                const collapsed = isGroupCollapsed(group.groupName);
                 const completedPct = group.total
                   ? Math.round((group.completed / group.total) * 100)
                   : 0;
-                const done = group.total > 0 && group.completed === group.total;
-
+                const groupStyle = getGroupColorVariant(group.groupName);
+                const isGroupDone = group.total > 0 && group.completed === group.total;
                 return (
                   <div
                     key={group.groupName}
-                    className={`overflow-hidden rounded-2xl border ${style.card}`}
+                    className={`overflow-hidden rounded-2xl border bg-white ${groupStyle.card}`}
                   >
-                    <div
-                      className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5 ${style.header}`}
-                    >
+                    <div className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5 md:px-4 ${groupStyle.header}`}>
                       <button
                         type="button"
                         onClick={() => toggleGroupCollapsed(group.groupName)}
@@ -2393,39 +2655,30 @@ export default function NormedInstrumentChecklistApp() {
                       >
                         <ChevronDown
                           size={16}
-                          className={`text-slate-500 transition-transform ${
-                            collapsed ? "-rotate-90" : "rotate-0"
-                          }`}
+                          className={`text-slate-500 transition-transform ${collapsed ? "-rotate-90" : "rotate-0"}`}
                         />
                         <div>
-                          <p className={`text-sm font-semibold ${style.title}`}>
-                            {group.groupName}
-                          </p>
-                          <p className={`text-[11px] ${style.meta}`}>
+                          <p className={`text-sm font-semibold ${groupStyle.title}`}>{group.groupName}</p>
+                          <p className={`text-[11px] ${groupStyle.meta}`}>
                             {group.completed}/{group.total} selesai ({completedPct}%)
                           </p>
                         </div>
                       </button>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`rounded-md px-2 py-1 text-[10px] font-semibold ${
-                            done ? style.badgeDone : style.badgeProgress
-                          }`}
-                        >
-                          {done ? "Selesai · Minimize" : "On Progress"}
+                      <div className="flex items-center gap-1.5">
+                        <span className={`rounded-md px-2 py-1 text-[10px] font-semibold ${groupStyle.badge}`}>
+                          {isGroupDone ? "Selesai · Minimize" : "On Progress"}
                         </span>
                         <button
                           type="button"
                           onClick={() => setCheckedForItems(group.items, true)}
-                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${style.checkBtn}`}
+                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${groupStyle.quickCheck}`}
                         >
                           Centang semua
                         </button>
                         <button
                           type="button"
                           onClick={() => setCheckedForItems(group.items, false)}
-                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${style.uncheckBtn}`}
+                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${groupStyle.quickUncheck}`}
                         >
                           Batal semua
                         </button>
@@ -2441,7 +2694,7 @@ export default function NormedInstrumentChecklistApp() {
                           <span>Piece</span>
                           <span className="text-right">Cek</span>
                         </div>
-                        <div className="divide-y divide-slate-100 bg-white">
+                        <div className="divide-y divide-slate-100">
                           {group.items.map((item) => renderChecklistRow(item))}
                         </div>
                       </>
@@ -2450,7 +2703,7 @@ export default function NormedInstrumentChecklistApp() {
                 );
               })}
 
-              {groupedFilteredItems.length === 0 ? (
+              {displayedGroupedItems.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
                   Instrument tidak ditemukan.
                 </div>
@@ -2465,186 +2718,140 @@ export default function NormedInstrumentChecklistApp() {
                 <span>Piece</span>
                 <span className="text-right">Cek</span>
               </div>
-
               <div className="divide-y divide-slate-100">
-                {filteredItems.map((item) => renderChecklistRow(item))}
+                {visibleItems.map((item) => renderChecklistRow(item))}
               </div>
-
-              {filteredItems.length === 0 ? (
+              {visibleItems.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-slate-500">
                   Instrument tidak ditemukan.
                 </div>
               ) : null}
             </div>
           )}
+        </section>
 
-          <AnimatePresence>
-            {previewCurrentItem ? (
+        <AnimatePresence>
+          {previewCurrentItem ? (
+            <motion.div
+              key="instrument-preview-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+              onClick={closePreview}
+            >
               <motion.div
-                key="instrument-preview-backdrop"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-                onClick={closePreview}
+                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
               >
-                <motion.div
-                  initial={{ opacity: 0, y: 16, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 16, scale: 0.96 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl"
-                  onClick={(event) => event.stopPropagation()}
-                  onTouchStart={onPreviewTouchStart}
-                  onTouchMove={onPreviewTouchMove}
-                  onTouchEnd={onPreviewTouchEnd}
-                  onTouchCancel={onPreviewTouchEnd}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        {selected.key.toUpperCase()} · {previewCurrentItem.category || "Lainnya"}
-                      </p>
-                      <h3 className="mt-1 text-base font-bold text-slate-900">
-                        {previewCurrentItem.catalogNo} · {previewCurrentItem.name}
-                      </h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={goToPreviousPreviewItem}
-                        disabled={!previewHasPrev}
-                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        type="button"
-                        onClick={goToNextPreviewItem}
-                        disabled={!previewHasNext}
-                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                      <button
-                        type="button"
-                        onClick={closePreview}
-                        className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
-                        aria-label="Tutup preview"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {selected.key.toUpperCase()} · {previewCurrentItem.category || "Lainnya"}
+                    </p>
+                    <h3 className="mt-1 text-base font-bold text-slate-900">
+                      {previewCurrentItem.catalogNo} · {previewCurrentItem.name}
+                    </h3>
                   </div>
-
-                  <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr]">
-                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                      <div className="flex items-center justify-between border-b border-slate-200 px-2 py-1.5">
-                        <span className="text-[11px] font-semibold text-slate-500">
-                          Zoom {Math.round(previewZoom * 100)}%
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={zoomOutPreview}
-                            disabled={previewZoom <= PREVIEW_ZOOM_MIN}
-                            className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            −
-                          </button>
-                          <button
-                            type="button"
-                            onClick={zoomInPreview}
-                            disabled={previewZoom >= PREVIEW_ZOOM_MAX}
-                            className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            +
-                          </button>
-                          <button
-                            type="button"
-                            onClick={resetPreviewZoom}
-                            disabled={previewZoom === PREVIEW_ZOOM_MIN}
-                            className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            100%
-                          </button>
-                        </div>
-                      </div>
-                      <div
-                        className="flex h-60 w-full items-center justify-center overflow-hidden"
-                        onWheel={onPreviewWheel}
-                      >
-                        {previewCurrentItem.imageUrl ? (
-                          <DriveImageWithFallback
-                            src={previewCurrentItem.imageUrl}
-                            driveId={previewCurrentItem.driveId}
-                            alt={previewCurrentItem.name}
-                            className="h-full w-full object-contain transition-transform duration-150"
-                            style={{
-                              transform: `scale(${previewZoom})`,
-                              transformOrigin: "center center",
-                            }}
-                          />
-                        ) : (
-                          <div className="flex h-60 w-full flex-col items-center justify-center gap-1 text-slate-400">
-                            <ImageIcon size={26} />
-                            <p className="text-xs font-medium">No image</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                      <p className="text-slate-700">
-                        <span className="font-semibold">Kode:</span> {previewCurrentItem.catalogNo}
-                      </p>
-                      <p className="text-slate-700">
-                        <span className="font-semibold">Deskripsi:</span> {previewCurrentItem.name}
-                      </p>
-                      <p className="text-slate-700">
-                        <span className="font-semibold">Group:</span> {previewCurrentItem.category || "-"}
-                      </p>
-                      <p className="text-slate-700">
-                        <span className="font-semibold">Piece:</span> {previewCurrentItem.qty}
-                      </p>
-                      <p className="text-slate-700">
-                        <span className="font-semibold">Status:</span>{" "}
-                        {checked[previewCurrentItem.id] ? "Sudah dicek" : "Belum dicek"}
-                      </p>
-                      {previewCurrentItem.isCustom ? (
-                        <p className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                          Instrument Tambahan
-                        </p>
-                      ) : null}
-                      <p className="text-[11px] text-slate-500">
-                        {previewIndex >= 0
-                          ? `Item ${previewIndex + 1} dari ${previewSourceItems.length}`
-                          : ""}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        Shortcut: ← Prev · → Next · Esc Close
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex justify-end gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => toggleItem(previewCurrentItem.id)}
-                      className={`rounded-xl px-3 py-2 text-xs font-semibold ${
-                        checked[previewCurrentItem.id]
-                          ? "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                          : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                      }`}
+                      onClick={goToPreviousPreviewItem}
+                      disabled={!previewHasPrev}
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {checked[previewCurrentItem.id] ? "Batalkan Checklist" : "Centang Item Ini"}
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={goToNextPreviewItem}
+                      disabled={!previewHasNext}
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closePreview}
+                      className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+                      aria-label="Tutup preview"
+                    >
+                      <X size={16} />
                     </button>
                   </div>
-                </motion.div>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-[180px_1fr]">
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                    {previewCurrentItem.imageUrl ? (
+                      <DriveImageWithFallback
+                        src={previewCurrentItem.imageUrl}
+                        driveId={previewCurrentItem.driveId}
+                        alt={previewCurrentItem.name}
+                        className="h-44 w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-44 w-full flex-col items-center justify-center gap-1 text-slate-400">
+                        <ImageIcon size={26} />
+                        <p className="text-xs font-medium">No image</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Kode:</span> {previewCurrentItem.catalogNo}
+                    </p>
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Deskripsi:</span> {previewCurrentItem.name}
+                    </p>
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Group:</span> {previewCurrentItem.category || "-"}
+                    </p>
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Piece:</span> {previewCurrentItem.qty}
+                    </p>
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Status:</span>{" "}
+                      {checked[previewCurrentItem.id] ? "Sudah dicek" : "Belum dicek"}
+                    </p>
+                    {previewCurrentItem.isCustom ? (
+                      <p className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                        Instrument Tambahan
+                      </p>
+                    ) : null}
+                    <p className="text-[11px] text-slate-500">
+                      {previewIndex >= 0
+                        ? `Item ${previewIndex + 1} dari ${previewSourceItems.length}`
+                        : ""}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      Shortcut: ← Prev · → Next · Esc Close
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleItem(previewCurrentItem.id)}
+                    className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                      checked[previewCurrentItem.id]
+                        ? "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                  >
+                    {checked[previewCurrentItem.id] ? "Batalkan Checklist" : "Centang Item Ini"}
+                  </button>
+                </div>
               </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </section>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </section>
     </main>
   );

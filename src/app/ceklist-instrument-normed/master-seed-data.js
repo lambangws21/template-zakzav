@@ -167,3 +167,7 @@ export function buildAdminMasterSeedRows() {
   });
   return rows;
 }
+
+export function buildMasterSeedRows() {
+  return buildAdminMasterSeedRows();
+}
