@@ -9,6 +9,7 @@ import {
   Bone,
   Camera,
   ChartSpline,
+  SplinePointer,
   CircleDot,
   CloudOff,
   Crop,
@@ -41,6 +42,7 @@ import {
   RulerDimensionLine,
   Save,
   Spline,
+  LineSquiggle,
   Target,
   Trash2,
   Undo2,
@@ -1215,6 +1217,15 @@ function rotateVector(x, y, rotation) {
   };
 }
 
+function normalizeRotationDegrees(rotation) {
+  return (((rotation || 0) % 360) + 360) % 360;
+}
+
+function getSignedAngleDeltaDegrees(startRad, endRad) {
+  const delta = endRad - startRad;
+  return (Math.atan2(Math.sin(delta), Math.cos(delta)) * 180) / Math.PI;
+}
+
 function toLayerLocal(point, layer) {
   const dx = point.x - layer.centerX;
   const dy = point.y - layer.centerY;
@@ -1277,6 +1288,73 @@ function getLayerMaskDisplayPoints(layer) {
       ? point.handleOutY * scaleY
       : undefined,
   }));
+}
+
+function normalizeFreeLineLayerBounds(layer) {
+  if (layer?.kind !== "free-line") return layer;
+
+  const localPoints = getLayerMaskDisplayPoints(layer);
+  if (!localPoints || localPoints.length < MIN_FREE_CUT_POINTS) return layer;
+
+  const coordinates = [];
+  for (const point of localPoints) {
+    coordinates.push({ x: point.x, y: point.y });
+    if (Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)) {
+      coordinates.push({ x: point.handleInX, y: point.handleInY });
+    }
+    if (Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)) {
+      coordinates.push({ x: point.handleOutX, y: point.handleOutY });
+    }
+  }
+
+  const xs = coordinates.map((point) => point.x);
+  const ys = coordinates.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return layer;
+
+  const boundsWidth = Math.max(1, maxX - minX);
+  const boundsHeight = Math.max(1, maxY - minY);
+  const padding = clamp(Math.max(boundsWidth, boundsHeight) * 0.18, 32, 96);
+  const nextWidth = Math.max(16, Math.ceil(boundsWidth + padding * 2));
+  const nextHeight = Math.max(16, Math.ceil(boundsHeight + padding * 2));
+  const shiftX = (minX + maxX) / 2;
+  const shiftY = (minY + maxY) / 2;
+  const centerOffset = rotateVector(
+    layer.flipX ? -shiftX : shiftX,
+    layer.flipY ? -shiftY : shiftY,
+    layer.rotation,
+  );
+
+  return {
+    ...layer,
+    sourceWidth: nextWidth,
+    sourceHeight: nextHeight,
+    displayWidth: nextWidth,
+    displayHeight: nextHeight,
+    centerX: layer.centerX + centerOffset.x,
+    centerY: layer.centerY + centerOffset.y,
+    maskPoints: localPoints.map((point) => {
+      const nextPoint = {
+        x: point.x - shiftX,
+        y: point.y - shiftY,
+      };
+      if (Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)) {
+        nextPoint.handleInX = point.handleInX - shiftX;
+        nextPoint.handleInY = point.handleInY - shiftY;
+      }
+      if (
+        Number.isFinite(point.handleOutX) &&
+        Number.isFinite(point.handleOutY)
+      ) {
+        nextPoint.handleOutX = point.handleOutX - shiftX;
+        nextPoint.handleOutY = point.handleOutY - shiftY;
+      }
+      return nextPoint;
+    }),
+  };
 }
 
 function getFreeLineVertexPoints(layer) {
@@ -1377,22 +1455,21 @@ function getFreeLineCurveHandles(layer, pointIndex) {
   ];
 }
 
-function toLayerMaskPoint(point, layer) {
+function toLayerMaskPoint(point, layer, { clampToBounds = true } = {}) {
   const local = toLayerShapeLocal(point, layer);
   const size = getLayerDisplaySize(layer);
   const sourceWidth = Math.max(1, layer.sourceWidth || size.width);
   const sourceHeight = Math.max(1, layer.sourceHeight || size.height);
+  const x = local.x * (sourceWidth / Math.max(1, size.width));
+  const y = local.y * (sourceHeight / Math.max(1, size.height));
+
+  if (!clampToBounds) {
+    return { x, y };
+  }
+
   return {
-    x: clamp(
-      local.x * (sourceWidth / Math.max(1, size.width)),
-      -sourceWidth / 2,
-      sourceWidth / 2,
-    ),
-    y: clamp(
-      local.y * (sourceHeight / Math.max(1, size.height)),
-      -sourceHeight / 2,
-      sourceHeight / 2,
-    ),
+    x: clamp(x, -sourceWidth / 2, sourceWidth / 2),
+    y: clamp(y, -sourceHeight / 2, sourceHeight / 2),
   };
 }
 
@@ -2187,7 +2264,7 @@ function InfoTooltip({ text }) {
 
 const ICON_COMPONENTS = {
   draw: PencilLine,
-  freeLine: Spline,
+  freeLine: LineSquiggle,
   pan: HandGrab,
   cut: Slice,
   centerFinder: Target,
@@ -2426,7 +2503,7 @@ function LayerToolbarActionButton({
 
 const TOOL_ICON_COMPONENTS = {
   draw: PencilLine,
-  freeLine: Spline,
+  freeLine: SplinePointer,
   pan: HandGrab,
   cut: Slice,
   centerFinder: Target,
@@ -10064,11 +10141,15 @@ export default function XrayCalibrationWorkspace({
           }
           setHistoryPaused(true);
           if (hitCutLayerHandle.handleKey === "rotate") {
-            const localPoint = toLayerLocal(imagePoint, targetLayer);
             interactionRef.current = {
               mode: "rotate-cut-layer",
               layerId: targetLayer.id,
-              startPointerAngle: Math.atan2(localPoint.y, localPoint.x),
+              centerX: targetLayer.centerX,
+              centerY: targetLayer.centerY,
+              startPointerAngle: Math.atan2(
+                imagePoint.y - targetLayer.centerY,
+                imagePoint.x - targetLayer.centerX,
+              ),
               startRotation: Number(targetLayer.rotation || 0),
             };
             return;
@@ -10709,11 +10790,15 @@ export default function XrayCalibrationWorkspace({
         if (!targetLayer.lockScale && tool === "pan") {
           setHistoryPaused(true);
           if (genericCutLayerHandle.handleKey === "rotate") {
-            const localPoint = toLayerLocal(imagePoint, targetLayer);
             interactionRef.current = {
               mode: "rotate-cut-layer",
               layerId: targetLayer.id,
-              startPointerAngle: Math.atan2(localPoint.y, localPoint.x),
+              centerX: targetLayer.centerX,
+              centerY: targetLayer.centerY,
+              startPointerAngle: Math.atan2(
+                imagePoint.y - targetLayer.centerY,
+                imagePoint.x - targetLayer.centerX,
+              ),
               startRotation: Number(targetLayer.rotation || 0),
             };
           } else {
@@ -11528,7 +11613,9 @@ export default function XrayCalibrationWorkspace({
             if (layer.id !== layerId || layer.kind !== "free-line") {
               return layer;
             }
-            const nextMaskPoint = toLayerMaskPoint(movePoint, layer);
+            const nextMaskPoint = toLayerMaskPoint(movePoint, layer, {
+              clampToBounds: false,
+            });
             const nextMaskPoints = Array.isArray(layer.maskPoints)
               ? layer.maskPoints.map((pointItem, index) => {
                   if (index !== pointIndex) return pointItem;
@@ -11556,10 +11643,10 @@ export default function XrayCalibrationWorkspace({
                   return nextPointItem;
                 })
               : [];
-            return {
+            return normalizeFreeLineLayerBounds({
               ...layer,
               maskPoints: nextMaskPoints,
-            };
+            });
           }),
         );
         return;
@@ -11580,7 +11667,9 @@ export default function XrayCalibrationWorkspace({
                   if (index !== pointIndex) return pointItem;
                   const anchorX = Number(pointItem.x) || 0;
                   const anchorY = Number(pointItem.y) || 0;
-                  const nextHandlePoint = toLayerMaskPoint(movePoint, layer);
+                  const nextHandlePoint = toLayerMaskPoint(movePoint, layer, {
+                    clampToBounds: false,
+                  });
                   const vectorX = nextHandlePoint.x - anchorX;
                   const vectorY = nextHandlePoint.y - anchorY;
                   const nextPointItem = { ...pointItem };
@@ -11598,10 +11687,10 @@ export default function XrayCalibrationWorkspace({
                   return nextPointItem;
                 })
               : [];
-            return {
+            return normalizeFreeLineLayerBounds({
               ...layer,
               maskPoints: nextMaskPoints,
-            };
+            });
           }),
         );
         return;
@@ -11872,16 +11961,25 @@ export default function XrayCalibrationWorkspace({
 
       if (interactionRef.current.mode === "rotate-cut-layer") {
         clearSnapPreview();
-        const { layerId, startPointerAngle, startRotation } =
+        const {
+          layerId,
+          centerX,
+          centerY,
+          startPointerAngle,
+          startRotation,
+        } =
           interactionRef.current;
-        const targetLayer =
-          cutLayers.find((layer) => layer.id === layerId) || null;
-        if (!targetLayer) return;
+        if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return;
         const nextImagePoint = screenToImagePoint(point.x, point.y);
-        const localPoint = toLayerLocal(nextImagePoint, targetLayer);
-        const nextPointerAngle = Math.atan2(localPoint.y, localPoint.x);
-        const deltaDeg =
-          ((nextPointerAngle - startPointerAngle) * 180) / Math.PI;
+        const nextPointerAngle = Math.atan2(
+          nextImagePoint.y - centerY,
+          nextImagePoint.x - centerX,
+        );
+        const deltaDeg = getSignedAngleDeltaDegrees(
+          startPointerAngle,
+          nextPointerAngle,
+        );
+        const nextRotation = normalizeRotationDegrees(startRotation + deltaDeg);
         setCutLayers((prev) =>
           prev.map((layer) =>
             layer.id === layerId
@@ -11889,7 +11987,7 @@ export default function XrayCalibrationWorkspace({
                 ? layer
                 : {
                     ...layer,
-                    rotation: (((startRotation + deltaDeg) % 360) + 360) % 360,
+                    rotation: nextRotation,
                   }
               : layer,
           ),
@@ -12320,6 +12418,45 @@ export default function XrayCalibrationWorkspace({
       return;
     }
     handlePointerUp();
+  }, [handlePointerUp]);
+
+  useEffect(() => {
+    const finishPointerInteraction = (event) => {
+      if (!interactionRef.current.mode) return;
+      if (
+        activePointerIdRef.current !== null &&
+        Number.isFinite(event?.pointerId) &&
+        event.pointerId !== activePointerIdRef.current
+      ) {
+        return;
+      }
+      handlePointerUp();
+    };
+    const finishAnyInteraction = () => {
+      if (interactionRef.current.mode) {
+        handlePointerUp();
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        finishAnyInteraction();
+      }
+    };
+
+    window.addEventListener("pointerup", finishPointerInteraction, true);
+    window.addEventListener("pointercancel", finishPointerInteraction, true);
+    window.addEventListener("blur", finishAnyInteraction);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pointerup", finishPointerInteraction, true);
+      window.removeEventListener(
+        "pointercancel",
+        finishPointerInteraction,
+        true,
+      );
+      window.removeEventListener("blur", finishAnyInteraction);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [handlePointerUp]);
 
   const handleWheel = useCallback(
@@ -23277,6 +23414,7 @@ export default function XrayCalibrationWorkspace({
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
                 onPointerLeave={handlePointerLeave}
+                onLostPointerCapture={handlePointerUp}
                 onContextMenu={(event) => event.preventDefault()}
               />
             </div>

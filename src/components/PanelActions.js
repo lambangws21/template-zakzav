@@ -7,12 +7,15 @@ import {
   Grid,
   MapPin,
   Minus,
+  Waypoints,
+  LineSquiggle,
   Move,
   PenTool,
   Redo2,
   Scissors,
   Sliders,
   Undo2,
+  BookMarked,
 } from "lucide-react";
 
 const PANEL_ACTION_STYLES = `
@@ -42,7 +45,8 @@ const TOOL_ICON_MAP = {
   draw: PenTool,
   pan: Move,
   cut: Scissors,
-  freeLine: Activity,
+  freeLine: LineSquiggle,
+  freeLinePoint: Waypoints,
   angle: Compass,
   hka: GitBranch,
   hkaAuto: GitBranch,
@@ -61,18 +65,18 @@ const TOOL_COLOR_MAP = {
 };
 
 function getToolGroup(item) {
-  if (item.key === "pan" || item.freeLineMode === "point") {
+  if (item.key === "pan" ) {
     return "Navigation & Interaction";
   }
-  if (item.key === "draw" || item.key === "angle" || item.freeLineMode === "freehand") {
+  if (item.key === "draw" || item.key === "angle" || item.freeLineMode === "freehand" || item.freeLineMode === "point") {
     return "Measurement & Drawing";
   }
   return "Surgical Planning & Axis";
 }
 
 function getToolIcon(item) {
-  if (item.freeLineMode === "point") return MapPin;
-  return TOOL_ICON_MAP[item.icon] || TOOL_ICON_MAP[item.key] || Activity;
+  if (item.freeLineMode === "point") return Waypoints;
+  return TOOL_ICON_MAP[item.icon] || TOOL_ICON_MAP[item.key] || BookMarked;
 }
 
 function groupTools(tools) {
@@ -105,7 +109,7 @@ export default function PanelActions({
 
   return (
     <div
-      className={`w-[min(84vw,230px)] rounded-[28px] p-4 -mt-5 text-slate-800 panel-actions-neu-card ${className}`}
+      className={`w-[min(84vw,220px)] rounded-[28px] p-4 -mt-5 text-slate-800 panel-actions-neu-card ${className}`}
     >
       <style>{PANEL_ACTION_STYLES}</style>
 
@@ -130,7 +134,7 @@ export default function PanelActions({
           <button
             type="button"
             onClick={onMinimize}
-            className="flex h-6 w-6 items-center justify-center rounded-full text-slate-500 panel-actions-neu-button hover:text-slate-800"
+            className="flex bg-red-400 h-6 w-6 items-center justify-center rounded-full text-slate-500 panel-actions-neu-button hover:text-slate-800"
             title="Minimize panel actions"
             aria-label="Minimize panel actions"
           >
