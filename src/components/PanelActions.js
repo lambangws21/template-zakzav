@@ -6,6 +6,7 @@ import {
   GitBranch,
   Grid,
   MapPin,
+  MessageSquare,
   Minus,
   Waypoints,
   LineSquiggle,
@@ -51,6 +52,7 @@ const TOOL_ICON_MAP = {
   hka: GitBranch,
   hkaAuto: GitBranch,
   guideBuilder: Grid,
+  annotation: MessageSquare,
 };
 
 const TOOL_COLOR_MAP = {
@@ -62,13 +64,20 @@ const TOOL_COLOR_MAP = {
   angle: "text-amber-500",
   hkaAuto: "text-purple-500",
   guideBuilder: "text-teal-500",
+  annotation: "text-orange-500",
 };
 
 function getToolGroup(item) {
   if (item.key === "pan" ) {
     return "Navigation & Interaction";
   }
-  if (item.key === "draw" || item.key === "angle" || item.freeLineMode === "freehand" || item.freeLineMode === "point") {
+  if (
+    item.key === "draw" ||
+    item.key === "angle" ||
+    item.key === "annotation" ||
+    item.freeLineMode === "freehand" ||
+    item.freeLineMode === "point"
+  ) {
     return "Measurement & Drawing";
   }
   return "Surgical Planning & Axis";
@@ -113,7 +122,7 @@ export default function PanelActions({
     >
       <style>{PANEL_ACTION_STYLES}</style>
 
-      <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-300/20 pb-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-[#eef2f7] text-cyan-600 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.76)]">
             <Sliders className="h-4 w-4" />
@@ -143,14 +152,14 @@ export default function PanelActions({
         </div>
       </div>
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-3 space-y-4">
         {groups.map((group) => (
           <div key={group.title} className="space-y-2">
-            <span className="block px-1 text-[8px] font-black tracking-widest text-slate-400 uppercase">
+            <span className="block px-1 text-[7px] font-black tracking-widest text-slate-400 uppercase">
               {group.title}
             </span>
 
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 gap-1">
               {group.items.map((item) => {
                 const isActive = item.freeLineMode
                   ? activeTool === "freeLine" &&
@@ -167,7 +176,7 @@ export default function PanelActions({
                     key={item.key}
                     type="button"
                     onClick={() => onSelectTool?.(item)}
-                    className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition-all ${
+                    className={`flex w-full items-center justify-between rounded-2xl px-2.5 py-2 text-left transition-all ${
                       isActive
                         ? "panel-actions-active"
                         : "panel-actions-neu-button text-slate-700"

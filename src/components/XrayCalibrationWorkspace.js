@@ -23,12 +23,14 @@ import {
   GitCompare,
   HandGrab,
   History,
+  Layers,
   MoveLeft,
   MoveRight,
   Lock,
   LockOpen,
   Maximize2,
   Menu,
+  MessageSquare,
   Minus,
   MoveDown,
   MoveUp,
@@ -91,6 +93,15 @@ const STORY_STORAGE_KEY = "xray_workspace_story_v1";
 const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
 const MEASURE_LEGEND_VISIBILITY_KEY = "xray_measure_legend_visible_v1";
 const DEFAULT_TEMPLATE_LAYER_OPACITY = 0.55;
+const DEFAULT_ANNOTATION_COLOR = "#f97316";
+const ANNOTATION_COLOR_OPTIONS = [
+  "#f97316",
+  "#22c55e",
+  "#38bdf8",
+  "#a855f7",
+  "#f43f5e",
+  "#facc15",
+];
 const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
 const VIEW_PAN_VISIBLE_MARGIN = 96;
 const DEFAULT_SNAP_SETTINGS = {
@@ -2162,6 +2173,8 @@ function drawTag(ctx, x, y, text, color, options = {}) {
 
   ctx.save();
   ctx.font = `${fontSize}px Inter, sans-serif`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
   const textMetrics = ctx.measureText(text);
   const width = textMetrics.width + paddingX * 2;
   const height = fontSize + paddingY * 2 + 4;
@@ -2177,7 +2190,7 @@ function drawTag(ctx, x, y, text, color, options = {}) {
 
   ctx.globalAlpha = textOpacity;
   ctx.fillStyle = "#f8fafc";
-  ctx.fillText(text, x - width / 2 + paddingX, y + fontSize / 2 - 0.5);
+  ctx.fillText(text, x - width / 2 + paddingX, y);
   ctx.restore();
 }
 
@@ -2214,6 +2227,22 @@ function getTagBounds(x, y, text, options = {}) {
     right: x + estimatedWidth / 2,
     top: y - height / 2,
     bottom: y + height / 2,
+  };
+}
+
+function cloneAnnotation(annotation) {
+  return {
+    id: annotation?.id,
+    x: Number(annotation?.x) || 0,
+    y: Number(annotation?.y) || 0,
+    text: String(annotation?.text || ""),
+    color: annotation?.color || DEFAULT_ANNOTATION_COLOR,
+    fontSize: clamp(Number(annotation?.fontSize) || 11, 8, 24),
+    labelOpacity: clamp(
+      Number(annotation?.labelOpacity ?? DEFAULT_LABEL_OPACITY),
+      0.08,
+      1,
+    ),
   };
 }
 
@@ -2299,6 +2328,8 @@ const ICON_COMPONENTS = {
   eye: Eye,
   eyeOff: EyeOff,
   settings: SlidersHorizontal,
+  annotation: MessageSquare,
+  layers: Layers,
   angle: DraftingCompass,
   circle: CircleDot,
   hka: ChartSpline,
@@ -2509,6 +2540,7 @@ const TOOL_ICON_COMPONENTS = {
   centerFinder: Target,
   axisBuilder: Bone,
   guideBuilder: RulerDimensionLine,
+  annotation: MessageSquare,
   angle: DraftingCompass,
   circle: CircleDot,
   hka: ChartSpline,
@@ -2903,6 +2935,7 @@ export default function XrayCalibrationWorkspace({
   const nextCircleIdRef = useRef(1);
   const nextHkaIdRef = useRef(1);
   const nextCutLayerIdRef = useRef(1);
+  const nextAnnotationIdRef = useRef(1);
   const historyPastRef = useRef([]);
   const historyFutureRef = useRef([]);
   const historyCurrentRef = useRef(null);
@@ -3048,6 +3081,8 @@ export default function XrayCalibrationWorkspace({
   const [planSteps, setPlanSteps] = useState([]);
   const [planningGuides, setPlanningGuides] = useState([]);
   const [selectedPlanningGuideId, setSelectedPlanningGuideId] = useState(null);
+  const [annotations, setAnnotations] = useState([]);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState(null);
   const [planningGuideMode, setPlanningGuideMode] = useState("valgusCut");
   const [valgusCutAngleDeg, setValgusCutAngleDeg] = useState(5);
   const [valgusCutSide, setValgusCutSide] = useState("Right");
@@ -3193,11 +3228,44 @@ export default function XrayCalibrationWorkspace({
     () => hkaSets.find((item) => item.id === selectedHkaId) || null,
     [hkaSets, selectedHkaId],
   );
+  const selectedAnnotation = useMemo(
+    () => annotations.find((item) => item.id === selectedAnnotationId) || null,
+    [annotations, selectedAnnotationId],
+  );
   useEffect(() => {
     if (!selectedHka?.mode) return;
     setHkaInputMode(selectedHka.mode);
     setHkaSide(normalizeHkaSide(selectedHka.side));
   }, [selectedHka?.id, selectedHka?.mode, selectedHka?.side]);
+  useEffect(() => {
+    if (
+      selectedAnnotationId !== null &&
+      !annotations.some((item) => item.id === selectedAnnotationId)
+    ) {
+      setSelectedAnnotationId(null);
+    }
+  }, [annotations, selectedAnnotationId]);
+  useEffect(() => {
+    if (
+      selectedAnnotationId !== null &&
+      (selectedLineId !== null ||
+        selectedAngleId !== null ||
+        selectedCircleId !== null ||
+        selectedHkaId !== null ||
+        selectedCutLayerId !== null ||
+        selectedPlanningGuideId !== null)
+    ) {
+      setSelectedAnnotationId(null);
+    }
+  }, [
+    selectedAngleId,
+    selectedAnnotationId,
+    selectedCircleId,
+    selectedCutLayerId,
+    selectedHkaId,
+    selectedLineId,
+    selectedPlanningGuideId,
+  ]);
   const selectedCutLayer = useMemo(
     () => cutLayers.find((layer) => layer.id === selectedCutLayerId) || null,
     [cutLayers, selectedCutLayerId],
@@ -3527,6 +3595,7 @@ export default function XrayCalibrationWorkspace({
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
+      setSelectedAnnotationId(null);
       setSelectedPlanningGuideId(null);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
@@ -3544,6 +3613,7 @@ export default function XrayCalibrationWorkspace({
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
+      setSelectedAnnotationId(null);
       setSelectedPlanningGuideId(null);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
@@ -3586,6 +3656,7 @@ export default function XrayCalibrationWorkspace({
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
+      setSelectedAnnotationId(null);
       setSelectedPlanningGuideId(null);
       setMobilePanelMode("workspace");
       if (isMobileViewport) {
@@ -3680,6 +3751,7 @@ export default function XrayCalibrationWorkspace({
       setSelectedCircleId(null);
       setSelectedHkaId(null);
       setSelectedCutLayerId(null);
+      setSelectedAnnotationId(null);
       setSelectedPlanningGuideId(null);
       setActiveRightPanel("measure");
       triggerSelectionPulse("line", nextLine.id);
@@ -3710,6 +3782,7 @@ export default function XrayCalibrationWorkspace({
       setSelectedAngleId(null);
       setSelectedHkaId(null);
       setSelectedCutLayerId(null);
+      setSelectedAnnotationId(null);
       setSelectedPlanningGuideId(null);
       setActiveRightPanel("measure");
       setTool("circle");
@@ -3753,6 +3826,7 @@ export default function XrayCalibrationWorkspace({
     setSelectedCutLayerId(null);
     setSelectedCutLayerExtraIds([]);
     setSelectedPlanningGuideId(null);
+    setSelectedAnnotationId(null);
     setSelectionPulse(null);
     clearMobileHandleAssist();
     clearMobileAngleHandleAssist();
@@ -3765,6 +3839,80 @@ export default function XrayCalibrationWorkspace({
     clearMobilePlanningGuideHandleAssist,
     setSelectionPulse,
   ]);
+
+  const selectAnnotationFromCanvas = useCallback(
+    (annotationId, { openPanel = false } = {}) => {
+      setSelectedAnnotationId(annotationId);
+      setSelectedFreeLinePointIndex(null);
+      setSelectedLineId(null);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedCutLayerId(null);
+      setSelectedCutLayerExtraIds([]);
+      setSelectedPlanningGuideId(null);
+      setMobilePanelMode("workspace");
+      setActiveRightPanel("tool");
+      if (isMobileViewport) {
+        setMobileControlsOpen(openPanel);
+      }
+      triggerSelectionPulse("annotation", annotationId);
+    },
+    [isMobileViewport, triggerSelectionPulse],
+  );
+
+  const addAnnotationAtPoint = useCallback(
+    (imagePoint) => {
+      const annotationText =
+        typeof window !== "undefined"
+          ? window.prompt("Teks anotasi", `Anotasi ${nextAnnotationIdRef.current}`)
+          : `Anotasi ${nextAnnotationIdRef.current}`;
+      const nextText = String(annotationText || "").trim();
+      if (!nextText) {
+        setNotice("Anotasi dibatalkan.");
+        return null;
+      }
+      const nextAnnotation = {
+        id: nextAnnotationIdRef.current,
+        x: imagePoint.x,
+        y: imagePoint.y,
+        text: nextText,
+        color: DEFAULT_ANNOTATION_COLOR,
+        fontSize: 11,
+        labelOpacity: 0.68,
+      };
+      nextAnnotationIdRef.current += 1;
+      setAnnotations((prev) => [...prev, nextAnnotation]);
+      selectAnnotationFromCanvas(nextAnnotation.id, { openPanel: false });
+      setTool(getIdleTool());
+      setNotice("Anotasi dibuat. Pilih anotasi untuk ubah teks, warna, atau posisi.");
+      return nextAnnotation;
+    },
+    [getIdleTool, selectAnnotationFromCanvas],
+  );
+
+  const updateAnnotationById = useCallback((annotationId, updater) => {
+    setAnnotations((prev) =>
+      prev.map((annotation) => {
+        if (annotation.id !== annotationId) return annotation;
+        const patch =
+          typeof updater === "function" ? updater(annotation) : updater;
+        return cloneAnnotation({ ...annotation, ...patch });
+      }),
+    );
+  }, []);
+
+  const removeSelectedAnnotation = useCallback(() => {
+    if (selectedAnnotationId === null) {
+      setNotice("Pilih anotasi dulu untuk dihapus.");
+      return;
+    }
+    setAnnotations((prev) =>
+      prev.filter((annotation) => annotation.id !== selectedAnnotationId),
+    );
+    setSelectedAnnotationId(null);
+    setNotice("Anotasi dihapus.");
+  }, [selectedAnnotationId]);
 
   const openRelevantMobilePanel = useCallback(() => {
     if (
@@ -3779,7 +3927,7 @@ export default function XrayCalibrationWorkspace({
       setMobileControlsOpen(true);
       return;
     }
-    if (selectedCutLayerId !== null) {
+    if (selectedCutLayerId !== null || selectedAnnotationId !== null) {
       setMobilePanelMode("workspace");
       setActiveRightPanel("tool");
       setMobileControlsOpen(true);
@@ -3795,6 +3943,7 @@ export default function XrayCalibrationWorkspace({
     selectedCutLayerId,
     selectedHkaId,
     selectedLineId,
+    selectedAnnotationId,
     selectedPlanningGuideId,
   ]);
 
@@ -4306,10 +4455,12 @@ export default function XrayCalibrationWorkspace({
       angles,
       circles,
       hkaSets,
+      annotations: annotations.map((item) => cloneAnnotation(item)),
       selectedLineId,
       selectedAngleId,
       selectedCircleId,
       selectedHkaId,
+      selectedAnnotationId,
       calibrationLineId,
       lockedLineIds: [...lockedLineIds],
       mmPerPixel,
@@ -4367,6 +4518,7 @@ export default function XrayCalibrationWorkspace({
       activityLog,
       actualMmInput,
       actualUnit,
+      annotations,
       angles,
       calibrationLineId,
       calibrationMode,
@@ -4402,6 +4554,7 @@ export default function XrayCalibrationWorkspace({
       rotation,
       sourceZoomPercent,
       selectedAngleId,
+      selectedAnnotationId,
       selectedCircleId,
       selectedCutLayerId,
       selectedCutLayerExtraIds,
@@ -5207,6 +5360,8 @@ export default function XrayCalibrationWorkspace({
             ? `Guide Builder aktif. Acuan ${guideBuilderReference.label} siap. Klik canvas untuk menjatuhkan ${guideBuilderMode === "parallel" ? "parallel" : "perpendicular"} guide.`
             : "Guide Builder aktif. Pilih satu line atau planning guide dulu sebagai acuan, lalu klik canvas.",
         );
+      } else if (nextTool === "annotation") {
+        setNotice("Anotasi aktif. Klik canvas untuk menambahkan catatan teks.");
       }
       if (isMobileViewport) {
         setMobileControlsOpen(false);
@@ -5234,6 +5389,7 @@ export default function XrayCalibrationWorkspace({
     (nextMode = "freehand") => {
       const normalizedMode = nextMode === "point" ? "point" : "freehand";
       setDraftFreeLine(null);
+      setDraftFreeLineTargetLayerId(null);
       setHistoryPaused(false);
       setFreeLineMode(normalizedMode);
       handleToolChange("freeLine");
@@ -5299,23 +5455,12 @@ export default function XrayCalibrationWorkspace({
 
   const completeDraftFreeLine = useCallback(() => {
     if (!draftFreeLine || !Array.isArray(draftFreeLine.points)) return false;
-    const targetDraftLayer =
-      draftFreeLineTargetLayerId !== null
-        ? cutLayers.find(
-            (layer) =>
-              layer.id === draftFreeLineTargetLayerId &&
-              layer.kind === "free-line",
-          )
-        : null;
-    const nextLayerId = targetDraftLayer?.id ?? nextCutLayerIdRef.current;
+    const nextLayerId = nextCutLayerIdRef.current;
 
     const nextLayer = buildFreeLineLayerFromPoints({
       polygonPoints: draftFreeLine.points,
       layerId: nextLayerId,
-      name:
-        targetDraftLayer?.name && targetDraftLayer.isFreeLineDraftLayer
-          ? targetDraftLayer.name.replace(/^Layer Kosong/, "Free Line")
-          : targetDraftLayer?.name || `Free Line ${nextLayerId}`,
+      name: `Free Line ${nextLayerId}`,
       fillColor: draftFreeLine.fillColor || DEFAULT_FREE_LINE_COLOR,
       drawMode: draftFreeLine.drawMode || freeLineMode,
       curveStrength:
@@ -5331,29 +5476,9 @@ export default function XrayCalibrationWorkspace({
       return false;
     }
 
-    if (targetDraftLayer) {
-      setCutLayers((prev) =>
-        prev.map((layer) =>
-          layer.id === targetDraftLayer.id
-            ? {
-                ...nextLayer,
-                groupId: layer.groupId || null,
-                opacity: layer.isFreeLineDraftLayer
-                  ? 0.85
-                  : Number.isFinite(layer.opacity)
-                    ? layer.opacity
-                    : 0.85,
-                isFreeLineDraftLayer: false,
-              }
-            : layer,
-        ),
-      );
-      setDraftFreeLineTargetLayerId(null);
-    } else {
-      nextCutLayerIdRef.current += 1;
-      setCutLayers((prev) => [...prev, nextLayer]);
-      setDraftFreeLineTargetLayerId(null);
-    }
+    nextCutLayerIdRef.current += 1;
+    setCutLayers((prev) => [...prev, nextLayer]);
+    setDraftFreeLineTargetLayerId(null);
     focusLayerSettings(nextLayer.id);
     setSelectedLineId(null);
     setSelectedAngleId(null);
@@ -5363,9 +5488,7 @@ export default function XrayCalibrationWorkspace({
     setDraftFreeLine(null);
     setHistoryPaused(false);
     setNotice(
-      targetDraftLayer
-        ? "Layer kosong diisi dengan Free Line baru. Urutan stack dipertahankan."
-        : "Free Line berhasil dibuat sebagai shape baru.",
+      "Free Line berhasil dibuat sebagai layer baru di atas stack. Layer lain tidak berubah.",
     );
     setTool(getIdleTool());
     if (shouldUseMobileOneShotTool) {
@@ -5373,9 +5496,7 @@ export default function XrayCalibrationWorkspace({
     }
     return true;
   }, [
-    cutLayers,
     draftFreeLine,
-    draftFreeLineTargetLayerId,
     focusLayerSettings,
     freeLineMode,
     getIdleTool,
@@ -5390,60 +5511,23 @@ export default function XrayCalibrationWorkspace({
       }
 
       const normalizedMode = mode === "point" ? "point" : "freehand";
-      const width = clamp(modelWidth * 0.18, 72, 180);
-      const height = clamp(modelHeight * 0.12, 52, 140);
-      const centerX = modelWidth / 2;
-      const centerY = modelHeight / 2;
-      const polygonPoints = [
-        { x: centerX - width / 2, y: centerY - height / 2 },
-        { x: centerX + width / 2, y: centerY - height / 2 },
-        { x: centerX + width / 2, y: centerY + height / 2 },
-        { x: centerX - width / 2, y: centerY + height / 2 },
-      ];
-      const layerId = nextCutLayerIdRef.current;
-      const nextLayer = buildFreeLineLayerFromPoints({
-        polygonPoints,
-        layerId,
-        name: `Layer Kosong ${layerId}`,
-        fillColor: DEFAULT_FREE_LINE_COLOR,
-        drawMode: normalizedMode,
-        curveStrength:
-          normalizedMode === "point"
-            ? DEFAULT_FREE_LINE_CURVE_POINT
-            : DEFAULT_FREE_LINE_CURVE_FREEHAND,
-      });
-
-      if (!nextLayer) {
-        setNotice("Layer kosong gagal dibuat.");
-        return;
-      }
-
-      nextCutLayerIdRef.current += 1;
-      const draftLayer = {
-        ...nextLayer,
-        opacity: 0.58,
-        isFreeLineDraftLayer: true,
-      };
-      setCutLayers((prev) => [...prev, draftLayer]);
-      setSelectedCutLayerId(draftLayer.id);
+      setDraftFreeLineTargetLayerId(null);
+      setSelectedCutLayerId(null);
       setSelectedCutLayerExtraIds([]);
       setSelectedLineId(null);
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
       setSelectedPlanningGuideId(null);
-      setDraftFreeLineTargetLayerId(draftLayer.id);
-      focusLayerSettings(draftLayer.id);
       activateFreeLineMode(normalizedMode);
       setNotice(
-        `Layer kosong #${draftLayer.id} dibuat. Gambar dengan ${
+        `Gambar ${
           normalizedMode === "point" ? "Point Mode" : "Freehand"
-        }; hasilnya akan mengisi layer ini dan urutan stack tetap bisa dinaik-turunkan.`,
+        } di atas canvas. Setelah selesai, hasilnya otomatis menjadi layer baru paling atas tanpa mengubah layer lain.`,
       );
     },
     [
       activateFreeLineMode,
-      focusLayerSettings,
       freeLineMode,
       image,
       modelHeight,
@@ -5673,6 +5757,9 @@ export default function XrayCalibrationWorkspace({
         const parsedHkaSets = Array.isArray(payload.hkaSets)
           ? payload.hkaSets
           : [];
+        const parsedAnnotations = Array.isArray(payload.annotations)
+          ? payload.annotations.map((item) => cloneAnnotation(item))
+          : [];
         const parsedCutLayers = Array.isArray(payload.cutLayers)
           ? payload.cutLayers
           : [];
@@ -5772,6 +5859,7 @@ export default function XrayCalibrationWorkspace({
         setAngles(parsedAngles);
         setCircles(parsedCircles);
         setHkaSets(parsedHkaSets.map((item) => cloneHkaItem(item)));
+        setAnnotations(parsedAnnotations);
         setDraftAnglePoints([]);
         setDraftCirclePoints([]);
         setDraftHkaPoints([]);
@@ -5780,6 +5868,7 @@ export default function XrayCalibrationWorkspace({
         setSelectedAngleId(payload.selectedAngleId ?? null);
         setSelectedCircleId(payload.selectedCircleId ?? null);
         setSelectedHkaId(payload.selectedHkaId ?? null);
+        setSelectedAnnotationId(payload.selectedAnnotationId ?? null);
         setCalibrationLineId(payload.calibrationLineId ?? null);
         setLockedLineIds(
           new Set(
@@ -5894,6 +5983,10 @@ export default function XrayCalibrationWorkspace({
         nextHkaIdRef.current =
           parsedHkaSets.length > 0
             ? Math.max(...parsedHkaSets.map((item) => item.id || 0)) + 1
+            : 1;
+        nextAnnotationIdRef.current =
+          parsedAnnotations.length > 0
+            ? Math.max(...parsedAnnotations.map((item) => item.id || 0)) + 1
             : 1;
         nextCutLayerIdRef.current =
           restoredCutLayers.length > 0
@@ -6270,6 +6363,7 @@ export default function XrayCalibrationWorkspace({
           : [],
       })),
       hkaSets: hkaSets.map((item) => cloneHkaItem(item)),
+      annotations: annotations.map((item) => cloneAnnotation(item)),
       cutLayers: cutLayers.map((layer) => ({
         ...layer,
         maskPoints: Array.isArray(layer.maskPoints)
@@ -6309,6 +6403,7 @@ export default function XrayCalibrationWorkspace({
     [
       actualMmInput,
       actualUnit,
+      annotations,
       angles,
       calibrationMode,
       calibrationLineId,
@@ -6382,6 +6477,11 @@ export default function XrayCalibrationWorkspace({
       })),
     );
     setHkaSets(snapshot.hkaSets.map((item) => cloneHkaItem(item)));
+    setAnnotations(
+      Array.isArray(snapshot.annotations)
+        ? snapshot.annotations.map((item) => cloneAnnotation(item))
+        : [],
+    );
     setCutLayers(
       snapshot.cutLayers.map((layer) => ({
         ...layer,
@@ -6421,6 +6521,7 @@ export default function XrayCalibrationWorkspace({
     setSelectedAngleId(null);
     setSelectedCircleId(null);
     setSelectedHkaId(null);
+    setSelectedAnnotationId(null);
     setSelectedCutLayerId(null);
     setSelectedPlanningGuideId(null);
     setDraftLine(null);
@@ -6608,6 +6709,32 @@ export default function XrayCalibrationWorkspace({
       return null;
     },
     [getPlanningGuideLabelText, imageToScreenPoint, planningGuides],
+  );
+
+  const findAnnotationByPoint = useCallback(
+    (screenPoint) => {
+      for (let index = annotations.length - 1; index >= 0; index -= 1) {
+        const annotation = annotations[index];
+        const anchor = imageToScreenPoint(annotation.x, annotation.y);
+        const labelText = annotation.text || `Anotasi #${annotation.id}`;
+        const bounds = getTagBounds(anchor.x, anchor.y, labelText, {
+          fontSize: annotation.fontSize || 11,
+          paddingX: 7,
+          paddingY: 4,
+          radius: 7,
+        });
+        if (
+          screenPoint.x >= bounds.left &&
+          screenPoint.x <= bounds.right &&
+          screenPoint.y >= bounds.top &&
+          screenPoint.y <= bounds.bottom
+        ) {
+          return annotation.id;
+        }
+      }
+      return null;
+    },
+    [annotations, imageToScreenPoint],
   );
 
   const findClosestHandle = useCallback(
@@ -8510,6 +8637,52 @@ export default function XrayCalibrationWorkspace({
       );
     }
 
+    for (const annotation of annotations) {
+      const anchor = imageToScreenPoint(annotation.x, annotation.y);
+      const color = annotation.color || DEFAULT_ANNOTATION_COLOR;
+      const isSelectedAnnotation = annotation.id === selectedAnnotationId;
+      const isPulsingAnnotation =
+        selectionPulse?.type === "annotation" &&
+        selectionPulse.id === annotation.id;
+      const text = annotation.text || `Anotasi #${annotation.id}`;
+      overlayCtx.save();
+      if (isSelectedAnnotation || isPulsingAnnotation) {
+        const bounds = getTagBounds(anchor.x, anchor.y, text, {
+          fontSize: annotation.fontSize || 11,
+          paddingX: 7,
+          paddingY: 4,
+          radius: 7,
+        });
+        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.7)";
+        overlayCtx.lineWidth = isPulsingAnnotation ? 5 : 3;
+        overlayCtx.beginPath();
+        overlayCtx.roundRect(
+          bounds.left - 3,
+          bounds.top - 3,
+          bounds.right - bounds.left + 6,
+          bounds.bottom - bounds.top + 6,
+          10,
+        );
+        overlayCtx.stroke();
+      }
+      overlayCtx.restore();
+      drawTag(overlayCtx, anchor.x, anchor.y, text, color, {
+        bgOpacity: Math.max(
+          0.12,
+          Math.min(
+            1,
+            (annotation.labelOpacity ?? DEFAULT_LABEL_OPACITY) +
+              (isSelectedAnnotation ? 0.18 : 0),
+          ),
+        ),
+        borderOpacity: isSelectedAnnotation ? 1 : 0.9,
+        fontSize: annotation.fontSize || 11,
+        paddingX: 7,
+        paddingY: 4,
+        radius: 7,
+      });
+    }
+
     const activeCutLayer =
       selectedCutLayerId !== null
         ? cutLayers.find((layer) => layer.id === selectedCutLayerId) || null
@@ -9201,6 +9374,7 @@ export default function XrayCalibrationWorkspace({
     }
   }, [
     activeSnapTarget,
+    annotations,
     angles,
     calibrationMode,
     calibrationLineId,
@@ -9257,6 +9431,7 @@ export default function XrayCalibrationWorkspace({
     rotation,
     selectionPulse,
     selectedAngleId,
+    selectedAnnotationId,
     selectedCircleId,
     selectedCutLayerId,
     selectedCutLayerIdsSet,
@@ -9455,6 +9630,8 @@ export default function XrayCalibrationWorkspace({
       setPlanSteps([]);
       setPlanningGuides([]);
       setSelectedPlanningGuideId(null);
+      setAnnotations([]);
+      setSelectedAnnotationId(null);
       setPlanningGuideMode("valgusCut");
       setValgusCutAngleDeg(5);
       setValgusCutSide("Right");
@@ -9786,6 +9963,115 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      if (tool === "annotation") {
+        addAnnotationAtPoint(boundedPoint);
+        return;
+      }
+
+      const hitAnnotationId = findAnnotationByPoint(point);
+      if (hitAnnotationId !== null) {
+        const targetAnnotation = annotations.find(
+          (annotation) => annotation.id === hitAnnotationId,
+        );
+        if (!targetAnnotation) return;
+        selectAnnotationFromCanvas(hitAnnotationId, {
+          openPanel: isTouchLikePointer,
+        });
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-annotation",
+          annotationId: hitAnnotationId,
+          startImageX: imagePoint.x,
+          startImageY: imagePoint.y,
+          originX: targetAnnotation.x,
+          originY: targetAnnotation.y,
+        };
+        setNotice("Anotasi aktif. Geser untuk memindahkan catatan.");
+        return;
+      }
+
+      if (tool === "freeLine") {
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedAnnotationId(null);
+        setSelectedPlanningGuideId(null);
+
+        if (freeLineMode === "point") {
+          const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
+
+          if (draftFreeLine?.points?.length) {
+            const startPoint = draftFreeLine.points[0];
+            if (
+              draftFreeLine.points.length < MIN_FREE_CUT_POINTS &&
+              getDistance(startPoint, snappedPlacementPoint) <= closeRadius
+            ) {
+              setNotice(
+                `Free Line: pilih ${MIN_FREE_CUT_POINTS - draftFreeLine.points.length} titik lagi.`,
+              );
+              return;
+            }
+            if (
+              draftFreeLine.points.length >= MIN_FREE_CUT_POINTS &&
+              getDistance(startPoint, snappedPlacementPoint) <= closeRadius
+            ) {
+              completeDraftFreeLine();
+              return;
+            }
+
+            const lastPoint =
+              draftFreeLine.points[draftFreeLine.points.length - 1];
+            if (getDistance(lastPoint, snappedPlacementPoint) <= 1.5) {
+              return;
+            }
+
+            const nextPoints = [...draftFreeLine.points, snappedPlacementPoint];
+            setDraftFreeLine((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    points: nextPoints,
+                    hoverPoint: snappedPlacementPoint,
+                  }
+                : prev,
+            );
+            setHistoryPaused(true);
+            setNotice(
+              nextPoints.length >= MIN_FREE_CUT_POINTS
+                ? "Free Line: lanjutkan titik atau klik titik awal untuk selesai."
+                : `Free Line: pilih ${MIN_FREE_CUT_POINTS - nextPoints.length} titik lagi.`,
+            );
+            return;
+          }
+
+          setDraftFreeLine({
+            points: [snappedPlacementPoint],
+            hoverPoint: snappedPlacementPoint,
+            fillColor: DEFAULT_FREE_LINE_COLOR,
+            drawMode: "point",
+          });
+          setHistoryPaused(true);
+          setNotice(
+            "Free Line Point Mode: klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai.",
+          );
+          return;
+        }
+
+        setDraftFreeLine({
+          points: [snappedPlacementPoint],
+          fillColor: DEFAULT_FREE_LINE_COLOR,
+          drawMode: "freehand",
+        });
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "draw-free-line",
+        };
+        setNotice("Free Line aktif. Drag untuk menggambar shape bebas.");
+        return;
+      }
 
       if (tool === "pan" && isTouchLikePointer) {
         const assistHandleHit = findMobileHandleAssistHit(point);
@@ -11043,88 +11329,6 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      if (tool === "freeLine") {
-        setSelectedLineId(null);
-        setSelectedAngleId(null);
-        setSelectedCircleId(null);
-        setSelectedHkaId(null);
-        setSelectedCutLayerId(null);
-        setSelectedPlanningGuideId(null);
-
-        if (freeLineMode === "point") {
-          const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
-
-          if (draftFreeLine?.points?.length) {
-            const startPoint = draftFreeLine.points[0];
-            if (
-              draftFreeLine.points.length < MIN_FREE_CUT_POINTS &&
-              getDistance(startPoint, snappedPlacementPoint) <= closeRadius
-            ) {
-              setNotice(
-                `Free Line: pilih ${MIN_FREE_CUT_POINTS - draftFreeLine.points.length} titik lagi.`,
-              );
-              return;
-            }
-            if (
-              draftFreeLine.points.length >= MIN_FREE_CUT_POINTS &&
-              getDistance(startPoint, snappedPlacementPoint) <= closeRadius
-            ) {
-              completeDraftFreeLine();
-              return;
-            }
-
-            const lastPoint =
-              draftFreeLine.points[draftFreeLine.points.length - 1];
-            if (getDistance(lastPoint, snappedPlacementPoint) <= 1.5) {
-              return;
-            }
-
-            const nextPoints = [...draftFreeLine.points, snappedPlacementPoint];
-            setDraftFreeLine((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    points: nextPoints,
-                    hoverPoint: snappedPlacementPoint,
-                  }
-                : prev,
-            );
-            setHistoryPaused(true);
-            setNotice(
-              nextPoints.length >= MIN_FREE_CUT_POINTS
-                ? "Free Line: lanjutkan titik atau klik titik awal untuk selesai."
-                : `Free Line: pilih ${MIN_FREE_CUT_POINTS - nextPoints.length} titik lagi.`,
-            );
-            return;
-          }
-
-          setDraftFreeLine({
-            points: [snappedPlacementPoint],
-            hoverPoint: snappedPlacementPoint,
-            fillColor: DEFAULT_FREE_LINE_COLOR,
-            drawMode: "point",
-          });
-          setHistoryPaused(true);
-          setNotice(
-            "Free Line Point Mode: klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai.",
-          );
-          return;
-        }
-
-        const startPoint = snappedPlacementPoint;
-        setDraftFreeLine({
-          points: [startPoint],
-          fillColor: DEFAULT_FREE_LINE_COLOR,
-          drawMode: "freehand",
-        });
-        setHistoryPaused(true);
-        interactionRef.current = {
-          mode: "draw-free-line",
-        };
-        setNotice("Free Line aktif. Drag untuk menggambar shape bebas.");
-        return;
-      }
-
       if (tool === "angle") {
         const hitAngleHandle = findClosestAngleHandle(boundedPoint);
         if (hitAngleHandle) {
@@ -11364,6 +11568,8 @@ export default function XrayCalibrationWorkspace({
       activateMobileAngleHandleAssist,
       activateMobileHkaHandleAssist,
       activateMobilePlanningGuideHandleAssist,
+      addAnnotationAtPoint,
+      annotations,
       clampToImageBounds,
       clearMobileAngleHandleAssist,
       clearMobileHandleAssist,
@@ -11397,6 +11603,7 @@ export default function XrayCalibrationWorkspace({
       getMobileHkaHandleAssistGeometry,
       getMobilePlanningGuideHandleAssistGeometry,
       clearActiveCanvasSelection,
+      findAnnotationByPoint,
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
@@ -11427,6 +11634,7 @@ export default function XrayCalibrationWorkspace({
       linePreset,
       resolveSnappedImagePoint,
       selectLayerFromCanvas,
+      selectAnnotationFromCanvas,
       selectPlanningGuideForEdit,
       selectedCutLayerIds,
       selectedCutLayerIdsSet,
@@ -11600,6 +11808,34 @@ export default function XrayCalibrationWorkspace({
             points: [...prev.points, movePoint],
           };
         });
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-annotation") {
+        clearSnapPreview();
+        const movePoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        const {
+          annotationId,
+          startImageX,
+          startImageY,
+          originX,
+          originY,
+        } = interactionRef.current;
+        const dx = movePoint.x - startImageX;
+        const dy = movePoint.y - startImageY;
+        setAnnotations((prev) =>
+          prev.map((annotation) =>
+            annotation.id === annotationId
+              ? {
+                  ...annotation,
+                  x: clamp(originX + dx, 0, modelWidth),
+                  y: clamp(originY + dy, 0, modelHeight),
+                }
+              : annotation,
+          ),
+        );
         return;
       }
 
@@ -12445,6 +12681,8 @@ export default function XrayCalibrationWorkspace({
 
     window.addEventListener("pointerup", finishPointerInteraction, true);
     window.addEventListener("pointercancel", finishPointerInteraction, true);
+    window.addEventListener("touchend", finishAnyInteraction, true);
+    window.addEventListener("touchcancel", finishAnyInteraction, true);
     window.addEventListener("blur", finishAnyInteraction);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
@@ -12454,6 +12692,8 @@ export default function XrayCalibrationWorkspace({
         finishPointerInteraction,
         true,
       );
+      window.removeEventListener("touchend", finishAnyInteraction, true);
+      window.removeEventListener("touchcancel", finishAnyInteraction, true);
       window.removeEventListener("blur", finishAnyInteraction);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -12734,6 +12974,11 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
+    if (selectedAnnotation) {
+      removeSelectedAnnotation();
+      return;
+    }
+
     if (selectedCutLayer) {
       setCutLayers((prev) =>
         prev.filter((item) => item.id !== selectedCutLayer.id),
@@ -12748,7 +12993,9 @@ export default function XrayCalibrationWorkspace({
     calibrationLineId,
     deleteSelectedFreeLinePoint,
     isLineLocked,
+    removeSelectedAnnotation,
     selectedAngle,
+    selectedAnnotation,
     selectedCircle,
     selectedCutLayer,
     selectedHka,
@@ -13451,6 +13698,7 @@ export default function XrayCalibrationWorkspace({
       nextAngleIdRef.current = 1;
       nextCircleIdRef.current = 1;
       nextHkaIdRef.current = 1;
+      nextAnnotationIdRef.current = 1;
       nextCutLayerIdRef.current = 1;
       resetHistoryStacks();
       setNotice(
@@ -14097,6 +14345,8 @@ export default function XrayCalibrationWorkspace({
           ? `Circle #${selectedCircle.id}`
           : selectedHka
             ? `HKA #${selectedHka.id}`
+            : selectedAnnotation
+              ? `Anotasi #${selectedAnnotation.id}`
             : selectedCutLayer
               ? `${getLayerDefaultName(selectedCutLayer)} #${selectedCutLayer.id}`
               : "-";
@@ -14126,6 +14376,7 @@ export default function XrayCalibrationWorkspace({
     planNote,
     planSteps.length,
     selectedAngle,
+    selectedAnnotation,
     selectedCircle,
     selectedCutLayer,
     selectedHka,
@@ -14495,6 +14746,7 @@ export default function XrayCalibrationWorkspace({
       if (key === "h" || key === "m" || key === "p") handleToolChange("pan");
       if (key === "c") handleToolChange("cut");
       if (key === "a") handleToolChange("angle");
+      if (key === "n") handleToolChange("annotation");
       if (key === "o") handleToolChange("circle");
       if (key === "k") handleToolChange("hkaAuto");
       if (key === "j") handleToolChange("centerFinder");
@@ -14801,6 +15053,7 @@ export default function XrayCalibrationWorkspace({
       freeLineMode: "point",
     },
     { icon: "angle", label: "Angle", desc: "sudut", key: "angle" },
+    { icon: "annotation", label: "Note", desc: "anotasi", key: "annotation" },
     { icon: "hka", label: "HKA", desc: "axis knee", key: "hkaAuto" },
     { icon: "guideBuilder", label: "Guide", desc: "parallel", key: "guideBuilder" },
   ];
@@ -17517,17 +17770,17 @@ export default function XrayCalibrationWorkspace({
                   {selectedLayerDropdownLabel}
                 </span>
               </summary>
-              <div className="absolute right-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,360px)] rounded-[24px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.16),-4px_-4px_12px_rgba(255,255,255,0.9)]">
-                <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="fixed inset-x-3 top-[76px] z-[85] max-h-[calc(100dvh-92px)] w-auto overflow-hidden rounded-[32px] border border-white/80 bg-[#eef2f7] p-4 text-slate-800 shadow-[6px_6px_14px_rgba(165,180,203,0.34),-6px_-6px_14px_rgba(255,255,255,0.88)] sm:absolute sm:right-0 sm:left-auto sm:top-[calc(100%+8px)] sm:w-[min(92vw,420px)] sm:p-5">
+                <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/30 pb-3">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border border-white/75 bg-[#eef2f7] text-cyan-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.86)]">
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/75 bg-[#eef2f7] text-blue-600 shadow-[2px_2px_5px_rgba(165,180,203,0.45),-2px_-2px_5px_#ffffff]">
                       <Icon name="settings" className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <div className="text-xs font-extrabold text-slate-900">
+                      <div className="text-sm font-black tracking-tight text-slate-800">
                         Layer Settings
                       </div>
-                      <div className="truncate text-[10px] font-semibold text-slate-500">
+                      <div className="truncate text-[10px] font-bold tracking-wide text-slate-400 uppercase">
                         {cutLayers.length} layer tersedia
                       </div>
                     </div>
@@ -17535,7 +17788,7 @@ export default function XrayCalibrationWorkspace({
                   <button
                     type="button"
                     onClick={() => setSimpleLayerDropdownOpen(false)}
-                    className={`${SOFT_RAISED_CLASS} h-8 rounded-full px-3 text-[10px] font-bold text-slate-600`}
+                    className="rounded-xl border border-white/60 bg-[#eef2f7] px-4 py-2 text-xs font-bold text-slate-600 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] transition active:scale-95"
                   >
                     Tutup
                   </button>
@@ -17552,7 +17805,7 @@ export default function XrayCalibrationWorkspace({
                     setSimpleLayerDropdownOpen(true);
                   }}
                   disabled={!cutLayers.length}
-                  className="mb-2 w-full rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mb-3 w-full cursor-pointer appearance-none rounded-2xl border border-white bg-[#eef2f7] px-4 py-2.5 text-xs font-black text-slate-700 outline-none shadow-[inset_1.5px_1.5px_3px_rgba(165,180,203,0.4),inset_-1.5px_-1.5px_3px_#ffffff] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">
                     {cutLayers.length ? "Pilih layer aktif" : "Belum ada layer"}
@@ -17565,19 +17818,24 @@ export default function XrayCalibrationWorkspace({
                   ))}
                 </select>
 
+                <div className="max-h-[calc(100dvh-220px)] space-y-4 overflow-y-auto pr-1 sm:max-h-[62vh]">
                 {!selectedCutLayer || !selectedLayerMetrics ? (
-                  <div className="rounded-2xl border border-white/75 bg-white/40 px-3 py-3 text-[11px] font-semibold text-slate-500 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.18),inset_-3px_-3px_7px_rgba(255,255,255,0.86)]">
+                  <div className="rounded-2xl border border-white/60 bg-[#eef2f7] px-3.5 py-3 text-[11px] font-bold text-slate-500 shadow-[inset_1.5px_1.5px_4px_rgba(165,180,203,0.48),inset_-1.5px_-1.5px_4px_#ffffff]">
                     Pilih layer dari daftar untuk mengatur ukuran, posisi,
                     rotasi, dan opacity.
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="rounded-2xl border border-white/75 bg-white/45 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.18),inset_-3px_-3px_7px_rgba(255,255,255,0.86)]">
-                      <div className="truncate text-slate-900">
+                  <div className="space-y-4">
+                    <div className="space-y-1 rounded-2xl border border-white/60 bg-[#eef2f7] px-3.5 py-3 text-[11px] font-bold text-slate-600 shadow-[inset_1.5px_1.5px_4px_rgba(165,180,203,0.48),inset_-1.5px_-1.5px_4px_#ffffff]">
+                      <span className="block text-[10px] font-extrabold tracking-widest text-blue-600 uppercase">
+                        Active Target
+                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 truncate text-xs font-black text-slate-800">
                         {selectedCutLayer.name ||
                           getLayerDefaultName(selectedCutLayer)}
                       </div>
-                      <div className="mt-0.5">
+                      <div className="shrink-0 rounded-md border border-white bg-white/60 px-2 py-0.5 font-mono text-[10px] text-slate-500">
                         W{" "}
                         {formatTemplateLayerRealSize(
                           selectedLayerMetrics.widthMm,
@@ -17587,11 +17845,77 @@ export default function XrayCalibrationWorkspace({
                           selectedLayerMetrics.heightMm,
                         )}
                       </div>
+                      </div>
                     </div>
 
+                    {selectedCutLayer.kind === "free-line" ? (
+                      <div className="space-y-2.5 rounded-2xl border border-white/60 bg-[#eef2f7] p-3.5 shadow-[2px_2px_5px_rgba(165,180,203,0.38),-2px_-2px_5px_#ffffff]">
+                        <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                          Nama & Warna Shape
+                        </div>
+                        <input
+                          type="text"
+                          value={
+                            selectedCutLayer.name ||
+                            getLayerDefaultName(selectedCutLayer)
+                          }
+                          onChange={(event) =>
+                            updateLayerById(selectedCutLayer.id, {
+                              name: event.target.value,
+                            })
+                          }
+                          className="w-full rounded-xl border border-white/90 bg-[#edf1f6] px-3.5 py-2 text-xs font-bold text-slate-800 outline-none shadow-[inset_2px_2px_4px_rgba(196,207,220,0.7),inset_-2px_-2px_4px_#ffffff]"
+                          placeholder="Nama layer"
+                        />
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
+                            <ColorSwatchButton
+                              key={`simple-free-color-${color}`}
+                              color={color}
+                              active={
+                                (selectedCutLayer.fillColor ||
+                                  DEFAULT_FREE_LINE_COLOR) === color
+                              }
+                              label={`Warna shape ${color}`}
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  fillColor: color,
+                                })
+                              }
+                            />
+                          ))}
+                          <label
+                            className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
+                            title="Warna custom shape"
+                          >
+                            <span
+                              className="h-4 w-4 rounded-full border border-dashed border-slate-400"
+                              style={{
+                                background:
+                                  "conic-gradient(from 180deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ef4444)",
+                              }}
+                            />
+                            <input
+                              type="color"
+                              value={
+                                selectedCutLayer.fillColor ||
+                                DEFAULT_FREE_LINE_COLOR
+                              }
+                              onChange={(event) =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  fillColor: event.target.value,
+                                })
+                              }
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+
                     {isImageBackedLayerKind(selectedCutLayer.kind) ? (
-                      <div className="rounded-2xl border border-white/75 bg-[#eef2f7] p-2 shadow-[3px_3px_8px_rgba(148,163,184,0.22),-3px_-3px_8px_rgba(255,255,255,0.86)]">
-                        <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
+                      <div className="space-y-2.5 rounded-2xl border border-white/60 bg-[#eef2f7] p-3 shadow-[2px_2px_5px_rgba(165,180,203,0.38),-2px_-2px_5px_#ffffff]">
+                        <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
                           Ruler & Scale
                         </div>
                         <div className="grid grid-cols-[1fr_auto_auto] gap-1.5">
@@ -17604,14 +17928,14 @@ export default function XrayCalibrationWorkspace({
                               setTemplateRealSizeInput(event.target.value)
                             }
                             placeholder="Real size"
-                            className="min-w-0 rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                            className="min-w-0 rounded-xl border border-white/90 bg-[#edf1f6] px-3 py-2 text-xs font-bold text-slate-800 outline-none shadow-[inset_2px_2px_4px_rgba(196,207,220,0.7),inset_-2px_-2px_4px_#ffffff]"
                           />
                           <select
                             value={templateRealSizeAxis}
                             onChange={(event) =>
                               setTemplateRealSizeAxis(event.target.value)
                             }
-                            className="rounded-2xl border border-white/75 bg-[#eef2f7] px-2 py-2 text-[10px] font-bold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                            className="rounded-xl border border-white/90 bg-[#edf1f6] px-2 py-2 text-[10px] font-bold text-slate-700 outline-none shadow-[inset_2px_2px_4px_rgba(196,207,220,0.7),inset_-2px_-2px_4px_#ffffff]"
                           >
                             <option value="height">H</option>
                             <option value="width">W</option>
@@ -17621,7 +17945,7 @@ export default function XrayCalibrationWorkspace({
                             onChange={(event) =>
                               setTemplateRealSizeUnit(event.target.value)
                             }
-                            className="rounded-2xl border border-white/75 bg-[#eef2f7] px-2 py-2 text-[10px] font-bold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                            className="rounded-xl border border-white/90 bg-[#edf1f6] px-2 py-2 text-[10px] font-bold text-slate-700 outline-none shadow-[inset_2px_2px_4px_rgba(196,207,220,0.7),inset_-2px_-2px_4px_#ffffff]"
                           >
                             <option value="mm">mm</option>
                             <option value="cm">cm</option>
@@ -17656,7 +17980,8 @@ export default function XrayCalibrationWorkspace({
                       </div>
                     ) : null}
 
-                    {[
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {[
                       {
                         key: "width",
                         label: "Width",
@@ -17784,7 +18109,7 @@ export default function XrayCalibrationWorkspace({
                     ].map((control) => (
                       <label
                         key={control.key}
-                        className="block rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.22),-3px_-3px_8px_rgba(255,255,255,0.86)]"
+                        className="block rounded-2xl border border-white/50 bg-[#eef2f7] px-3 py-2.5 shadow-[2px_2px_5px_rgba(165,180,203,0.38),-2px_-2px_5px_#ffffff]"
                       >
                         <span className="flex items-center justify-between gap-3 text-[10px] font-extrabold text-slate-600">
                           <span>{control.label}</span>
@@ -17802,12 +18127,17 @@ export default function XrayCalibrationWorkspace({
                           onChange={(event) =>
                             control.onChange(Number(event.target.value))
                           }
-                          className="mt-2 w-full accent-cyan-700 disabled:cursor-not-allowed disabled:opacity-45"
+                          className="mt-2 h-1.5 w-full cursor-pointer accent-cyan-700 disabled:cursor-not-allowed disabled:opacity-45"
                         />
                       </label>
                     ))}
+                    </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <span className="block px-1 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                        Aksi & Susunan Layer
+                      </span>
+                      <div className="grid grid-cols-3 gap-2.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -17816,8 +18146,9 @@ export default function XrayCalibrationWorkspace({
                             openPanel: false,
                           });
                         }}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-cyan-800`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff]"
                       >
+                        <Icon name="pan" className="h-4 w-4 text-cyan-600" />
                         Move
                       </button>
                       <button
@@ -17829,8 +18160,9 @@ export default function XrayCalibrationWorkspace({
                           })
                         }
                         disabled={!modelWidth || !modelHeight}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] disabled:cursor-not-allowed disabled:opacity-45"
                       >
+                        <Icon name="fit" className="h-4 w-4 text-blue-600" />
                         Center
                       </button>
                       <button
@@ -17841,8 +18173,9 @@ export default function XrayCalibrationWorkspace({
                             flipX: !item.flipX,
                           }))
                         }
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff]"
                       >
+                        <Icon name="flipH" className="h-4 w-4 text-emerald-600" />
                         Flip H
                       </button>
                       <button
@@ -17853,8 +18186,9 @@ export default function XrayCalibrationWorkspace({
                             flipY: !item.flipY,
                           }))
                         }
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff]"
                       >
+                        <Icon name="flipV" className="h-4 w-4 text-emerald-600" />
                         Flip V
                       </button>
                       <button
@@ -17868,8 +18202,9 @@ export default function XrayCalibrationWorkspace({
                             flipY: false,
                           })
                         }
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff]"
                       >
+                        <Icon name="reset" className="h-4 w-4 text-amber-600" />
                         Default
                       </button>
                       <button
@@ -17880,57 +18215,224 @@ export default function XrayCalibrationWorkspace({
                             lockScale: !item.lockScale,
                           }))
                         }
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                        className={`flex flex-col items-center gap-1.5 rounded-xl border px-1.5 py-2.5 text-[10px] font-black shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] ${
+                          selectedCutLayer.lockScale
+                            ? "border-indigo-200 bg-[#eef2f7] text-indigo-700 shadow-[inset_1.5px_1.5px_3px_rgba(165,180,203,0.5),inset_-1.5px_-1.5px_3px_#ffffff]"
+                            : "border-white/60 bg-[#eef2f7] text-slate-700"
+                        }`}
                       >
+                        <Icon
+                          name={selectedCutLayer.lockScale ? "lock" : "unlock"}
+                          className="h-4 w-4 text-indigo-600"
+                        />
                         {selectedCutLayer.lockScale ? "Unlock" : "Lock"}
                       </button>
                       <button
                         type="button"
                         onClick={duplicateSelectedCutLayer}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff]"
                       >
+                        <Icon name="layers" className="h-4 w-4 text-indigo-600" />
                         Duplicate
                       </button>
                       <button
                         type="button"
                         onClick={() => moveSelectedCutLayersInStack("down")}
                         disabled={!selectedCutLayerIds.length}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] disabled:cursor-not-allowed disabled:opacity-45"
                       >
+                        <Icon name="moveDown" className="h-4 w-4 text-slate-600" />
                         Turun
                       </button>
                       <button
                         type="button"
                         onClick={() => moveSelectedCutLayersInStack("up")}
                         disabled={!selectedCutLayerIds.length}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] disabled:cursor-not-allowed disabled:opacity-45"
                       >
+                        <Icon name="moveUp" className="h-4 w-4 text-slate-600" />
                         Naik
                       </button>
                       <button
                         type="button"
                         onClick={() => moveSelectedCutLayersInStack("back")}
                         disabled={!selectedCutLayerIds.length}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] disabled:cursor-not-allowed disabled:opacity-45"
                       >
+                        <Icon name="moveDown" className="h-4 w-4 text-slate-600" />
                         Bawah
                       </button>
                       <button
                         type="button"
                         onClick={() => moveSelectedCutLayersInStack("front")}
                         disabled={!selectedCutLayerIds.length}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-white/60 bg-[#eef2f7] px-1.5 py-2.5 text-[10px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(165,180,203,0.4),-2px_-2px_5px_#ffffff] disabled:cursor-not-allowed disabled:opacity-45"
                       >
+                        <Icon name="moveUp" className="h-4 w-4 text-slate-600" />
                         Atas
                       </button>
                       <button
                         type="button"
                         onClick={removeSelectedCutLayer}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-rose-600`}
+                        className="flex flex-col items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-1.5 py-2.5 text-[10px] font-black text-rose-600 shadow-[2px_2px_5px_rgba(165,180,203,0.3),-2px_-2px_5px_#ffffff]"
                       >
+                        <Icon name="trash" className="h-4 w-4 text-rose-500" />
                         Delete Layer
                       </button>
+                      </div>
                     </div>
+                  </div>
+                )}
+                </div>
+              </div>
+            </details>
+          ) : null}
+          {isSimpleUiMode ? (
+            <details className="group relative">
+              <summary
+                className={`${selectedAnnotation ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex cursor-pointer list-none items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden`}
+              >
+                <Icon name="annotation" className="h-3.5 w-3.5" />
+                <span>Anotasi</span>
+                <span className="max-w-[96px] truncate text-[10px] font-bold text-orange-700">
+                  {selectedAnnotation
+                    ? selectedAnnotation.text || `#${selectedAnnotation.id}`
+                    : `${annotations.length} note`}
+                </span>
+              </summary>
+              <div className="absolute right-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,320px)] rounded-[24px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-extrabold text-slate-900">
+                      Anotasi Canvas
+                    </div>
+                    <div className="truncate text-[10px] font-semibold text-slate-500">
+                      Klik Note lalu tap canvas untuk membuat catatan.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToolChange("annotation")}
+                    className={`${SOFT_RAISED_CLASS} h-8 rounded-full px-3 text-[10px] font-bold text-orange-700`}
+                  >
+                    + Note
+                  </button>
+                </div>
+                <select
+                  value={selectedAnnotationId ?? ""}
+                  onChange={(event) => {
+                    const nextId = Number(event.target.value);
+                    if (!Number.isFinite(nextId)) return;
+                    selectAnnotationFromCanvas(nextId, { openPanel: false });
+                  }}
+                  disabled={!annotations.length}
+                  className="mb-2 w-full rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">
+                    {annotations.length ? "Pilih anotasi" : "Belum ada anotasi"}
+                  </option>
+                  {annotations.map((annotation, index) => (
+                    <option key={annotation.id} value={annotation.id}>
+                      {annotation.text || `Anotasi #${annotation.id}`} |{" "}
+                      {index + 1}/{annotations.length}
+                    </option>
+                  ))}
+                </select>
+                {selectedAnnotation ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={selectedAnnotation.text}
+                      onChange={(event) =>
+                        updateAnnotationById(selectedAnnotation.id, {
+                          text: event.target.value,
+                        })
+                      }
+                      rows={2}
+                      className="w-full resize-none rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                      placeholder="Teks anotasi"
+                    />
+                    <label className="block rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-[10px] font-extrabold text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.18),-3px_-3px_8px_rgba(255,255,255,0.86)]">
+                      <span className="flex items-center justify-between">
+                        <span>Ukuran teks</span>
+                        <span>{selectedAnnotation.fontSize || 11}px</span>
+                      </span>
+                      <input
+                        type="range"
+                        min={8}
+                        max={22}
+                        step={1}
+                        value={selectedAnnotation.fontSize || 11}
+                        onChange={(event) =>
+                          updateAnnotationById(selectedAnnotation.id, {
+                            fontSize: Number(event.target.value),
+                          })
+                        }
+                        className="mt-2 w-full accent-orange-600"
+                      />
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {ANNOTATION_COLOR_OPTIONS.map((color) => (
+                        <ColorSwatchButton
+                          key={`annotation-color-${color}`}
+                          color={color}
+                          active={
+                            (selectedAnnotation.color ||
+                              DEFAULT_ANNOTATION_COLOR) === color
+                          }
+                          label={`Warna anotasi ${color}`}
+                          onClick={() =>
+                            updateAnnotationById(selectedAnnotation.id, {
+                              color,
+                            })
+                          }
+                        />
+                      ))}
+                      <label
+                        className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
+                        title="Warna custom anotasi"
+                      >
+                        <span
+                          className="h-4 w-4 rounded-full border border-dashed border-slate-400"
+                          style={{
+                            background:
+                              "conic-gradient(from 180deg, #f97316, #22c55e, #38bdf8, #a855f7, #f43f5e, #facc15, #f97316)",
+                          }}
+                        />
+                        <input
+                          type="color"
+                          value={
+                            selectedAnnotation.color ||
+                            DEFAULT_ANNOTATION_COLOR
+                          }
+                          onChange={(event) =>
+                            updateAnnotationById(selectedAnnotation.id, {
+                              color: event.target.value,
+                            })
+                          }
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToolChange("pan")}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-cyan-800`}
+                      >
+                        Move
+                      </button>
+                      <button
+                        type="button"
+                        onClick={removeSelectedAnnotation}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-rose-600`}
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-white/75 bg-white/40 px-3 py-3 text-[11px] font-semibold text-slate-500 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.18),inset_-3px_-3px_7px_rgba(255,255,255,0.86)]">
+                    Belum ada anotasi dipilih.
                   </div>
                 )}
               </div>
@@ -18301,6 +18803,12 @@ export default function XrayCalibrationWorkspace({
                 label="Angle Tool"
                 onClick={() => handleToolChange("angle")}
                 active={tool === "angle"}
+              />
+              <ToolIconButton
+                icon="annotation"
+                label="Annotation"
+                onClick={() => handleToolChange("annotation")}
+                active={tool === "annotation"}
               />
               <ToolIconButton
                 icon="circle"
@@ -20168,6 +20676,13 @@ export default function XrayCalibrationWorkspace({
                   label="Angle Tool"
                   onClick={() => handleToolChange("angle")}
                   active={tool === "angle"}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
+                  icon="annotation"
+                  label="Annotation"
+                  onClick={() => handleToolChange("annotation")}
+                  active={tool === "annotation"}
                   className="h-9 w-full"
                 />
                 <ToolIconButton
@@ -23386,9 +23901,20 @@ export default function XrayCalibrationWorkspace({
                 ref={overlayCanvasRef}
                 className={`absolute inset-0 touch-none select-none ${
                   tool === "pan"
-                    ? interactionRef.current.mode === "pan"
+                    ? selectedAnnotationId !== null ||
+                      selectedCutLayer?.kind === "free-line" ||
+                      interactionRef.current.mode === "move-free-line-point" ||
+                      interactionRef.current.mode ===
+                        "move-free-line-curve-handle" ||
+                      interactionRef.current.mode === "move-annotation"
+                      ? "cursor-default"
+                      : interactionRef.current.mode === "pan"
                       ? "cursor-grabbing"
                       : "cursor-grab"
+                    : tool === "annotation"
+                      ? "cursor-text"
+                      : tool === "freeLine" && freeLineMode === "point"
+                        ? "cursor-default"
                     : interactionRef.current.mode === "move-line" ||
                         interactionRef.current.mode === "move-line-label" ||
                         interactionRef.current.mode === "move-hka-label" ||
@@ -23415,6 +23941,8 @@ export default function XrayCalibrationWorkspace({
                 onPointerCancel={handlePointerUp}
                 onPointerLeave={handlePointerLeave}
                 onLostPointerCapture={handlePointerUp}
+                onTouchEnd={handlePointerUp}
+                onTouchCancel={handlePointerUp}
                 onContextMenu={(event) => event.preventDefault()}
               />
             </div>
