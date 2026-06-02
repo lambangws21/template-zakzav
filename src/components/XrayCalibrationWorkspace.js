@@ -76,6 +76,11 @@ import {
 } from "../lib/digitalTemplating/implantLibrary";
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import LocalImplantLibraryPanel from "./LocalImplantLibraryPanel";
+import CalibrationLineModalPanel from "./modalPanel";
+import ModalStarter from "./ModalStarter";
+import MobileNavigation from "./MobileNavigation";
+import PanelActions from "./PanelActions";
+import QuickPanel from "./QuickPanel";
 import TemplateStoragePicker from "./TemplateStoragePicker";
 
 const MIN_SCALE = 0.1;
@@ -85,6 +90,7 @@ const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
 const MEASURE_LEGEND_VISIBILITY_KEY = "xray_measure_legend_visible_v1";
 const DEFAULT_TEMPLATE_LAYER_OPACITY = 0.55;
 const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
+const VIEW_PAN_VISIBLE_MARGIN = 96;
 const DEFAULT_SNAP_SETTINGS = {
   endpoint: true,
   midpoint: true,
@@ -385,6 +391,12 @@ function isImageBackedLayerKind(kind) {
   return kind === "upload" || kind === "free-cut";
 }
 
+function getLayerFilterValue(layer) {
+  const layerContrast = clamp(Number(layer?.contrast ?? 100), 10, 300);
+  const layerLevel = clamp(Number(layer?.level ?? 100), 10, 300);
+  return `contrast(${layerContrast}%) brightness(${layerLevel}%)`;
+}
+
 function getLayerDefaultName(layer) {
   if (!layer) return "Layer";
   if (layer.kind === "upload") return "Template";
@@ -620,6 +632,8 @@ function buildFreeCutLayerFromPoints({
     flipX: false,
     flipY: false,
     opacity: 1,
+    contrast: 100,
+    level: 100,
     lockScale: false,
     maskPoints: normalizedPoints.map((point) => ({
       x: point.x - width / 2,
@@ -670,6 +684,8 @@ function buildFreeLineLayerFromPoints({
     flipX: false,
     flipY: false,
     opacity: 0.85,
+    contrast: 100,
+    level: 100,
     lockScale: false,
     fillColor,
     drawMode,
@@ -915,10 +931,8 @@ function getHkaMeasurementResult(hka) {
     side,
   });
   const absoluteDeviation = result?.absoluteDeviation ?? null;
-  const signedDeviation = getHkaSignedCoronalAngle(
-    hka.hip,
-    hka.knee,
-    hka.ankle,
+  const signedDeviation = normalizeHkaSignedDeviation(
+    getHkaSignedCoronalAngle(hka.hip, hka.knee, hka.ankle),
   );
 
   return {
@@ -934,6 +948,40 @@ function getHkaMeasurementResult(hka) {
   };
 }
 
+function normalizeHkaSide(side) {
+  return String(side || "").toLowerCase() === "left" ? "left" : "right";
+}
+
+function normalizeHkaSignedDeviation(rawAngle) {
+  if (!Number.isFinite(rawAngle)) return null;
+  let normalized = rawAngle;
+  if (normalized > 90) normalized -= 180;
+  if (normalized < -90) normalized += 180;
+  return normalized;
+}
+
+function inferHkaDirectionFromSignedDeviation(signedDeviation, side, fallback = "varus") {
+  if (!Number.isFinite(signedDeviation) || Math.abs(signedDeviation) < 0.2) {
+    return fallback === "valgus" ? "valgus" : "varus";
+  }
+  const normalizedSide = normalizeHkaSide(side);
+  const isVarus =
+    normalizedSide === "right" ? signedDeviation > 0 : signedDeviation < 0;
+  return isVarus ? "varus" : "valgus";
+}
+
+function inferHkaDirectionFromPoints(hip, knee, ankle, side, fallback = "varus") {
+  return inferHkaDirectionFromSignedDeviation(
+    normalizeHkaSignedDeviation(getHkaSignedCoronalAngle(hip, knee, ankle)),
+    side,
+    fallback,
+  );
+}
+
+function getHkaSideLabel(side) {
+  return normalizeHkaSide(side) === "left" ? "Kaki kiri" : "Kaki kanan";
+}
+
 function getHkaCanvasLabelText(measurement, expanded = false) {
   if (!measurement) return "HKA";
 
@@ -946,10 +994,16 @@ function getHkaCanvasLabelText(measurement, expanded = false) {
   }
 
   if (measurement.absoluteDeviation === null) return "HKA";
+  const sidePrefix = normalizeHkaSide(measurement.side) === "left" ? "L" : "R";
   if (expanded) {
-    return `${measurement.label} (${measurement.absoluteDeviation.toFixed(1)}°)`;
+    return `${sidePrefix} ${measurement.label} (${measurement.absoluteDeviation.toFixed(1)}°)`;
   }
-  return `HKA ${measurement.absoluteDeviation.toFixed(1)}°`;
+  if (measurement.absoluteDeviation < 3) {
+    return `${sidePrefix} Neutral ${measurement.absoluteDeviation.toFixed(1)}°`;
+  }
+  return `${sidePrefix} ${
+    measurement.direction === "valgus" ? "Valgus" : "Varus"
+  } ${measurement.absoluteDeviation.toFixed(1)}°`;
 }
 
 function getAngleCanvasLabelText(angle, expanded = false) {
@@ -1995,6 +2049,31 @@ function getSnapTypeShortLabel(type) {
   return "END";
 }
 
+function getSnapTargetSignature(target) {
+  if (!target) return "none";
+  const round = (value) =>
+    Number.isFinite(value) ? Number(value).toFixed(2) : "";
+  const sourceRefs = Array.isArray(target.sourceRefs)
+    ? target.sourceRefs.join(",")
+    : "";
+  const hintSegments = Array.isArray(target.hintSegments)
+    ? target.hintSegments
+        .map(
+          (segment) =>
+            `${round(segment.x1)}:${round(segment.y1)}:${round(segment.x2)}:${round(segment.y2)}`,
+        )
+        .join("|")
+    : "";
+
+  return [
+    target.type || "",
+    round(target.x),
+    round(target.y),
+    sourceRefs,
+    hintSegments,
+  ].join(";");
+}
+
 function drawTag(ctx, x, y, text, color, options = {}) {
   const fontSize = options.fontSize ?? 10;
   const paddingX = options.paddingX ?? 5;
@@ -2161,6 +2240,107 @@ function Icon({ name, className = "h-4 w-4" }) {
   if (!IconComponent) return null;
   return (
     <IconComponent className={className} strokeWidth={2} aria-hidden="true" />
+  );
+}
+
+const HIP_FUNCTION_SUMMARY_ITEMS = [
+  {
+    key: "offset",
+    label: "Offset",
+    shortLabel: "Offset umum",
+    activeClass: "text-rose-700",
+    detail:
+      "Preset garis offset umum untuk membandingkan jarak antar landmark sesuai kebutuhan templating.",
+    notice: "Gambar line pada landmark yang ingin dibandingkan.",
+  },
+  {
+    key: "femoralOffset",
+    label: "F-Offset",
+    shortLabel: "Femoral offset",
+    activeClass: "text-emerald-700",
+    detail:
+      "Femoral offset mengukur jarak lateral center femoral head terhadap axis femur. Ini dipakai untuk menilai restoration offset femur.",
+    notice:
+      "Pakai untuk mengukur jarak lateral head center terhadap axis femur.",
+  },
+  {
+    key: "globalOffset",
+    label: "G-Offset",
+    shortLabel: "Global offset",
+    activeClass: "text-violet-700",
+    detail:
+      "Global offset mengukur kombinasi offset femur dan acetabulum/pelvis. Ini dipakai untuk menilai keseimbangan offset total hip.",
+    notice:
+      "Pakai untuk membandingkan offset total dari pelvis/acetabulum sampai femur.",
+  },
+  {
+    key: "lld",
+    label: "LLD",
+    shortLabel: "Leg length",
+    activeClass: "text-orange-700",
+    detail:
+      "LLD mengukur leg length discrepancy, yaitu beda panjang tungkai kiri-kanan dari garis referensi pelvis atau landmark yang dipilih.",
+    notice:
+      "Pakai untuk mengukur beda panjang tungkai dari referensi pelvis atau landmark yang dipilih.",
+  },
+];
+
+const HIP_FUNCTION_SUMMARY_BY_KEY = HIP_FUNCTION_SUMMARY_ITEMS.reduce(
+  (acc, item) => {
+    acc[item.key] = item;
+    return acc;
+  },
+  {},
+);
+
+function HipFunctionSummaryPanel({
+  className = "",
+  compact = false,
+  defaultExpanded = false,
+  title = "Ringkasan Fungsi HIP",
+}) {
+  const [isOpen, setIsOpen] = useState(defaultExpanded);
+
+  return (
+    <details
+      className={`${SOFT_INSET_CLASS} px-3 py-2 text-slate-700 ${className}`}
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[10px] font-extrabold tracking-wide text-slate-700 uppercase [&::-webkit-details-marker]:hidden">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Icon name="target" className="h-3.5 w-3.5 shrink-0 text-cyan-700" />
+          <span className="truncate">{title}</span>
+        </span>
+        <span className={`${SOFT_RAISED_CLASS} shrink-0 px-2 py-1 text-[9px] font-bold text-cyan-700`}>
+          Info
+        </span>
+      </summary>
+      <div
+        className={`mt-2 grid gap-1.5 ${
+          compact ? "grid-cols-1" : "sm:grid-cols-2"
+        }`}
+      >
+        {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => (
+          <div
+            key={`hip-summary-${item.key}`}
+            className={`${SOFT_SURFACE_CLASS} px-2.5 py-2`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[10px] font-extrabold ${item.activeClass}`}>
+                {item.label}
+              </span>
+              <span className="truncate text-[9px] font-bold text-slate-500">
+                {item.shortLabel}
+              </span>
+            </div>
+            <p className="mt-1 text-[10px] leading-4 text-slate-600">
+              {item.detail}
+            </p>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -2603,13 +2783,19 @@ function CompactSliderField({
   return controlContent;
 }
 
-export default function XrayCalibrationWorkspace() {
+export default function XrayCalibrationWorkspace({
+  simpleUiMode = false,
+  onOpenSimpleUi,
+  onOpenAdvancedUi,
+} = {}) {
+  const isSimpleUiMode = Boolean(simpleUiMode);
   const containerRef = useRef(null);
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
   const overlayCanvasRef = useRef(null);
   const compareCanvasRef = useRef(null);
+  const mainUploadInputRef = useRef(null);
   const layerUploadInputRef = useRef(null);
   const compareUploadInputRef = useRef(null);
   const measurePanelRef = useRef(null);
@@ -2618,6 +2804,8 @@ export default function XrayCalibrationWorkspace() {
   const interactionRef = useRef({ mode: null, startX: 0, startY: 0 });
   const interactionCanvasRectRef = useRef(null);
   const activePointerIdRef = useRef(null);
+  const activeSnapTargetRef = useRef(null);
+  const activeSnapTargetSignatureRef = useRef(getSnapTargetSignature(null));
   const objectUrlRef = useRef(null);
   const compareObjectUrlRef = useRef(null);
   const saveDebounceRef = useRef(null);
@@ -2678,6 +2866,8 @@ export default function XrayCalibrationWorkspace() {
   const [draftCut, setDraftCut] = useState(null);
   const [draftFreeLine, setDraftFreeLine] = useState(null);
   const [freeLineMode, setFreeLineMode] = useState(DEFAULT_FREE_LINE_MODE);
+  const [draftFreeLineTargetLayerId, setDraftFreeLineTargetLayerId] =
+    useState(null);
   const [cutLayers, setCutLayers] = useState([]);
   const [templateLibrary, setTemplateLibrary] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
@@ -2722,6 +2912,7 @@ export default function XrayCalibrationWorkspace() {
   const [measurementUnit, setMeasurementUnit] = useState("cm");
   const [linePreset, setLinePreset] = useState("normal");
   const [hkaInputMode, setHkaInputMode] = useState("full");
+  const [hkaSide, setHkaSide] = useState("right");
   const [measureAnatomyTab, setMeasureAnatomyTab] = useState("knee");
   const [showMeasureLegend, setShowMeasureLegend] = useState(false);
   const [contrast, setContrast] = useState(100);
@@ -2758,6 +2949,18 @@ export default function XrayCalibrationWorkspace() {
   const [showStartupCalibrationAlert, setShowStartupCalibrationAlert] =
     useState(true);
   const [highlightCalibrationPanel, setHighlightCalibrationPanel] =
+    useState(false);
+  const [simpleCalibrationModalOpen, setSimpleCalibrationModalOpen] =
+    useState(false);
+  const [simpleLayerDropdownOpen, setSimpleLayerDropdownOpen] =
+    useState(false);
+  const [simplePlanningModal, setSimplePlanningModal] = useState(null);
+  const [simpleGuideModalOpen, setSimpleGuideModalOpen] = useState(false);
+  const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
+  const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
+  const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
+    useState(false);
+  const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
     useState(false);
   const [notice, setNotice] = useState(
     "Upload gambar lalu tarik garis. Garis yang sudah ada bisa di-adjust dengan drag titik ujung atau geser garis.",
@@ -2828,6 +3031,11 @@ export default function XrayCalibrationWorkspace() {
   }, [isMobileViewport]);
 
   useEffect(() => {
+    if (isSimpleUiMode && isMobileViewport) return;
+    setSimpleMobilePanel(null);
+  }, [isMobileViewport, isSimpleUiMode]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
     const handleMobilePanelPreview = (event) => {
@@ -2881,10 +3089,7 @@ export default function XrayCalibrationWorkspace() {
 
   const shouldUseMobileOneShotTool = isMobileViewport && isCoarsePointer;
 
-  const getIdleTool = useCallback(
-    () => (shouldUseMobileOneShotTool ? MOBILE_IDLE_TOOL : "draw"),
-    [shouldUseMobileOneShotTool],
-  );
+  const getIdleTool = useCallback(() => MOBILE_IDLE_TOOL, []);
   const sheetMainImageEndpointHost = useMemo(() => {
     const url = String(sheetMainImageEndpoint || "").trim();
     if (!url) return "";
@@ -2914,7 +3119,8 @@ export default function XrayCalibrationWorkspace() {
   useEffect(() => {
     if (!selectedHka?.mode) return;
     setHkaInputMode(selectedHka.mode);
-  }, [selectedHka?.id, selectedHka?.mode]);
+    setHkaSide(normalizeHkaSide(selectedHka.side));
+  }, [selectedHka?.id, selectedHka?.mode, selectedHka?.side]);
   const selectedCutLayer = useMemo(
     () => cutLayers.find((layer) => layer.id === selectedCutLayerId) || null,
     [cutLayers, selectedCutLayerId],
@@ -3067,6 +3273,10 @@ export default function XrayCalibrationWorkspace() {
       height: layerHeight,
       heightMax: Math.max(200, Math.round(modelHeight * 2) || 200),
       opacity: Math.round((selectedCutLayer.opacity ?? 1) * 100),
+      contrast: Math.round(
+        clamp(Number(selectedCutLayer.contrast ?? 100), 10, 300),
+      ),
+      level: Math.round(clamp(Number(selectedCutLayer.level ?? 100), 10, 300)),
       rotation: Math.round(
         normalizedRotation > 180
           ? normalizedRotation - 360
@@ -3274,6 +3484,16 @@ export default function XrayCalibrationWorkspace() {
       setToolConfigModal("layerSettings");
     },
     [focusLayerSettings, selectedCutLayerId],
+  );
+  const openSimpleLayerDropdown = useCallback(
+    (layerId = selectedCutLayerId) => {
+      if (layerId) {
+        focusLayerCanvas(layerId, { openPanel: false });
+      }
+      setSimpleLayerDropdownOpen(true);
+      setNotice("Atur layer dari dropdown Layer di header.");
+    },
+    [focusLayerCanvas, selectedCutLayerId],
   );
   const selectLayerFromCanvas = useCallback(
     (
@@ -3576,6 +3796,29 @@ export default function XrayCalibrationWorkspace() {
       }),
     );
   }, []);
+
+  const updateHkaSideById = useCallback(
+    (hkaId, nextSide) => {
+      const normalizedSide = normalizeHkaSide(nextSide);
+      updateHkaById(hkaId, (item) => {
+        const nextItem = { ...item, side: normalizedSide };
+        if (item.mode === "full") {
+          nextItem.direction = inferHkaDirectionFromPoints(
+            item.hip,
+            item.knee,
+            item.ankle,
+            normalizedSide,
+            item.direction || "varus",
+          );
+        }
+        return nextItem;
+      });
+      setNotice(
+        `HKA diset sebagai ${getHkaSideLabel(normalizedSide)}. Label varus/valgus dihitung ulang dari orientasi sisi tersebut.`,
+      );
+    },
+    [updateHkaById],
+  );
 
   const formatTemplateLayerRealSize = useCallback(
     (valueMm) => {
@@ -3952,8 +4195,15 @@ export default function XrayCalibrationWorkspace() {
         flipX: layer.flipX,
         flipY: layer.flipY,
         opacity: layer.opacity ?? 1,
+        contrast: Number.isFinite(layer.contrast) ? layer.contrast : 100,
+        level: Number.isFinite(layer.level) ? layer.level : 100,
         lockScale: Boolean(layer.lockScale),
         fillColor: layer.fillColor || "",
+        drawMode: layer.drawMode || DEFAULT_FREE_LINE_MODE,
+        curveStrength: Number.isFinite(layer.curveStrength)
+          ? layer.curveStrength
+          : undefined,
+        isFreeLineDraftLayer: Boolean(layer.isFreeLineDraftLayer),
         imageSrc: isImageBackedLayerKind(layer.kind)
           ? layer.imageSrc || ""
           : "",
@@ -3992,6 +4242,7 @@ export default function XrayCalibrationWorkspace() {
       actualMmInput,
       actualUnit,
       hkaInputMode,
+      hkaSide,
       templateRealSizeInput,
       templateRealSizeUnit,
       templateRealSizeAxis,
@@ -4052,6 +4303,7 @@ export default function XrayCalibrationWorkspace() {
       flipY,
       hkaSets,
       hkaInputMode,
+      hkaSide,
       imageName,
       leftSidebarWidth,
       level,
@@ -4515,7 +4767,7 @@ export default function XrayCalibrationWorkspace() {
   ]);
 
   const clampViewToViewport = useCallback(
-    (nextView) => {
+    (nextView, { relaxed = false } = {}) => {
       if (
         !nextView ||
         !viewport.width ||
@@ -4577,15 +4829,35 @@ export default function XrayCalibrationWorkspace() {
 
       let nextPanX = nextView.panX;
       let nextPanY = nextView.panY;
+      const relaxedVisibleX = Math.min(
+        VIEW_PAN_VISIBLE_MARGIN,
+        Math.max(24, viewport.width * 0.3),
+        Math.max(24, boundsWidth),
+      );
+      const relaxedVisibleY = Math.min(
+        VIEW_PAN_VISIBLE_MARGIN,
+        Math.max(24, viewport.height * 0.3),
+        Math.max(24, boundsHeight),
+      );
 
-      if (boundsWidth <= viewport.width) {
+      if (relaxed) {
+        if (maxX < relaxedVisibleX) nextPanX += relaxedVisibleX - maxX;
+        if (minX > viewport.width - relaxedVisibleX) {
+          nextPanX += viewport.width - relaxedVisibleX - minX;
+        }
+      } else if (boundsWidth <= viewport.width) {
         nextPanX += (viewport.width - boundsWidth) / 2 - minX;
       } else {
         if (minX > 0) nextPanX -= minX;
         if (maxX < viewport.width) nextPanX += viewport.width - maxX;
       }
 
-      if (boundsHeight <= viewport.height) {
+      if (relaxed) {
+        if (maxY < relaxedVisibleY) nextPanY += relaxedVisibleY - maxY;
+        if (minY > viewport.height - relaxedVisibleY) {
+          nextPanY += viewport.height - relaxedVisibleY - minY;
+        }
+      } else if (boundsHeight <= viewport.height) {
         nextPanY += (viewport.height - boundsHeight) / 2 - minY;
       } else {
         if (minY > 0) nextPanY -= minY;
@@ -4602,7 +4874,17 @@ export default function XrayCalibrationWorkspace() {
         panY: nextPanY,
       };
     },
-    [orientedSize.height, orientedSize.width, viewport.height, viewport.width],
+    [
+      flipX,
+      flipY,
+      modelHeight,
+      modelWidth,
+      orientedSize.height,
+      orientedSize.width,
+      rotation,
+      viewport.height,
+      viewport.width,
+    ],
   );
 
   const scrollToPanel = useCallback((panelRef) => {
@@ -4642,6 +4924,18 @@ export default function XrayCalibrationWorkspace() {
     [getIdleTool],
   );
 
+  const openSimpleCalibrationModal = useCallback(
+    (
+      message = "Kalibrasi line wajib untuk measurement akurat. Buat atau pilih garis referensi, isi ukuran real, lalu simpan kalibrasi.",
+    ) => {
+      setShowStartupCalibrationAlert(false);
+      setCalibrationMode("line");
+      setSimpleCalibrationModalOpen(true);
+      setNotice(message);
+    },
+    [],
+  );
+
   const focusMeasureStep = useCallback(() => {
     setMobileControlsOpen(true);
     setMobilePanelMode("workspace");
@@ -4649,6 +4943,23 @@ export default function XrayCalibrationWorkspace() {
     setTool(getIdleTool());
     scrollToPanel(measurePanelRef);
   }, [getIdleTool, scrollToPanel]);
+
+  const openSimplePlanningModal = useCallback(
+    (mode) => {
+      const nextMode = mode === "hip" ? "hip" : "tka";
+      setMeasureAnatomyTab(nextMode === "hip" ? "hip" : "knee");
+      setActiveRightPanel("measure");
+      setMobilePanelMode("workspace");
+      setTool(getIdleTool());
+      setSimplePlanningModal(nextMode);
+      setNotice(
+        nextMode === "hip"
+          ? "Planning HIP dibuka. Pilih preset offset/LLD, lalu gambar atau pilih line di canvas."
+          : "Planning TKA dibuka. Pilih line acuan, atur mode guide, lalu buat guide.",
+      );
+    },
+    [getIdleTool],
+  );
 
   const focusExportStep = useCallback(() => {
     if (!hasCalibration) {
@@ -4752,13 +5063,24 @@ export default function XrayCalibrationWorkspace() {
   }, []);
 
   const handleToolChange = useCallback(
-    (nextTool) => {
+    (nextTool, options = {}) => {
       const requiresCalibration =
         nextTool === "angle" || nextTool === "circle" || nextTool === "hkaAuto";
       if (requiresCalibration && !hasCalibration) {
-        focusCalibrationStep(
-          "Kalibrasi wajib sebelum memakai Angle/Circle/HKA.",
-        );
+        const calibrationMessage =
+          "Kalibrasi wajib sebelum memakai Angle/Circle/HKA.";
+        if (isSimpleUiMode) {
+          openSimpleCalibrationModal(calibrationMessage);
+        } else {
+          focusCalibrationStep(calibrationMessage);
+        }
+        return;
+      }
+      if (nextTool === "hkaAuto" && !options?.skipHkaSidePrompt) {
+        setHkaSideModalOpen(true);
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setNotice("Pilih sisi kaki dulu sebelum membuat HKA.");
         return;
       }
       setMobilePanelMode("workspace");
@@ -4823,10 +5145,28 @@ export default function XrayCalibrationWorkspace() {
       focusCalibrationStep,
       hasCalibration,
       hkaInputMode,
+      isSimpleUiMode,
       isMobileViewport,
+      openSimpleCalibrationModal,
       resetMobileLineTapTarget,
       setDraftFreeLine,
     ],
+  );
+
+  const activateFreeLineMode = useCallback(
+    (nextMode = "freehand") => {
+      const normalizedMode = nextMode === "point" ? "point" : "freehand";
+      setDraftFreeLine(null);
+      setHistoryPaused(false);
+      setFreeLineMode(normalizedMode);
+      handleToolChange("freeLine");
+      setNotice(
+        normalizedMode === "point"
+          ? "Free Line Point Mode aktif. Klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai."
+          : "Free Line Freehand aktif. Drag untuk menggambar shape bebas.",
+      );
+    },
+    [handleToolChange],
   );
 
   const completeDraftCut = useCallback(() => {
@@ -4866,28 +5206,39 @@ export default function XrayCalibrationWorkspace() {
         ? "Free cut berhasil dibuat sebagai layer baru."
         : "Free cut berhasil dibuat. Layer ini tampil normal, tetapi sumber remote tidak bisa diekspor ulang.",
     );
+    setTool(getIdleTool());
     if (shouldUseMobileOneShotTool) {
-      setTool(MOBILE_IDLE_TOOL);
       setMobileControlsOpen(false);
-    } else {
-      setTool("draw");
     }
     return true;
   }, [
     cropRect,
     draftCut,
     focusLayerSettings,
+    getIdleTool,
     image,
     shouldUseMobileOneShotTool,
   ]);
 
   const completeDraftFreeLine = useCallback(() => {
     if (!draftFreeLine || !Array.isArray(draftFreeLine.points)) return false;
+    const targetDraftLayer =
+      draftFreeLineTargetLayerId !== null
+        ? cutLayers.find(
+            (layer) =>
+              layer.id === draftFreeLineTargetLayerId &&
+              layer.kind === "free-line",
+          )
+        : null;
+    const nextLayerId = targetDraftLayer?.id ?? nextCutLayerIdRef.current;
 
     const nextLayer = buildFreeLineLayerFromPoints({
       polygonPoints: draftFreeLine.points,
-      layerId: nextCutLayerIdRef.current,
-      name: `Free Line ${nextCutLayerIdRef.current}`,
+      layerId: nextLayerId,
+      name:
+        targetDraftLayer?.name && targetDraftLayer.isFreeLineDraftLayer
+          ? targetDraftLayer.name.replace(/^Layer Kosong/, "Free Line")
+          : targetDraftLayer?.name || `Free Line ${nextLayerId}`,
       fillColor: draftFreeLine.fillColor || DEFAULT_FREE_LINE_COLOR,
       drawMode: draftFreeLine.drawMode || freeLineMode,
       curveStrength:
@@ -4903,8 +5254,29 @@ export default function XrayCalibrationWorkspace() {
       return false;
     }
 
-    nextCutLayerIdRef.current += 1;
-    setCutLayers((prev) => [...prev, nextLayer]);
+    if (targetDraftLayer) {
+      setCutLayers((prev) =>
+        prev.map((layer) =>
+          layer.id === targetDraftLayer.id
+            ? {
+                ...nextLayer,
+                groupId: layer.groupId || null,
+                opacity: layer.isFreeLineDraftLayer
+                  ? 0.85
+                  : Number.isFinite(layer.opacity)
+                    ? layer.opacity
+                    : 0.85,
+                isFreeLineDraftLayer: false,
+              }
+            : layer,
+        ),
+      );
+      setDraftFreeLineTargetLayerId(null);
+    } else {
+      nextCutLayerIdRef.current += 1;
+      setCutLayers((prev) => [...prev, nextLayer]);
+      setDraftFreeLineTargetLayerId(null);
+    }
     focusLayerSettings(nextLayer.id);
     setSelectedLineId(null);
     setSelectedAngleId(null);
@@ -4913,20 +5285,94 @@ export default function XrayCalibrationWorkspace() {
     setSelectedPlanningGuideId(null);
     setDraftFreeLine(null);
     setHistoryPaused(false);
-    setNotice("Free Line berhasil dibuat sebagai shape baru.");
+    setNotice(
+      targetDraftLayer
+        ? "Layer kosong diisi dengan Free Line baru. Urutan stack dipertahankan."
+        : "Free Line berhasil dibuat sebagai shape baru.",
+    );
+    setTool(getIdleTool());
     if (shouldUseMobileOneShotTool) {
-      setTool(MOBILE_IDLE_TOOL);
       setMobileControlsOpen(false);
-    } else {
-      setTool("pan");
     }
     return true;
   }, [
+    cutLayers,
     draftFreeLine,
+    draftFreeLineTargetLayerId,
     focusLayerSettings,
     freeLineMode,
+    getIdleTool,
     shouldUseMobileOneShotTool,
   ]);
+
+  const createEmptyFreeLineLayer = useCallback(
+    (mode = freeLineMode) => {
+      if (!image || modelWidth <= 0 || modelHeight <= 0) {
+        setNotice("Upload gambar utama dulu sebelum membuat layer kosong.");
+        return;
+      }
+
+      const normalizedMode = mode === "point" ? "point" : "freehand";
+      const width = clamp(modelWidth * 0.18, 72, 180);
+      const height = clamp(modelHeight * 0.12, 52, 140);
+      const centerX = modelWidth / 2;
+      const centerY = modelHeight / 2;
+      const polygonPoints = [
+        { x: centerX - width / 2, y: centerY - height / 2 },
+        { x: centerX + width / 2, y: centerY - height / 2 },
+        { x: centerX + width / 2, y: centerY + height / 2 },
+        { x: centerX - width / 2, y: centerY + height / 2 },
+      ];
+      const layerId = nextCutLayerIdRef.current;
+      const nextLayer = buildFreeLineLayerFromPoints({
+        polygonPoints,
+        layerId,
+        name: `Layer Kosong ${layerId}`,
+        fillColor: DEFAULT_FREE_LINE_COLOR,
+        drawMode: normalizedMode,
+        curveStrength:
+          normalizedMode === "point"
+            ? DEFAULT_FREE_LINE_CURVE_POINT
+            : DEFAULT_FREE_LINE_CURVE_FREEHAND,
+      });
+
+      if (!nextLayer) {
+        setNotice("Layer kosong gagal dibuat.");
+        return;
+      }
+
+      nextCutLayerIdRef.current += 1;
+      const draftLayer = {
+        ...nextLayer,
+        opacity: 0.58,
+        isFreeLineDraftLayer: true,
+      };
+      setCutLayers((prev) => [...prev, draftLayer]);
+      setSelectedCutLayerId(draftLayer.id);
+      setSelectedCutLayerExtraIds([]);
+      setSelectedLineId(null);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedPlanningGuideId(null);
+      setDraftFreeLineTargetLayerId(draftLayer.id);
+      focusLayerSettings(draftLayer.id);
+      activateFreeLineMode(normalizedMode);
+      setNotice(
+        `Layer kosong #${draftLayer.id} dibuat. Gambar dengan ${
+          normalizedMode === "point" ? "Point Mode" : "Freehand"
+        }; hasilnya akan mengisi layer ini dan urutan stack tetap bisa dinaik-turunkan.`,
+      );
+    },
+    [
+      activateFreeLineMode,
+      focusLayerSettings,
+      freeLineMode,
+      image,
+      modelHeight,
+      modelWidth,
+    ],
+  );
 
   const handleLinePresetChange = useCallback(
     (nextPreset) => {
@@ -4953,6 +5399,10 @@ export default function XrayCalibrationWorkspace() {
       clearMobilePlanningGuideHandleAssist();
       setLinePreset(nextPreset);
       setTool("draw");
+      const hipPresetInfo = HIP_FUNCTION_SUMMARY_BY_KEY[nextPreset];
+      if (hipPresetInfo) {
+        setNotice(`${hipPresetInfo.label} aktif. ${hipPresetInfo.notice}`);
+      }
       if (isMobileViewport) {
         setMobileControlsOpen(false);
       }
@@ -5185,11 +5635,14 @@ export default function XrayCalibrationWorkspace() {
                   0.05,
                   1,
                 ),
+                contrast: clamp(Number(layer.contrast ?? 100), 10, 300),
+                level: clamp(Number(layer.level ?? 100), 10, 300),
                 lockScale: Boolean(layer.lockScale),
                 fillColor: layer.fillColor || "",
                 drawMode:
                   layer.drawMode === "point" ? "point" : DEFAULT_FREE_LINE_MODE,
                 curveStrength: getFreeLineCurveStrength(layer),
+                isFreeLineDraftLayer: Boolean(layer.isFreeLineDraftLayer),
                 imageSrc: layer.imageSrc || "",
                 maskPoints: Array.isArray(layer.maskPoints)
                   ? layer.maskPoints
@@ -5263,6 +5716,7 @@ export default function XrayCalibrationWorkspace() {
         setActualMmInput(payload.actualMmInput || "13");
         setActualUnit(payload.actualUnit || "cm");
         setHkaInputMode(payload.hkaInputMode || "full");
+        setHkaSide(normalizeHkaSide(payload.hkaSide));
         setTemplateRealSizeInput(payload.templateRealSizeInput || "");
         setTemplateRealSizeUnit(payload.templateRealSizeUnit || "cm");
         setTemplateRealSizeAxis(payload.templateRealSizeAxis || "height");
@@ -6820,13 +7274,22 @@ export default function XrayCalibrationWorkspace() {
   const resolveSnapWithPreview = useCallback(
     (rawPoint, options = {}) => {
       const result = resolveSnappedImagePoint(rawPoint, options);
-      setActiveSnapTarget(result.candidate);
+      const nextCandidate = result.candidate || null;
+      const nextSignature = getSnapTargetSignature(nextCandidate);
+      if (activeSnapTargetSignatureRef.current !== nextSignature) {
+        activeSnapTargetRef.current = nextCandidate;
+        activeSnapTargetSignatureRef.current = nextSignature;
+        setActiveSnapTarget(nextCandidate);
+      }
       return result;
     },
     [resolveSnappedImagePoint],
   );
 
   const clearSnapPreview = useCallback(() => {
+    if (!activeSnapTargetRef.current) return;
+    activeSnapTargetRef.current = null;
+    activeSnapTargetSignatureRef.current = getSnapTargetSignature(null);
     setActiveSnapTarget(null);
   }, []);
 
@@ -6905,7 +7368,7 @@ export default function XrayCalibrationWorkspace() {
       canvas.style.height = `${viewport.height}px`;
     }
     const filterValue = `contrast(${contrast}%) brightness(${level}%)`;
-    imageCanvas.style.filter = filterValue;
+    imageCanvas.style.filter = "none";
     overlayCanvas.style.filter = "none";
 
     const imageCtx = imageCanvas.getContext("2d");
@@ -6988,6 +7451,7 @@ export default function XrayCalibrationWorkspace() {
         imageCtx.rotate((layer.rotation * Math.PI) / 180);
         imageCtx.scale(layer.flipX ? -1 : 1, layer.flipY ? -1 : 1);
         imageCtx.globalAlpha = clamp(layer.opacity ?? 1, 0.05, 1);
+        imageCtx.filter = "none";
 
         if (layer.kind === "free-line") {
           const localMaskPoints = getLayerMaskDisplayPoints(layer);
@@ -7009,6 +7473,9 @@ export default function XrayCalibrationWorkspace() {
             imageCtx.restore();
             continue;
           }
+          imageCtx.filter = isImageBacked
+            ? getLayerFilterValue(layer)
+            : "none";
           imageCtx.drawImage(
             sourceImage,
             srcX,
@@ -8877,6 +9344,7 @@ export default function XrayCalibrationWorkspace() {
       setDraftAxisBuilderPoints([]);
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
+      setDraftFreeLineTargetLayerId(null);
       setGuideBuilderPreviewPoint(null);
       setGuideBuilderMode("parallel");
       setDraftLine(null);
@@ -8947,6 +9415,7 @@ export default function XrayCalibrationWorkspace() {
       noticeText,
       opacity = DEFAULT_TEMPLATE_LAYER_OPACITY,
       sizeMode = "template",
+      autoScaleFromCalibration = false,
     }) => {
       if (!image || !modelWidth || !modelHeight) {
         setNotice(
@@ -8996,6 +9465,24 @@ export default function XrayCalibrationWorkspace() {
         Math.min(modelWidth, modelHeight) * TEMPLATE_INITIAL_MAX_FRACTION;
       const targetMaxWidth = modelWidth * 0.42;
       const targetMaxHeight = modelHeight * 0.42;
+      const templateRulerScale =
+        autoScaleFromCalibration && mmPerPixel !== null && !shouldMatchBase
+          ? estimateTemplateRulerPxPerMm(layerImage)
+          : null;
+      const calibratedDisplayWidth = templateRulerScale
+        ? clamp(
+            srcW / templateRulerScale.pxPerMm / mmPerPixel,
+            18,
+            Math.max(18, modelWidth * 3),
+          )
+        : null;
+      const calibratedDisplayHeight = templateRulerScale
+        ? clamp(
+            srcH / templateRulerScale.pxPerMm / mmPerPixel,
+            18,
+            Math.max(18, modelHeight * 3),
+          )
+        : null;
       const scale = shouldMatchBase
         ? 1
         : sameCanvasSize
@@ -9007,16 +9494,22 @@ export default function XrayCalibrationWorkspace() {
               targetMaxHeight / srcH,
               1,
             );
-      const displayWidth = inheritedTemplateSize
-        ? Math.max(18, inheritedTemplateSize.width)
-        : shouldMatchBase || sameCanvasSize
-          ? modelWidth
-          : Math.max(18, srcW * scale);
-      const displayHeight = inheritedTemplateSize
-        ? Math.max(18, inheritedTemplateSize.height)
-        : shouldMatchBase || sameCanvasSize
-          ? modelHeight
-          : Math.max(18, srcH * scale);
+      const displayWidth =
+        calibratedDisplayWidth !== null
+          ? calibratedDisplayWidth
+          : inheritedTemplateSize
+            ? Math.max(18, inheritedTemplateSize.width)
+            : shouldMatchBase || sameCanvasSize
+              ? modelWidth
+              : Math.max(18, srcW * scale);
+      const displayHeight =
+        calibratedDisplayHeight !== null
+          ? calibratedDisplayHeight
+          : inheritedTemplateSize
+            ? Math.max(18, inheritedTemplateSize.height)
+            : shouldMatchBase || sameCanvasSize
+              ? modelHeight
+              : Math.max(18, srcH * scale);
 
       const nextLayer = {
         id: nextCutLayerIdRef.current,
@@ -9037,6 +9530,8 @@ export default function XrayCalibrationWorkspace() {
         flipY: false,
         opacity:
           shouldMatchBase || sameCanvasSize ? Math.min(opacity, 0.6) : opacity,
+        contrast: 100,
+        level: 100,
         lockScale: false,
       };
 
@@ -9052,10 +9547,18 @@ export default function XrayCalibrationWorkspace() {
       const trimText = contentBounds
         ? " Margin kosong template otomatis di-trim."
         : "";
+      const calibrationText = autoScaleFromCalibration
+        ? mmPerPixel === null
+          ? " Kalibrasi belum aktif: klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi."
+          : templateRulerScale
+            ? ` Scale implant otomatis mengikuti garis kalibrasi aktif dari ruler template ${templateRulerScale.axis}.`
+            : " Ruler template tidak terbaca otomatis; pilih layer lalu pakai Ruler atau isi Scale real manual."
+        : "";
       setNotice(
         (noticeText ||
           `Layer "${nextLayer.name}" ditambahkan di atas layer bawah.`) +
-          trimText,
+          trimText +
+          calibrationText,
       );
       return true;
     },
@@ -9065,6 +9568,7 @@ export default function XrayCalibrationWorkspace() {
       getIdleTool,
       image,
       isMobileViewport,
+      mmPerPixel,
       modelHeight,
       modelWidth,
       selectedCutLayer,
@@ -10364,8 +10868,8 @@ export default function XrayCalibrationWorkspace() {
           setNotice(
             "Center Finder selesai. Center dan circle referensi berhasil dibuat.",
           );
+          setTool(getIdleTool());
           if (shouldUseMobileOneShotTool) {
-            setTool(MOBILE_IDLE_TOOL);
             setMobileControlsOpen(false);
           }
           return [];
@@ -10409,8 +10913,8 @@ export default function XrayCalibrationWorkspace() {
           setNotice(
             "Axis Builder selesai. Axis dibuat dari midpoint segmen proximal dan distal.",
           );
+          setTool(getIdleTool());
           if (shouldUseMobileOneShotTool) {
-            setTool(MOBILE_IDLE_TOOL);
             setMobileControlsOpen(false);
           }
           return [];
@@ -10447,8 +10951,8 @@ export default function XrayCalibrationWorkspace() {
         setNotice(
           `${guideBuilderMode === "parallel" ? "Parallel" : "Perpendicular"} guide dibuat dari ${guideBuilderReference.label}.`,
         );
+        setTool(getIdleTool());
         if (shouldUseMobileOneShotTool) {
-          setTool(MOBILE_IDLE_TOOL);
           setMobileControlsOpen(false);
         }
         return;
@@ -10596,8 +11100,8 @@ export default function XrayCalibrationWorkspace() {
           setAngles((items) => [...items, nextAngle]);
           setSelectedAngleId(nextAngle.id);
           setNotice("Angle measurement dibuat.");
+          setTool(getIdleTool());
           if (shouldUseMobileOneShotTool) {
-            setTool(MOBILE_IDLE_TOOL);
             setMobileControlsOpen(false);
           }
           return [];
@@ -10713,7 +11217,7 @@ export default function XrayCalibrationWorkspace() {
               id: nextHkaIdRef.current,
               mode: hkaInputMode,
               direction: "varus",
-              side: "right",
+              side: hkaSide,
               lineColor: DEFAULT_HKA_LINE_COLOR,
               strokeWidth: DEFAULT_HKA_STROKE_WIDTH,
               labelOffsetX: DEFAULT_HKA_LABEL_OFFSET_X,
@@ -10721,12 +11225,25 @@ export default function XrayCalibrationWorkspace() {
               showArc: hkaInputMode === "full",
             },
           );
+          if (hkaInputMode === "full") {
+            nextHka.direction = inferHkaDirectionFromPoints(
+              nextHka.hip,
+              nextHka.knee,
+              nextHka.ankle,
+              hkaSide,
+              "varus",
+            );
+          }
           nextHkaIdRef.current += 1;
           setHkaSets((items) => [...items, nextHka]);
           setSelectedHkaId(nextHka.id);
-          setNotice(`${definition.label} dibuat dari landmarks.`);
+          setNotice(
+            `${definition.label} dibuat dari landmarks${
+              hkaInputMode === "full" ? ` (${getHkaSideLabel(hkaSide)})` : ""
+            }.`,
+          );
+          setTool(getIdleTool());
           if (shouldUseMobileOneShotTool) {
-            setTool(MOBILE_IDLE_TOOL);
             setMobileControlsOpen(false);
           }
           return [];
@@ -10805,6 +11322,7 @@ export default function XrayCalibrationWorkspace() {
       findCutLayerHandle,
       focusLayerCanvas,
       focusPlanningGuideCanvas,
+      getIdleTool,
       getRelatedLayerIds,
       getLocalPoint,
       image,
@@ -10813,6 +11331,7 @@ export default function XrayCalibrationWorkspace() {
       guideBuilderMode,
       guideBuilderReference,
       hasCalibration,
+      hkaSide,
       isCoarsePointer,
       isMobileViewport,
       isLineLocked,
@@ -10956,11 +11475,14 @@ export default function XrayCalibrationWorkspace() {
         const dx = point.x - interactionRef.current.startX;
         const dy = point.y - interactionRef.current.startY;
         setView((prev) =>
-          clampViewToViewport({
-            ...prev,
-            panX: interactionRef.current.startPanX + dx,
-            panY: interactionRef.current.startPanY + dy,
-          }),
+          clampViewToViewport(
+            {
+              ...prev,
+              panX: interactionRef.current.startPanX + dx,
+              panY: interactionRef.current.startPanY + dy,
+            },
+            { relaxed: true },
+          ),
         );
         return;
       }
@@ -11605,10 +12127,20 @@ export default function XrayCalibrationWorkspace() {
         setHkaSets((prev) =>
           prev.map((item) => {
             if (item.id !== hkaId) return item;
-            return {
+            const nextItem = {
               ...item,
               [handleKey]: { x: adjustedPoint.x, y: adjustedPoint.y },
             };
+            if (nextItem.mode === "full") {
+              nextItem.direction = inferHkaDirectionFromPoints(
+                nextItem.hip,
+                nextItem.knee,
+                nextItem.ankle,
+                nextItem.side,
+                nextItem.direction || "varus",
+              );
+            }
+            return nextItem;
           }),
         );
         return;
@@ -11616,6 +12148,7 @@ export default function XrayCalibrationWorkspace() {
     },
     [
       angles,
+      clampViewToViewport,
       clampToImageBounds,
       circles,
       clearSnapPreview,
@@ -11647,6 +12180,8 @@ export default function XrayCalibrationWorkspace() {
   );
 
   const handlePointerUp = useCallback(() => {
+    const completedInteractionMode = interactionRef.current.mode;
+
     if (interactionRef.current.mode === "draw" && draftLine) {
       const length = getLineLength(draftLine);
       if (length >= 2) {
@@ -11682,8 +12217,8 @@ export default function XrayCalibrationWorkspace() {
         }
       }
       setDraftLine(null);
+      setTool(getIdleTool());
       if (shouldUseMobileOneShotTool) {
-        setTool(MOBILE_IDLE_TOOL);
         if (hasCalibration) {
           setMobileControlsOpen(false);
         }
@@ -11701,8 +12236,8 @@ export default function XrayCalibrationWorkspace() {
         setHistoryPaused(false);
         setNotice("Free Line butuh area minimal 3 titik.");
       }
+      setTool(getIdleTool());
       if (shouldUseMobileOneShotTool) {
-        setTool(MOBILE_IDLE_TOOL);
         setMobileControlsOpen(false);
       }
     }
@@ -11733,10 +12268,14 @@ export default function XrayCalibrationWorkspace() {
         setNotice("Diameter terlalu kecil. Ulangi circle.");
       }
       setDraftCirclePoints([]);
+      setTool(getIdleTool());
       if (shouldUseMobileOneShotTool) {
-        setTool(MOBILE_IDLE_TOOL);
         setMobileControlsOpen(false);
       }
+    }
+
+    if (completedInteractionMode === "pan") {
+      setView((prev) => clampViewToViewport(prev));
     }
 
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
@@ -11760,18 +12299,28 @@ export default function XrayCalibrationWorkspace() {
     setGuideBuilderPreviewPoint(null);
     clearSnapPreview();
   }, [
+    clampViewToViewport,
     clearSnapPreview,
     completeDraftFreeLine,
     draftCirclePoints,
     draftFreeLine,
     draftLine,
     focusCalibrationStep,
+    getIdleTool,
     hasCalibration,
     isCoarsePointer,
     resetMobileLineTapTarget,
     setGuideBuilderPreviewPoint,
     shouldUseMobileOneShotTool,
   ]);
+
+  const handlePointerLeave = useCallback(() => {
+    setHoveredMeasurementInfo(null);
+    if (interactionRef.current.mode && activePointerIdRef.current !== null) {
+      return;
+    }
+    handlePointerUp();
+  }, [handlePointerUp]);
 
   const handleWheel = useCallback(
     (event) => {
@@ -12660,6 +13209,7 @@ export default function XrayCalibrationWorkspace() {
   const resetCutArea = useCallback(() => {
     setDraftCut(null);
     setDraftFreeLine(null);
+    setDraftFreeLineTargetLayerId(null);
     setCutLayers([]);
     setSelectedCutLayerId(null);
     nextCutLayerIdRef.current = 1;
@@ -12710,7 +13260,13 @@ export default function XrayCalibrationWorkspace() {
       setTemplateRealSizeAxis("height");
       setCopiedTemplateScale(null);
       setActionToast(null);
+      setHkaSideModalOpen(false);
+      setSimpleLayerDropdownOpen(false);
+      setSimplePlanningModal(null);
+      setSimpleGuideModalOpen(false);
       setMeasureAnatomyTab("knee");
+      setHkaInputMode("full");
+      setHkaSide("right");
       setContrast(100);
       setLevel(100);
       setRotation(0);
@@ -12975,7 +13531,7 @@ export default function XrayCalibrationWorkspace() {
     async (template) => {
       if (!image || !modelWidth || !modelHeight) {
         setNotice("Upload gambar utama dulu sebelum menambahkan template.");
-        return;
+        return false;
       }
 
       try {
@@ -12995,18 +13551,20 @@ export default function XrayCalibrationWorkspace() {
           0;
         if (!srcW || !srcH) {
           setNotice("Template library tidak valid.");
-          return;
+          return false;
         }
 
-        addImageAsWorkspaceLayer({
+        return addImageAsWorkspaceLayer({
           layerImage,
           imageSrc: loaded.src,
           name: template.name,
           sizeMode: "inherit-template",
           noticeText: `Template "${template.name}" ditambahkan ke canvas.`,
+          autoScaleFromCalibration: Boolean(template.autoScaleFromCalibration),
         });
       } catch {
         setNotice("Gagal load template dari library.");
+        return false;
       }
     },
     [addImageAsWorkspaceLayer, image, modelHeight, modelWidth],
@@ -13037,14 +13595,30 @@ export default function XrayCalibrationWorkspace() {
       setNotice("Pilih implant lokal terlebih dahulu.");
       return;
     }
+    const calibrationInstruction = `Implant "${selectedImplantLibraryItem.label}" ditambahkan. Klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi supaya implant mengikuti skala X-ray.`;
     void addTemplateToCanvas({
       id: selectedImplantLibraryItem.id,
       name: selectedImplantLibraryItem.label,
       imageSrc: selectedImplantLibraryItem.imageSrc,
       sourceWidth: 0,
       sourceHeight: 0,
+      autoScaleFromCalibration: true,
+    }).then((added) => {
+      if (!added || mmPerPixel !== null) return;
+      if (isSimpleUiMode) {
+        openSimpleCalibrationModal(calibrationInstruction);
+        return;
+      }
+      focusCalibrationStep(calibrationInstruction);
     });
-  }, [addTemplateToCanvas, selectedImplantLibraryItem]);
+  }, [
+    addTemplateToCanvas,
+    focusCalibrationStep,
+    isSimpleUiMode,
+    mmPerPixel,
+    openSimpleCalibrationModal,
+    selectedImplantLibraryItem,
+  ]);
 
   const useGoogleSheetImageAsLayer = useCallback(
     (sheetImage) => {
@@ -13917,12 +14491,14 @@ export default function XrayCalibrationWorkspace() {
     };
   }, []);
 
+  const effectiveShowLeftSidebar = showLeftSidebar && !isSimpleUiMode;
+  const effectiveShowRightSidebar = showRightSidebar && !isSimpleUiMode;
   const desktopSectionClass =
-    showLeftSidebar && showRightSidebar
+    effectiveShowLeftSidebar && effectiveShowRightSidebar
       ? "lg:[grid-template-columns:var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
-      : showLeftSidebar
+      : effectiveShowLeftSidebar
         ? "lg:[grid-template-columns:var(--left-sidebar-width)_minmax(0,1fr)]"
-        : showRightSidebar
+        : effectiveShowRightSidebar
           ? "lg:[grid-template-columns:minmax(0,1fr)_var(--right-sidebar-width)]"
           : "lg:grid-cols-1";
   const isLeftSidebarCompact = leftSidebarWidth <= 170;
@@ -13931,19 +14507,23 @@ export default function XrayCalibrationWorkspace() {
   const isRightSidebarNarrow = rightSidebarWidth <= 220;
   const mobileSetupPanelVisible =
     isMobileViewport &&
+    !isSimpleUiMode &&
     mobileControlsOpen &&
-    showLeftSidebar &&
+    effectiveShowLeftSidebar &&
     mobilePanelMode === "setup";
   const mobileWorkspacePanelVisible =
     isMobileViewport &&
+    !isSimpleUiMode &&
     mobileControlsOpen &&
-    showRightSidebar &&
+    effectiveShowRightSidebar &&
     mobilePanelMode === "workspace";
   const activeToolLabel =
     tool === "draw"
       ? "Draw"
       : tool === "freeLine"
-        ? "Free Line"
+        ? freeLineMode === "point"
+          ? "Point Mode"
+          : "Free Line"
         : tool === "pan"
           ? "Move"
           : tool === "cut"
@@ -13959,26 +14539,6 @@ export default function XrayCalibrationWorkspace() {
                 : tool === "circle"
                 ? "Circle"
                 : "HKA";
-  const activeToolIcon =
-    tool === "draw"
-      ? "draw"
-      : tool === "freeLine"
-        ? "freeLine"
-        : tool === "pan"
-          ? "pan"
-          : tool === "cut"
-            ? "cut"
-            : tool === "centerFinder"
-              ? "centerFinder"
-              : tool === "axisBuilder"
-                ? "axisBuilder"
-                : tool === "guideBuilder"
-                  ? "guideBuilder"
-            : tool === "angle"
-              ? "angle"
-              : tool === "circle"
-              ? "circle"
-              : "hka";
   const activeOrthoBuilderMeta =
     tool === "centerFinder"
       ? {
@@ -14035,63 +14595,167 @@ export default function XrayCalibrationWorkspace() {
       (isImageBackedLayerKind(selectedCutLayer.kind) ||
         selectedCutLayer.kind === "free-line"),
   );
+  const simpleWorkflowSteps = [
+    {
+      id: 1,
+      label: "Upload",
+      done: Boolean(image),
+      onClick: () => mainUploadInputRef.current?.click(),
+    },
+    {
+      id: 2,
+      label: "Calib",
+      done: hasCalibration,
+      onClick: () => openSimpleCalibrationModal(),
+    },
+    {
+      id: 3,
+      label: "Ukur",
+      done: measurementEntityCount > 0,
+      onClick: () => {
+        if (!hasCalibration) {
+          openSimpleCalibrationModal(
+            "Selesaikan kalibrasi dulu sebelum measurement.",
+          );
+          return;
+        }
+        focusMeasureStep();
+      },
+    },
+    {
+      id: 4,
+      label: "Export",
+      done: hasCalibration && measurementEntityCount > 0,
+      onClick: () => {
+        if (!hasCalibration) {
+          openSimpleCalibrationModal(
+            "Export report dikunci sampai kalibrasi aktif.",
+          );
+          return;
+        }
+        focusExportStep();
+      },
+    },
+  ];
+  const selectedLayerDropdownLabel = selectedCutLayer
+    ? selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)
+    : cutLayers.length > 0
+      ? "Pilih layer"
+      : "Layer kosong";
+  const implantLibraryScaleInstruction = hasCalibration
+    ? "Kalibrasi aktif: implant lokal akan mencoba auto-scale mengikuti garis kalibrasi dari ruler template. Jika belum pas, pilih layer lalu tekan Ruler atau Scale."
+    : "Sebelum memakai implant lokal, klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi.";
+  const simpleToolMenuItems = [
+    { icon: "draw", label: "Line", desc: "gambar ukur", key: "draw" },
+    { icon: "pan", label: "Move", desc: "drag canvas/layer", key: "pan" },
+    { icon: "cut", label: "Cut", desc: "fragment", key: "cut" },
+    {
+      icon: "freeLine",
+      label: "Free",
+      desc: "freehand",
+      key: "freeLine",
+      freeLineMode: "freehand",
+    },
+    {
+      icon: "freeLine",
+      label: "Point",
+      desc: "point mode",
+      key: "freeLinePoint",
+      freeLineMode: "point",
+    },
+    { icon: "angle", label: "Angle", desc: "sudut", key: "angle" },
+    { icon: "hka", label: "HKA", desc: "axis knee", key: "hkaAuto" },
+    { icon: "guideBuilder", label: "Guide", desc: "parallel", key: "guideBuilder" },
+  ];
+  const mobileNavigationTabs = [
+    {
+      id: "setup",
+      label: "Setup",
+      onClick: () => {
+        if (isSimpleUiMode) {
+          setSimpleMobilePanel((prev) => (prev === "quick" ? null : "quick"));
+          return;
+        }
+        setMobilePanelMode("setup");
+        setMobileControlsOpen(true);
+      },
+      active: isSimpleUiMode
+        ? simpleMobilePanel === "quick"
+        : mobileSetupPanelVisible,
+    },
+    {
+      id: "tool",
+      label: "Tool",
+      onClick: () => {
+        if (isSimpleUiMode) {
+          setSimpleMobilePanel((prev) => (prev === "tools" ? null : "tools"));
+          return;
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("tool");
+        setMobileControlsOpen(true);
+      },
+      active: isSimpleUiMode
+        ? simpleMobilePanel === "tools"
+        : mobileWorkspacePanelVisible && activeRightPanel === "tool",
+    },
+    {
+      id: "measure",
+      label: "Measure",
+      onClick: () => {
+        if (isSimpleUiMode) {
+          setSimpleMobilePanel(null);
+          openSimpleCalibrationModal();
+          return;
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setMobileControlsOpen(true);
+      },
+      active: isSimpleUiMode
+        ? simpleCalibrationModalOpen
+        : mobileWorkspacePanelVisible && activeRightPanel === "measure",
+    },
+    {
+      id: "planning",
+      label: "Plan",
+      onClick: () => {
+        if (isSimpleUiMode) {
+          setSimpleMobilePanel((prev) =>
+            prev === "planning" ? null : "planning",
+          );
+          return;
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("planning");
+        setMobileControlsOpen(true);
+      },
+      active: isSimpleUiMode
+        ? simpleMobilePanel === "planning" || Boolean(simplePlanningModal)
+        : mobileWorkspacePanelVisible && activeRightPanel === "planning",
+    },
+  ];
+  const mobileNavigationActiveTool =
+    (isSimpleUiMode && simpleMobilePanel === "tools") ||
+    (!isSimpleUiMode &&
+      mobileWorkspacePanelVisible &&
+      activeRightPanel === "tool" &&
+      tool !== "pan" &&
+      tool !== "draw")
+      ? "tools"
+      : tool === "draw"
+        ? "draw"
+        : tool === "pan"
+          ? "pan"
+          : "tools";
 
   return (
     <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
-      <AnimatePresence>
-        {showStartupCalibrationAlert ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) {
-                goToCalibrationPanel();
-              }
-            }}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 18 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 18 }}
-              transition={PANEL_SPRING}
-              className={`w-full max-w-lg ${SOFT_PANEL_CLASS}`}
-            >
-              <h2 className="text-base font-semibold text-slate-900">
-                Kalibrasi Wajib Sebelum Ukur
-              </h2>
-              <p className="mt-2 text-sm text-slate-700">
-                Untuk hasil ukuran akurat, tarik garis kalibrasi pada ruler
-                X-ray (contoh 13 cm), lalu isi nilai aktual dan simpan kalibrasi
-                sebelum melakukan measurement.
-              </p>
-              <div
-                className={`mt-3 ${SOFT_INSET_CLASS} px-3 py-2 text-[10px] text-slate-700`}
-              >
-                Langkah cepat: Upload gambar, tarik garis di ruler, simpan
-                kalibrasi, lalu mulai ukur.
-              </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={goToCalibrationPanel}
-                  className={SOFT_TEXT_BUTTON_CLASS}
-                >
-                  Keluar
-                </button>
-                <button
-                  type="button"
-                  onClick={goToCalibrationPanel}
-                  className={`${SOFT_PRESSED_CLASS} px-3 py-2 text-xs font-medium text-rose-600`}
-                >
-                  Saya Mengerti
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      <ModalStarter
+        open={showStartupCalibrationAlert}
+        onExit={goToCalibrationPanel}
+        onConfirm={goToCalibrationPanel}
+      />
       <AnimatePresence>
         {actionToast ? (
           <motion.div
@@ -14116,7 +14780,11 @@ export default function XrayCalibrationWorkspace() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[94] flex items-center justify-center bg-slate-950/35 p-4"
+            className={`fixed inset-0 z-[94] flex items-center justify-center p-4 ${
+              toolConfigModal === "layerSettings"
+                ? "bg-slate-950/24 backdrop-blur-sm"
+                : "bg-slate-950/35"
+            }`}
             onClick={(event) => {
               if (event.target === event.currentTarget) {
                 setToolConfigModal(null);
@@ -14128,17 +14796,26 @@ export default function XrayCalibrationWorkspace() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 14 }}
               transition={PANEL_SPRING}
-              className={`w-full ${
+              className={
                 toolConfigModal === "layerSettings"
-                  ? "max-w-3xl"
-                  : toolConfigModal === "layerMove" || toolConfigModal === "layerLayout"
-                  ? "max-w-2xl"
-                  : toolConfigModal === "snapTool"
-                    ? "max-w-lg"
-                    : "max-w-md"
-              } ${SOFT_PANEL_CLASS}`}
+                  ? "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-white/80 bg-[#eef2f7] p-5 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.74)]"
+                  : `w-full ${
+                      toolConfigModal === "layerMove" ||
+                      toolConfigModal === "layerLayout"
+                        ? "max-w-2xl"
+                        : toolConfigModal === "snapTool"
+                          ? "max-w-lg"
+                          : "max-w-md"
+                    } ${SOFT_PANEL_CLASS}`
+              }
             >
-              <div className="mb-2 flex items-center justify-between gap-3">
+              <div
+                className={
+                  toolConfigModal === "layerSettings"
+                    ? "mb-4 flex items-center justify-between gap-3"
+                    : "mb-2 flex items-center justify-between gap-3"
+                }
+              >
                 <div className="flex items-center gap-2">
                   <Icon
                     name={
@@ -14155,9 +14832,19 @@ export default function XrayCalibrationWorkspace() {
                             ? "package"
                             : "guideBuilder"
                     }
-                    className="h-4 w-4 text-cyan-700"
+                    className={
+                      toolConfigModal === "layerSettings"
+                        ? "h-5 w-5 text-cyan-800"
+                        : "h-4 w-4 text-cyan-700"
+                    }
                   />
-                  <div className="text-sm font-semibold text-slate-900">
+                  <div
+                    className={
+                      toolConfigModal === "layerSettings"
+                        ? "text-lg font-extrabold text-slate-950"
+                        : "text-sm font-semibold text-slate-900"
+                    }
+                  >
                     {toolConfigModal === "snapTool"
                       ? "Snap Tool"
                       : toolConfigModal === "layerSettings"
@@ -14175,7 +14862,11 @@ export default function XrayCalibrationWorkspace() {
                 <button
                   type="button"
                   onClick={() => setToolConfigModal(null)}
-                  className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`}
+                  className={
+                    toolConfigModal === "layerSettings"
+                      ? "rounded-full border border-white/70 bg-[#eef2f7] px-5 py-2 text-xs font-semibold text-slate-700 shadow-[4px_4px_10px_rgba(148,163,184,0.42),-4px_-4px_10px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
+                      : `${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`
+                  }
                 >
                   Tutup
                 </button>
@@ -14277,7 +14968,7 @@ export default function XrayCalibrationWorkspace() {
                   ) : (
                     <>
                       <div
-                        className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
+                        className="rounded-full border border-white/75 bg-[#eef2f7] px-4 py-3 text-sm text-slate-800 shadow-[inset_4px_4px_9px_rgba(148,163,184,0.24),inset_-4px_-4px_9px_rgba(255,255,255,0.82)]"
                         style={{
                           color: selectedLayerPalette?.text || "#334155",
                         }}
@@ -14289,14 +14980,18 @@ export default function XrayCalibrationWorkspace() {
                           ? ` • primary dari ${selectedCutLayerIds.length} layer`
                           : ""}
                       </div>
-                      <div className={`grid gap-1 p-1 ${SOFT_INSET_CLASS} ${hasLayerContentControls ? "grid-cols-3" : "grid-cols-2"}`}>
+                      <div
+                        className={`grid gap-1.5 rounded-full border border-white/70 bg-[#eef2f7] p-1.5 shadow-[inset_5px_5px_12px_rgba(148,163,184,0.22),inset_-5px_-5px_12px_rgba(255,255,255,0.86)] ${
+                          hasLayerContentControls ? "grid-cols-3" : "grid-cols-2"
+                        }`}
+                      >
                         <button
                           type="button"
                           onClick={() => setLayerSettingsTab("transform")}
-                          className={`px-2 py-2 text-xs font-semibold transition ${
+                          className={`rounded-full px-2 py-2.5 text-xs font-bold transition ${
                             layerSettingsTab === "transform"
-                              ? SOFT_DARK_BUTTON_CLASS
-                              : `${SOFT_RAISED_CLASS} text-cyan-700`
+                              ? "bg-[linear-gradient(180deg,#6d9bc2_0%,#426e95_100%)] text-white shadow-[inset_2px_2px_5px_rgba(15,23,42,0.18),4px_4px_10px_rgba(66,110,149,0.22)]"
+                              : "text-cyan-900/80"
                           }`}
                         >
                           Transform
@@ -14305,10 +15000,10 @@ export default function XrayCalibrationWorkspace() {
                           <button
                             type="button"
                             onClick={() => setLayerSettingsTab("content")}
-                            className={`px-2 py-2 text-xs font-semibold transition ${
+                            className={`rounded-full px-2 py-2.5 text-xs font-bold transition ${
                               layerSettingsTab === "content"
-                                ? SOFT_DARK_BUTTON_CLASS
-                                : `${SOFT_RAISED_CLASS} text-cyan-700`
+                                ? "bg-[linear-gradient(180deg,#6d9bc2_0%,#426e95_100%)] text-white shadow-[inset_2px_2px_5px_rgba(15,23,42,0.18),4px_4px_10px_rgba(66,110,149,0.22)]"
+                                : "text-cyan-900/80"
                             }`}
                           >
                             Content
@@ -14317,10 +15012,10 @@ export default function XrayCalibrationWorkspace() {
                         <button
                           type="button"
                           onClick={() => setLayerSettingsTab("view")}
-                          className={`px-2 py-2 text-xs font-semibold transition ${
+                          className={`rounded-full px-2 py-2.5 text-xs font-bold transition ${
                             layerSettingsTab === "view"
-                              ? SOFT_DARK_BUTTON_CLASS
-                              : `${SOFT_RAISED_CLASS} text-cyan-700`
+                              ? "bg-[linear-gradient(180deg,#6d9bc2_0%,#426e95_100%)] text-white shadow-[inset_2px_2px_5px_rgba(15,23,42,0.18),4px_4px_10px_rgba(66,110,149,0.22)]"
+                              : "text-cyan-900/80"
                           }`}
                         >
                           View
@@ -14328,8 +15023,8 @@ export default function XrayCalibrationWorkspace() {
                       </div>
 
                       {layerSettingsTab === "transform" ? (
-                        <div className="flex flex-col gap-2">
-                          <div className="grid grid-cols-3 gap-1.5">
+                        <div className="flex flex-col gap-3">
+                          <div className="grid grid-cols-3 gap-2 rounded-[22px] border border-white/70 bg-[#eef2f7] p-2 shadow-[inset_4px_4px_10px_rgba(148,163,184,0.18),inset_-4px_-4px_10px_rgba(255,255,255,0.82)]">
                             <IconButton
                               icon="target"
                               label="Center Layer"
@@ -14409,7 +15104,26 @@ export default function XrayCalibrationWorkspace() {
                               className="h-9 w-full"
                             />
                           </div>
-                          <div className="grid gap-1.5 md:grid-cols-2">
+                          <div className="rounded-[24px] border border-white/75 bg-[#eef2f7] p-4 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.82)]">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-sm font-extrabold text-slate-950">
+                                Ukuran
+                              </div>
+                              <div className="text-xs font-medium text-slate-700">
+                                Real: W{" "}
+                                {formatTemplateLayerRealSize(
+                                  selectedLayerMetrics.widthMm,
+                                )}{" "}
+                                | H{" "}
+                                {formatTemplateLayerRealSize(
+                                  selectedLayerMetrics.heightMm,
+                                )}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-500">
+                                Aktif ({measurementUnit})
+                              </div>
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-2">
                             <CompactSliderField
                               label="Width"
                               valueText={`${Math.round(selectedLayerMetrics.width)}`}
@@ -14614,6 +15328,48 @@ export default function XrayCalibrationWorkspace() {
                                 increaseIcon="rotateRight"
                               />
                             </div>
+                            <div className="md:col-span-2">
+                              <CompactSliderField
+                                label="Opacity"
+                                valueText={`${selectedLayerMetrics.opacity}%`}
+                                min={10}
+                                max={100}
+                                step={1}
+                                value={selectedLayerMetrics.opacity}
+                                onChange={(event) => {
+                                  const nextOpacity = clamp(
+                                    Number(event.target.value) / 100,
+                                    0.05,
+                                    1,
+                                  );
+                                  updateLayerById(selectedCutLayer.id, {
+                                    opacity: nextOpacity,
+                                  });
+                                }}
+                                onDecrease={() =>
+                                  updateLayerById(selectedCutLayer.id, (item) => ({
+                                    ...item,
+                                    opacity: clamp(
+                                      Number(item.opacity ?? 1) - 0.05,
+                                      0.05,
+                                      1,
+                                    ),
+                                  }))
+                                }
+                                onIncrease={() =>
+                                  updateLayerById(selectedCutLayer.id, (item) => ({
+                                    ...item,
+                                    opacity: clamp(
+                                      Number(item.opacity ?? 1) + 0.05,
+                                      0.05,
+                                      1,
+                                    ),
+                                  }))
+                                }
+                                controlStyle="knob"
+                              />
+                            </div>
+                            </div>
                           </div>
                         </div>
                       ) : null}
@@ -14732,6 +15488,94 @@ export default function XrayCalibrationWorkspace() {
                                   className={`${SOFT_TEXT_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-45`}
                                 >
                                   Paste Scale
+                                </button>
+                              </div>
+                              <div className="mt-2 grid gap-1.5">
+                                <CompactSliderField
+                                  label="Contrast"
+                                  valueText={`${selectedLayerMetrics.contrast}%`}
+                                  min={10}
+                                  max={300}
+                                  step={1}
+                                  value={selectedLayerMetrics.contrast}
+                                  onChange={(event) =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      contrast: clamp(
+                                        Number(event.target.value),
+                                        10,
+                                        300,
+                                      ),
+                                    })
+                                  }
+                                  onDecrease={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => ({
+                                      ...item,
+                                      contrast: clamp(
+                                        Number(item.contrast ?? 100) - 5,
+                                        10,
+                                        300,
+                                      ),
+                                    }))
+                                  }
+                                  onIncrease={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => ({
+                                      ...item,
+                                      contrast: clamp(
+                                        Number(item.contrast ?? 100) + 5,
+                                        10,
+                                        300,
+                                      ),
+                                    }))
+                                  }
+                                />
+                                <CompactSliderField
+                                  label="Level"
+                                  valueText={`${selectedLayerMetrics.level}%`}
+                                  min={10}
+                                  max={300}
+                                  step={1}
+                                  value={selectedLayerMetrics.level}
+                                  onChange={(event) =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      level: clamp(
+                                        Number(event.target.value),
+                                        10,
+                                        300,
+                                      ),
+                                    })
+                                  }
+                                  onDecrease={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => ({
+                                      ...item,
+                                      level: clamp(
+                                        Number(item.level ?? 100) - 5,
+                                        10,
+                                        300,
+                                      ),
+                                    }))
+                                  }
+                                  onIncrease={() =>
+                                    updateLayerById(selectedCutLayer.id, (item) => ({
+                                      ...item,
+                                      level: clamp(
+                                        Number(item.level ?? 100) + 5,
+                                        10,
+                                        300,
+                                      ),
+                                    }))
+                                  }
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      contrast: 100,
+                                      level: 100,
+                                    })
+                                  }
+                                  className={SOFT_TEXT_BUTTON_CLASS}
+                                >
+                                  Reset Contrast / Level
                                 </button>
                               </div>
                               {copiedTemplateScale ? (
@@ -15432,24 +16276,1556 @@ export default function XrayCalibrationWorkspace() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <CalibrationLineModalPanel
+        open={isSimpleUiMode && simpleCalibrationModalOpen}
+        onClose={() => setSimpleCalibrationModalOpen(false)}
+        calibrationMode={calibrationMode}
+        onCalibrationModeChange={setCalibrationMode}
+        calibrationReferenceLine={calibrationReferenceLine}
+        lineTypeLabel={lineTypeLabel}
+        actualValue={actualMmInput}
+        onActualValueChange={setActualMmInput}
+        actualUnit={actualUnit}
+        onActualUnitChange={setActualUnit}
+        sourceZoomPercent={sourceZoomPercent}
+        onSourceZoomPercentChange={setSourceZoomPercent}
+        mmPerPixelValue={mmPerPixel}
+        mmPerPixelAt100Value={mmPerPixelAt100Input}
+        onMmPerPixelAt100Change={setMmPerPixelAt100Input}
+        calibrationQuality={calibrationQuality}
+        selectedLengthText={
+          calibrationReferenceLine
+            ? formatMeasurementFromPx(getLineLength(calibrationReferenceLine))
+            : ""
+        }
+        onCreatePresetFromInput={createCalibrationPresetLineFromInput}
+        onCreatePresetLine={createCalibrationPresetLine}
+        onManualDraw={() => {
+          setSimpleCalibrationModalOpen(false);
+          handleToolChange("draw");
+        }}
+        lineStrokeWidth={
+          calibrationReferenceLine &&
+          Number.isFinite(calibrationReferenceLine.strokeWidth)
+            ? calibrationReferenceLine.strokeWidth
+            : DEFAULT_LINE_STROKE_WIDTH
+        }
+        onLineStrokeWidthChange={(nextValue) => {
+          if (!calibrationReferenceLine) return;
+          setLines((prev) =>
+            prev.map((line) =>
+              line.id === calibrationReferenceLine.id
+                ? { ...line, strokeWidth: nextValue }
+                : line,
+            ),
+          );
+        }}
+        onSave={applyCalibration}
+        canSave={calibrationMode === "line" ? Boolean(calibrationReferenceLine) : true}
+        hasCalibration={hasCalibration}
+        measurementUnit={measurementUnit}
+      />
+      <AnimatePresence>
+        {isSimpleUiMode && simpleGuideModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[96] flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setSimpleGuideModalOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              className="max-h-[92vh] w-full max-w-[560px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
+                    <Icon name="guideBuilder" className="h-5 w-5 text-cyan-700" />
+                    <span>Panduan Simple UI</span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Ringkasan tombol penting, layer, Free Line, HKA, dan planning.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSimpleGuideModalOpen(false)}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-6px_-6px_14px_rgba(255,255,255,0.76)]"
+                  aria-label="Tutup panduan"
+                  title="Tutup"
+                >
+                  <X className="h-4 w-4" strokeWidth={2.1} />
+                </button>
+              </div>
+              <div className="max-h-[calc(92vh-82px)] space-y-3 overflow-y-auto px-5 py-5">
+                {[
+                  {
+                    title: "1. Upload & Kalibrasi",
+                    body: "Upload X-ray, lalu buka Kalibrasi untuk membuat atau memilih line ruler. Measurement klinis aktif setelah kalibrasi tersimpan.",
+                  },
+                  {
+                    title: "2. Layer Kosong",
+                    body: "Layer Kosong membuat layer vector di stack. Pilih Freehand atau Point Mode, gambar di canvas, lalu hasilnya mengisi layer kosong itu.",
+                  },
+                  {
+                    title: "3. Urutan Layer",
+                    body: "Pilih layer dari dropdown header. Tombol Naik, Turun, Atas, dan Bawah mengubah posisi layer tanpa mengubah logika canvas.",
+                  },
+                  {
+                    title: "4. HKA Knee",
+                    body: "Pilih Kaki kanan atau Kaki kiri sebelum membuat HKA. Sistem memakai sisi ini untuk membuat label varus/valgus lebih mudah dibaca.",
+                  },
+                  {
+                    title: "5. Planning Guide",
+                    body: "Gunakan TKA untuk Distal Cut, Tibial Slope, atau Tibial Cut. Guide memakai line acuan yang sama dengan workspace.",
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="rounded-[22px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_5px_5px_12px_rgba(100,116,139,0.13),inset_-5px_-5px_12px_rgba(255,255,255,0.75)]"
+                  >
+                    <div className="text-sm font-extrabold text-slate-800">
+                      {item.title}
+                    </div>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                      {item.body}
+                    </p>
+                  </div>
+                ))}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimpleGuideModalOpen(false);
+                      createEmptyFreeLineLayer("point");
+                    }}
+                    disabled={!image || !modelWidth || !modelHeight}
+                    className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Layer Kosong + Point
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimpleGuideModalOpen(false);
+                      handleToolChange("guideBuilder");
+                    }}
+                    className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)]"
+                  >
+                    Buka Guide Tool
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimpleGuideModalOpen(false);
+                      openSimplePlanningModal("tka");
+                    }}
+                    className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)]"
+                  >
+                    Planning TKA
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimpleGuideModalOpen(false);
+                      openSimplePlanningModal("hip");
+                    }}
+                    className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)]"
+                  >
+                    Planning HIP
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {hkaSideModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[96] flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setHkaSideModalOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              className="w-full max-w-[440px] rounded-[30px] border border-white/85 bg-[#e9eef5] p-5 text-slate-900 shadow-[14px_14px_34px_rgba(15,23,42,0.24),-8px_-8px_24px_rgba(255,255,255,0.72)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+                    <Icon name="hka" className="h-5 w-5 text-cyan-700" />
+                    <span>HKA Knee</span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                    Pilih sisi kaki sebelum membuat line HKA agar label
+                    varus/valgus terbaca sesuai kanan atau kiri.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHkaSideModalOpen(false)}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[5px_5px_12px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.76)]"
+                  aria-label="Tutup pilihan HKA"
+                  title="Tutup"
+                >
+                  <X className="h-4 w-4" strokeWidth={2.1} />
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-2 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.14),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+                {[
+                  { key: "right", label: "Kaki kanan" },
+                  { key: "left", label: "Kaki kiri" },
+                ].map((sideItem) => {
+                  const isActive = hkaSide === sideItem.key;
+                  return (
+                    <button
+                      key={`hka-side-modal-${sideItem.key}`}
+                      type="button"
+                      onClick={() => setHkaSide(sideItem.key)}
+                      className={`rounded-[18px] px-3 py-3 text-xs font-extrabold transition ${
+                        isActive
+                          ? "border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] text-white shadow-[inset_3px_3px_7px_rgba(0,0,0,0.25),5px_5px_14px_rgba(51,65,85,0.32)]"
+                          : "border border-white/82 bg-[#e9eef5] text-slate-600 shadow-[5px_5px_12px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.74)]"
+                      }`}
+                    >
+                      {sideItem.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                <label>
+                  Mode
+                  <select
+                    value={hkaInputMode}
+                    onChange={(event) => handleHkaModeChange(event.target.value)}
+                    className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
+                  >
+                    {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => (
+                      <option key={`hka-modal-mode-${modeItem.key}`} value={modeItem.key}>
+                        {modeItem.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="rounded-[18px] border border-white/78 bg-[#e9eef5] px-3 py-2 text-[11px] leading-5 shadow-[inset_4px_4px_10px_rgba(100,116,139,0.13),inset_-4px_-4px_10px_rgba(255,255,255,0.75)]">
+                  {getHkaModeDefinition(hkaInputMode).modeLabel}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHkaSideModalOpen(false);
+                    setDraftHkaPoints([]);
+                    handleToolChange("hkaAuto", { skipHkaSidePrompt: true });
+                  }}
+                  className="rounded-[18px] border border-emerald-400/70 bg-[linear-gradient(180deg,#36c768_0%,#22a755_100%)] px-4 py-3 text-xs font-extrabold text-white shadow-[6px_6px_14px_rgba(34,197,94,0.2),-5px_-5px_12px_rgba(255,255,255,0.65)]"
+                >
+                  Mulai HKA {getHkaSideLabel(hkaSide)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHkaSideModalOpen(false);
+                    handleToolChange("pan");
+                  }}
+                  className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-4 py-3 text-xs font-extrabold text-slate-600 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)]"
+                >
+                  Move
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isSimpleUiMode && simplePlanningModal ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setSimplePlanningModal(null);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              className="max-h-[92vh] w-full max-w-[620px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
+                    <Icon name="package" className="h-5 w-5 text-slate-700" />
+                    <span>
+                      {simplePlanningModal === "hip"
+                        ? "Planning HIP"
+                        : "Planning TKA"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {simplePlanningModal === "hip"
+                      ? "Offset, LLD, dan line hip memakai tool yang sama dengan workspace."
+                      : "Distal cut, tibial slope, dan tibial cut memakai guide canvas yang sama."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSimplePlanningModal(null)}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-6px_-6px_14px_rgba(255,255,255,0.76)]"
+                  aria-label="Tutup planning"
+                  title="Tutup"
+                >
+                  <X className="h-4 w-4" strokeWidth={2.1} />
+                </button>
+              </div>
+
+              <div className="max-h-[calc(92vh-82px)] space-y-3 overflow-y-auto px-5 py-5">
+                {simplePlanningModal === "tka" ? (
+                  <>
+                    <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+                      <div className="text-sm font-extrabold text-slate-700">
+                        Acuan Planning
+                      </div>
+                      <div
+                        className={`mt-1 text-xs font-semibold ${
+                          selectedLine ? "text-slate-600" : "text-rose-500"
+                        }`}
+                      >
+                        {selectedLine
+                          ? `Line #${selectedLine.id} | ${lineTypeLabel(selectedLine.type)}${
+                              mmPerPixel !== null
+                                ? ` | ${formatMeasurementFromPx(getLineLength(selectedLine))}`
+                                : ""
+                            }`
+                          : "Pilih satu line di canvas terlebih dahulu."}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-1.5 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.14),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+                      {[
+                        { id: "valgusCut", label: "Distal Cut" },
+                        { id: "tibialSlope", label: "Tibial Slope" },
+                        { id: "tibialCut", label: "Tibial Cut" },
+                      ].map((mode) => {
+                        const isActive = planningGuideMode === mode.id;
+                        return (
+                          <button
+                            key={`simple-plan-${mode.id}`}
+                            type="button"
+                            onClick={() => setPlanningGuideMode(mode.id)}
+                            className={`rounded-[18px] px-2 py-2.5 text-xs font-extrabold transition ${
+                              isActive
+                                ? "border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] text-white shadow-[inset_3px_3px_7px_rgba(0,0,0,0.25),5px_5px_14px_rgba(51,65,85,0.38)]"
+                                : "border border-white/82 bg-[#e9eef5] text-slate-600 shadow-[5px_5px_12px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.74)]"
+                            }`}
+                          >
+                            {mode.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-4 text-xs font-semibold text-slate-600 shadow-[8px_8px_18px_rgba(100,116,139,0.18),-6px_-6px_16px_rgba(255,255,255,0.72)] sm:grid-cols-2">
+                      {planningGuideMode === "valgusCut" ? (
+                        <>
+                          <label>
+                            Angle
+                            <input
+                              type="number"
+                              min="0"
+                              max="15"
+                              step="0.5"
+                              value={valgusCutAngleDeg}
+                              onChange={(event) =>
+                                setValgusCutAngleDeg(
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                          <label>
+                            Side
+                            <select
+                              value={valgusCutSide}
+                              onChange={(event) =>
+                                setValgusCutSide(event.target.value)
+                              }
+                              className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
+                            >
+                              <option value="Right">Right</option>
+                              <option value="Left">Left</option>
+                            </select>
+                          </label>
+                          <label>
+                            Offset
+                            <input
+                              type="number"
+                              min="0"
+                              max="400"
+                              step="1"
+                              value={valgusCutOffsetPx}
+                              onChange={(event) =>
+                                setValgusCutOffsetPx(
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                          <label>
+                            Length
+                            <input
+                              type="number"
+                              min="20"
+                              max="800"
+                              step="5"
+                              value={valgusCutLineLengthPx}
+                              onChange={(event) =>
+                                setValgusCutLineLengthPx(
+                                  Number(event.target.value) || 20,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                      {planningGuideMode === "tibialSlope" ? (
+                        <>
+                          <label>
+                            Slope
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              step="0.5"
+                              value={tibialSlopeDeg}
+                              onChange={(event) =>
+                                setTibialSlopeDeg(
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                          <label>
+                            Posterior
+                            <select
+                              value={tibialPosteriorSide}
+                              onChange={(event) =>
+                                setTibialPosteriorSide(event.target.value)
+                              }
+                              className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
+                            >
+                              <option value="Right">Right</option>
+                              <option value="Left">Left</option>
+                            </select>
+                          </label>
+                          <label>
+                            Offset
+                            <input
+                              type="number"
+                              min="0"
+                              max="400"
+                              step="1"
+                              value={tibialSlopeOffsetPx}
+                              onChange={(event) =>
+                                setTibialSlopeOffsetPx(
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                          <label>
+                            Length
+                            <input
+                              type="number"
+                              min="20"
+                              max="800"
+                              step="5"
+                              value={tibialSlopeLineLengthPx}
+                              onChange={(event) =>
+                                setTibialSlopeLineLengthPx(
+                                  Number(event.target.value) || 20,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                      {planningGuideMode === "tibialCut" ? (
+                        <>
+                          <label>
+                            Angle
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              step="0.5"
+                              value={tibialCutAngleDeg}
+                              onChange={(event) =>
+                                setTibialCutAngleDeg(
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                          <label>
+                            Direction
+                            <select
+                              value={tibialCutDirection}
+                              onChange={(event) =>
+                                setTibialCutDirection(event.target.value)
+                              }
+                              className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
+                            >
+                              <option value="Valgus">Valgus</option>
+                              <option value="Varus">Varus</option>
+                            </select>
+                          </label>
+                          <label>
+                            Offset
+                            <input
+                              type="number"
+                              min="0"
+                              max="400"
+                              step="1"
+                              value={tibialCutOffsetPx}
+                              onChange={(event) =>
+                                setTibialCutOffsetPx(
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                          <label>
+                            Length
+                            <input
+                              type="number"
+                              min="20"
+                              max="800"
+                              step="5"
+                              value={tibialCutLineLengthPx}
+                              onChange={(event) =>
+                                setTibialCutLineLengthPx(
+                                  Number(event.target.value) || 20,
+                                )
+                              }
+                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={
+                          selectedPlanningGuide
+                            ? () => updateSelectedPlanningGuide()
+                            : addPlanningGuideFromSelectedLine
+                        }
+                        disabled={!selectedPlanningGuide && !selectedLine}
+                        className="rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#ff7770_0%,#fb5f58_100%)] px-3 py-3 text-xs font-extrabold text-white shadow-[6px_6px_14px_rgba(248,113,113,0.25),-5px_-5px_12px_rgba(255,255,255,0.68)] transition disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {selectedPlanningGuide ? "Update Guide" : "Buat dari Line"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPlanningGuides([]);
+                          setSelectedPlanningGuideId(null);
+                          setNotice("Semua planning guide dihapus.");
+                        }}
+                        disabled={planningGuides.length === 0}
+                        className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-500 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)] transition disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Clear Guide
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 text-xs font-semibold text-slate-600 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+                      <div className="text-sm font-extrabold text-slate-700">
+                        Hip Summary
+                      </div>
+                      <div className="mt-2 grid gap-1.5 sm:grid-cols-3">
+                        <div>Femoral: {legPackageSummary.femoralMean}</div>
+                        <div>Global: {legPackageSummary.globalMean}</div>
+                        <div>LLD: {legPackageSummary.lldDelta}</div>
+                      </div>
+                    </div>
+                    <HipFunctionSummaryPanel defaultExpanded />
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => (
+                        <button
+                          key={`simple-hip-${item.key}`}
+                          type="button"
+                          title={item.detail}
+                          onClick={() => {
+                            setSimplePlanningModal(null);
+                            handleLinePresetChange(item.key);
+                          }}
+                          className={`rounded-[18px] border px-3 py-3 text-xs font-extrabold shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)] transition ${
+                            linePreset === item.key
+                              ? "border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] text-white"
+                              : "border-white/82 bg-[#e9eef5] text-slate-600"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSimplePlanningModal(null);
+                        handleToolChange("pan");
+                      }}
+                      className="w-full rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-600 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)]"
+                    >
+                      Move / Drag Canvas
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {false && isSimpleUiMode && simpleCalibrationModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setSimpleCalibrationModalOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              className="max-h-[92vh] w-full max-w-[760px] overflow-hidden rounded-[30px] border border-white/85 bg-[linear-gradient(180deg,#f8fbff_0%,#edf3f9_100%)] text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.32),inset_0_0_0_1px_rgba(255,255,255,0.65)]"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-300/70 px-5 py-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xl font-semibold text-slate-950">
+                    <Icon name="preset" className="h-5 w-5 text-slate-900" />
+                    <span>Kalibrasi Line</span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-900">
+                    Pakai garis referensi real untuk menyimpan faktor kalibrasi
+                    sebelum measurement.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSimpleCalibrationModalOpen(false)}
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#edf2f7_100%)] text-slate-950 shadow-[8px_8px_18px_rgba(71,85,105,0.18),-4px_-4px_12px_rgba(255,255,255,0.78)] transition hover:scale-[1.02]"
+                  aria-label="Tutup kalibrasi"
+                  title="Tutup"
+                >
+                  <X className="h-4 w-4" strokeWidth={2.1} />
+                </button>
+              </div>
+
+              <div className="max-h-[calc(90vh-83px)] space-y-4 overflow-y-auto px-5 py-5">
+                <div className="flex items-start gap-3 rounded-2xl border border-white/70 bg-[#eef2f7] p-4 text-xs font-medium leading-relaxed text-slate-600 shadow-[inset_4px_4px_8px_rgba(148,163,184,0.28),inset_-4px_-4px_8px_rgba(255,255,255,0.88)]">
+                  <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-black text-amber-600">
+                    !
+                  </span>
+                  <span>
+                    {calibrationMode === "line" && !calibrationReferenceLine
+                      ? "Belum ada line terpilih. Buat ruler default di bawah atau gambar garis di kanvas untuk memulai kalibrasi."
+                      : "Gunakan parameter yang sama dengan workspace utama, lalu simpan agar measurement dan export memakai faktor kalibrasi aktif."}
+                  </span>
+                </div>
+
+                <section className="rounded-[18px] border border-slate-950/90 bg-white/18 px-4 py-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    1. Pilih Sumber Kalibrasi
+                  </h2>
+                  <div className="mt-4 grid grid-cols-2 rounded-full bg-slate-300/55 p-1 shadow-[inset_8px_8px_18px_rgba(100,116,139,0.14),inset_-8px_-8px_18px_rgba(255,255,255,0.72)]">
+                    <button
+                      type="button"
+                      onClick={() => setCalibrationMode("line")}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        calibrationMode === "line"
+                          ? "bg-white text-slate-950 shadow-[5px_5px_14px_rgba(71,85,105,0.18),-3px_-3px_10px_rgba(255,255,255,0.9)]"
+                          : "text-slate-800"
+                      }`}
+                    >
+                      Garis Real
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCalibrationMode("zoom")}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        calibrationMode === "zoom"
+                          ? "bg-white text-slate-950 shadow-[5px_5px_14px_rgba(71,85,105,0.18),-3px_-3px_10px_rgba(255,255,255,0.9)]"
+                          : "text-slate-800"
+                      }`}
+                    >
+                      Zoom %
+                    </button>
+                  </div>
+                  <div className="mt-4 rounded-full border border-white/85 bg-[linear-gradient(180deg,#fbfdff_0%,#edf2f7_100%)] px-4 py-3 shadow-[6px_6px_16px_rgba(71,85,105,0.14),-4px_-4px_12px_rgba(255,255,255,0.8)]">
+                    {calibrationMode === "line" && calibrationReferenceLine ? (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                        <span>Garis #{calibrationReferenceLine.id}</span>
+                        <span className="text-slate-400">|</span>
+                        <span className="font-medium uppercase text-slate-600">
+                          {lineTypeLabel(calibrationReferenceLine.type)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-center text-sm text-slate-700">
+                        Belum ada line terpilih. Pilih garis di kanvas.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-slate-950/90 bg-white/18 px-4 py-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    2. Faktor & QC
+                  </h2>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_112px]">
+                    <label className="min-w-0 text-sm font-medium text-slate-950">
+                      {calibrationMode === "line"
+                        ? `Nilai Real (${actualUnit})`
+                        : "mm/px @100%"}
+                      <input
+                        type="number"
+                        min="0"
+                        step={calibrationMode === "line" ? "0.01" : "0.000001"}
+                        value={
+                          calibrationMode === "line"
+                            ? actualMmInput
+                            : mmPerPixelAt100Input
+                        }
+                        onChange={(event) =>
+                          calibrationMode === "line"
+                            ? setActualMmInput(event.target.value)
+                            : setMmPerPixelAt100Input(event.target.value)
+                        }
+                        className="mt-2 w-full rounded-full border border-white/80 bg-[linear-gradient(180deg,#fdfefe_0%,#edf2f7_100%)] px-4 py-3 text-sm text-slate-950 outline-none shadow-[inset_5px_5px_12px_rgba(100,116,139,0.12),inset_-5px_-5px_12px_rgba(255,255,255,0.8)]"
+                        placeholder={
+                          calibrationMode === "line"
+                            ? `Nilai Real (${actualUnit})`
+                            : "mm/px @100%"
+                        }
+                      />
+                    </label>
+                    <label className="min-w-0 text-sm font-medium text-slate-950">
+                      Zoom Source (%)
+                      <input
+                        type="number"
+                        min="1"
+                        step="0.1"
+                        value={sourceZoomPercent}
+                        onChange={(event) =>
+                          setSourceZoomPercent(event.target.value)
+                        }
+                        className="mt-2 w-full rounded-full border border-white/80 bg-[linear-gradient(180deg,#fdfefe_0%,#edf2f7_100%)] px-4 py-3 text-sm text-slate-950 outline-none shadow-[inset_5px_5px_12px_rgba(100,116,139,0.12),inset_-5px_-5px_12px_rgba(255,255,255,0.8)]"
+                      />
+                    </label>
+                    <label className="min-w-0 text-sm font-medium text-transparent">
+                      Unit
+                      <select
+                        value={actualUnit}
+                        onChange={(event) => setActualUnit(event.target.value)}
+                        className="mt-2 w-full rounded-full border border-white/80 bg-[linear-gradient(180deg,#fdfefe_0%,#edf2f7_100%)] px-4 py-3 text-sm text-slate-950 outline-none shadow-[8px_8px_18px_rgba(71,85,105,0.14),-4px_-4px_12px_rgba(255,255,255,0.75)]"
+                      >
+                        <option value="cm">cm</option>
+                        <option value="mm">mm</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-5 text-xl font-semibold text-slate-950">
+                    Faktor:{" "}
+                    {mmPerPixel !== null
+                      ? `${mmPerPixel.toFixed(6)} mm/px`
+                      : "-"}
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="text-sm text-slate-950">
+                      <span className="mr-2 font-medium">QC:</span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-sm font-semibold ${
+                          calibrationQuality.status === "good"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-rose-100 text-rose-700"
+                        }`}
+                      >
+                        {calibrationQuality.status === "good" ? (
+                          <BadgeCheck className="h-4 w-4" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                        {calibrationQuality.status === "good"
+                          ? "Baik"
+                          : "Perbaiki"}
+                      </span>
+                      <div className="mt-2 text-xs text-slate-800">
+                        {calibrationQuality.detail}
+                      </div>
+                    </div>
+                    <div className="text-sm text-slate-950">
+                      <span className="mr-2 font-medium">Status:</span>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-1 text-sm font-semibold ${
+                          calibrationQuality.status === "good"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {calibrationQuality.title}
+                      </span>
+                      <div className="mt-2 text-xs text-slate-800">
+                        {selectedLine
+                          ? `Panjang terpilih: ${formatMeasurementFromPx(selectedLengthPx)}`
+                          : "Buat/pilih garis referensi sebelum simpan."}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-slate-950/90 bg-white/18 px-4 py-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    3. Opsi Ruler & Tampilan
+                  </h2>
+                  <div className="mt-3 grid grid-cols-[112px_1fr] items-center gap-3">
+                    <div className="text-xs font-semibold uppercase text-slate-950">
+                      Ruler Default
+                    </div>
+                    <button
+                      type="button"
+                      onClick={createCalibrationPresetLineFromInput}
+                      className="rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#eef3f8_100%)] px-4 py-2 text-sm font-semibold text-slate-950 shadow-[6px_6px_16px_rgba(71,85,105,0.14),-4px_-4px_12px_rgba(255,255,255,0.78)]"
+                    >
+                      Buat
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => createCalibrationPresetLine(100)}
+                      className="rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#eef3f8_100%)] px-4 py-3 text-sm text-slate-950 shadow-[6px_6px_16px_rgba(71,85,105,0.14),-4px_-4px_12px_rgba(255,255,255,0.78)]"
+                    >
+                      10 cm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => createCalibrationPresetLine(130)}
+                      className="rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#eef3f8_100%)] px-4 py-3 text-sm text-slate-950 shadow-[6px_6px_16px_rgba(71,85,105,0.14),-4px_-4px_12px_rgba(255,255,255,0.78)]"
+                    >
+                      13 cm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => createCalibrationPresetLine(150)}
+                      className="rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#eef3f8_100%)] px-4 py-3 text-sm text-slate-950 shadow-[6px_6px_16px_rgba(71,85,105,0.14),-4px_-4px_12px_rgba(255,255,255,0.78)]"
+                    >
+                      15 cm
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimpleCalibrationModalOpen(false);
+                      handleToolChange("draw");
+                    }}
+                    className="mt-3 w-full rounded-full border border-sky-500/70 bg-[linear-gradient(180deg,#42a7df_0%,#1878b9_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_26px_rgba(14,116,184,0.24)]"
+                  >
+                    Tutup Modal & Gambar Line Manual
+                  </button>
+                </section>
+
+                {calibrationMode === "line" && calibrationReferenceLine ? (
+                  <section className="rounded-[18px] border border-slate-950/90 bg-white/18 px-4 py-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
+                    <div className="text-xs font-semibold uppercase text-slate-950">
+                      Stroke Width Ruler
+                    </div>
+                    <div className="mt-3 rounded-[22px] border border-white/80 bg-[linear-gradient(180deg,#fbfdff_0%,#edf2f7_100%)] px-4 py-4 shadow-[8px_8px_20px_rgba(71,85,105,0.14),-5px_-5px_16px_rgba(255,255,255,0.8)]">
+                      <div className="flex items-center justify-between text-sm text-slate-950">
+                        <span>Stroke</span>
+                        <span>
+                          {(
+                            Number.isFinite(calibrationReferenceLine.strokeWidth)
+                              ? calibrationReferenceLine.strokeWidth
+                              : DEFAULT_LINE_STROKE_WIDTH
+                          ).toFixed(1)}
+                          x
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={8}
+                        step={0.1}
+                        value={
+                          Number.isFinite(calibrationReferenceLine.strokeWidth)
+                            ? calibrationReferenceLine.strokeWidth
+                            : DEFAULT_LINE_STROKE_WIDTH
+                        }
+                        onChange={(event) => {
+                          const nextValue = Number(event.target.value);
+                          setLines((prev) =>
+                            prev.map((line) =>
+                              line.id === calibrationReferenceLine.id
+                                ? { ...line, strokeWidth: nextValue }
+                                : line,
+                            ),
+                          );
+                        }}
+                        className="mt-5 w-full accent-slate-400"
+                      />
+                      <div className="mt-4 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLines((prev) =>
+                              prev.map((line) =>
+                                line.id === calibrationReferenceLine.id
+                                  ? {
+                                      ...line,
+                                      strokeWidth: clamp(
+                                        (Number(line.strokeWidth) ||
+                                          DEFAULT_LINE_STROKE_WIDTH) - 0.2,
+                                        1,
+                                        8,
+                                      ),
+                                    }
+                                  : line,
+                              ),
+                            )
+                          }
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#edf2f7_100%)] text-xl text-slate-950 shadow-[6px_6px_14px_rgba(71,85,105,0.16),-4px_-4px_12px_rgba(255,255,255,0.8)]"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLines((prev) =>
+                              prev.map((line) =>
+                                line.id === calibrationReferenceLine.id
+                                  ? {
+                                      ...line,
+                                      strokeWidth: clamp(
+                                        (Number(line.strokeWidth) ||
+                                          DEFAULT_LINE_STROKE_WIDTH) + 0.2,
+                                        1,
+                                        8,
+                                      ),
+                                    }
+                                  : line,
+                              ),
+                            )
+                          }
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#edf2f7_100%)] text-xl text-slate-950 shadow-[6px_6px_14px_rgba(71,85,105,0.16),-4px_-4px_12px_rgba(255,255,255,0.8)]"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                  <motion.button
+                    type="button"
+                    onClick={applyCalibration}
+                    disabled={calibrationMode === "line" ? !selectedLine : false}
+                    whileHover={
+                      calibrationMode === "line" && !selectedLine
+                        ? undefined
+                        : BUTTON_HOVER
+                    }
+                    whileTap={
+                      calibrationMode === "line" && !selectedLine
+                        ? undefined
+                        : BUTTON_TAP
+                    }
+                    transition={{ duration: 0.16, ease: "easeOut" }}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-400/70 bg-[linear-gradient(180deg,#36c768_0%,#22a755_100%)] px-4 py-4 text-base font-semibold text-white shadow-[0_16px_30px_rgba(34,197,94,0.28)] transition disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <BadgeCheck className="h-4 w-4" strokeWidth={2} />
+                    <span>Simpan Kalibrasi</span>
+                  </motion.button>
+                  <button
+                    type="button"
+                    onClick={() => setSimpleCalibrationModalOpen(false)}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-300/70 bg-[linear-gradient(180deg,#ef334d_0%,#d91f3a_100%)] px-4 py-4 text-base font-semibold text-white shadow-[0_16px_30px_rgba(225,29,72,0.22)]"
+                  >
+                    <X className="h-4 w-4" />
+                    <span>Tutup</span>
+                  </button>
+                </div>
+
+                <div className="px-1 text-sm text-slate-950">
+                  {hasCalibration ? `Aktif (${measurementUnit})` : "Belum aktif"}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <header
-        className={`${SOFT_PANEL_CLASS} flex items-start justify-between gap-2 px-3 pt-2 pb-1 sm:px-4 sm:py-3`}
+        className={`${SOFT_PANEL_CLASS} relative z-50 flex flex-wrap items-start justify-between gap-2 px-3 pt-2 pb-1 sm:px-4 sm:py-3`}
       >
-        <div className="flex flex-col gap-0.5">
-          <h1 className="text-base font-semibold text-slate-900 sm:text-xl">
-            My Counteinvas
-          </h1>
-          <p className="hidden text-xs text-slate-600 sm:block">
-            Upload, kalibrasi & ukur
-          </p>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <div className="flex shrink-0 flex-col gap-0.5">
+            <h1 className="text-base font-semibold text-slate-900 sm:text-xl">
+              My Counteinvas
+            </h1>
+            <p className="hidden text-xs text-slate-600 sm:block">
+              Upload, kalibrasi & ukur
+            </p>
+          </div>
+
+          {isSimpleUiMode ? (
+            <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/75 bg-[#eef2f7] p-1 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]">
+              {simpleWorkflowSteps.map((step) => {
+                const active = workflowStep === step.id;
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={step.onClick}
+                    className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[10px] font-extrabold transition ${
+                      active
+                        ? "bg-slate-900 text-white shadow-[2px_2px_7px_rgba(15,23,42,0.22),-2px_-2px_7px_rgba(255,255,255,0.9)]"
+                        : step.done
+                          ? "bg-emerald-500 text-white shadow-[2px_2px_7px_rgba(16,185,129,0.24),-2px_-2px_7px_rgba(255,255,255,0.86)]"
+                          : "text-slate-500 hover:bg-white/60 hover:text-slate-900"
+                    }`}
+                    title={`${step.id}. ${step.label}`}
+                  >
+                    <span
+                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${
+                        active || step.done
+                          ? "bg-white/20 text-white"
+                          : "bg-white/70 text-slate-500"
+                      }`}
+                    >
+                      {step.id}
+                    </span>
+                    <span>{step.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
-        <IconButton
-          icon={mobileControlsOpen ? "close" : "menu"}
-          label={mobileControlsOpen ? "Tutup Kontrol" : "Buka Kontrol"}
-          onClick={toggleMobileControlsPanel}
-          active={mobileControlsOpen}
-          className="lg:hidden"
-        />
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {isSimpleUiMode ? (
+            <details
+              open={simpleLayerDropdownOpen}
+              onToggle={(event) =>
+                setSimpleLayerDropdownOpen(event.currentTarget.open)
+              }
+              className="group relative"
+            >
+              <summary
+                className={`${SOFT_RAISED_CLASS} flex cursor-pointer list-none items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden`}
+              >
+                <Icon name="settings" className="h-3.5 w-3.5" />
+                <span>Layer</span>
+                <span className="max-w-[108px] truncate text-[10px] font-bold text-cyan-800">
+                  {selectedLayerDropdownLabel}
+                </span>
+              </summary>
+              <div className="absolute right-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,360px)] rounded-[24px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.16),-4px_-4px_12px_rgba(255,255,255,0.9)]">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border border-white/75 bg-[#eef2f7] text-cyan-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.86)]">
+                      <Icon name="settings" className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-slate-900">
+                        Layer Settings
+                      </div>
+                      <div className="truncate text-[10px] font-semibold text-slate-500">
+                        {cutLayers.length} layer tersedia
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSimpleLayerDropdownOpen(false)}
+                    className={`${SOFT_RAISED_CLASS} h-8 rounded-full px-3 text-[10px] font-bold text-slate-600`}
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <select
+                  value={selectedCutLayer?.id ?? ""}
+                  onChange={(event) => {
+                    const rawLayerId = event.target.value;
+                    if (!rawLayerId) return;
+                    const nextLayerId = Number(rawLayerId);
+                    if (!Number.isFinite(nextLayerId)) return;
+                    selectLayerFromCanvas(nextLayerId, { openPanel: false });
+                    setSimpleLayerDropdownOpen(true);
+                  }}
+                  disabled={!cutLayers.length}
+                  className="mb-2 w-full rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">
+                    {cutLayers.length ? "Pilih layer aktif" : "Belum ada layer"}
+                  </option>
+                  {cutLayers.map((layer, layerIndex) => (
+                    <option key={layer.id} value={layer.id}>
+                      {layer.name || getLayerDefaultName(layer)} |{" "}
+                      {layerIndex + 1}/{cutLayers.length}
+                    </option>
+                  ))}
+                </select>
+
+                {!selectedCutLayer || !selectedLayerMetrics ? (
+                  <div className="rounded-2xl border border-white/75 bg-white/40 px-3 py-3 text-[11px] font-semibold text-slate-500 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.18),inset_-3px_-3px_7px_rgba(255,255,255,0.86)]">
+                    Pilih layer dari daftar untuk mengatur ukuran, posisi,
+                    rotasi, dan opacity.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="rounded-2xl border border-white/75 bg-white/45 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.18),inset_-3px_-3px_7px_rgba(255,255,255,0.86)]">
+                      <div className="truncate text-slate-900">
+                        {selectedCutLayer.name ||
+                          getLayerDefaultName(selectedCutLayer)}
+                      </div>
+                      <div className="mt-0.5">
+                        W{" "}
+                        {formatTemplateLayerRealSize(
+                          selectedLayerMetrics.widthMm,
+                        )}{" "}
+                        | H{" "}
+                        {formatTemplateLayerRealSize(
+                          selectedLayerMetrics.heightMm,
+                        )}
+                      </div>
+                    </div>
+
+                    {isImageBackedLayerKind(selectedCutLayer.kind) ? (
+                      <div className="rounded-2xl border border-white/75 bg-[#eef2f7] p-2 shadow-[3px_3px_8px_rgba(148,163,184,0.22),-3px_-3px_8px_rgba(255,255,255,0.86)]">
+                        <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
+                          Ruler & Scale
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={templateRealSizeInput}
+                            onChange={(event) =>
+                              setTemplateRealSizeInput(event.target.value)
+                            }
+                            placeholder="Real size"
+                            className="min-w-0 rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                          />
+                          <select
+                            value={templateRealSizeAxis}
+                            onChange={(event) =>
+                              setTemplateRealSizeAxis(event.target.value)
+                            }
+                            className="rounded-2xl border border-white/75 bg-[#eef2f7] px-2 py-2 text-[10px] font-bold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                          >
+                            <option value="height">H</option>
+                            <option value="width">W</option>
+                          </select>
+                          <select
+                            value={templateRealSizeUnit}
+                            onChange={(event) =>
+                              setTemplateRealSizeUnit(event.target.value)
+                            }
+                            className="rounded-2xl border border-white/75 bg-[#eef2f7] px-2 py-2 text-[10px] font-bold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
+                          >
+                            <option value="mm">mm</option>
+                            <option value="cm">cm</option>
+                          </select>
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={trimSelectedTemplateLayer}
+                            disabled={!selectedLayerCanTrim}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Trim
+                          </button>
+                          <button
+                            type="button"
+                            onClick={applyTemplateRulerScale}
+                            disabled={!selectedLayerCanApplyRulerScale}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Ruler
+                          </button>
+                          <button
+                            type="button"
+                            onClick={applyTemplateRealSize}
+                            disabled={!selectedLayerCanApplyRealSize}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Scale
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {[
+                      {
+                        key: "width",
+                        label: "Width",
+                        value: selectedLayerMetrics.width,
+                        valueText: `${selectedLayerMetrics.width}px`,
+                        min: 16,
+                        max: selectedLayerMetrics.widthMax,
+                        disabled: selectedCutLayer.lockScale,
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            displayWidth: clamp(
+                              nextValue,
+                              16,
+                              selectedLayerMetrics.widthMax,
+                            ),
+                          }),
+                      },
+                      {
+                        key: "height",
+                        label: "Height",
+                        value: selectedLayerMetrics.height,
+                        valueText: `${selectedLayerMetrics.height}px`,
+                        min: 16,
+                        max: selectedLayerMetrics.heightMax,
+                        disabled: selectedCutLayer.lockScale,
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            displayHeight: clamp(
+                              nextValue,
+                              16,
+                              selectedLayerMetrics.heightMax,
+                            ),
+                          }),
+                      },
+                      {
+                        key: "centerX",
+                        label: "Pos X",
+                        value: clamp(
+                          selectedLayerMetrics.centerX,
+                          0,
+                          selectedLayerMetrics.centerXMax,
+                        ),
+                        valueText: `${selectedLayerMetrics.centerX}px`,
+                        min: 0,
+                        max: selectedLayerMetrics.centerXMax,
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            centerX: clamp(
+                              nextValue,
+                              0,
+                              selectedLayerMetrics.centerXMax,
+                            ),
+                          }),
+                      },
+                      {
+                        key: "centerY",
+                        label: "Pos Y",
+                        value: clamp(
+                          selectedLayerMetrics.centerY,
+                          0,
+                          selectedLayerMetrics.centerYMax,
+                        ),
+                        valueText: `${selectedLayerMetrics.centerY}px`,
+                        min: 0,
+                        max: selectedLayerMetrics.centerYMax,
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            centerY: clamp(
+                              nextValue,
+                              0,
+                              selectedLayerMetrics.centerYMax,
+                            ),
+                          }),
+                      },
+                      {
+                        key: "rotation",
+                        label: "Rotate",
+                        value: selectedLayerMetrics.rotation,
+                        valueText: `${selectedLayerMetrics.rotation}°`,
+                        min: -180,
+                        max: 180,
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            rotation: (nextValue + 360) % 360,
+                          }),
+                      },
+                      {
+                        key: "contrast",
+                        label: "Contrast",
+                        value: selectedLayerMetrics.contrast,
+                        valueText: `${selectedLayerMetrics.contrast}%`,
+                        min: 10,
+                        max: 300,
+                        disabled: !isImageBackedLayerKind(selectedCutLayer.kind),
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            contrast: clamp(nextValue, 10, 300),
+                          }),
+                      },
+                      {
+                        key: "level",
+                        label: "Level",
+                        value: selectedLayerMetrics.level,
+                        valueText: `${selectedLayerMetrics.level}%`,
+                        min: 10,
+                        max: 300,
+                        disabled: !isImageBackedLayerKind(selectedCutLayer.kind),
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            level: clamp(nextValue, 10, 300),
+                          }),
+                      },
+                      {
+                        key: "opacity",
+                        label: "Opacity",
+                        value: selectedLayerMetrics.opacity,
+                        valueText: `${selectedLayerMetrics.opacity}%`,
+                        min: 10,
+                        max: 100,
+                        onChange: (nextValue) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            opacity: clamp(nextValue / 100, 0.05, 1),
+                          }),
+                      },
+                    ].map((control) => (
+                      <label
+                        key={control.key}
+                        className="block rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.22),-3px_-3px_8px_rgba(255,255,255,0.86)]"
+                      >
+                        <span className="flex items-center justify-between gap-3 text-[10px] font-extrabold text-slate-600">
+                          <span>{control.label}</span>
+                          <span className="font-mono text-slate-900">
+                            {control.valueText}
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          min={control.min}
+                          max={control.max}
+                          step={1}
+                          value={control.value}
+                          disabled={control.disabled}
+                          onChange={(event) =>
+                            control.onChange(Number(event.target.value))
+                          }
+                          className="mt-2 w-full accent-cyan-700 disabled:cursor-not-allowed disabled:opacity-45"
+                        />
+                      </label>
+                    ))}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleToolChange("pan");
+                          focusLayerCanvas(selectedCutLayer.id, {
+                            openPanel: false,
+                          });
+                        }}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-cyan-800`}
+                      >
+                        Move
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, {
+                            centerX: modelWidth / 2,
+                            centerY: modelHeight / 2,
+                          })
+                        }
+                        disabled={!modelWidth || !modelHeight}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                      >
+                        Center
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            flipX: !item.flipX,
+                          }))
+                        }
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                      >
+                        Flip H
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            flipY: !item.flipY,
+                          }))
+                        }
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                      >
+                        Flip V
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, {
+                            contrast: 100,
+                            level: 100,
+                            rotation: 0,
+                            flipX: false,
+                            flipY: false,
+                          })
+                        }
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                      >
+                        Default
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            lockScale: !item.lockScale,
+                          }))
+                        }
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                      >
+                        {selectedCutLayer.lockScale ? "Unlock" : "Lock"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={duplicateSelectedCutLayer}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold`}
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSelectedCutLayersInStack("down")}
+                        disabled={!selectedCutLayerIds.length}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                      >
+                        Turun
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSelectedCutLayersInStack("up")}
+                        disabled={!selectedCutLayerIds.length}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                      >
+                        Naik
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSelectedCutLayersInStack("back")}
+                        disabled={!selectedCutLayerIds.length}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                      >
+                        Bawah
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSelectedCutLayersInStack("front")}
+                        disabled={!selectedCutLayerIds.length}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                      >
+                        Atas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={removeSelectedCutLayer}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-rose-600`}
+                      >
+                        Delete Layer
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </details>
+          ) : null}
+          {isSimpleUiMode && typeof onOpenAdvancedUi === "function" ? (
+            <button
+              type="button"
+              onClick={onOpenAdvancedUi}
+              className={`${SOFT_RAISED_CLASS} rounded-full px-4 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950`}
+            >
+              Advanced UI
+            </button>
+          ) : typeof onOpenSimpleUi === "function" ? (
+            <button
+              type="button"
+              onClick={onOpenSimpleUi}
+              className={`${SOFT_RAISED_CLASS} rounded-full px-4 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950`}
+            >
+              Simple UI
+            </button>
+          ) : null}
+          {!isSimpleUiMode ? (
+            <IconButton
+              icon={mobileControlsOpen ? "close" : "menu"}
+              label={mobileControlsOpen ? "Tutup Kontrol" : "Buka Kontrol"}
+              onClick={toggleMobileControlsPanel}
+              active={mobileControlsOpen}
+              className="lg:hidden"
+            />
+          ) : null}
+        </div>
       </header>
 
       <motion.section
@@ -15460,7 +17836,7 @@ export default function XrayCalibrationWorkspace() {
           "--right-sidebar-width": `${rightSidebarWidth}px`,
         }}
       >
-        {showLeftSidebar ? (
+        {effectiveShowLeftSidebar ? (
           <div
             role="separator"
             aria-label="Resize menu kiri"
@@ -15471,6 +17847,7 @@ export default function XrayCalibrationWorkspace() {
             <div className="mx-auto h-full w-[2px] rounded-full bg-slate-200 transition hover:bg-slate-400" />
           </div>
         ) : null}
+        {!isSimpleUiMode ? (
         <motion.button
           type="button"
           onClick={() => setShowLeftSidebar((prev) => !prev)}
@@ -15487,7 +17864,8 @@ export default function XrayCalibrationWorkspace() {
             className="h-4 w-4"
           />
         </motion.button>
-        {showRightSidebar ? (
+        ) : null}
+        {effectiveShowRightSidebar ? (
           <div
             role="separator"
             aria-label="Resize menu kanan"
@@ -15498,6 +17876,7 @@ export default function XrayCalibrationWorkspace() {
             <div className="mx-auto h-full w-[2px] rounded-full bg-slate-200 transition hover:bg-slate-400" />
           </div>
         ) : null}
+        {!isSimpleUiMode ? (
         <motion.button
           type="button"
           onClick={() => setShowRightSidebar((prev) => !prev)}
@@ -15514,6 +17893,7 @@ export default function XrayCalibrationWorkspace() {
             className="h-4 w-4"
           />
         </motion.button>
+        ) : null}
         <motion.aside
           layout={!isMobileViewport}
           initial={false}
@@ -15541,7 +17921,7 @@ export default function XrayCalibrationWorkspace() {
             isMobileViewport && mobilePanelPreviewActive
               ? "!backdrop-blur-0 !max-h-0 !overflow-visible !rounded-none !border-transparent !bg-transparent !pb-0 !shadow-none [&>*]:pointer-events-none [&>*]:opacity-0"
               : ""
-          } ${showLeftSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
+          } ${effectiveShowLeftSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
           <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
@@ -15603,6 +17983,7 @@ export default function XrayCalibrationWorkspace() {
             </div>
             <input
               id="xray-upload"
+              ref={mainUploadInputRef}
               type="file"
               accept="image/*"
               onChange={handleImageUpload}
@@ -15764,12 +18145,20 @@ export default function XrayCalibrationWorkspace() {
                 onClick={() => handleToolChange("cut")}
                 active={tool === "cut"}
               />
+              <div className= "flex  "> 
               <ToolIconButton
                 icon="freeLine"
                 label="Free Line (G)"
-                onClick={() => handleToolChange("freeLine")}
-                active={tool === "freeLine"}
+                onClick={() => activateFreeLineMode("freehand")}
+                active={tool === "freeLine" && freeLineMode === "freehand"}
               />
+              <ToolIconButton
+                icon="freeLine"
+                label="Point Mode"
+                onClick={() => activateFreeLineMode("point")}
+                active={tool === "freeLine" && freeLineMode === "point"}
+              />
+            </div>
               <ToolIconButton
                 icon="angle"
                 label="Angle Tool"
@@ -15982,6 +18371,7 @@ export default function XrayCalibrationWorkspace() {
               onSelectType={setSelectedImplantType}
               onSelectItemId={setSelectedImplantLibraryId}
               onUseSelected={useSelectedImplantLibraryAsLayer}
+              scaleInstruction={implantLibraryScaleInstruction}
               compact={isLeftSidebarCompact}
               disabled={!image || !modelWidth || !modelHeight}
             />
@@ -17113,6 +19503,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => handleLinePresetChange("offset")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.offset.detail}
                 className={`rounded-md border px-2 py-1 text-[10px] ${
                   linePreset === "offset"
                     ? "border-rose-600 bg-rose-600 text-white"
@@ -17124,6 +19515,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => handleLinePresetChange("femoralOffset")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.femoralOffset.detail}
                 className={`rounded-md border px-2 py-1 text-xs ${
                   linePreset === "femoralOffset"
                     ? "border-emerald-600 bg-emerald-600 text-white"
@@ -17135,6 +19527,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => handleLinePresetChange("globalOffset")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.globalOffset.detail}
                 className={`rounded-md border px-2 py-1 text-xs ${
                   linePreset === "globalOffset"
                     ? "border-violet-600 bg-violet-600 text-white"
@@ -17146,6 +19539,7 @@ export default function XrayCalibrationWorkspace() {
               <button
                 type="button"
                 onClick={() => handleLinePresetChange("lld")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.lld.detail}
                 className={`rounded-md border px-2 py-1 text-xs ${
                   linePreset === "lld"
                     ? "border-orange-600 bg-orange-600 text-white"
@@ -17486,7 +19880,7 @@ export default function XrayCalibrationWorkspace() {
             isMobileViewport && mobilePanelPreviewActive
               ? "!backdrop-blur-0 !max-h-0 !overflow-visible !rounded-none !border-transparent !bg-transparent !pb-0 !shadow-none [&>*]:pointer-events-none [&>*]:opacity-0"
               : ""
-          } ${showRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
+          } ${effectiveShowRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
           <div className="sticky top-0 z-10 -ml-2 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
@@ -17621,8 +20015,15 @@ export default function XrayCalibrationWorkspace() {
                 <ToolIconButton
                   icon="freeLine"
                   label="Free Line (G)"
-                  onClick={() => handleToolChange("freeLine")}
-                  active={tool === "freeLine"}
+                  onClick={() => activateFreeLineMode("freehand")}
+                  active={tool === "freeLine" && freeLineMode === "freehand"}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
+                  icon="freeLine"
+                  label="Point Mode"
+                  onClick={() => activateFreeLineMode("point")}
+                  active={tool === "freeLine" && freeLineMode === "point"}
                   className="h-9 w-full"
                 />
                 <ToolIconButton
@@ -17766,14 +20167,7 @@ export default function XrayCalibrationWorkspace() {
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
-                      onClick={() => {
-                        setDraftFreeLine(null);
-                        setHistoryPaused(false);
-                        setFreeLineMode("freehand");
-                        setNotice(
-                          "Free Line Freehand aktif. Drag untuk menggambar shape bebas.",
-                        );
-                      }}
+                      onClick={() => activateFreeLineMode("freehand")}
                       className={`px-2 py-2 text-xs font-medium transition ${
                         freeLineMode === "freehand"
                           ? SOFT_DARK_BUTTON_CLASS
@@ -17784,14 +20178,7 @@ export default function XrayCalibrationWorkspace() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setDraftFreeLine(null);
-                        setHistoryPaused(false);
-                        setFreeLineMode("point");
-                        setNotice(
-                          "Free Line Point Mode aktif. Klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai.",
-                        );
-                      }}
+                      onClick={() => activateFreeLineMode("point")}
                       className={`px-2 py-2 text-xs font-medium transition ${
                         freeLineMode === "point"
                           ? SOFT_DARK_BUTTON_CLASS
@@ -17801,6 +20188,13 @@ export default function XrayCalibrationWorkspace() {
                       Point Mode
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => createEmptyFreeLineLayer(freeLineMode)}
+                    className={`${SOFT_TEXT_BUTTON_CLASS} mt-1.5 w-full px-2 py-2 text-[10px] font-bold text-blue-700`}
+                  >
+                    + Layer Kosong
+                  </button>
                   {!isRightSidebarCompact ? (
                     <div className="mt-1 text-[10px] text-slate-500">
                       `G` pilih tool. `Enter` selesai di Point Mode, `Escape`
@@ -18126,8 +20520,36 @@ export default function XrayCalibrationWorkspace() {
                       </button>
                     ))}
                   </div>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    {[
+                      { key: "right", label: "Kaki kanan" },
+                      { key: "left", label: "Kaki kiri" },
+                    ].map((sideItem) => (
+                      <button
+                        key={`hka-side-${sideItem.key}`}
+                        type="button"
+                        onClick={() => {
+                          setHkaSide(sideItem.key);
+                          if (selectedHka) {
+                            updateHkaSideById(selectedHka.id, sideItem.key);
+                          } else {
+                            setNotice(
+                              `HKA berikutnya diset untuk ${sideItem.label}. Varus/valgus akan dibaca dari sisi ini.`,
+                            );
+                          }
+                        }}
+                        className={measurePresetButtonClass(
+                          hkaSide === sideItem.key,
+                          "text-cyan-700",
+                        )}
+                      >
+                        {sideItem.label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="mt-1.5 rounded-[16px] border border-cyan-100 bg-cyan-50/70 px-3 py-2 text-[10px] text-cyan-800">
-                    Mode aktif: {getHkaModeDefinition(hkaInputMode).modeLabel}
+                    Mode aktif: {getHkaModeDefinition(hkaInputMode).modeLabel} |{" "}
+                    {getHkaSideLabel(hkaSide)}
                   </div>
                 </div>
               ) : null}
@@ -18142,47 +20564,26 @@ export default function XrayCalibrationWorkspace() {
                     </span>
                   </div>
                   <div className={SIDEBAR_TEXT_BUTTON_GRID_CLASS}>
-                    <button
-                      type="button"
-                      onClick={() => handleLinePresetChange("offset")}
-                      className={measurePresetButtonClass(
-                        linePreset === "offset",
-                        "text-rose-700",
-                      )}
-                    >
-                      Offset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLinePresetChange("femoralOffset")}
-                      className={measurePresetButtonClass(
-                        linePreset === "femoralOffset",
-                        "text-emerald-700",
-                      )}
-                    >
-                      F-Offset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLinePresetChange("globalOffset")}
-                      className={measurePresetButtonClass(
-                        linePreset === "globalOffset",
-                        "text-violet-700",
-                      )}
-                    >
-                      G-Offset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLinePresetChange("lld")}
-                      className={measurePresetButtonClass(
-                        linePreset === "lld",
-                        "text-orange-700",
-                      )}
-                    >
-                      LLD
-                    </button>
+                    {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => (
+                      <button
+                        key={`measure-hip-${item.key}`}
+                        type="button"
+                        onClick={() => handleLinePresetChange(item.key)}
+                        title={item.detail}
+                        className={measurePresetButtonClass(
+                          linePreset === item.key,
+                          item.activeClass,
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
+                  <HipFunctionSummaryPanel
+                    className="mt-2"
+                    compact
+                    title="Fungsi Offset"
+                  />
                 </div>
               ) : null}
               <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
@@ -18841,6 +21242,9 @@ export default function XrayCalibrationWorkspace() {
                     <div className="mt-0.5">
                       Mode jurnal: {selectedHkaMetrics.modeLabel}
                     </div>
+                    <div className="mt-0.5">
+                      Sisi: {getHkaSideLabel(selectedHkaMetrics.side)}
+                    </div>
                     {selectedHkaMetrics.mode === "fta" ? (
                       <>
                         <div className="mt-0.5">
@@ -18998,6 +21402,25 @@ export default function XrayCalibrationWorkspace() {
                   {selectedHkaMetrics.mode === "full" ? (
                     <>
                       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                        {[
+                          { key: "right", label: "Kaki kanan" },
+                          { key: "left", label: "Kaki kiri" },
+                        ].map((sideItem) => (
+                          <button
+                            key={`selected-hka-side-${sideItem.key}`}
+                            type="button"
+                            onClick={() => updateHkaSideById(selectedHka.id, sideItem.key)}
+                            className={`px-2 py-1 text-[10px] font-medium transition ${
+                              selectedHkaMetrics.side === sideItem.key
+                                ? SOFT_DARK_BUTTON_CLASS
+                                : `${SOFT_TEXT_BUTTON_CLASS} text-cyan-900`
+                            }`}
+                          >
+                            {sideItem.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           onClick={() =>
@@ -19097,21 +21520,27 @@ export default function XrayCalibrationWorkspace() {
               ) : null}
               {measureAnatomyTab === "knee" ? (
                 <div
-                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-amber-900`}
+                  className="rounded-[30px] border border-white/80 bg-[#e9eef5] px-3 py-3 text-slate-800 shadow-[12px_12px_26px_rgba(100,116,139,0.24),-8px_-8px_22px_rgba(255,255,255,0.72)]"
                 >
-                  <div className="mb-1.5 flex items-center justify-between gap-2 text-[9px] font-semibold tracking-wide text-amber-900 uppercase">
-                    <span>TKA Planning</span>
-                    <span className="tracking-normal text-amber-700 normal-case">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <span className="text-sm font-extrabold tracking-wide text-slate-700 uppercase">
+                      TKA Planning
+                    </span>
+                    <span className="rounded-full border border-white/80 bg-[#e9eef5] px-3 py-1.5 text-[11px] font-bold text-rose-500 shadow-[5px_5px_12px_rgba(100,116,139,0.28),-5px_-5px_12px_rgba(255,255,255,0.76)]">
                       {planningGuides.length} guide
                     </span>
                   </div>
                   <div
-                    className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+                    className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-3 py-3 text-[11px] text-slate-700 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]"
                   >
-                    <div className="font-medium text-[9px] text-amber-950">
+                    <div className="font-extrabold text-[11px] text-slate-700">
                       Acuan Planning
                     </div>
-                    <div className="mt-0.5 text-[9px]">
+                    <div
+                      className={`mt-1 text-[11px] font-semibold ${
+                        selectedLine ? "text-slate-600" : "text-rose-500"
+                      }`}
+                    >
                       {selectedLine
                         ? `Line #${selectedLine.id} | ${lineTypeLabel(selectedLine.type)}${
                             mmPerPixel !== null
@@ -19121,7 +21550,7 @@ export default function XrayCalibrationWorkspace() {
                         : "Pilih satu line dulu dari tab Measure."}
                     </div>
                   </div>
-                  <div className={`mt-1.5 text-[9px] ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}>
+                  <div className="mt-3 grid grid-cols-3 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-1.5 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.14),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
                     {[
                       {
                         id: "valgusCut",
@@ -19142,7 +21571,11 @@ export default function XrayCalibrationWorkspace() {
                           key={mode.id}
                           type="button"
                           onClick={() => setPlanningGuideMode(mode.id)}
-                          className={`${isActive ? SOFT_DARK_BUTTON_CLASS : `${SOFT_RAISED_CLASS} text-amber-900`} px-2 py-2 text-[9px] font-medium transition`}
+                          className={`rounded-[18px] px-2 py-2.5 text-[10px] font-extrabold transition ${
+                            isActive
+                              ? "border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] text-white shadow-[inset_3px_3px_7px_rgba(0,0,0,0.25),5px_5px_14px_rgba(51,65,85,0.38)]"
+                              : "border border-white/82 bg-[#e9eef5] text-slate-600 shadow-[5px_5px_12px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.74)] hover:text-slate-900"
+                          }`}
                         >
                           {mode.label}
                         </button>
@@ -19151,21 +21584,21 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                   {selectedPlanningGuide ? (
                     <div
-                      className={`${SOFT_SURFACE_CLASS} mt-1.5 px-3 py-2 text-[11px] text-amber-900`}
+                      className="mt-3 rounded-[24px] border border-white/78 bg-[#e9eef5] px-3 py-3 text-[11px] text-slate-700 shadow-[8px_8px_18px_rgba(100,116,139,0.20),-6px_-6px_16px_rgba(255,255,255,0.72)]"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium text-amber-950">
+                        <div className="font-extrabold text-slate-800">
                           Guide Aktif
                         </div>
                         <button
                           type="button"
                           onClick={() => setSelectedPlanningGuideId(null)}
-                          className={`${SOFT_TEXT_BUTTON_CLASS} px-1.5 py-1 text-[10px] text-amber-900`}
+                          className="rounded-full border border-white/82 bg-[#e9eef5] px-2.5 py-1 text-[10px] font-bold text-slate-600 shadow-[4px_4px_9px_rgba(100,116,139,0.20),-4px_-4px_9px_rgba(255,255,255,0.74)]"
                         >
                           Lepas
                         </button>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-amber-800">
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-slate-600">
                         <span
                           className="h-2.5 w-2.5 rounded-full"
                           style={{
@@ -19180,13 +21613,13 @@ export default function XrayCalibrationWorkspace() {
                               : `Tibial Cut | ${selectedPlanningGuide.direction}`}
                         </span>
                       </div>
-                      <div className="mt-0.5 text-[10px] text-amber-700">
+                      <div className="mt-1 text-[10px] text-slate-500">
                         Anchor dan label bisa di-drag langsung di canvas.
                         Gunakan sync bila anchor mau ikut line baru.
                       </div>
                       <div className="mt-1.5 grid gap-1.5">
-                        <div className={`${SOFT_INSET_CLASS} px-2 py-1.5`}>
-                          <div className="mb-1 text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
+                        <div className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-2 py-2 shadow-[inset_5px_5px_11px_rgba(100,116,139,0.13),inset_-5px_-5px_11px_rgba(255,255,255,0.72)]">
+                          <div className="mb-1 text-[10px] font-semibold tracking-wide text-slate-600 uppercase">
                             Line Color
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -19227,7 +21660,7 @@ export default function XrayCalibrationWorkspace() {
                                   ),
                                 )
                               }
-                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px] text-amber-900`}
+                              className="rounded-full border border-white/82 bg-[#e9eef5] px-2 py-1 text-[10px] font-bold text-slate-600 shadow-[4px_4px_9px_rgba(100,116,139,0.18),-4px_-4px_9px_rgba(255,255,255,0.72)]"
                             >
                               Auto
                             </button>
@@ -19602,13 +22035,13 @@ export default function XrayCalibrationWorkspace() {
                       </label>
                     </div>
                   ) : null}
-                  <div className={`mt-1.5 ${SIDEBAR_TEXT_BUTTON_GRID_CLASS}`}>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {selectedPlanningGuide ? (
                       <>
                         <button
                           type="button"
                           onClick={() => updateSelectedPlanningGuide()}
-                          className={`${SOFT_PRESSED_CLASS} px-2 py-2 text-xs font-medium text-amber-700`}
+                          className="rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#ff7770_0%,#fb5f58_100%)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[6px_6px_14px_rgba(248,113,113,0.25),-5px_-5px_12px_rgba(255,255,255,0.68)] transition disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           Update Guide
                         </button>
@@ -19618,7 +22051,7 @@ export default function XrayCalibrationWorkspace() {
                             updateSelectedPlanningGuide({ syncLine: true })
                           }
                           disabled={!selectedLine}
-                          className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45`}
+                          className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-2.5 text-xs font-extrabold text-slate-600 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)] transition disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           Sync dari Line
                         </button>
@@ -19628,7 +22061,7 @@ export default function XrayCalibrationWorkspace() {
                         type="button"
                         onClick={addPlanningGuideFromSelectedLine}
                         disabled={!selectedLine}
-                        className={`${SOFT_PRESSED_CLASS} px-2 py-2 text-xs font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-45`}
+                        className="rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#ff7770_0%,#fb5f58_100%)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[6px_6px_14px_rgba(248,113,113,0.25),-5px_-5px_12px_rgba(255,255,255,0.68)] transition disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         Buat dari Line
                       </button>
@@ -19641,16 +22074,16 @@ export default function XrayCalibrationWorkspace() {
                         setNotice("Semua planning guide dihapus.");
                       }}
                       disabled={planningGuides.length === 0}
-                      className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-xs text-amber-900 disabled:cursor-not-allowed disabled:opacity-45`}
+                      className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-2.5 text-xs font-extrabold text-slate-500 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)] transition disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       Clear Guide
                     </button>
                   </div>
                   <div
-                    className={`mt-1.5 max-h-36 overflow-y-auto ${SOFT_SURFACE_CLASS} px-3 py-2 text-[11px] text-amber-900`}
+                    className="mt-3 max-h-40 overflow-y-auto rounded-[24px] border border-white/78 bg-[#e9eef5] px-3 py-2 text-[11px] text-slate-700 shadow-[8px_8px_18px_rgba(100,116,139,0.18),-6px_-6px_16px_rgba(255,255,255,0.72)]"
                   >
                     {planningGuideRows.length === 0 ? (
-                      <p>Belum ada planning guide.</p>
+                      <p className="text-slate-500">Belum ada planning guide.</p>
                     ) : (
                       <div className="flex flex-col gap-1.5">
                         {planningGuideRows
@@ -19668,7 +22101,7 @@ export default function XrayCalibrationWorkspace() {
                               <motion.div
                                 layout
                                 key={row.id}
-                                className={`${SOFT_TINT_CARD_CLASS} px-2 py-1.5 ${
+                                className={`rounded-[18px] border border-white/78 bg-[#e9eef5] px-2 py-2 shadow-[5px_5px_12px_rgba(100,116,139,0.16),-5px_-5px_12px_rgba(255,255,255,0.72)] ${
                                   isGuideSelected ? "scale-[1.01]" : ""
                                 }`}
                                 style={{
@@ -19685,7 +22118,7 @@ export default function XrayCalibrationWorkspace() {
                                     }
                                     className="min-w-0 flex-1 text-left"
                                   >
-                                    <div className="flex items-center gap-1.5 truncate font-medium text-amber-950">
+                                    <div className="flex items-center gap-1.5 truncate font-extrabold text-slate-700">
                                       <span
                                         className="h-2.5 w-2.5 shrink-0 rounded-full"
                                         style={{ backgroundColor: guideColor }}
@@ -19694,7 +22127,7 @@ export default function XrayCalibrationWorkspace() {
                                         {row.label}
                                       </span>
                                     </div>
-                                    <div className="text-[10px] text-amber-700">
+                                    <div className="text-[10px] text-slate-500">
                                       {row.meta}
                                     </div>
                                   </button>
@@ -19704,7 +22137,7 @@ export default function XrayCalibrationWorkspace() {
                                       onClick={() =>
                                         togglePlanningGuideHidden(row.id)
                                       }
-                                      className={`${SOFT_TEXT_BUTTON_CLASS} px-1.5 py-1 text-[10px] text-amber-900`}
+                                      className="rounded-full border border-white/82 bg-[#e9eef5] px-2 py-1 text-[10px] font-bold text-slate-600 shadow-[4px_4px_9px_rgba(100,116,139,0.18),-4px_-4px_9px_rgba(255,255,255,0.72)]"
                                     >
                                       {guide?.hidden ? "Show" : "Hide"}
                                     </button>
@@ -19713,7 +22146,7 @@ export default function XrayCalibrationWorkspace() {
                                       onClick={() =>
                                         removePlanningGuide(row.id)
                                       }
-                                      className={`${SOFT_DANGER_BUTTON_CLASS} px-1.5 py-1 text-[10px]`}
+                                      className="rounded-full border border-white/82 bg-[#e9eef5] px-2 py-1 text-[10px] font-bold text-rose-600 shadow-[4px_4px_9px_rgba(100,116,139,0.18),-4px_-4px_9px_rgba(255,255,255,0.72)]"
                                     >
                                       Hapus
                                     </button>
@@ -19978,6 +22411,11 @@ export default function XrayCalibrationWorkspace() {
                   <div>Femoral Offset: {legPackageSummary.femoralMean}</div>
                   <div>Global Offset: {legPackageSummary.globalMean}</div>
                   <div>LLD: {legPackageSummary.lldDelta}</div>
+                  <HipFunctionSummaryPanel
+                    className="mt-2"
+                    compact
+                    title="Apa fungsinya?"
+                  />
                 </div>
               ) : null}
             </motion.div>
@@ -20182,7 +22620,9 @@ export default function XrayCalibrationWorkspace() {
                         <button
                           type="button"
                           onClick={() =>
-                            openLayerSettingsModal(selectedCutLayer.id)
+                            isSimpleUiMode
+                              ? openSimpleLayerDropdown(selectedCutLayer.id)
+                              : openLayerSettingsModal(selectedCutLayer.id)
                           }
                           className={`flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                             showLayerToolbarName ? "gap-1.5 pr-2" : "pr-1.5"
@@ -20220,7 +22660,9 @@ export default function XrayCalibrationWorkspace() {
                           icon="settings"
                           label="Buka layer settings"
                           onClick={() =>
-                            openLayerSettingsModal(selectedCutLayer.id)
+                            isSimpleUiMode
+                              ? openSimpleLayerDropdown(selectedCutLayer.id)
+                              : openLayerSettingsModal(selectedCutLayer.id)
                           }
                         />
                       </div>
@@ -20231,7 +22673,11 @@ export default function XrayCalibrationWorkspace() {
                     >
                       <button
                         type="button"
-                        onClick={() => openLayerSettingsModal(selectedCutLayer.id)}
+                        onClick={() =>
+                          isSimpleUiMode
+                            ? openSimpleLayerDropdown(selectedCutLayer.id)
+                            : openLayerSettingsModal(selectedCutLayer.id)
+                        }
                         className={`mr-1 flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                           showLayerToolbarName ? "gap-2 pr-2" : "pr-1.5"
                         }`}
@@ -20291,7 +22737,11 @@ export default function XrayCalibrationWorkspace() {
                       <LayerToolbarActionButton
                         icon="settings"
                         label="Buka layer settings"
-                        onClick={() => openLayerSettingsModal(selectedCutLayer.id)}
+                        onClick={() =>
+                          isSimpleUiMode
+                            ? openSimpleLayerDropdown(selectedCutLayer.id)
+                            : openLayerSettingsModal(selectedCutLayer.id)
+                        }
                       />
                     </div>
                   )}
@@ -20415,7 +22865,7 @@ export default function XrayCalibrationWorkspace() {
                         <BadgeCheck className="h-4 w-4" strokeWidth={2.2} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-semibold tracking-wide text-cyan-800 uppercase">
+                        <div className="text-[10px] font-semibold tracking-wide text-cyan-800 uppercase">
                           Kalibrasi Diperlukan
                         </div>
                         <div className="mt-1 text-[12px] leading-5 text-slate-800">
@@ -20425,7 +22875,13 @@ export default function XrayCalibrationWorkspace() {
                           <button
                             type="button"
                             onClick={() =>
-                              focusCalibrationStep(canvasCalibrationPromptText)
+                              isSimpleUiMode
+                                ? openSimpleCalibrationModal(
+                                    canvasCalibrationPromptText,
+                                  )
+                                : focusCalibrationStep(
+                                    canvasCalibrationPromptText,
+                                  )
                             }
                             className="inline-flex items-center gap-1 rounded-[16px] border border-cyan-300 bg-[linear-gradient(180deg,#d9fbff_0%,#bff5f6_100%)] px-3 py-2 text-[11px] font-semibold text-cyan-950 shadow-[0_8px_18px_rgba(34,211,238,0.16)]"
                           >
@@ -20443,108 +22899,310 @@ export default function XrayCalibrationWorkspace() {
                   </div>
                 </motion.div>
               ) : null}
-              <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-20 px-2 lg:hidden">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`${SOFT_FLOAT_SURFACE_CLASS} grid flex-1 grid-cols-4 p-1`}
-                  >
-                    {[
-                      {
-                        id: "setup",
-                        label: "Setup",
-                        onClick: () => {
-                          setMobilePanelMode("setup");
-                          setMobileControlsOpen(true);
-                        },
-                        active: mobileSetupPanelVisible,
-                      },
-                      {
-                        id: "tool",
-                        label: "Tool",
-                        onClick: () => {
-                          setMobilePanelMode("workspace");
-                          setActiveRightPanel("tool");
-                          setMobileControlsOpen(true);
-                        },
-                        active:
-                          mobileWorkspacePanelVisible &&
-                          activeRightPanel === "tool",
-                      },
-                      {
-                        id: "measure",
-                        label: "Measure",
-                        onClick: () => {
-                          setMobilePanelMode("workspace");
-                          setActiveRightPanel("measure");
-                          setMobileControlsOpen(true);
-                        },
-                        active:
-                          mobileWorkspacePanelVisible &&
-                          activeRightPanel === "measure",
-                      },
-                      {
-                        id: "planning",
-                        label: "Plan",
-                        onClick: () => {
-                          setMobilePanelMode("workspace");
-                          setActiveRightPanel("planning");
-                          setMobileControlsOpen(true);
-                        },
-                        active:
-                          mobileWorkspacePanelVisible &&
-                          activeRightPanel === "planning",
-                      },
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={item.onClick}
-                        className={`inline-flex min-w-0 items-center justify-center rounded-xl px-2 py-2 text-[10px] font-semibold transition ${
-                          item.active
-                            ? `${SOFT_PRESSED_CLASS} text-slate-800`
-                            : `${SOFT_RAISED_CLASS} text-slate-600`
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div
-                    className={`${SOFT_FLOAT_SURFACE_CLASS} flex shrink-0 items-center gap-1 p-1`}
-                  >
-                    <ToolIconButton
-                      icon="pan"
-                      label="Move / Pan (H)"
-                      onClick={() => handleToolChange("pan")}
-                      active={tool === "pan"}
-                      className="h-10 w-10 shrink-0 border-slate-500"
-                    />
-                    <ToolIconButton
-                      icon="draw"
-                      label="Draw Line (L)"
-                      onClick={() => handleToolChange("draw")}
-                      active={tool === "draw"}
-                      className="h-10 w-10 shrink-0 border-slate-500"
-                    />
+              {isSimpleUiMode ? (
+                <div className="pointer-events-none absolute inset-0 z-20 hidden lg:block">
+                  {simpleQuickPanelMinimized ? (
                     <button
                       type="button"
-                      onClick={() => {
-                        setMobilePanelMode("workspace");
-                        setActiveRightPanel("tool");
-                        setMobileControlsOpen(true);
-                      }}
-                      className={`inline-flex h-10 min-w-[68px] items-center justify-center gap-1 px-2 text-[10px] font-semibold transition ${SOFT_RAISED_CLASS} text-slate-600`}
-                      aria-label={`Buka tools, tool aktif ${activeToolLabel}`}
-                      title={`Tool aktif: ${activeToolLabel}`}
+                      onClick={() => setSimpleQuickPanelMinimized(false)}
+                      className="pointer-events-auto absolute top-3 left-3 inline-flex items-center gap-2 rounded-[18px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
+                      title="Buka Quick Panel"
                     >
-                      <Icon name={activeToolIcon} className="h-4 w-4" />
-                      <span>Tools</span>
+                      <Icon name="menu" className="h-3.5 w-3.5" />
+                      <span>Quick</span>
+                    </button>
+                  ) : (
+                    <QuickPanel
+                      className="pointer-events-auto absolute top-3 left-3 max-h-[calc(100vh-180px)] overflow-y-auto backdrop-blur-xl"
+                      statusLabel={hasCalibration ? "Ready" : "Calib"}
+                      workflowStep={workflowStep}
+                      workflowMax={4}
+                      measurementCount={measurementEntityCount}
+                      activeTool={tool}
+                      onMinimize={() => setSimpleQuickPanelMinimized(true)}
+                      onUpload={() => mainUploadInputRef.current?.click()}
+                      onCalibration={() => openSimpleCalibrationModal()}
+                      onCreateLayer={() =>
+                        createEmptyFreeLineLayer(freeLineMode)
+                      }
+                      canCreateLayer={Boolean(image && modelWidth && modelHeight)}
+                      onGuide={() => setSimpleGuideModalOpen(true)}
+                      onMove={() => handleToolChange("pan")}
+                      onOpenTka={() => openSimplePlanningModal("tka")}
+                      onOpenHip={() => openSimplePlanningModal("hip")}
+                      onHistory={undoHistory}
+                      canHistory={historyState.undo > 0}
+                      onReset={() => resetWorkspaceState()}
+                      implantItems={LOCAL_IMPLANT_LIBRARY}
+                      selectedImplantType={selectedImplantType}
+                      selectedImplantItemId={selectedImplantLibraryId}
+                      onSelectImplantType={setSelectedImplantType}
+                      onSelectImplantItemId={setSelectedImplantLibraryId}
+                      onUseSelectedImplant={useSelectedImplantLibraryAsLayer}
+                      implantDisabled={!image || !modelWidth || !modelHeight}
+                      implantInstruction={implantLibraryScaleInstruction}
+                    />
+                  )}
+
+                  {simpleToolPanelMinimized ? (
+                    <button
+                      type="button"
+                      onClick={() => setSimpleToolPanelMinimized(false)}
+                      className="pointer-events-auto absolute top-1/2 right-4 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-white/75 bg-[#eef2f7]/95 p-3 text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
+                      title="Buka panel ikon"
+                    >
+                      <Icon name="menu" className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <PanelActions
+                      className="pointer-events-auto absolute top-1/2 right-4 max-h-[calc(100vh-190px)] -translate-y-1/2 overflow-y-auto backdrop-blur-xl"
+                      tools={simpleToolMenuItems}
+                      activeTool={tool}
+                      activeFreeLineMode={freeLineMode}
+                      onMinimize={() => setSimpleToolPanelMinimized(true)}
+                      onSelectTool={(item) =>
+                        item.freeLineMode
+                          ? activateFreeLineMode(item.freeLineMode)
+                          : handleToolChange(item.key)
+                      }
+                      onUndo={undoHistory}
+                      onRedo={redoHistory}
+                      canUndo={historyState.undo > 0}
+                      canRedo={historyState.redo > 0}
+                    />
+                  )}
+
+                  <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-[22px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl">
+                    <button
+                      type="button"
+                      onClick={() => zoomBy(1 / 1.15)}
+                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
+                    >
+                      Zoom {(view.scale * 100).toFixed(0)}%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToolChange("pan")}
+                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
+                    >
+                      {activeToolLabel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openSimpleCalibrationModal()}
+                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
+                    >
+                      {hasCalibration ? measurementUnit : "uncalibrated"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={undoHistory}
+                      disabled={historyState.undo < 1}
+                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      History
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => resetWorkspaceState()}
+                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 text-rose-600 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
+                      title="Reset workspace tanpa menghapus gambar utama"
+                    >
+                      Reset
                     </button>
                   </div>
                 </div>
-              </div>
+              ) : null}
+              <AnimatePresence>
+                {isSimpleUiMode && isMobileViewport && simpleMobilePanel ? (
+                  <motion.div
+                    key={`simple-mobile-panel-${simpleMobilePanel}`}
+                    initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 16, scale: 0.98 }}
+                    transition={MOBILE_PANEL_TRANSITION}
+                    className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+82px)] z-40 lg:hidden"
+                  >
+                    {simpleMobilePanel === "quick" ? (
+                      <QuickPanel
+                        className="mx-auto max-h-[min(66vh,560px)] overflow-y-auto backdrop-blur-xl"
+                        statusLabel={hasCalibration ? "Ready" : "Calib"}
+                        workflowStep={workflowStep}
+                        workflowMax={4}
+                        measurementCount={measurementEntityCount}
+                        activeTool={tool}
+                        onMinimize={() => setSimpleMobilePanel(null)}
+                        onUpload={() => {
+                          setSimpleMobilePanel(null);
+                          mainUploadInputRef.current?.click();
+                        }}
+                        onCalibration={() => {
+                          setSimpleMobilePanel(null);
+                          openSimpleCalibrationModal();
+                        }}
+                        onCreateLayer={() => {
+                          setSimpleMobilePanel(null);
+                          createEmptyFreeLineLayer(freeLineMode);
+                        }}
+                        canCreateLayer={Boolean(image && modelWidth && modelHeight)}
+                        onGuide={() => {
+                          setSimpleMobilePanel(null);
+                          setSimpleGuideModalOpen(true);
+                        }}
+                        onMove={() => {
+                          setSimpleMobilePanel(null);
+                          handleToolChange("pan");
+                        }}
+                        onOpenTka={() => {
+                          setSimpleMobilePanel(null);
+                          openSimplePlanningModal("tka");
+                        }}
+                        onOpenHip={() => {
+                          setSimpleMobilePanel(null);
+                          openSimplePlanningModal("hip");
+                        }}
+                        onHistory={() => {
+                          setSimpleMobilePanel(null);
+                          undoHistory();
+                        }}
+                        canHistory={historyState.undo > 0}
+                        onReset={() => {
+                          setSimpleMobilePanel(null);
+                          resetWorkspaceState();
+                        }}
+                        implantItems={LOCAL_IMPLANT_LIBRARY}
+                        selectedImplantType={selectedImplantType}
+                        selectedImplantItemId={selectedImplantLibraryId}
+                        onSelectImplantType={setSelectedImplantType}
+                        onSelectImplantItemId={setSelectedImplantLibraryId}
+                        onUseSelectedImplant={(...args) => {
+                          setSimpleMobilePanel(null);
+                          useSelectedImplantLibraryAsLayer(...args);
+                        }}
+                        implantDisabled={!image || !modelWidth || !modelHeight}
+                        implantInstruction={implantLibraryScaleInstruction}
+                      />
+                    ) : simpleMobilePanel === "tools" ? (
+                      <PanelActions
+                        className="mx-auto max-h-[min(66vh,560px)] overflow-y-auto backdrop-blur-xl"
+                        tools={simpleToolMenuItems}
+                        activeTool={tool}
+                        activeFreeLineMode={freeLineMode}
+                        onMinimize={() => setSimpleMobilePanel(null)}
+                        onSelectTool={(item) => {
+                          setSimpleMobilePanel(null);
+                          if (item.freeLineMode) {
+                            activateFreeLineMode(item.freeLineMode);
+                            return;
+                          }
+                          handleToolChange(item.key);
+                        }}
+                        onUndo={() => {
+                          setSimpleMobilePanel(null);
+                          undoHistory();
+                        }}
+                        onRedo={() => {
+                          setSimpleMobilePanel(null);
+                          redoHistory();
+                        }}
+                        canUndo={historyState.undo > 0}
+                        canRedo={historyState.redo > 0}
+                      />
+                    ) : (
+                      <div className="mx-auto w-[min(92vw,360px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.34),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
+                          <div>
+                            <h2 className="text-xs font-black tracking-wider uppercase">
+                              Planning
+                            </h2>
+                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
+                              TKA / HIP / Guide
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSimpleMobilePanel(null)}
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                            aria-label="Tutup planning mobile"
+                            title="Tutup"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimpleMobilePanel(null);
+                              openSimplePlanningModal("tka");
+                            }}
+                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
+                          >
+                            TKA
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimpleMobilePanel(null);
+                              openSimplePlanningModal("hip");
+                            }}
+                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
+                          >
+                            HIP
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimpleMobilePanel(null);
+                              setSimpleGuideModalOpen(true);
+                            }}
+                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
+                          >
+                            Guide
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimpleMobilePanel(null);
+                              handleToolChange("hkaAuto");
+                            }}
+                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
+                          >
+                            HKA
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+              <MobileNavigation
+                className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-20 px-2 lg:hidden"
+                tabs={mobileNavigationTabs}
+                activeTool={mobileNavigationActiveTool}
+                activeToolLabel={`Tool aktif: ${activeToolLabel}`}
+                onPan={() => {
+                  setSimpleMobilePanel(null);
+                  handleToolChange("pan");
+                }}
+                onDraw={() => {
+                  setSimpleMobilePanel(null);
+                  handleToolChange("draw");
+                }}
+                onTools={() => {
+                  if (isSimpleUiMode) {
+                    setSimpleMobilePanel((prev) =>
+                      prev === "tools" ? null : "tools",
+                    );
+                    return;
+                  }
+                  setMobilePanelMode("workspace");
+                  setActiveRightPanel("tool");
+                  setMobileControlsOpen(true);
+                }}
+              />
               <div
-                className={`absolute top-2 right-2 z-20 flex flex-col gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 ${SOFT_FLOAT_SURFACE_CLASS}`}
+                className={`absolute top-2 right-2 z-20 flex gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 ${SOFT_FLOAT_SURFACE_CLASS}`}
               >
                 <motion.button
                   type="button"
@@ -20617,10 +23275,8 @@ export default function XrayCalibrationWorkspace() {
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onPointerLeave={() => {
-                  setHoveredMeasurementInfo(null);
-                  handlePointerUp();
-                }}
+                onPointerCancel={handlePointerUp}
+                onPointerLeave={handlePointerLeave}
                 onContextMenu={(event) => event.preventDefault()}
               />
             </div>

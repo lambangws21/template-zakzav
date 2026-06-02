@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { AlertCircle } from "lucide-react";
 import { useMemo } from "react";
 import {
   countImplantLibraryByType,
@@ -27,6 +28,7 @@ export default function LocalImplantLibraryPanel({
   onUseSelected,
   compact = false,
   disabled = false,
+  scaleInstruction = "",
 }) {
   const counts = useMemo(() => countImplantLibraryByType(items), [items]);
   const filteredItems = useMemo(
@@ -44,10 +46,19 @@ export default function LocalImplantLibraryPanel({
 
   return (
     <motion.div layout className={`${SOFT_SURFACE_CLASS} p-3`}>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between gap-1.5">
         <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
           {compact ? "Implant" : "Implant Lokal"}
         </span>
+        {scaleInstruction ? (
+          <span
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-100 bg-[#eef2f7] text-cyan-700 shadow-[4px_4px_9px_rgba(71,85,105,0.18),-3px_-3px_8px_rgba(255,255,255,0.78)]"
+            title={scaleInstruction}
+            aria-label={scaleInstruction}
+          >
+            <AlertCircle className="h-3.5 w-3.5" strokeWidth={2.1} />
+          </span>
+        ) : null}
       </div>
       {!compact ? (
         <div className="mt-1 text-[10px] text-slate-500">

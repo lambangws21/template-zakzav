@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 
 const PacsDicomViewer = dynamic(() => import("@/components/PacsDicomViewer"), {
@@ -37,19 +37,43 @@ const WORKSPACE_OPTIONS = [
     description:
       "Untuk file DICOM (.dcm) dengan tools PACS (WL, Pan, Zoom, Length).",
   },
+  {
+    key: "simple",
+    title: "Simple UI",
+    description:
+      "Tampilan simple dengan logika templating yang sama untuk upload, kalibrasi, ukur, dan planning.",
+  },
 ];
 
 export default function ImagingWorkspaceShell() {
-  const [activeWorkspace, setActiveWorkspace] = useState("photo");
+  const [activeWorkspace, setActiveWorkspace] = useState("simple");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  useEffect(() => {
+    const viewportQuery = window.matchMedia("(max-width: 1023px)");
+    const updateMobileState = () => {
+      const nextIsMobile = viewportQuery.matches;
+      setIsMobileViewport(nextIsMobile);
+      if (nextIsMobile) {
+        setActiveWorkspace("simple");
+      }
+    };
+
+    updateMobileState();
+    viewportQuery.addEventListener("change", updateMobileState);
+    return () => viewportQuery.removeEventListener("change", updateMobileState);
+  }, []);
+
+  const effectiveWorkspace = isMobileViewport ? "simple" : activeWorkspace;
 
   const activeWorkspaceInfo = useMemo(
-    () => WORKSPACE_OPTIONS.find((item) => item.key === activeWorkspace),
-    [activeWorkspace],
+    () => WORKSPACE_OPTIONS.find((item) => item.key === effectiveWorkspace),
+    [effectiveWorkspace],
   );
 
   return (
     <div className="min-h-screen w-full">
-      <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div className="sticky top-0 z-30 hidden border-b border-slate-200 bg-white/95 backdrop-blur lg:block">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-3 py-3 sm:px-4 lg:px-6">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {WORKSPACE_OPTIONS.map((workspace) => (
@@ -58,7 +82,7 @@ export default function ImagingWorkspaceShell() {
                 type="button"
                 onClick={() => setActiveWorkspace(workspace.key)}
                 className={`shrink-0 rounded-md px-3 py-2 text-xs sm:text-sm ${
-                  activeWorkspace === workspace.key
+                  effectiveWorkspace === workspace.key
                     ? "bg-slate-900 text-white"
                     : "border border-slate-300 bg-white text-slate-700"
                 }`}
@@ -73,10 +97,18 @@ export default function ImagingWorkspaceShell() {
         </div>
       </div>
 
-      {activeWorkspace === "dicom" ? (
+      {effectiveWorkspace === "dicom" ? (
         <PacsDicomViewer />
       ) : (
-        <XrayCalibrationWorkspace />
+        <XrayCalibrationWorkspace
+          simpleUiMode={effectiveWorkspace === "simple"}
+          onOpenSimpleUi={
+            isMobileViewport ? undefined : () => setActiveWorkspace("simple")
+          }
+          onOpenAdvancedUi={
+            isMobileViewport ? undefined : () => setActiveWorkspace("photo")
+          }
+        />
       )}
     </div>
   );

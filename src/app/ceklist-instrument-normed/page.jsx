@@ -27,6 +27,7 @@ import {
   Stethoscope,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import DriveImageWithFallback from "@/components/DriveImageWithFallback.jsx";
 import {
   FloatingInputField,
@@ -1131,6 +1132,97 @@ function fileToBase64(file) {
   });
 }
 
+function buildEmptySubmissionEditor() {
+  return {
+    submissionId: "",
+    procedureKey: "",
+    procedureTitle: "",
+    operationDate: "",
+    doctorName: "",
+    hospitalName: "",
+    repAssist: "",
+    patientName: "",
+    medrec: "",
+    region: "",
+    invoiceTo: "",
+    reviewNote: "",
+    checklistJson: "",
+    status: "",
+    progress: 0,
+  };
+}
+
+function normalizeDashboardSubmissionRow(rawRow, index) {
+  const source = rawRow && typeof rawRow === "object" ? rawRow : {};
+  const submissionId = String(
+    source.submissionId || source.id || `submission-${index + 1}`
+  ).trim();
+  const createdAt = String(source.createdAt || source.created_at || source.timestamp || "").trim();
+  const operationDate = String(source.operationDate || "").trim();
+  const procedureKey =
+    normalizeProcedureKey(source.procedureKey) ||
+    inferProcedureKeyFromText(source.systemName || source.procedureTitle || source.title || "");
+  const procedureTitle = String(source.systemName || source.procedureTitle || source.title || "").trim();
+  const checklistJson = String(source.checklistJson || source.checklist_json || "[]");
+  const checklistRows = parseJsonSafe(checklistJson);
+  const resolvedTotal =
+    Number(source.total || source.totalItems || source.total_items || 0) ||
+    (Array.isArray(checklistRows) ? checklistRows.length : 0);
+  const resolvedCompleted =
+    Number(source.completed || source.completedItems || source.completed_items || 0) ||
+    (Array.isArray(checklistRows)
+      ? checklistRows.reduce((acc, row) => acc + (row?.checked ? 1 : 0), 0)
+      : 0);
+  const normalizedTotal = Number.isFinite(resolvedTotal) ? resolvedTotal : 0;
+  const normalizedCompleted = Number.isFinite(resolvedCompleted) ? resolvedCompleted : 0;
+  const progressRaw =
+    Number(source.progress || source.progressPercent || source.progress_percent || 0) ||
+    (normalizedTotal > 0 ? Math.round((normalizedCompleted / normalizedTotal) * 100) : 0);
+  const progress = Number.isFinite(progressRaw) ? Math.max(0, Math.min(100, Math.round(progressRaw))) : 0;
+  const status =
+    String(source.status || "").trim() ||
+    (progress >= 100 ? "Lengkap" : "Belum Lengkap");
+
+  const patientStickerUrl = toSafeImageSrc(
+    String(source.patientStickerUrl || source.patientStickerImageUrl || "").trim() ||
+      driveIdToImageUrl(source.patientStickerDriveId),
+    ""
+  );
+  const officeDocumentationUrl = toSafeImageSrc(
+    String(source.officeDocumentationUrl || source.officeDocumentationImageUrl || "").trim() ||
+      driveIdToImageUrl(source.officeDocumentationDriveId),
+    patientStickerUrl
+  );
+  const hospitalDocumentationUrl = toSafeImageSrc(
+    String(source.hospitalDocumentationUrl || source.hospitalDocumentationImageUrl || "").trim() ||
+      driveIdToImageUrl(source.hospitalDocumentationDriveId),
+    patientStickerUrl
+  );
+
+  return {
+    submissionId,
+    createdAt,
+    operationDate,
+    procedureKey,
+    procedureTitle,
+    doctorName: String(source.doctorName || "").trim(),
+    hospitalName: String(source.hospitalName || "").trim(),
+    repAssist: String(source.repAssist || source.operatorName || "").trim(),
+    patientName: String(source.patientName || "").trim(),
+    medrec: String(source.medrec || source.patientCode || "").trim(),
+    region: String(source.region || "").trim(),
+    invoiceTo: String(source.invoiceTo || "").trim(),
+    reviewNote: String(source.reviewNote || source.note || "").trim(),
+    checklistJson,
+    status,
+    progress,
+    completed: normalizedCompleted,
+    total: normalizedTotal,
+    officeDocumentationUrl,
+    hospitalDocumentationUrl,
+  };
+}
+
 export default function NormedInstrumentChecklistApp() {
   const [procedureKey, setProcedureKey] = useState("tkr");
   const [bipolarIncludeStem, setBipolarIncludeStem] = useState(true);
@@ -1146,15 +1238,22 @@ export default function NormedInstrumentChecklistApp() {
   const [doctorName, setDoctorName] = useState("");
   const [patientCode, setPatientCode] = useState("");
   const [caseNote, setCaseNote] = useState("");
-  const [documentationPhoto, setDocumentationPhoto] = useState(null);
-  const [documentationPreview, setDocumentationPreview] = useState("");
-  const [photoName, setPhotoName] = useState("");
+  const [officeDocumentationPhoto, setOfficeDocumentationPhoto] = useState(null);
+  const [officeDocumentationPreview, setOfficeDocumentationPreview] = useState("");
+  const [officePhotoName, setOfficePhotoName] = useState("");
+  const [hospitalDocumentationPhoto, setHospitalDocumentationPhoto] = useState(null);
+  const [hospitalDocumentationPreview, setHospitalDocumentationPreview] = useState("");
+  const [hospitalPhotoName, setHospitalPhotoName] = useState("");
+  const [documentationModalOpen, setDocumentationModalOpen] = useState(false);
+  const [documentationPromptedByProcedure, setDocumentationPromptedByProcedure] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [previewItem, setPreviewItem] = useState(null);
   const [showOnlyUnchecked, setShowOnlyUnchecked] = useState(false);
   const [showMobilePhotos, setShowMobilePhotos] = useState(false);
   const [superCompactMobile, setSuperCompactMobile] = useState(true);
+  const [quickToolsModalOpen, setQuickToolsModalOpen] = useState(false);
+  const [dashboardCollapsed, setDashboardCollapsed] = useState(false);
   const [checklistMenuOpen, setChecklistMenuOpen] = useState(false);
   const [operationControlModalOpen, setOperationControlModalOpen] = useState(false);
   const [checklistViewMode, setChecklistViewMode] = useState("group");
@@ -1175,7 +1274,17 @@ export default function NormedInstrumentChecklistApp() {
       bipolar: 0,
       stem: 0,
     },
+    submissions: [],
   });
+  const [submissionEditorOpen, setSubmissionEditorOpen] = useState(false);
+  const [submissionEditorSaving, setSubmissionEditorSaving] = useState(false);
+  const [submissionEditor, setSubmissionEditor] = useState(buildEmptySubmissionEditor());
+  const [submissionOfficePhoto, setSubmissionOfficePhoto] = useState(null);
+  const [submissionOfficePreview, setSubmissionOfficePreview] = useState("");
+  const [submissionOfficePhotoName, setSubmissionOfficePhotoName] = useState("");
+  const [submissionHospitalPhoto, setSubmissionHospitalPhoto] = useState(null);
+  const [submissionHospitalPreview, setSubmissionHospitalPreview] = useState("");
+  const [submissionHospitalPhotoName, setSubmissionHospitalPhotoName] = useState("");
 
   const selected = CHECKLISTS.find((item) => item.key === procedureKey) || CHECKLISTS[0];
   const baseSelectedItems = useMemo(
@@ -1497,21 +1606,30 @@ export default function NormedInstrumentChecklistApp() {
     () => criticalItems.filter((item) => Boolean(checked[item.id])),
     [checked, criticalItems]
   );
+  const hasOfficeDocumentation = Boolean(officeDocumentationPreview);
+  const hasHospitalDocumentation = Boolean(hospitalDocumentationPreview);
+  const hasBothDocumentationPhotos = hasOfficeDocumentation && hasHospitalDocumentation;
+  const allChecklistCompleted = total > 0 && completed === total;
   const mandatoryPhotoPending =
-    checkedCriticalItems.length > 0 && !documentationPhoto && !documentationPreview;
+    checkedCriticalItems.length > 0 && !hasBothDocumentationPhotos;
+  const checklistCompletedPhotoPending =
+    allChecklistCompleted && !hasBothDocumentationPhotos;
+  const documentationPromptedForSelectedProcedure = Boolean(
+    documentationPromptedByProcedure[selected.key]
+  );
   const isOperationInfoComplete =
     Boolean(operatorName.trim()) && Boolean(hospitalName.trim());
-  const stageTotalItems = useMemo(
-    () => stageScopedGroupedItems.reduce((totalCount, group) => totalCount + group.total, 0),
-    [stageScopedGroupedItems]
-  );
+  const stageItems = useMemo(() => {
+    if (!activeWizardStage) return selectedItems;
+    const matched = selectedItems.filter((item) =>
+      matchesGroupStage(item.category || "Lainnya", activeWizardStage)
+    );
+    return matched.length ? matched : selectedItems;
+  }, [activeWizardStage, selectedItems]);
+  const stageTotalItems = stageItems.length;
   const stageCompletedItems = useMemo(
-    () =>
-      stageScopedGroupedItems.reduce(
-        (totalCount, group) => totalCount + group.completed,
-        0
-      ),
-    [stageScopedGroupedItems]
+    () => stageItems.reduce((totalCount, item) => totalCount + (checked[item.id] ? 1 : 0), 0),
+    [checked, stageItems]
   );
   const stageProgressPercent = stageTotalItems
     ? Math.round((stageCompletedItems / stageTotalItems) * 100)
@@ -1552,6 +1670,55 @@ export default function NormedInstrumentChecklistApp() {
       setActiveGroupFilter("all");
     }
   }, [activeGroupName, checklistViewMode, setActiveGroupFilter, stageScopedGroupedItems]);
+
+  useEffect(() => {
+    if (!procedureStages.length) return;
+    if (activeWizardStageIndex >= procedureStages.length - 1) return;
+    if (!stageTotalItems) return;
+    if (stageCompletedItems < stageTotalItems) return;
+
+    setWizardStageByProcedure((prev) => {
+      const currentIndex = Number(prev[selected.key] ?? 0);
+      if (currentIndex !== activeWizardStageIndex) return prev;
+      const nextIndex = Math.min(procedureStages.length - 1, currentIndex + 1);
+      if (nextIndex === currentIndex) return prev;
+      return {
+        ...prev,
+        [selected.key]: nextIndex,
+      };
+    });
+    setActiveGroupByProcedure((prev) => {
+      if (prev[selected.key] === "all") return prev;
+      return {
+        ...prev,
+        [selected.key]: "all",
+      };
+    });
+  }, [
+    activeWizardStageIndex,
+    procedureStages.length,
+    selected.key,
+    stageCompletedItems,
+    stageTotalItems,
+  ]);
+
+  useEffect(() => {
+    if (!isOperationInfoComplete) return;
+    if (!allChecklistCompleted) return;
+    if (hasBothDocumentationPhotos) return;
+    if (documentationPromptedForSelectedProcedure) return;
+    setDocumentationModalOpen(true);
+    setDocumentationPromptedByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: true,
+    }));
+  }, [
+    allChecklistCompleted,
+    documentationPromptedForSelectedProcedure,
+    hasBothDocumentationPhotos,
+    isOperationInfoComplete,
+    selected.key,
+  ]);
 
   const refreshInstrumentProfiles = useCallback(async (options = {}) => {
     if (!GOOGLE_SHEET_ENDPOINT) return;
@@ -1700,32 +1867,36 @@ export default function NormedInstrumentChecklistApp() {
         setMessage(lastError);
       }
 
+      const normalizedSubmissions = (snapshot.submissions || [])
+        .map((submission, index) => normalizeDashboardSubmissionRow(submission, index))
+        .filter((submission) => submission.submissionId);
+
+      normalizedSubmissions.sort((left, right) => {
+        const rightTime = new Date(right.createdAt || right.operationDate || 0).getTime() || 0;
+        const leftTime = new Date(left.createdAt || left.operationDate || 0).getTime() || 0;
+        return rightTime - leftTime;
+      });
+
       const todayKey = getTodayKey(new Date());
       const byProcedure = { tkr: 0, thr: 0, bipolar: 0, stem: 0 };
       let completedToday = 0;
       let totalToday = 0;
 
-      snapshot.submissions.forEach((submission) => {
-        const dateValue =
-          submission?.operationDate ||
-          submission?.createdAt ||
-          submission?.timestamp ||
-          submission?.created_at ||
-          "";
+      normalizedSubmissions.forEach((submission) => {
+        const dateValue = submission.operationDate || submission.createdAt || "";
         if (getTodayKey(dateValue) !== todayKey) return;
         totalToday += 1;
 
         const procedureKey =
-          normalizeProcedureKey(submission?.procedureKey) ||
-          inferProcedureKeyFromText(submission?.systemName || submission?.procedureTitle || "");
+          normalizeProcedureKey(submission.procedureKey) ||
+          inferProcedureKeyFromText(submission.procedureTitle || "");
         if (procedureKey && Object.prototype.hasOwnProperty.call(byProcedure, procedureKey)) {
           byProcedure[procedureKey] += 1;
         }
 
-        const completionPercent = Number(submission?.progress || 0);
         if (
-          completionPercent >= 100 ||
-          String(submission?.status || "").toLowerCase().includes("lengkap")
+          submission.progress >= 100 ||
+          String(submission.status || "").toLowerCase().includes("lengkap")
         ) {
           completedToday += 1;
         }
@@ -1737,6 +1908,7 @@ export default function NormedInstrumentChecklistApp() {
         totalToday,
         completedToday,
         byProcedure,
+        submissions: normalizedSubmissions.slice(0, 25),
       });
     } catch (error) {
       setDailyDashboard((prev) => ({ ...prev, loading: false }));
@@ -1819,6 +1991,46 @@ export default function NormedInstrumentChecklistApp() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [operationControlModalOpen, isOperationInfoComplete]);
 
+  useEffect(() => {
+    if (!documentationModalOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      setDocumentationModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [documentationModalOpen]);
+
+  useEffect(() => {
+    if (!quickToolsModalOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      setQuickToolsModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [quickToolsModalOpen]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1439px)");
+    const applyAutoCollapse = () => {
+      setDashboardCollapsed(media.matches);
+    };
+    applyAutoCollapse();
+    media.addEventListener("change", applyAutoCollapse);
+    return () => media.removeEventListener("change", applyAutoCollapse);
+  }, []);
+
+  useEffect(() => {
+    if (!submissionEditorOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      setSubmissionEditorOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [submissionEditorOpen]);
+
   const openOperationControlModal = useCallback(() => {
     setOperationControlModalOpen(true);
   }, []);
@@ -1831,6 +2043,12 @@ export default function NormedInstrumentChecklistApp() {
     (nextProcedureKey) => {
       if (!nextProcedureKey || nextProcedureKey === procedureKey) return;
       setProcedureKey(nextProcedureKey);
+      setOfficeDocumentationPhoto(null);
+      setOfficeDocumentationPreview("");
+      setOfficePhotoName("");
+      setHospitalDocumentationPhoto(null);
+      setHospitalDocumentationPreview("");
+      setHospitalPhotoName("");
       setOperationControlModalOpen(true);
     },
     [procedureKey]
@@ -1939,6 +2157,64 @@ export default function NormedInstrumentChecklistApp() {
       delete next[item.id];
     });
     setChecked(next);
+    setOfficeDocumentationPhoto(null);
+    setOfficeDocumentationPreview("");
+    setOfficePhotoName("");
+    setHospitalDocumentationPhoto(null);
+    setHospitalDocumentationPreview("");
+    setHospitalPhotoName("");
+    setDocumentationPromptedByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: false,
+    }));
+  }
+
+  function resetChecklistAndFormAfterSubmit() {
+    setChecked((prev) => {
+      const next = { ...prev };
+      selectedItems.forEach((item) => {
+        delete next[item.id];
+      });
+      return next;
+    });
+    setOperatorName("");
+    setHospitalName("");
+    setDoctorName("");
+    setPatientCode("");
+    setCaseNote("");
+    setExtraCatalogNo("");
+    setExtraDescription("");
+    setExtraPiece("1");
+    setCustomInstrumentsByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: [],
+    }));
+    setOfficeDocumentationPhoto(null);
+    setOfficeDocumentationPreview("");
+    setOfficePhotoName("");
+    setHospitalDocumentationPhoto(null);
+    setHospitalDocumentationPreview("");
+    setHospitalPhotoName("");
+    setDocumentationModalOpen(false);
+    setDocumentationPromptedByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: false,
+    }));
+    setQuery("");
+    setShowOnlyUnchecked(false);
+    setChecklistViewMode("group");
+    setActiveGroupByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: "all",
+    }));
+    setCollapsedGroupsByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: {},
+    }));
+    setWizardStageByProcedure((prev) => ({
+      ...prev,
+      [selected.key]: 0,
+    }));
   }
 
   function addExtraInstrument(event) {
@@ -2005,7 +2281,7 @@ export default function NormedInstrumentChecklistApp() {
     });
   }
 
-  async function handlePhotoChange(event) {
+  async function handleDocumentationPhotoChange(type, event) {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -2015,19 +2291,36 @@ export default function NormedInstrumentChecklistApp() {
       return;
     }
 
-    setDocumentationPhoto(file);
-    setPhotoName(file.name);
+    const normalizedType = type === "hospital" ? "hospital" : "office";
+    if (normalizedType === "office") {
+      setOfficeDocumentationPhoto(file);
+      setOfficePhotoName(file.name);
+    } else {
+      setHospitalDocumentationPhoto(file);
+      setHospitalPhotoName(file.name);
+    }
     const base64 = await fileToBase64(file);
-    setDocumentationPreview(base64);
+    if (normalizedType === "office") {
+      setOfficeDocumentationPreview(base64);
+    } else {
+      setHospitalDocumentationPreview(base64);
+    }
   }
 
-  function removePhoto() {
-    setDocumentationPhoto(null);
-    setDocumentationPreview("");
-    setPhotoName("");
+  function removeDocumentationPhoto(type) {
+    const normalizedType = type === "hospital" ? "hospital" : "office";
+    if (normalizedType === "office") {
+      setOfficeDocumentationPhoto(null);
+      setOfficeDocumentationPreview("");
+      setOfficePhotoName("");
+      return;
+    }
+    setHospitalDocumentationPhoto(null);
+    setHospitalDocumentationPreview("");
+    setHospitalPhotoName("");
   }
 
-  function buildPayload(photoBase64 = "") {
+  function buildPayload({ officePhotoBase64 = "", hospitalPhotoBase64 = "" } = {}) {
     return {
       action: "saveChecklist",
       procedureKey: selected.key,
@@ -2044,8 +2337,10 @@ export default function NormedInstrumentChecklistApp() {
       status: progress === 100 ? "Lengkap" : "Belum Lengkap",
       missingCount: missingItems.length,
       missingItems: missingItems.map((item) => `${item.catalogNo} - ${item.name}`).join("; "),
-      photoName,
-      photoBase64,
+      officePhotoName,
+      officePhotoBase64,
+      hospitalPhotoName,
+      hospitalPhotoBase64,
       items: selectedItems.map((item) => ({
         id: item.id,
         catalogNo: item.catalogNo,
@@ -2059,10 +2354,19 @@ export default function NormedInstrumentChecklistApp() {
     };
   }
 
-  function buildImplantUsageData(photoBase64 = "") {
+  function buildImplantUsageData(officePhotoBase64 = "", hospitalPhotoBase64 = "") {
     const nowIso = new Date().toISOString();
-    const photoMime =
-      (photoBase64 && String(photoBase64).match(/^data:([^;]+);base64,/)?.[1]) ||
+    const officePhotoMime =
+      (officePhotoBase64 && String(officePhotoBase64).match(/^data:([^;]+);base64,/)?.[1]) ||
+      "image/jpeg";
+    const hospitalPhotoMime =
+      (hospitalPhotoBase64 &&
+        String(hospitalPhotoBase64).match(/^data:([^;]+);base64,/)?.[1]) ||
+      "image/jpeg";
+    const patientStickerBase64 = hospitalPhotoBase64 || officePhotoBase64;
+    const patientStickerMime =
+      (patientStickerBase64 &&
+        String(patientStickerBase64).match(/^data:([^;]+);base64,/)?.[1]) ||
       "image/jpeg";
 
     const slots = selectedItems.map((item, index) => ({
@@ -2100,11 +2404,30 @@ export default function NormedInstrumentChecklistApp() {
         isCritical: isCriticalInstrument(item),
         checked: Boolean(checked[item.id]),
       })),
-      patientStickerUpload: photoBase64
+      patientStickerUpload: patientStickerBase64
         ? {
-            fileName: photoName || `normed-${selected.key}-${Date.now()}.jpg`,
-            mimeType: photoMime,
-            dataUrl: photoBase64,
+            fileName:
+              hospitalPhotoName ||
+              officePhotoName ||
+              `normed-${selected.key}-patient-${Date.now()}.jpg`,
+            mimeType: patientStickerMime,
+            dataUrl: patientStickerBase64,
+          }
+        : null,
+      officeDocumentationUpload: officePhotoBase64
+        ? {
+            fileName:
+              officePhotoName || `normed-${selected.key}-office-${Date.now()}.jpg`,
+            mimeType: officePhotoMime,
+            dataUrl: officePhotoBase64,
+          }
+        : null,
+      hospitalDocumentationUpload: hospitalPhotoBase64
+        ? {
+            fileName:
+              hospitalPhotoName || `normed-${selected.key}-hospital-${Date.now()}.jpg`,
+            mimeType: hospitalPhotoMime,
+            dataUrl: hospitalPhotoBase64,
           }
         : null,
       slots,
@@ -2118,7 +2441,10 @@ export default function NormedInstrumentChecklistApp() {
   }
 
   function exportJson() {
-    const payload = buildPayload(documentationPreview);
+    const payload = buildPayload({
+      officePhotoBase64: officeDocumentationPreview,
+      hospitalPhotoBase64: hospitalDocumentationPreview,
+    });
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -2144,9 +2470,12 @@ export default function NormedInstrumentChecklistApp() {
       return;
     }
 
-    if (mandatoryPhotoPending) {
+    if (mandatoryPhotoPending || checklistCompletedPhotoPending) {
+      setDocumentationModalOpen(true);
       setMessage(
-        `Upload foto dokumentasi wajib karena ada ${checkedCriticalItems.length} item kritikal yang sudah dicentang.`
+        checkedCriticalItems.length > 0
+          ? `Upload 2 foto dokumentasi (Office & Hospital) wajib karena ada ${checkedCriticalItems.length} item kritikal yang sudah dicentang.`
+          : "Checklist sudah selesai. Upload 2 foto dokumentasi (Office & Hospital) sebelum Simpan ke Sheet."
       );
       return;
     }
@@ -2154,11 +2483,20 @@ export default function NormedInstrumentChecklistApp() {
     setSubmitting(true);
 
     try {
-      const photoBase64 = documentationPhoto ? await fileToBase64(documentationPhoto) : "";
+      const officePhotoBase64 = officeDocumentationPhoto
+        ? await fileToBase64(officeDocumentationPhoto)
+        : String(officeDocumentationPreview || "").startsWith("data:")
+          ? officeDocumentationPreview
+          : "";
+      const hospitalPhotoBase64 = hospitalDocumentationPhoto
+        ? await fileToBase64(hospitalDocumentationPhoto)
+        : String(hospitalDocumentationPreview || "").startsWith("data:")
+          ? hospitalDocumentationPreview
+          : "";
       const payload = {
         url: GOOGLE_SHEET_ENDPOINT,
         action: "create_implant_usage",
-        data: buildImplantUsageData(photoBase64),
+        data: buildImplantUsageData(officePhotoBase64, hospitalPhotoBase64),
       };
 
       const response = await fetch("/api/google-sheet-images", {
@@ -2186,17 +2524,257 @@ export default function NormedInstrumentChecklistApp() {
         );
       }
 
-      setMessage(
-        remote?.submissionId
-          ? `Checklist berhasil disimpan ke Google Sheet. ID: ${remote.submissionId}`
-          : "Checklist berhasil disimpan ke Google Sheet."
-      );
+      const successText = remote?.submissionId
+        ? `Checklist berhasil disimpan ke Google Sheet. ID: ${remote.submissionId}`
+        : "Checklist berhasil disimpan ke Google Sheet.";
+      resetChecklistAndFormAfterSubmit();
+      setMessage(successText);
+      toast.success(successText);
       refreshDailyDashboard({ silent: true });
     } catch (error) {
       console.error(error);
-      setMessage(error.message || "Terjadi kesalahan saat menyimpan.");
+      const errorText = error.message || "Terjadi kesalahan saat menyimpan.";
+      setMessage(errorText);
+      toast.error(errorText);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function loadSavedSubmission(submissionRow) {
+    if (!submissionRow) return;
+
+    const targetProcedureKey =
+      normalizeProcedureKey(submissionRow.procedureKey) ||
+      inferProcedureKeyFromText(submissionRow.procedureTitle || submissionRow.systemName || "") ||
+      selected.key;
+
+    if (targetProcedureKey && targetProcedureKey !== procedureKey) {
+      setProcedureKey(targetProcedureKey);
+    }
+    setOperatorName(submissionRow.repAssist || "");
+    setHospitalName(submissionRow.hospitalName || "");
+    setDoctorName(submissionRow.doctorName || "");
+    setPatientCode(submissionRow.medrec || "");
+    setCaseNote(submissionRow.reviewNote || "");
+
+    const parsedChecklist = parseJsonSafe(submissionRow.checklistJson);
+    if (Array.isArray(parsedChecklist) && parsedChecklist.length) {
+      setChecked((prev) => {
+        const next = { ...prev };
+        parsedChecklist.forEach((row) => {
+          const rowId = String(row?.id || "").trim();
+          if (!rowId) return;
+          if (row?.checked) {
+            next[rowId] = true;
+          } else {
+            delete next[rowId];
+          }
+        });
+        return next;
+      });
+    }
+
+    setOfficeDocumentationPhoto(null);
+    setHospitalDocumentationPhoto(null);
+    setOfficeDocumentationPreview(submissionRow.officeDocumentationUrl || "");
+    setHospitalDocumentationPreview(submissionRow.hospitalDocumentationUrl || "");
+    setOfficePhotoName(submissionRow.officeDocumentationUrl ? "Office (tersimpan)" : "");
+    setHospitalPhotoName(submissionRow.hospitalDocumentationUrl ? "Hospital (tersimpan)" : "");
+    setDocumentationPromptedByProcedure((prev) => ({
+      ...prev,
+      [targetProcedureKey]: true,
+    }));
+    setMessage(`Data submission ${submissionRow.submissionId} berhasil dimuat ke form checklist.`);
+  }
+
+  function openSubmissionEditor(submissionRow) {
+    if (!submissionRow) return;
+    setSubmissionEditor({
+      submissionId: submissionRow.submissionId || "",
+      procedureKey: submissionRow.procedureKey || "",
+      procedureTitle: submissionRow.procedureTitle || "",
+      operationDate: submissionRow.operationDate || "",
+      doctorName: submissionRow.doctorName || "",
+      hospitalName: submissionRow.hospitalName || "",
+      repAssist: submissionRow.repAssist || "",
+      patientName: submissionRow.patientName || "",
+      medrec: submissionRow.medrec || "",
+      region: submissionRow.region || "",
+      invoiceTo: submissionRow.invoiceTo || "",
+      reviewNote: submissionRow.reviewNote || "",
+      checklistJson: submissionRow.checklistJson || "[]",
+      status: submissionRow.status || "",
+      progress: Number(submissionRow.progress || 0),
+    });
+    setSubmissionOfficePhoto(null);
+    setSubmissionOfficePreview(submissionRow.officeDocumentationUrl || "");
+    setSubmissionOfficePhotoName(submissionRow.officeDocumentationUrl ? "Office (tersimpan)" : "");
+    setSubmissionHospitalPhoto(null);
+    setSubmissionHospitalPreview(submissionRow.hospitalDocumentationUrl || "");
+    setSubmissionHospitalPhotoName(
+      submissionRow.hospitalDocumentationUrl ? "Hospital (tersimpan)" : ""
+    );
+    setSubmissionEditorOpen(true);
+  }
+
+  function closeSubmissionEditor() {
+    setSubmissionEditorOpen(false);
+    setSubmissionEditor(buildEmptySubmissionEditor());
+    setSubmissionOfficePhoto(null);
+    setSubmissionOfficePreview("");
+    setSubmissionOfficePhotoName("");
+    setSubmissionHospitalPhoto(null);
+    setSubmissionHospitalPreview("");
+    setSubmissionHospitalPhotoName("");
+  }
+
+  async function handleSubmissionEditorPhotoChange(type, event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const maxSizeMb = 4;
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      setMessage(`Ukuran foto maksimal ${maxSizeMb} MB.`);
+      return;
+    }
+    const base64 = await fileToBase64(file);
+    if (type === "hospital") {
+      setSubmissionHospitalPhoto(file);
+      setSubmissionHospitalPreview(base64);
+      setSubmissionHospitalPhotoName(file.name);
+      return;
+    }
+    setSubmissionOfficePhoto(file);
+    setSubmissionOfficePreview(base64);
+    setSubmissionOfficePhotoName(file.name);
+  }
+
+  function removeSubmissionEditorPhoto(type) {
+    if (type === "hospital") {
+      setSubmissionHospitalPhoto(null);
+      setSubmissionHospitalPreview("");
+      setSubmissionHospitalPhotoName("");
+      return;
+    }
+    setSubmissionOfficePhoto(null);
+    setSubmissionOfficePreview("");
+    setSubmissionOfficePhotoName("");
+  }
+
+  async function saveSubmissionEditor() {
+    if (!GOOGLE_SHEET_ENDPOINT) {
+      setMessage("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di file .env.local");
+      return;
+    }
+    if (!submissionEditor.submissionId) {
+      setMessage("Submission ID tidak valid.");
+      return;
+    }
+
+    setSubmissionEditorSaving(true);
+    setMessage("");
+
+    try {
+      const officeDataUrl = submissionOfficePhoto
+        ? await fileToBase64(submissionOfficePhoto)
+        : "";
+      const hospitalDataUrl = submissionHospitalPhoto
+        ? await fileToBase64(submissionHospitalPhoto)
+        : "";
+      const patientStickerDataUrl = hospitalDataUrl || officeDataUrl;
+
+      const payload = {
+        url: GOOGLE_SHEET_ENDPOINT,
+        action: "update_implant_usage_submission",
+        submissionId: submissionEditor.submissionId,
+        item: {
+          submissionId: submissionEditor.submissionId,
+          operationDate: submissionEditor.operationDate,
+          doctorName: submissionEditor.doctorName,
+          hospitalName: submissionEditor.hospitalName,
+          repAssist: submissionEditor.repAssist,
+          systemName: submissionEditor.procedureTitle,
+          invoiceTo: submissionEditor.invoiceTo || submissionEditor.hospitalName,
+          patientName: submissionEditor.patientName,
+          medrec: submissionEditor.medrec,
+          region: submissionEditor.region || submissionEditor.hospitalName,
+          reviewNote: submissionEditor.reviewNote,
+          reviewedBy: submissionEditor.repAssist || "checklist-ui",
+          checklistJson: submissionEditor.checklistJson || "[]",
+          officeDocumentationUpload: officeDataUrl
+            ? {
+                fileName:
+                  submissionOfficePhotoName ||
+                  `office-${submissionEditor.submissionId}-${Date.now()}.jpg`,
+                mimeType:
+                  String(officeDataUrl).match(/^data:([^;]+);base64,/)?.[1] || "image/jpeg",
+                dataUrl: officeDataUrl,
+              }
+            : null,
+          hospitalDocumentationUpload: hospitalDataUrl
+            ? {
+                fileName:
+                  submissionHospitalPhotoName ||
+                  `hospital-${submissionEditor.submissionId}-${Date.now()}.jpg`,
+                mimeType:
+                  String(hospitalDataUrl).match(/^data:([^;]+);base64,/)?.[1] ||
+                  "image/jpeg",
+                dataUrl: hospitalDataUrl,
+              }
+            : null,
+          patientStickerUpload: patientStickerDataUrl
+            ? {
+                fileName:
+                  submissionHospitalPhotoName ||
+                  submissionOfficePhotoName ||
+                  `patient-${submissionEditor.submissionId}-${Date.now()}.jpg`,
+                mimeType:
+                  String(patientStickerDataUrl).match(/^data:([^;]+);base64,/)?.[1] ||
+                  "image/jpeg",
+                dataUrl: patientStickerDataUrl,
+              }
+            : null,
+          deleteOldOfficeDocumentation: Boolean(officeDataUrl),
+          deleteOldHospitalDocumentation: Boolean(hospitalDataUrl),
+          deleteOldPatientSticker: Boolean(patientStickerDataUrl),
+        },
+      };
+
+      const response = await fetch("/api/google-sheet-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      const remote = result?.remote || result || {};
+      const remoteStatus = String(remote?.status || "").toLowerCase();
+      const remoteOk =
+        typeof remote?.ok === "boolean"
+          ? remote.ok
+          : remoteStatus
+            ? remoteStatus !== "error"
+            : true;
+      if (!response.ok || !result?.ok || !remoteOk) {
+        throw new Error(
+          remote?.error ||
+            remote?.message ||
+            result?.error ||
+            `Gagal update submission (HTTP ${response.status}).`
+        );
+      }
+
+      const successText = `Submission ${submissionEditor.submissionId} berhasil diupdate.`;
+      setMessage(successText);
+      toast.success(successText);
+      closeSubmissionEditor();
+      refreshDailyDashboard({ silent: true });
+    } catch (error) {
+      console.error(error);
+      const errorText = error?.message || "Gagal update submission.";
+      setMessage(errorText);
+      toast.error(errorText);
+    } finally {
+      setSubmissionEditorSaving(false);
     }
   }
 
@@ -2429,6 +3007,77 @@ export default function NormedInstrumentChecklistApp() {
     );
   };
 
+  const wizardPanel = (
+    <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm md:p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Wizard</p>
+          <h3 className="truncate text-base font-bold text-slate-900">
+            {selected.key.toUpperCase()} · {activeWizardStage?.label || "Tahap"}
+          </h3>
+        </div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+          {activeWizardStageIndex + 1}/{procedureStages.length}
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+        <span>
+          {stageCompletedItems}/{stageTotalItems} selesai
+        </span>
+        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">
+          {stageProgressPercent}%
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-blue-700 to-indigo-600 transition-all duration-300"
+          style={{ width: `${stageProgressPercent}%` }}
+        />
+      </div>
+
+      <div className="mt-3 flex items-center gap-1 overflow-x-auto pb-1">
+        {procedureStages.map((stage, index) => {
+          const active = index === activeWizardStageIndex;
+          return (
+            <button
+              key={stage.key}
+              type="button"
+              onClick={() => setWizardStageIndex(index)}
+              title={stage.label}
+              className={`inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition ${
+                active
+                  ? "border-blue-700 bg-blue-700 text-white shadow-sm"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {index + 1}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={goWizardPrev}
+          disabled={activeWizardStageIndex <= 0}
+          className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <ChevronLeft size={14} /> Prev
+        </button>
+        <button
+          type="button"
+          onClick={goWizardNext}
+          disabled={activeWizardStageIndex >= procedureStages.length - 1}
+          className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Next <ChevronRight size={14} />
+        </button>
+      </div>
+    </section>
+  );
+
   const checklistControlPanel = (
     <div className="rounded-[24px] border border-slate-200/90 bg-white/95 p-3 shadow-[0_18px_35px_rgba(15,23,42,0.12)] backdrop-blur md:p-4">
       <div className="inline-flex w-full rounded-[20px] bg-slate-200/80 p-1.5">
@@ -2660,63 +3309,7 @@ export default function NormedInstrumentChecklistApp() {
           })}
         </section>
 
-        <section className="rounded-3xl border border-white/80 bg-gradient-to-br from-white via-slate-50 to-blue-50 p-4 shadow-[0_14px_30px_rgba(30,41,59,0.12)] md:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Wizard Per Tahap
-              </p>
-              <h3 className="text-lg font-bold text-slate-900 md:text-xl">
-                {selected.key.toUpperCase()} · {activeWizardStage?.label || "Tahap"}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {stageCompletedItems}/{stageTotalItems} item tahap ini selesai ({stageProgressPercent}%)
-              </p>
-            </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">
-              Step {activeWizardStageIndex + 1}/{procedureStages.length}
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {procedureStages.map((stage, index) => {
-              const active = index === activeWizardStageIndex;
-              return (
-                <button
-                  key={stage.key}
-                  type="button"
-                  onClick={() => setWizardStageIndex(index)}
-                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
-                    active
-                      ? "border-blue-700 bg-blue-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {stage.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={goWizardPrev}
-              disabled={activeWizardStageIndex <= 0}
-              className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <ChevronLeft size={14} /> Prev
-            </button>
-            <button
-              type="button"
-              onClick={goWizardNext}
-              disabled={activeWizardStageIndex >= procedureStages.length - 1}
-              className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Next <ChevronRight size={14} />
-            </button>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
+        <section className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm xl:hidden">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -2785,22 +3378,85 @@ export default function NormedInstrumentChecklistApp() {
               </p>
             </article>
           </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Submission Tersimpan
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {dailyDashboard.submissions.length} data terbaru
+              </p>
+            </div>
+            {dailyDashboard.submissions.length ? (
+              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                {dailyDashboard.submissions.map((submission, submissionIndex) => (
+                  <div
+                    key={`${submission.submissionId || "submission"}-${submission.createdAt || "no-date"}-${submissionIndex}`}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-slate-700">
+                          {submission.submissionId}
+                        </p>
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {submission.procedureTitle || submission.procedureKey?.toUpperCase() || "-"}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {submission.hospitalName || "-"} · {submission.repAssist || "-"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                          {submission.progress}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => loadSavedSubmission(submission)}
+                          className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          Muat
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSubmissionEditor(submission)}
+                          className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">
+                Belum ada submission tersimpan yang bisa dimonitor.
+              </p>
+            )}
+          </div>
         </section>
 
         <section className="rounded-3xl border border-white/80 bg-gradient-to-r from-white via-slate-50 to-blue-50 px-4 py-4 shadow-[0_10px_24px_rgba(30,41,59,0.12)] md:px-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h3 className="text-2xl font-bold text-slate-900">Operasi &amp; Kontrol Tambahan</h3>
-              <p className="mt-1 text-sm text-slate-600">
-                Form mode tray, instrument tambahan, dan informasi operasi sekarang ada di modal popup.
-              </p>
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
+                <Stethoscope size={18} />
+              </span>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 md:text-2xl">Operasi &amp; Kontrol Tambahan</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Mode tray, instrumen tambahan, dan info operasi dikelola di modal agar area checklist tetap rapi.
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`inline-flex items-center rounded-xl px-3 py-2 text-xs font-semibold ${
+                className={`inline-flex items-center rounded-xl border px-3 py-2 text-xs font-semibold ${
                   isOperationInfoComplete
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-amber-100 text-amber-800"
+                    ? "border-emerald-200 bg-emerald-100/80 text-emerald-800"
+                    : "border-amber-200 bg-amber-100/80 text-amber-800"
                 }`}
               >
                 {isOperationInfoComplete ? "Data wajib lengkap" : "Lengkapi data wajib dulu"}
@@ -2808,18 +3464,18 @@ export default function NormedInstrumentChecklistApp() {
               <button
                 type="button"
                 onClick={openOperationControlModal}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
               >
                 Buka Form Operasi
               </button>
             </div>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
               <p className="text-[11px] font-semibold uppercase text-slate-500">Prosedur Aktif</p>
               <p className="text-sm font-bold text-slate-900">{selected.key.toUpperCase()}</p>
             </article>
-            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
               <p className="text-[11px] font-semibold uppercase text-slate-500">Mode Tray</p>
               <p className="text-sm font-bold text-slate-900">
                 {selected.key === "bipolar"
@@ -2833,11 +3489,11 @@ export default function NormedInstrumentChecklistApp() {
                     : "Default"}
               </p>
             </article>
-            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
               <p className="text-[11px] font-semibold uppercase text-slate-500">Operator</p>
               <p className="truncate text-sm font-bold text-slate-900">{operatorName || "-"}</p>
             </article>
-            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
+            <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
               <p className="text-[11px] font-semibold uppercase text-slate-500">Rumah Sakit</p>
               <p className="truncate text-sm font-bold text-slate-900">{hospitalName || "-"}</p>
             </article>
@@ -2861,11 +3517,18 @@ export default function NormedInstrumentChecklistApp() {
           </section>
         ) : null}
 
-        <section
-          className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6 ${
-            isOperationInfoComplete ? "" : "pointer-events-none opacity-60"
+        <div
+          className={`grid gap-6 transition-[grid-template-columns] duration-500 ease-in-out ${
+            dashboardCollapsed
+              ? "xl:grid-cols-[minmax(0,1fr)_88px]"
+              : "xl:grid-cols-[minmax(0,1fr)_360px]"
           }`}
         >
+          <section
+            className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6 ${
+              isOperationInfoComplete ? "" : "pointer-events-none opacity-60"
+            }`}
+          >
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-xl font-bold md:text-2xl">{selected.title}</h2>
@@ -2945,158 +3608,192 @@ export default function NormedInstrumentChecklistApp() {
             </div>
           ) : null}
 
-          {checkedCriticalItems.length > 0 ? (
+          {checkedCriticalItems.length > 0 || checklistCompletedPhotoPending ? (
             <div
               className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
-                mandatoryPhotoPending
+                mandatoryPhotoPending || checklistCompletedPhotoPending
                   ? "border-amber-300 bg-amber-50 text-amber-800"
                   : "border-emerald-300 bg-emerald-50 text-emerald-800"
               }`}
             >
               <p className="inline-flex items-center gap-2 font-semibold">
                 <AlertTriangle size={15} />
-                Mandatory Foto Item Kritikal
+                Mandatory Foto Dokumentasi
               </p>
-              <p className="mt-1 text-xs">
-                {checkedCriticalItems.length} item kritikal sudah dicentang.
-                {mandatoryPhotoPending
-                  ? " Upload foto dokumentasi sebelum Simpan ke Sheet."
-                  : " Foto dokumentasi sudah valid."}
+              <p className="mt-1 text-[9px]">
+                {checkedCriticalItems.length > 0
+                  ? `${checkedCriticalItems.length} item kritikal sudah dicentang.`
+                  : "Checklist sudah selesai."}
+                {mandatoryPhotoPending || checklistCompletedPhotoPending
+                  ? " Upload 2 foto dokumentasi (Office & Hospital) sebelum Simpan ke Sheet."
+                  : " Foto dokumentasi Office & Hospital sudah valid."}
               </p>
             </div>
           ) : null}
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-            <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder=" "
-              className="peer h-11 w-full rounded-xl border border-indigo-200 bg-white pl-9 pr-3 pt-5 text-sm outline-none transition focus:border-indigo-400"
+          <div className="mt-4">{wizardPanel}</div>
+
+          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="relative flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-slate-400"
               />
-              <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-0 peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-indigo-600 peer-[&:not(:placeholder-shown)]:top-0 peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-indigo-600">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder=" "
+                className="peer h-11 w-full rounded-xl border border-indigo-200 bg-white pl-9 pr-3 pt-5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              />
+              <span className="pointer-events-none absolute left-12 top-1/2 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-[10px] peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-indigo-600 peer-[&:not(:placeholder-shown)]:top-[10px] peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-indigo-600">
                 Cari kode / deskripsi
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => setQuickToolsModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100 md:min-w-[220px]"
+            >
+              <SlidersHorizontal size={16} />
+              Filter & Dokumentasi
+            </button>
           </div>
 
-          <div className="mt-3 md:hidden">
-            <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600">
-                <span className="inline-flex items-center gap-2">
-                  <SlidersHorizontal size={14} />
-                  Filter & Foto
-                </span>
-                <ChevronDown size={14} className="text-slate-500" />
-              </summary>
-              <div className="mt-3 space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowOnlyUnchecked((prev) => !prev)}
-                    className={`rounded-xl border px-3 py-2 text-xs font-medium ${
-                      showOnlyUnchecked
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    Belum dicek
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowMobilePhotos((prev) => !prev)}
-                    className={`rounded-xl border px-3 py-2 text-xs font-medium ${
-                      showMobilePhotos
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    Tampilkan foto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSuperCompactMobile((prev) => !prev)}
-                    className={`rounded-xl border px-3 py-2 text-xs font-medium ${
-                      superCompactMobile
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    Compact
-                  </button>
-                </div>
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                  <Camera size={14} /> Upload Foto Dokumentasi
-                  <input type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
-                </label>
+
+          <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOnlyUnchecked((prev) => !prev)}
+                  className={`inline-flex min-w-[132px] items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                    showOnlyUnchecked
+                      ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <Eye size={14} />
+                  Belum dicek
+                </button>
                 <button
                   type="button"
                   onClick={() => refreshInstrumentProfiles()}
                   disabled={syncingProfiles}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-w-[168px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {syncingProfiles ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+                  {syncingProfiles ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <RefreshCcw size={14} />
+                  )}
                   Sync Foto Instrument
                 </button>
-                <p className="text-[11px] text-slate-500">
-                  InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
-                </p>
+                <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
+                  {profilesLoadedAt ? (
+                    <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-500">
+                      Sync: {new Date(profilesLoadedAt).toLocaleTimeString("id-ID")}
+                    </span>
+                  ) : null}
+                  <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600">
+                    InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
+                  </span>
+                </div>
               </div>
-            </details>
-          </div>
-
-          <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[1fr_320px]">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowOnlyUnchecked((prev) => !prev)}
-                className={`rounded-xl border px-3 py-2 text-xs font-medium ${
-                  showOnlyUnchecked
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-              >
-                Belum dicek
-              </button>
-              <button
-                type="button"
-                onClick={() => refreshInstrumentProfiles()}
-                disabled={syncingProfiles}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {syncingProfiles ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <RefreshCcw size={14} />
-                )}
-                Sync Foto Instrument
-              </button>
-              {profilesLoadedAt ? (
-                <span className="text-[11px] text-slate-400">
-                  Sync terakhir: {new Date(profilesLoadedAt).toLocaleTimeString("id-ID")}
-                </span>
-              ) : null}
-              <span className="text-[11px] text-slate-500">
-                InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
-              </span>
             </div>
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <Camera size={18} /> Ambil / Upload Foto Dokumentasi
-              <input type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
-            </label>
+            <div className="grid gap-2">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                <Camera size={18} /> Upload Foto Office
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => handleDocumentationPhotoChange("office", event)}
+                  className="hidden"
+                />
+              </label>
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                <Camera size={18} /> Upload Foto Hospital
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => handleDocumentationPhotoChange("hospital", event)}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
 
-          {documentationPreview ? (
-            <div className="mt-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <Image src={documentationPreview} alt="Preview dokumentasi" className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-800">Foto dokumentasi siap disimpan</p>
-                <p className="truncate text-xs text-slate-500">{photoName}</p>
+          {hasOfficeDocumentation || hasHospitalDocumentation ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Dokumentasi Office
+                </p>
+                {hasOfficeDocumentation ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <Image
+                      src={officeDocumentationPreview}
+                      alt="Preview dokumentasi office"
+                      width={80}
+                      height={80}
+                      unoptimized
+                      className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">
+                        Foto Office siap disimpan
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {officePhotoName || "Foto Office"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeDocumentationPhoto("office")}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white"
+                    >
+                      <X size={14} /> Hapus
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">Belum ada foto office.</p>
+                )}
               </div>
-              <button onClick={removePhoto} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white">
-                <X size={14} /> Hapus
-              </button>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Dokumentasi Hospital
+                </p>
+                {hasHospitalDocumentation ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <Image
+                      src={hospitalDocumentationPreview}
+                      alt="Preview dokumentasi hospital"
+                      width={80}
+                      height={80}
+                      unoptimized
+                      className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">
+                        Foto Hospital siap disimpan
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {hospitalPhotoName || "Foto Hospital"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeDocumentationPhoto("hospital")}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white"
+                    >
+                      <X size={14} /> Hapus
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">Belum ada foto hospital.</p>
+                )}
+              </div>
             </div>
           ) : null}
 
@@ -3137,8 +3834,8 @@ export default function NormedInstrumentChecklistApp() {
             <div className="h-full rounded-full bg-slate-900 transition-all" style={{ width: `${progress}%` }} />
           </div>
 
-          {checklistViewMode === "group" ? (
-            <div className="mt-6 space-y-3">
+            {checklistViewMode === "group" ? (
+              <div className="mt-6 space-y-3">
               {displayedGroupedItems.map((group) => {
                 const collapsed = isGroupCollapsed(group.groupName);
                 const completedPct = group.total
@@ -3212,9 +3909,9 @@ export default function NormedInstrumentChecklistApp() {
                   Instrument tidak ditemukan.
                 </div>
               ) : null}
-            </div>
-          ) : (
-            <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              </div>
+            ) : (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <div className="hidden grid-cols-[64px_130px_1fr_90px_44px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
                 <span>Foto</span>
                 <span>Kode</span>
@@ -3230,9 +3927,189 @@ export default function NormedInstrumentChecklistApp() {
                   Instrument tidak ditemukan.
                 </div>
               ) : null}
+              </div>
+            )}
+          </section>
+
+          <aside className="hidden xl:block">
+            <div
+              className={`sticky top-4 overflow-hidden rounded-3xl border border-white/70 bg-gradient-to-br from-white/90 via-slate-50/80 to-blue-50/70 shadow-[0_14px_32px_rgba(30,41,59,0.14)] backdrop-blur transition-[padding,width,transform,opacity] duration-300 ease-out ${
+                dashboardCollapsed ? "p-2" : "p-4"
+              }`}
+            >
+              <div
+                className={`flex ${
+                  dashboardCollapsed
+                    ? "flex-col items-center gap-2"
+                    : "items-start justify-between gap-2"
+                }`}
+              >
+                {dashboardCollapsed ? (
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/90 text-slate-700">
+                    <CalendarDays size={16} />
+                  </div>
+                ) : (
+                  <div>
+                    <p className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <CalendarDays size={13} /> Dashboard Harian
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {getTodayKey(new Date())}
+                    </p>
+                  </div>
+                )}
+                <div className={`flex items-center gap-1 ${dashboardCollapsed ? "flex-col" : ""}`}>
+                  {!dashboardCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={() => refreshDailyDashboard()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-white"
+                    >
+                      {dailyDashboard.loading ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <RefreshCcw size={12} />
+                      )}
+                      Refresh
+                    </button>
+                  ) : (
+                    <div className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => refreshDailyDashboard()}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-700 hover:bg-white"
+                        aria-label="Refresh dashboard"
+                      >
+                        {dailyDashboard.loading ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <RefreshCcw size={12} />
+                        )}
+                      </button>
+                      <span className="pointer-events-none absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-sm group-hover:block group-focus-within:block">
+                        Refresh
+                      </span>
+                    </div>
+                  )}
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => setDashboardCollapsed((prev) => !prev)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-700 hover:bg-white"
+                      aria-label={dashboardCollapsed ? "Expand dashboard" : "Collapse dashboard"}
+                    >
+                      {dashboardCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                    <span className="pointer-events-none absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-sm group-hover:block group-focus-within:block">
+                      {dashboardCollapsed ? "Expand" : "Minimize"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {dashboardCollapsed ? (
+                <div className="mt-3 space-y-2">
+                  <div className="rounded-xl border border-slate-200 bg-white/85 px-2 py-2 text-center">
+                    <p className="text-[10px] font-semibold uppercase text-slate-500">Total</p>
+                    <p className="text-base font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/85 px-2 py-2 text-center">
+                    <p className="text-[10px] font-semibold uppercase text-emerald-700">Done</p>
+                    <p className="text-base font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/85 px-2 py-2 text-center">
+                    <p className="text-[10px] font-semibold uppercase text-slate-500">List</p>
+                    <p className="text-base font-bold text-slate-900">{dailyDashboard.submissions.length}</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <article className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-slate-500">Total</p>
+                      <p className="text-base font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+                    </article>
+                    <article className="rounded-xl border border-emerald-200 bg-emerald-50/85 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-emerald-700">Lengkap</p>
+                      <p className="text-base font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+                    </article>
+                    <article className="rounded-xl border border-blue-200 bg-blue-50/85 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-blue-700">TKR</p>
+                      <p className="text-base font-bold text-blue-900">{dailyDashboard.byProcedure.tkr}</p>
+                    </article>
+                    <article className="rounded-xl border border-violet-200 bg-violet-50/85 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-violet-700">Bipolar</p>
+                      <p className="text-base font-bold text-violet-900">{dailyDashboard.byProcedure.bipolar}</p>
+                    </article>
+                  </div>
+
+                  <article className="mt-2 rounded-xl border border-teal-200 bg-teal-50/85 px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase text-teal-700">THR / Stem</p>
+                    <p className="text-base font-bold text-teal-900">
+                      {dailyDashboard.byProcedure.thr + dailyDashboard.byProcedure.stem}
+                    </p>
+                  </article>
+
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white/85 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Submission Tersimpan
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        {dailyDashboard.submissions.length} data terbaru
+                      </p>
+                    </div>
+                    {dailyDashboard.submissions.length ? (
+                      <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
+                        {dailyDashboard.submissions.map((submission, submissionIndex) => (
+                          <div
+                            key={`${submission.submissionId || "submission"}-${submission.createdAt || "no-date"}-${submissionIndex}-side`}
+                            className="rounded-xl border border-slate-200 bg-white px-2.5 py-2"
+                          >
+                            <p className="truncate text-[11px] font-semibold text-slate-700">
+                              {submission.submissionId}
+                            </p>
+                            <p className="truncate text-xs font-semibold text-slate-900">
+                              {submission.procedureTitle || submission.procedureKey?.toUpperCase() || "-"}
+                            </p>
+                            <p className="truncate text-[11px] text-slate-500">
+                              {submission.hospitalName || "-"} · {submission.repAssist || "-"}
+                            </p>
+                            <div className="mt-2 flex items-center justify-between gap-1">
+                              <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                                {submission.progress}%
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => loadSavedSubmission(submission)}
+                                  className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                  Muat
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openSubmissionEditor(submission)}
+                                  className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Belum ada submission tersimpan.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          )}
-        </section>
+          </aside>
+        </div>
 
         <AnimatePresence>
           {operationControlModalOpen ? (
@@ -3417,6 +4294,423 @@ export default function NormedInstrumentChecklistApp() {
                     className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                   >
                     Simpan & Mulai Checklist
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {documentationModalOpen ? (
+            <motion.div
+              key="documentation-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+              onClick={() => setDocumentationModalOpen(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Upload Wajib
+                    </p>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Foto Dokumentasi Office & Hospital
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Checklist sudah selesai. Upload 2 foto dokumentasi sebelum simpan ke sheet.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDocumentationModalOpen(false)}
+                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+                    aria-label="Tutup modal upload dokumentasi"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                    <span className="inline-flex items-center gap-2">
+                      <Camera size={16} />
+                      Upload Foto Office
+                    </span>
+                    <span className="truncate text-xs text-slate-500">
+                      {officePhotoName || (hasOfficeDocumentation ? "Sudah ada" : "Belum ada")}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(event) => handleDocumentationPhotoChange("office", event)}
+                      className="hidden"
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                    <span className="inline-flex items-center gap-2">
+                      <Camera size={16} />
+                      Upload Foto Hospital
+                    </span>
+                    <span className="truncate text-xs text-slate-500">
+                      {hospitalPhotoName || (hasHospitalDocumentation ? "Sudah ada" : "Belum ada")}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(event) => handleDocumentationPhotoChange("hospital", event)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDocumentationModalOpen(false)}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Nanti dulu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocumentationModalOpen(false)}
+                    className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    Lanjut Checklist
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {quickToolsModalOpen ? (
+            <motion.div
+              key="quick-tools-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[2px]"
+              onClick={() => setQuickToolsModalOpen(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="relative w-full max-w-xl overflow-hidden rounded-[28px] border border-white/70 bg-white/70 p-4 shadow-[0_30px_80px_rgba(15,23,42,0.28)] backdrop-blur-xl md:p-5"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-blue-400/20 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-14 -left-14 h-40 w-40 rounded-full bg-indigo-500/20 blur-3xl" />
+
+                <div className="relative flex items-center justify-between gap-2">
+                  <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm backdrop-blur">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Quick Tools
+                    </p>
+                    <p className="text-sm font-bold text-slate-900">Filter & Dokumentasi</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickToolsModalOpen(false)}
+                    className="rounded-lg border border-white/70 bg-white/80 p-1.5 text-slate-600 shadow-sm hover:bg-white"
+                    aria-label="Tutup quick tools"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="relative mt-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowOnlyUnchecked((prev) => !prev)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-medium ${
+                        showOnlyUnchecked
+                          ? "border-blue-800 bg-gradient-to-r from-blue-800 to-indigo-700 text-white shadow-sm"
+                          : "border-white/80 bg-white/80 text-slate-700"
+                      }`}
+                    >
+                      Belum dicek
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowMobilePhotos((prev) => !prev)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-medium ${
+                        showMobilePhotos
+                          ? "border-blue-800 bg-gradient-to-r from-blue-800 to-indigo-700 text-white shadow-sm"
+                          : "border-white/80 bg-white/80 text-slate-700"
+                      }`}
+                    >
+                      Tampilkan foto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSuperCompactMobile((prev) => !prev)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-medium ${
+                        superCompactMobile
+                          ? "border-blue-800 bg-gradient-to-r from-blue-800 to-indigo-700 text-white shadow-sm"
+                          : "border-white/80 bg-white/80 text-slate-700"
+                      }`}
+                    >
+                      Compact
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300/80 bg-white/85 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                      <Camera size={14} /> Upload Foto Office
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(event) => handleDocumentationPhotoChange("office", event)}
+                        className="hidden"
+                      />
+                    </label>
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300/80 bg-white/85 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                      <Camera size={14} /> Upload Foto Hospital
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(event) => handleDocumentationPhotoChange("hospital", event)}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => refreshInstrumentProfiles()}
+                    disabled={syncingProfiles}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/80 bg-white/85 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {syncingProfiles ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <RefreshCcw size={14} />
+                    )}
+                    Sync Foto Instrument
+                  </button>
+                  <div className="rounded-lg border border-white/70 bg-white/75 px-2.5 py-2 text-[11px] text-slate-600">
+                    InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {submissionEditorOpen ? (
+            <motion.div
+              key="submission-editor-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+              onClick={closeSubmissionEditor}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.96 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Edit Submission
+                    </p>
+                    <p className="text-sm font-bold text-slate-900">
+                      {submissionEditor.submissionId}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeSubmissionEditor}
+                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-white"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="max-h-[calc(90vh-126px)] space-y-4 overflow-y-auto p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <FloatingInputField
+                      value={submissionEditor.repAssist}
+                      onChange={(event) =>
+                        setSubmissionEditor((prev) => ({
+                          ...prev,
+                          repAssist: event.target.value,
+                        }))
+                      }
+                      label="Nama TS / operator"
+                    />
+                    <FloatingInputField
+                      value={submissionEditor.hospitalName}
+                      onChange={(event) =>
+                        setSubmissionEditor((prev) => ({
+                          ...prev,
+                          hospitalName: event.target.value,
+                        }))
+                      }
+                      label="Rumah sakit / lokasi"
+                    />
+                    <FloatingInputField
+                      value={submissionEditor.doctorName}
+                      onChange={(event) =>
+                        setSubmissionEditor((prev) => ({
+                          ...prev,
+                          doctorName: event.target.value,
+                        }))
+                      }
+                      label="Dokter operator"
+                    />
+                    <FloatingInputField
+                      value={submissionEditor.medrec}
+                      onChange={(event) =>
+                        setSubmissionEditor((prev) => ({
+                          ...prev,
+                          medrec: event.target.value,
+                        }))
+                      }
+                      label="Kode pasien / MRN"
+                    />
+                    <FloatingInputField
+                      value={submissionEditor.operationDate}
+                      onChange={(event) =>
+                        setSubmissionEditor((prev) => ({
+                          ...prev,
+                          operationDate: event.target.value,
+                        }))
+                      }
+                      label="Tanggal operasi (YYYY-MM-DD)"
+                    />
+                    <FloatingInputField
+                      value={submissionEditor.reviewNote}
+                      onChange={(event) =>
+                        setSubmissionEditor((prev) => ({
+                          ...prev,
+                          reviewNote: event.target.value,
+                        }))
+                      }
+                      label="Catatan"
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Dokumentasi Office
+                      </p>
+                      {submissionOfficePreview ? (
+                        <Image
+                          src={submissionOfficePreview}
+                          alt="Office documentation"
+                          width={96}
+                          height={96}
+                          unoptimized
+                          className="mt-2 h-20 w-20 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">Belum ada foto office.</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          <Camera size={12} /> Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(event) => handleSubmissionEditorPhotoChange("office", event)}
+                            className="hidden"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeSubmissionEditorPhoto("office")}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <X size={12} /> Hapus
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Dokumentasi Hospital
+                      </p>
+                      {submissionHospitalPreview ? (
+                        <Image
+                          src={submissionHospitalPreview}
+                          alt="Hospital documentation"
+                          width={96}
+                          height={96}
+                          unoptimized
+                          className="mt-2 h-20 w-20 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">Belum ada foto hospital.</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          <Camera size={12} /> Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(event) => handleSubmissionEditorPhotoChange("hospital", event)}
+                            className="hidden"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeSubmissionEditorPhoto("hospital")}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <X size={12} /> Hapus
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={closeSubmissionEditor}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveSubmissionEditor}
+                    disabled={submissionEditorSaving}
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {submissionEditorSaving ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Save size={14} />
+                    )}
+                    Simpan Perubahan
                   </button>
                 </div>
               </motion.div>
