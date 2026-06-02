@@ -214,6 +214,12 @@ const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
 const MOBILE_DOUBLE_TAP_MS = 320;
 const MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN = 72;
+const MOBILE_TOUCH_TARGET_SCREEN = 48;
+const MOBILE_HANDLE_TARGET_SCREEN = 56;
+const MOBILE_ROTATE_HANDLE_TARGET_SCREEN = 60;
+const MOBILE_PRECISION_AUTO_ZOOM_SCALE = 2.2;
+const MOBILE_FINE_STEP_SCREEN = 2;
+const MOBILE_FINE_STEP_LARGE_SCREEN = 8;
 const DEFAULT_LINE_STROKE_WIDTH = 2;
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
@@ -889,6 +895,41 @@ function getHkaDraftNotice(mode, pointsPlaced) {
     .slice(pointsPlaced)
     .map((item) => item.promptLabel)
     .join(" -> ")}).`;
+}
+
+function isMobilePrecisionInteractionMode(mode) {
+  return [
+    "move-handle",
+    "move-line",
+    "move-line-label",
+    "move-angle-handle",
+    "move-angle-label",
+    "move-circle-center",
+    "move-circle-radius",
+    "move-hka-handle",
+    "move-hka-label",
+    "move-planning-guide-handle",
+    "move-planning-guide",
+    "move-planning-guide-label",
+    "move-cut-layer",
+    "resize-cut-layer",
+    "rotate-cut-layer",
+    "move-free-line-point",
+    "move-free-line-curve-handle",
+    "move-annotation",
+  ].includes(mode);
+}
+
+function getMobileInteractionLabel(mode) {
+  if (!mode) return "Edit";
+  if (mode.includes("hka")) return "HKA";
+  if (mode.includes("angle")) return "Angle";
+  if (mode.includes("circle")) return "Circle";
+  if (mode.includes("planning-guide")) return "Guide";
+  if (mode.includes("cut-layer") || mode.includes("free-line")) return "Layer";
+  if (mode.includes("annotation")) return "Note";
+  if (mode.includes("line")) return "Line";
+  return "Edit";
 }
 
 function getHkaMeasurementResult(hka) {
@@ -2903,6 +2944,7 @@ export default function XrayCalibrationWorkspace({
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
   const overlayCanvasRef = useRef(null);
+  const mobileLoupeCanvasRef = useRef(null);
   const compareCanvasRef = useRef(null);
   const mainUploadInputRef = useRef(null);
   const layerUploadInputRef = useRef(null);
@@ -2911,6 +2953,7 @@ export default function XrayCalibrationWorkspace({
   const layerSettingsPanelRef = useRef(null);
   const exportPanelRef = useRef(null);
   const interactionRef = useRef({ mode: null, startX: 0, startY: 0 });
+  const interactionStartedAtRef = useRef(0);
   const interactionCanvasRectRef = useRef(null);
   const activePointerIdRef = useRef(null);
   const activeSnapTargetRef = useRef(null);
@@ -2943,6 +2986,9 @@ export default function XrayCalibrationWorkspace({
   const measureLegendPreferenceLoadedRef = useRef(false);
   const snapModifierPressedRef = useRef(false);
   const autoFitSignatureRef = useRef("");
+  const mobilePrecisionPreviousViewRef = useRef(null);
+  const mobileCutLayerRafRef = useRef(null);
+  const mobileCutLayerRafUpdaterRef = useRef(null);
 
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [compareViewport, setCompareViewport] = useState({
@@ -3042,6 +3088,8 @@ export default function XrayCalibrationWorkspace({
   const [mobileHkaHandleAssist, setMobileHkaHandleAssist] = useState(null);
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
     useState(null);
+  const [mobileCanvasMode, setMobileCanvasMode] = useState("pan");
+  const [mobilePrecisionOverlay, setMobilePrecisionOverlay] = useState(null);
   const [selectionPulse, setSelectionPulse] = useState(null);
   const [hoveredMeasurementInfo, setHoveredMeasurementInfo] = useState(null);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
@@ -4001,6 +4049,121 @@ export default function XrayCalibrationWorkspace({
     );
   }, []);
 
+  const scheduleCutLayersUpdate = useCallback(
+    (updater) => {
+      if (!isMobileViewport || typeof window === "undefined") {
+        setCutLayers(updater);
+        return;
+      }
+
+      mobileCutLayerRafUpdaterRef.current = updater;
+      if (mobileCutLayerRafRef.current !== null) return;
+
+      mobileCutLayerRafRef.current = window.requestAnimationFrame(() => {
+        const pendingUpdater = mobileCutLayerRafUpdaterRef.current;
+        mobileCutLayerRafUpdaterRef.current = null;
+        mobileCutLayerRafRef.current = null;
+        if (pendingUpdater) {
+          setCutLayers(pendingUpdater);
+        }
+      });
+    },
+    [isMobileViewport],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (
+        mobileCutLayerRafRef.current !== null &&
+        typeof window !== "undefined"
+      ) {
+        window.cancelAnimationFrame(mobileCutLayerRafRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSimpleUiMode || !isMobileViewport || !mobilePrecisionOverlay) {
+      return undefined;
+    }
+
+    const animationId = window.requestAnimationFrame(() => {
+      const loupeCanvas = mobileLoupeCanvasRef.current;
+      const imageCanvas = imageCanvasRef.current;
+      const overlayCanvas = overlayCanvasRef.current;
+      if (!loupeCanvas || !imageCanvas || !overlayCanvas) return;
+
+      const ratio = window.devicePixelRatio || 1;
+      const loupeSize = 96;
+      const cropSize = 58;
+      const targetSize = Math.round(loupeSize * ratio);
+      const cropPixels = Math.round(cropSize * ratio);
+      if (loupeCanvas.width !== targetSize) {
+        loupeCanvas.width = targetSize;
+      }
+      if (loupeCanvas.height !== targetSize) {
+        loupeCanvas.height = targetSize;
+      }
+      loupeCanvas.style.width = `${loupeSize}px`;
+      loupeCanvas.style.height = `${loupeSize}px`;
+
+      const context = loupeCanvas.getContext("2d");
+      if (!context) return;
+
+      const maxSourceX = Math.max(0, imageCanvas.width - cropPixels);
+      const maxSourceY = Math.max(0, imageCanvas.height - cropPixels);
+      const sourceX = Math.round(
+        clamp(
+          mobilePrecisionOverlay.screenX * ratio - cropPixels / 2,
+          0,
+          maxSourceX,
+        ),
+      );
+      const sourceY = Math.round(
+        clamp(
+          mobilePrecisionOverlay.screenY * ratio - cropPixels / 2,
+          0,
+          maxSourceY,
+        ),
+      );
+
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, targetSize, targetSize);
+      context.fillStyle = "#0f172a";
+      context.fillRect(0, 0, targetSize, targetSize);
+      context.drawImage(
+        imageCanvas,
+        sourceX,
+        sourceY,
+        cropPixels,
+        cropPixels,
+        0,
+        0,
+        targetSize,
+        targetSize,
+      );
+      context.drawImage(
+        overlayCanvas,
+        sourceX,
+        sourceY,
+        cropPixels,
+        cropPixels,
+        0,
+        0,
+        targetSize,
+        targetSize,
+      );
+    });
+
+    return () => window.cancelAnimationFrame(animationId);
+  }, [
+    isMobileViewport,
+    isSimpleUiMode,
+    mobilePrecisionOverlay,
+    viewport.height,
+    viewport.width,
+  ]);
+
   const updateAngleById = useCallback((angleId, updater) => {
     setAngles((prev) =>
       prev.map((item) => {
@@ -4022,6 +4185,262 @@ export default function XrayCalibrationWorkspace({
       }),
     );
   }, []);
+
+  const nudgeMobileActiveTarget = useCallback(
+    (deltaX, deltaY) => {
+      if (!image) return;
+
+      const dx = deltaX / Math.max(view.scale, 0.01);
+      const dy = deltaY / Math.max(view.scale, 0.01);
+
+      if (selectedAnnotation) {
+        updateAnnotationById(selectedAnnotation.id, {
+          x: clamp(selectedAnnotation.x + dx, 0, modelWidth),
+          y: clamp(selectedAnnotation.y + dy, 0, modelHeight),
+        });
+        return;
+      }
+
+      if (
+        selectedCutLayer &&
+        selectedCutLayer.kind === "free-line" &&
+        selectedFreeLinePointIndex !== null
+      ) {
+        scheduleCutLayersUpdate((prev) =>
+          prev.map((layer) => {
+            if (layer.id !== selectedCutLayer.id || layer.kind !== "free-line") {
+              return layer;
+            }
+            const vertex = getFreeLineVertexPoints(layer).find(
+              (point) => point.pointIndex === selectedFreeLinePointIndex,
+            );
+            if (!vertex) return layer;
+            const nextMaskPoint = toLayerMaskPoint(
+              { x: vertex.x + dx, y: vertex.y + dy },
+              layer,
+              { clampToBounds: false },
+            );
+            const nextMaskPoints = Array.isArray(layer.maskPoints)
+              ? layer.maskPoints.map((pointItem, index) =>
+                  index === selectedFreeLinePointIndex
+                    ? { ...pointItem, x: nextMaskPoint.x, y: nextMaskPoint.y }
+                    : pointItem,
+                )
+              : [];
+            return normalizeFreeLineLayerBounds({
+              ...layer,
+              maskPoints: nextMaskPoints,
+            });
+          }),
+        );
+        return;
+      }
+
+      if (selectedCutLayer) {
+        updateLayerById(selectedCutLayer.id, {
+          centerX: Number(selectedCutLayer.centerX || 0) + dx,
+          centerY: Number(selectedCutLayer.centerY || 0) + dy,
+        });
+        return;
+      }
+
+      if (mobileHandleAssist && selectedLine) {
+        setLines((prev) =>
+          prev.map((line) => {
+            if (line.id !== selectedLine.id) return line;
+            if (mobileHandleAssist.handleKey === "start") {
+              return { ...line, x1: line.x1 + dx, y1: line.y1 + dy };
+            }
+            return { ...line, x2: line.x2 + dx, y2: line.y2 + dy };
+          }),
+        );
+        return;
+      }
+
+      if (selectedLine) {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === selectedLine.id
+              ? {
+                  ...line,
+                  x1: line.x1 + dx,
+                  y1: line.y1 + dy,
+                  x2: line.x2 + dx,
+                  y2: line.y2 + dy,
+                }
+              : line,
+          ),
+        );
+        return;
+      }
+
+      if (mobileAngleHandleAssist && selectedAngle) {
+        updateAngleById(selectedAngle.id, (item) => ({
+          ...item,
+          [mobileAngleHandleAssist.handleKey]: {
+            x: item[mobileAngleHandleAssist.handleKey].x + dx,
+            y: item[mobileAngleHandleAssist.handleKey].y + dy,
+          },
+        }));
+        return;
+      }
+
+      if (selectedAngle) {
+        updateAngleById(selectedAngle.id, (item) => ({
+          ...item,
+          p2: { x: item.p2.x + dx, y: item.p2.y + dy },
+        }));
+        return;
+      }
+
+      if (selectedCircle) {
+        setCircles((prev) =>
+          prev.map((circle) =>
+            circle.id === selectedCircle.id
+              ? { ...circle, cx: circle.cx + dx, cy: circle.cy + dy }
+              : circle,
+          ),
+        );
+        return;
+      }
+
+      if (mobileHkaHandleAssist && selectedHka) {
+        updateHkaById(selectedHka.id, (item) => {
+          const nextItem = {
+            ...item,
+            [mobileHkaHandleAssist.handleKey]: {
+              x: item[mobileHkaHandleAssist.handleKey].x + dx,
+              y: item[mobileHkaHandleAssist.handleKey].y + dy,
+            },
+          };
+          if (nextItem.mode === "full") {
+            nextItem.direction = inferHkaDirectionFromPoints(
+              nextItem.hip,
+              nextItem.knee,
+              nextItem.ankle,
+              nextItem.side,
+              nextItem.direction || "varus",
+            );
+          }
+          return nextItem;
+        });
+        return;
+      }
+
+      if (selectedHka) {
+        const primaryKey = selectedHka.mode === "full" ? "knee" : "femoralNotch";
+        updateHkaById(selectedHka.id, (item) => {
+          if (!item[primaryKey]) return item;
+          const nextItem = {
+            ...item,
+            [primaryKey]: {
+              x: item[primaryKey].x + dx,
+              y: item[primaryKey].y + dy,
+            },
+          };
+          if (nextItem.mode === "full") {
+            nextItem.direction = inferHkaDirectionFromPoints(
+              nextItem.hip,
+              nextItem.knee,
+              nextItem.ankle,
+              nextItem.side,
+              nextItem.direction || "varus",
+            );
+          }
+          return nextItem;
+        });
+        return;
+      }
+
+      if (mobilePlanningGuideHandleAssist && selectedPlanningGuide) {
+        setPlanningGuides((prev) =>
+          prev.map((guide) => {
+            if (guide.id !== selectedPlanningGuide.id) return guide;
+            if (mobilePlanningGuideHandleAssist.handleKey === "start") {
+              return {
+                ...guide,
+                anchorStart: {
+                  x: guide.anchorStart.x + dx,
+                  y: guide.anchorStart.y + dy,
+                },
+              };
+            }
+            return {
+              ...guide,
+              anchorEnd: {
+                x: guide.anchorEnd.x + dx,
+                y: guide.anchorEnd.y + dy,
+              },
+            };
+          }),
+        );
+        return;
+      }
+
+      if (selectedPlanningGuide) {
+        setPlanningGuides((prev) =>
+          prev.map((guide) =>
+            guide.id === selectedPlanningGuide.id
+              ? {
+                  ...guide,
+                  anchorStart: {
+                    x: guide.anchorStart.x + dx,
+                    y: guide.anchorStart.y + dy,
+                  },
+                  anchorEnd: {
+                    x: guide.anchorEnd.x + dx,
+                    y: guide.anchorEnd.y + dy,
+                  },
+                }
+              : guide,
+          ),
+        );
+        return;
+      }
+
+      setNotice("Pilih titik, line, HKA, guide, anotasi, atau layer dulu.");
+    },
+    [
+      image,
+      mobileAngleHandleAssist,
+      mobileHandleAssist,
+      mobileHkaHandleAssist,
+      mobilePlanningGuideHandleAssist,
+      modelHeight,
+      modelWidth,
+      selectedAngle,
+      selectedAnnotation,
+      selectedCircle,
+      selectedCutLayer,
+      selectedFreeLinePointIndex,
+      selectedHka,
+      selectedLine,
+      selectedPlanningGuide,
+      updateAngleById,
+      updateAnnotationById,
+      updateHkaById,
+      updateLayerById,
+      view.scale,
+    ],
+  );
+
+  const rotateSelectedLayerBy = useCallback(
+    (deltaDegrees) => {
+      if (!selectedCutLayer) {
+        setNotice("Pilih layer dulu untuk rotasi.");
+        return;
+      }
+      if (selectedCutLayer.lockScale) {
+        setNotice("Layer terkunci. Buka Lock dulu untuk rotasi.");
+        return;
+      }
+      updateLayerById(selectedCutLayer.id, (layer) => ({
+        ...layer,
+        rotation: normalizeRotationDegrees(Number(layer.rotation || 0) + deltaDegrees),
+      }));
+    },
+    [selectedCutLayer, updateLayerById],
+  );
 
   const updateHkaSideById = useCallback(
     (hkaId, nextSide) => {
@@ -5115,6 +5534,109 @@ export default function XrayCalibrationWorkspace({
       viewport.height,
       viewport.width,
     ],
+  );
+
+  const updateMobilePrecisionOverlay = useCallback(
+    (screenPoint, imagePoint, label = "Edit") => {
+      if (!isSimpleUiMode || !isMobileViewport || !screenPoint || !imagePoint) {
+        return;
+      }
+      setMobilePrecisionOverlay({
+        screenX: screenPoint.x,
+        screenY: screenPoint.y,
+        imageX: imagePoint.x,
+        imageY: imagePoint.y,
+        label,
+      });
+    },
+    [isMobileViewport, isSimpleUiMode],
+  );
+
+  const beginMobilePrecisionEdit = useCallback(
+    (screenPoint, imagePoint, label = "Edit") => {
+      if (!isSimpleUiMode || !isMobileViewport || !screenPoint || !imagePoint) {
+        return;
+      }
+
+      updateMobilePrecisionOverlay(screenPoint, imagePoint, label);
+      if (!mobilePrecisionPreviousViewRef.current) {
+        mobilePrecisionPreviousViewRef.current = view;
+      }
+
+      const nextScale = clamp(
+        Math.max(view.scale, MOBILE_PRECISION_AUTO_ZOOM_SCALE),
+        MIN_SCALE,
+        MAX_SCALE,
+      );
+      if (nextScale <= view.scale + 0.02) return;
+
+      setView((prev) =>
+        clampViewToViewport(
+          {
+            scale: nextScale,
+            panX: screenPoint.x - imagePoint.x * nextScale,
+            panY: screenPoint.y - imagePoint.y * nextScale,
+          },
+          { relaxed: true },
+        ),
+      );
+    },
+    [
+      clampViewToViewport,
+      isMobileViewport,
+      isSimpleUiMode,
+      updateMobilePrecisionOverlay,
+      view,
+    ],
+  );
+
+  const restoreMobilePrecisionView = useCallback(() => {
+    if (mobilePrecisionPreviousViewRef.current) {
+      setView((prev) =>
+        clampViewToViewport(mobilePrecisionPreviousViewRef.current || prev),
+      );
+      mobilePrecisionPreviousViewRef.current = null;
+    }
+    setMobilePrecisionOverlay(null);
+  }, [clampViewToViewport]);
+
+  const resetCanvasInteractionState = useCallback(
+    (message = "Canvas di-unlock. State drag/rotate/scale dan selection direset.") => {
+      if (
+        overlayCanvasRef.current &&
+        activePointerIdRef.current !== null &&
+        overlayCanvasRef.current.hasPointerCapture?.(activePointerIdRef.current)
+      ) {
+        try {
+          overlayCanvasRef.current.releasePointerCapture(activePointerIdRef.current);
+        } catch {
+          // ignore stale pointer capture
+        }
+      }
+      interactionRef.current = { mode: null, startX: 0, startY: 0 };
+      interactionStartedAtRef.current = 0;
+      interactionCanvasRectRef.current = null;
+      activePointerIdRef.current = null;
+      mobileLineTapRef.current = {
+        targetType: null,
+        lineId: null,
+        handleKey: null,
+        time: 0,
+      };
+      setHistoryPaused(false);
+      setDraftLine(null);
+      setDraftCirclePoints([]);
+      setDraftAnglePoints([]);
+      setDraftHkaPoints([]);
+      setGuideBuilderPreviewPoint(null);
+      activeSnapTargetRef.current = null;
+      activeSnapTargetSignatureRef.current = getSnapTargetSignature(null);
+      setActiveSnapTarget(null);
+      clearActiveCanvasSelection();
+      restoreMobilePrecisionView();
+      setNotice(message);
+    },
+    [clearActiveCanvasSelection, restoreMobilePrecisionView],
   );
 
   const scrollToPanel = useCallback((panelRef) => {
@@ -6595,7 +7117,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestLineId = useCallback(
     (imagePoint) => {
-      const thresholdInImage = (isCoarsePointer ? 18 : 8) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 8) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -6614,7 +7137,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestPlanningGuideId = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 10) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -6633,12 +7157,13 @@ export default function XrayCalibrationWorkspace({
 
       return pickedId;
     },
-    [planningGuides, view.scale],
+    [isCoarsePointer, planningGuides, view.scale],
   );
 
   const findClosestPlanningGuideHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
       let pickedHandle = null;
       let minDistance = Infinity;
 
@@ -6662,7 +7187,7 @@ export default function XrayCalibrationWorkspace({
 
       return pickedHandle;
     },
-    [planningGuides, view.scale],
+    [isCoarsePointer, planningGuides, view.scale],
   );
 
   const findPlanningGuideLabelByPoint = useCallback(
@@ -6739,7 +7264,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = (isCoarsePointer ? 24 : 10) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
       let pickedHandle = null;
       let minDistance = Infinity;
 
@@ -6897,7 +7423,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestAngleHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = (isCoarsePointer ? 22 : 10) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
       let picked = null;
       let minDistance = Infinity;
 
@@ -6925,7 +7452,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestAngleId = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 10) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -6951,13 +7479,15 @@ export default function XrayCalibrationWorkspace({
 
       return pickedId;
     },
-    [angles, view.scale],
+    [angles, isCoarsePointer, view.scale],
   );
 
   const findClosestCircleHandle = useCallback(
     (imagePoint) => {
-      const centerThreshold = 18 / view.scale;
-      const radiusThreshold = 16 / view.scale;
+      const centerThreshold =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 18) / view.scale;
+      const radiusThreshold =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 16) / view.scale;
 
       for (let i = circles.length - 1; i >= 0; i -= 1) {
         const circle = circles[i];
@@ -6978,12 +7508,13 @@ export default function XrayCalibrationWorkspace({
       }
       return null;
     },
-    [circles, view.scale],
+    [circles, isCoarsePointer, view.scale],
   );
 
   const findClosestCircleId = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 14 / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 14) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -7004,7 +7535,7 @@ export default function XrayCalibrationWorkspace({
 
       return pickedId;
     },
-    [circles, view.scale],
+    [circles, isCoarsePointer, view.scale],
   );
 
   const findCircleLabelByPoint = useCallback(
@@ -7036,7 +7567,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestHkaHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = (isCoarsePointer ? 22 : 10) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
       let picked = null;
       let minDistance = Infinity;
 
@@ -7065,7 +7597,8 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestHkaId = useCallback(
     (imagePoint) => {
-      const thresholdInImage = 10 / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 10) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -7119,7 +7652,7 @@ export default function XrayCalibrationWorkspace({
 
       return pickedId;
     },
-    [hkaSets, view.scale],
+    [hkaSets, isCoarsePointer, view.scale],
   );
 
   const findFreeLinePointHandle = useCallback(
@@ -7127,7 +7660,8 @@ export default function XrayCalibrationWorkspace({
       if (!selectedCutLayer || selectedCutLayer.kind !== "free-line") {
         return null;
       }
-      const thresholdInImage = (isCoarsePointer ? 24 : 12) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 12) / view.scale;
       let picked = null;
       let minDistance = Infinity;
 
@@ -7160,7 +7694,8 @@ export default function XrayCalibrationWorkspace({
         return null;
       }
 
-      const thresholdInImage = (isCoarsePointer ? 26 : 13) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 13) / view.scale;
       let picked = null;
       let minDistance = Infinity;
 
@@ -7351,7 +7886,8 @@ export default function XrayCalibrationWorkspace({
       }
 
       const thresholdInImage =
-        (thresholdPx ?? (isCoarsePointer ? 22 : 12)) / view.scale;
+        (thresholdPx ?? (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 12)) /
+        view.scale;
       let nearest = null;
       let nearestDistance = Infinity;
 
@@ -7499,7 +8035,8 @@ export default function XrayCalibrationWorkspace({
 
   const findCutLayerHandle = useCallback(
     (imagePoint) => {
-      const thresholdInImage = (isCoarsePointer ? 22 : 14) / view.scale;
+      const thresholdInImage =
+        (isCoarsePointer ? MOBILE_ROTATE_HANDLE_TARGET_SCREEN : 14) / view.scale;
 
       for (let i = cutLayers.length - 1; i >= 0; i -= 1) {
         const layer = cutLayers[i];
@@ -9939,6 +10476,7 @@ export default function XrayCalibrationWorkspace({
       }
       interactionCanvasRectRef.current =
         overlayCanvasRef.current?.getBoundingClientRect() || null;
+      interactionStartedAtRef.current = Date.now();
       const point = getLocalPoint(event);
       const imagePoint = screenToImagePoint(point.x, point.y);
       const boundedPoint = clampToImageBounds(imagePoint);
@@ -9963,6 +10501,23 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      if (
+        isSimpleUiMode &&
+        isMobileViewport &&
+        isTouchLikePointer &&
+        mobileCanvasMode === "pan" &&
+        tool === "pan"
+      ) {
+        interactionRef.current = {
+          mode: "pan",
+          startX: point.x,
+          startY: point.y,
+          startPanX: view.panX,
+          startPanY: view.panY,
+        };
+        return;
+      }
 
       if (tool === "annotation") {
         addAnnotationAtPoint(boundedPoint);
@@ -11626,10 +12181,12 @@ export default function XrayCalibrationWorkspace({
       hkaSide,
       isCoarsePointer,
       isMobileViewport,
+      isSimpleUiMode,
       isLineLocked,
       isRepeatedMobileLineTap,
       cutLayers,
       lines,
+      mobileCanvasMode,
       planningGuides,
       linePreset,
       resolveSnappedImagePoint,
@@ -11762,9 +12319,22 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      const activeInteractionMode = interactionRef.current.mode;
+      if (
+        activeInteractionMode &&
+        isMobilePrecisionInteractionMode(activeInteractionMode)
+      ) {
+        const precisionImagePoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        const precisionLabel = getMobileInteractionLabel(activeInteractionMode);
+        beginMobilePrecisionEdit(point, precisionImagePoint, precisionLabel);
+        updateMobilePrecisionOverlay(point, precisionImagePoint, precisionLabel);
+      }
+
       event.preventDefault();
 
-      if (interactionRef.current.mode === "pan") {
+      if (activeInteractionMode === "pan") {
         const dx = point.x - interactionRef.current.startX;
         const dy = point.y - interactionRef.current.startY;
         setView((prev) =>
@@ -11844,7 +12414,7 @@ export default function XrayCalibrationWorkspace({
           screenToImagePoint(point.x, point.y),
         );
         const { layerId, pointIndex } = interactionRef.current;
-        setCutLayers((prev) =>
+        scheduleCutLayersUpdate((prev) =>
           prev.map((layer) => {
             if (layer.id !== layerId || layer.kind !== "free-line") {
               return layer;
@@ -11893,7 +12463,7 @@ export default function XrayCalibrationWorkspace({
           screenToImagePoint(point.x, point.y),
         );
         const { layerId, pointIndex, handleKey } = interactionRef.current;
-        setCutLayers((prev) =>
+        scheduleCutLayersUpdate((prev) =>
           prev.map((layer) => {
             if (layer.id !== layerId || layer.kind !== "free-line") {
               return layer;
@@ -11954,7 +12524,7 @@ export default function XrayCalibrationWorkspace({
         const dx = nextImagePoint.x - startImageX;
         const dy = nextImagePoint.y - startImageY;
 
-        setCutLayers((prev) =>
+        scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layerIds.includes(layer.id)
               ? {
@@ -12175,7 +12745,7 @@ export default function XrayCalibrationWorkspace({
           nextFlipY = crossedY ? !startFlipY : startFlipY;
         }
 
-        setCutLayers((prev) =>
+        scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layer.id === layerId
               ? layer.lockScale
@@ -12215,8 +12785,22 @@ export default function XrayCalibrationWorkspace({
           startPointerAngle,
           nextPointerAngle,
         );
-        const nextRotation = normalizeRotationDegrees(startRotation + deltaDeg);
-        setCutLayers((prev) =>
+        const nextRotation = Math.round(
+          normalizeRotationDegrees(startRotation + deltaDeg) * 10,
+        ) / 10;
+        if (
+          Number.isFinite(interactionRef.current.lastRotation) &&
+          Math.abs(
+            getSignedAngleDeltaDegrees(
+              interactionRef.current.lastRotation,
+              nextRotation,
+            ),
+          ) < 0.15
+        ) {
+          return;
+        }
+        interactionRef.current.lastRotation = nextRotation;
+        scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layer.id === layerId
               ? layer.lockScale
@@ -12486,6 +13070,7 @@ export default function XrayCalibrationWorkspace({
       clampToImageBounds,
       circles,
       clearSnapPreview,
+      beginMobilePrecisionEdit,
       cutLayers,
       draftCut,
       draftFreeLine,
@@ -12506,9 +13091,11 @@ export default function XrayCalibrationWorkspace({
       modelHeight,
       modelWidth,
       resolveSnapWithPreview,
+      scheduleCutLayersUpdate,
       setPlanningGuides,
       screenToImagePoint,
       tool,
+      updateMobilePrecisionOverlay,
       view.scale,
     ],
   );
@@ -12613,6 +13200,7 @@ export default function XrayCalibrationWorkspace({
     }
 
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
+    interactionStartedAtRef.current = 0;
     interactionCanvasRectRef.current = null;
     if (
       overlayCanvasRef.current &&
@@ -12632,6 +13220,7 @@ export default function XrayCalibrationWorkspace({
     setHistoryPaused(false);
     setGuideBuilderPreviewPoint(null);
     clearSnapPreview();
+    restoreMobilePrecisionView();
   }, [
     clampViewToViewport,
     clearSnapPreview,
@@ -12644,6 +13233,7 @@ export default function XrayCalibrationWorkspace({
     hasCalibration,
     isCoarsePointer,
     resetMobileLineTapTarget,
+    restoreMobilePrecisionView,
     setGuideBuilderPreviewPoint,
     shouldUseMobileOneShotTool,
   ]);
@@ -12698,6 +13288,30 @@ export default function XrayCalibrationWorkspace({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [handlePointerUp]);
+
+  useEffect(() => {
+    if (!isSimpleUiMode || !isMobileViewport) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      const currentMode = interactionRef.current.mode;
+      if (!currentMode) return;
+      const activePointerId = activePointerIdRef.current;
+      const canvas = overlayCanvasRef.current;
+      const hasCapture =
+        activePointerId !== null && canvas?.hasPointerCapture?.(activePointerId);
+      const elapsedMs = interactionStartedAtRef.current
+        ? Date.now() - interactionStartedAtRef.current
+        : 0;
+
+      if (!hasCapture || elapsedMs > 20000) {
+        resetCanvasInteractionState(
+          "Canvas otomatis di-unlock karena pointer interaction terlihat macet.",
+        );
+      }
+    }, 1200);
+
+    return () => window.clearInterval(intervalId);
+  }, [isMobileViewport, isSimpleUiMode, resetCanvasInteractionState]);
 
   const handleWheel = useCallback(
     (event) => {
@@ -14923,11 +15537,31 @@ export default function XrayCalibrationWorkspace({
                 ? "Axis"
                 : tool === "guideBuilder"
                   ? "Guide"
-            : tool === "angle"
-              ? "Angle"
-                : tool === "circle"
-                ? "Circle"
-                : "HKA";
+                  : tool === "angle"
+                    ? "Angle"
+                    : tool === "circle"
+                      ? "Circle"
+                      : "HKA";
+  const hasMobileFineAdjustmentTarget = Boolean(
+    selectedAnnotation ||
+      selectedCutLayer ||
+      selectedLine ||
+      selectedAngle ||
+      selectedCircle ||
+      selectedHka ||
+      selectedPlanningGuide,
+  );
+  const selectedLayerRotationValue = selectedCutLayer
+    ? Math.round(normalizeRotationDegrees(Number(selectedCutLayer.rotation || 0)))
+    : 0;
+  const hkaWizardDefinition = getHkaModeDefinition(hkaInputMode);
+  const hkaWizardNextPoint =
+    tool === "hkaAuto"
+      ? hkaWizardDefinition.points[draftHkaPoints.length] || null
+      : null;
+  const selectedHkaMobileResult = selectedHka
+    ? getHkaMeasurementResult(selectedHka)
+    : null;
   const activeOrthoBuilderMeta =
     tool === "centerFinder"
       ? {
@@ -15060,7 +15694,7 @@ export default function XrayCalibrationWorkspace({
   const mobileNavigationTabs = [
     {
       id: "setup",
-      label: "Setup",
+      label: "Quick",
       onClick: () => {
         if (isSimpleUiMode) {
           setSimpleMobilePanel((prev) => (prev === "quick" ? null : "quick"));
@@ -15075,7 +15709,7 @@ export default function XrayCalibrationWorkspace({
     },
     {
       id: "tool",
-      label: "Tool",
+      label: "Measure",
       onClick: () => {
         if (isSimpleUiMode) {
           setSimpleMobilePanel((prev) => (prev === "tools" ? null : "tools"));
@@ -15090,8 +15724,24 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "tool",
     },
     {
+      id: "implant",
+      label: "Implant",
+      onClick: () => {
+        if (isSimpleUiMode) {
+          setSimpleMobilePanel((prev) =>
+            prev === "implant" ? null : "implant",
+          );
+          return;
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("tool");
+        setMobileControlsOpen(true);
+      },
+      active: isSimpleUiMode ? simpleMobilePanel === "implant" : false,
+    },
+    {
       id: "measure",
-      label: "Measure",
+      label: "Calib",
       onClick: () => {
         if (isSimpleUiMode) {
           setSimpleMobilePanel(null);
@@ -15140,7 +15790,13 @@ export default function XrayCalibrationWorkspace({
           : "tools";
 
   return (
-    <div className="flex min-h-[100dvh] w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 sm:py-2 lg:px-3">
+    <div
+      className={`flex w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 lg:px-3 ${
+        isSimpleUiMode
+          ? "h-[100dvh] overflow-hidden sm:py-0"
+          : "min-h-[100dvh] sm:py-2"
+      }`}
+    >
       <ModalStarter
         open={showStartupCalibrationAlert}
         onExit={goToCalibrationPanel}
@@ -18293,7 +18949,7 @@ export default function XrayCalibrationWorkspace({
                 className={`${selectedAnnotation ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex cursor-pointer list-none items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden`}
               >
                 <Icon name="annotation" className="h-3.5 w-3.5" />
-                <span>Anotasi</span>
+                {/* <span>Anotasi</span> */}
                 <span className="max-w-[96px] truncate text-[10px] font-bold text-orange-700">
                   {selectedAnnotation
                     ? selectedAnnotation.text || `#${selectedAnnotation.id}`
@@ -23579,7 +24235,7 @@ export default function XrayCalibrationWorkspace({
                       }
                       canCreateLayer={Boolean(image && modelWidth && modelHeight)}
                       onGuide={() => setSimpleGuideModalOpen(true)}
-                      onMove={() => handleToolChange("pan")}
+	                      onMove={() => handleToolChange("pan")}
                       onOpenTka={() => openSimplePlanningModal("tka")}
                       onOpenHip={() => openSimplePlanningModal("hip")}
                       onHistory={undoHistory}
@@ -23673,11 +24329,11 @@ export default function XrayCalibrationWorkspace({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 16, scale: 0.98 }}
                     transition={MOBILE_PANEL_TRANSITION}
-                    className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+82px)] z-40 lg:hidden"
+	                    className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+142px)] z-40 lg:hidden"
                   >
                     {simpleMobilePanel === "quick" ? (
                       <QuickPanel
-                        className="mx-auto max-h-[min(66vh,560px)] overflow-y-auto backdrop-blur-xl"
+	                        className="mx-auto max-h-[min(52vh,460px)] overflow-y-auto backdrop-blur-xl"
                         statusLabel={hasCalibration ? "Ready" : "Calib"}
                         workflowStep={workflowStep}
                         workflowMax={4}
@@ -23701,10 +24357,11 @@ export default function XrayCalibrationWorkspace({
                           setSimpleMobilePanel(null);
                           setSimpleGuideModalOpen(true);
                         }}
-                        onMove={() => {
-                          setSimpleMobilePanel(null);
-                          handleToolChange("pan");
-                        }}
+	                        onMove={() => {
+	                          setSimpleMobilePanel(null);
+	                          setMobileCanvasMode("edit");
+	                          handleToolChange("pan");
+	                        }}
                         onOpenTka={() => {
                           setSimpleMobilePanel(null);
                           openSimplePlanningModal("tka");
@@ -23736,16 +24393,17 @@ export default function XrayCalibrationWorkspace({
                       />
                     ) : simpleMobilePanel === "tools" ? (
                       <PanelActions
-                        className="mx-auto max-h-[min(66vh,560px)] overflow-y-auto backdrop-blur-xl"
+	                        className="mx-auto max-h-[min(52vh,460px)] overflow-y-auto backdrop-blur-xl"
                         tools={simpleToolMenuItems}
                         activeTool={tool}
                         activeFreeLineMode={freeLineMode}
                         onMinimize={() => setSimpleMobilePanel(null)}
-                        onSelectTool={(item) => {
-                          setSimpleMobilePanel(null);
-                          if (item.freeLineMode) {
-                            activateFreeLineMode(item.freeLineMode);
-                            return;
+	                        onSelectTool={(item) => {
+	                          setSimpleMobilePanel(null);
+	                          setMobileCanvasMode("edit");
+	                          if (item.freeLineMode) {
+	                            activateFreeLineMode(item.freeLineMode);
+	                            return;
                           }
                           handleToolChange(item.key);
                         }}
@@ -23760,6 +24418,79 @@ export default function XrayCalibrationWorkspace({
                         canUndo={historyState.undo > 0}
                         canRedo={historyState.redo > 0}
                       />
+                    ) : simpleMobilePanel === "implant" ? (
+                      <div className="mx-auto max-h-[min(52vh,460px)] w-[min(92vw,380px)] overflow-y-auto rounded-[30px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.34),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
+                          <div>
+                            <h2 className="text-xs font-black tracking-wider uppercase">
+                              Implant Lokal
+                            </h2>
+                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
+                              Template overlay
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSimpleMobilePanel(null)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                            aria-label="Tutup implant mobile"
+                            title="Tutup"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl border border-white/60 bg-[#e9eef5] p-1.5 shadow-[inset_2px_2px_5px_rgba(148,163,184,0.24),inset_-2px_-2px_5px_rgba(255,255,255,0.82)]">
+                          {LOCAL_IMPLANT_LIBRARY_TYPES.map((type) => (
+                            <button
+                              key={`mobile-implant-type-${type}`}
+                              type="button"
+                              onClick={() => setSelectedImplantType(type)}
+                              className={`min-h-11 rounded-xl px-2 text-[10px] font-black uppercase ${
+                                selectedImplantType === type
+                                  ? "bg-slate-900 text-white shadow-[inset_2px_2px_5px_rgba(0,0,0,0.28)]"
+                                  : "bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.82)]"
+                              }`}
+                            >
+                              {type}
+                            </button>
+                          ))}
+                        </div>
+                        <select
+                          value={selectedImplantLibraryId ?? ""}
+                          onChange={(event) =>
+                            setSelectedImplantLibraryId(event.target.value)
+                          }
+                          className="mt-3 w-full rounded-2xl border border-white/80 bg-[#edf1f6] px-3 py-3 text-xs font-bold text-slate-700 shadow-[inset_2px_2px_5px_rgba(148,163,184,0.28),inset_-2px_-2px_5px_rgba(255,255,255,0.86)] outline-none"
+                        >
+                          {LOCAL_IMPLANT_LIBRARY.filter(
+                            (item) => item.type === selectedImplantType,
+                          ).map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="mt-3 rounded-2xl border border-white/60 bg-white/40 px-3 py-2 text-[10px] font-semibold leading-4 text-slate-600">
+                          {implantLibraryScaleInstruction}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSimpleMobilePanel(null);
+                            useSelectedImplantLibraryAsLayer();
+                            setMobileCanvasMode("edit");
+                          }}
+                          disabled={
+                            !image ||
+                            !modelWidth ||
+                            !modelHeight ||
+                            !selectedImplantLibraryItem
+                          }
+                          className="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl border border-emerald-300 bg-emerald-200/80 text-xs font-black text-emerald-800 shadow-[3px_3px_8px_rgba(16,185,129,0.14),-3px_-3px_8px_rgba(255,255,255,0.78)] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          Pakai Implant
+                        </button>
+                      </div>
                     ) : (
                       <div className="mx-auto w-[min(92vw,360px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.34),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                         <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
@@ -23815,9 +24546,10 @@ export default function XrayCalibrationWorkspace({
                           <button
                             type="button"
                             onClick={() => {
-                              setSimpleMobilePanel(null);
-                              handleToolChange("hkaAuto");
-                            }}
+	                              setSimpleMobilePanel(null);
+	                              setMobileCanvasMode("edit");
+	                              handleToolChange("hkaAuto");
+	                            }}
                             className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
                           >
                             HKA
@@ -23825,23 +24557,187 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       </div>
                     )}
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
+	                  </motion.div>
+	                ) : null}
+	              </AnimatePresence>
+              {isSimpleUiMode && isMobileViewport && !image ? (
+                <div className="pointer-events-auto absolute top-3 left-3 z-30 max-w-[calc(100vw-1.5rem)] rounded-[24px] border border-white/75 bg-[#eef2f7]/95 px-3 py-3 text-slate-700 shadow-[3px_3px_10px_rgba(148,163,184,0.26),-3px_-3px_10px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    Alur cepat
+                  </div>
+                  <div className="mt-1 text-xs font-extrabold text-slate-800">
+                    {"Upload -> Kalibrasi -> Pengukuran -> Templating -> Simpan"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => mainUploadInputRef.current?.click()}
+                    className="mt-2 min-h-11 rounded-2xl border border-white/70 bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
+                  >
+                    Upload X-ray
+                  </button>
+                </div>
+              ) : null}
+
+              {isSimpleUiMode &&
+              isMobileViewport &&
+              (tool === "hkaAuto" || selectedHkaMobileResult) ? (
+                <div className="pointer-events-none absolute top-3 right-3 left-3 z-30 flex justify-center">
+                  <div className="pointer-events-auto max-w-[min(92vw,420px)] rounded-[22px] border border-cyan-200/80 bg-[#eef2f7]/94 px-3 py-2 text-slate-800 shadow-[3px_3px_10px_rgba(34,211,238,0.16),-3px_-3px_10px_rgba(255,255,255,0.8)] backdrop-blur-xl">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[9px] font-black tracking-widest text-cyan-700 uppercase">
+                          HKA Wizard
+                        </div>
+                        <div className="truncate text-xs font-extrabold text-slate-800">
+                          {hkaWizardNextPoint
+                            ? `Pilih ${hkaWizardNextPoint.promptLabel}`
+                            : selectedHkaMobileResult?.absoluteDeviation !== null
+                              ? selectedHkaMobileResult.label
+                              : getHkaDraftNotice(hkaInputMode, draftHkaPoints.length)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileCanvasMode("edit");
+                          handleToolChange("hkaAuto");
+                        }}
+                        className="min-h-10 shrink-0 rounded-2xl border border-white/75 bg-[#eef2f7] px-3 text-[10px] font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.26),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                      >
+                        HKA
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {isSimpleUiMode && isMobileViewport && mobilePrecisionOverlay ? (
+                <div className="pointer-events-none absolute inset-0 z-30">
+                  <div
+                    className="absolute top-0 bottom-0 w-px bg-cyan-300/75"
+                    style={{ left: `${mobilePrecisionOverlay.screenX}px` }}
+                  />
+                  <div
+                    className="absolute right-0 left-0 h-px bg-cyan-300/75"
+                    style={{ top: `${mobilePrecisionOverlay.screenY}px` }}
+                  />
+                  <div
+                    className="absolute flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-cyan-200 bg-[#eef2f7]/80 text-cyan-800 shadow-[4px_4px_14px_rgba(15,23,42,0.22),-4px_-4px_14px_rgba(255,255,255,0.72)] backdrop-blur-md"
+                    style={{
+                      left: `${clamp(mobilePrecisionOverlay.screenX + 18, 12, Math.max(12, viewport.width - 108))}px`,
+                      top: `${clamp(mobilePrecisionOverlay.screenY - 118, 12, Math.max(12, viewport.height - 122))}px`,
+                    }}
+                  >
+                    <canvas
+                      ref={mobileLoupeCanvasRef}
+                      className="absolute inset-0 h-full w-full rounded-full"
+                    />
+                    <div className="absolute top-1/2 right-4 left-4 h-px bg-cyan-500/80" />
+                    <div className="absolute top-4 bottom-4 left-1/2 w-px bg-cyan-500/80" />
+                    <div className="relative rounded-full bg-white/85 px-2 py-1 text-[9px] font-black shadow-sm">
+                      {mobilePrecisionOverlay.label}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {isSimpleUiMode &&
+              isMobileViewport &&
+              hasMobileFineAdjustmentTarget ? (
+                <div className="pointer-events-auto absolute right-2 bottom-[calc(env(safe-area-inset-bottom)+154px)] z-30 rounded-[24px] border border-white/75 bg-[#eef2f7]/95 p-2 text-slate-700 shadow-[3px_3px_10px_rgba(148,163,184,0.26),-3px_-3px_10px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <span />
+                    <button
+                      type="button"
+                      onClick={() => nudgeMobileActiveTarget(0, -MOBILE_FINE_STEP_SCREEN)}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-xs font-black shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                    >
+                      ↑
+                    </button>
+                    <span />
+                    <button
+                      type="button"
+                      onClick={() => nudgeMobileActiveTarget(-MOBILE_FINE_STEP_SCREEN, 0)}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-xs font-black shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => nudgeMobileActiveTarget(0, MOBILE_FINE_STEP_SCREEN)}
+                      onDoubleClick={() => nudgeMobileActiveTarget(0, MOBILE_FINE_STEP_LARGE_SCREEN)}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-xs font-black shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => nudgeMobileActiveTarget(MOBILE_FINE_STEP_SCREEN, 0)}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-xs font-black shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                    >
+                      →
+                    </button>
+                  </div>
+                  {selectedCutLayer ? (
+                    <div className="mt-2 w-[148px] rounded-2xl border border-white/60 bg-white/35 p-2">
+                      <div className="mb-1 flex items-center justify-between text-[9px] font-black text-slate-500">
+                        <span>Rotate</span>
+                        <span>{selectedLayerRotationValue}°</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-180}
+                        max={180}
+                        step={1}
+                        value={selectedLayerRotationValue > 180 ? selectedLayerRotationValue - 360 : selectedLayerRotationValue}
+                        onChange={(event) =>
+                          updateLayerById(selectedCutLayer.id, {
+                            rotation: normalizeRotationDegrees(Number(event.target.value)),
+                          })
+                        }
+                        className="w-full accent-cyan-700"
+                      />
+                      <div className="mt-1 grid grid-cols-4 gap-1">
+                        {[-5, -1, 1, 5].map((delta) => (
+                          <button
+                            key={`mobile-rotate-${delta}`}
+                            type="button"
+                            onClick={() => rotateSelectedLayerBy(delta)}
+                            className="min-h-9 rounded-xl border border-white/60 bg-[#eef2f7] text-[10px] font-black shadow-[1.5px_1.5px_4px_rgba(148,163,184,0.24),-1.5px_-1.5px_4px_rgba(255,255,255,0.78)]"
+                          >
+                            {delta > 0 ? `+${delta}` : delta}°
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <MobileNavigation
-                className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-20 px-2 lg:hidden"
+                className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-20 px-2 lg:hidden"
                 tabs={mobileNavigationTabs}
                 activeTool={mobileNavigationActiveTool}
                 activeToolLabel={`Tool aktif: ${activeToolLabel}`}
+                canvasMode={mobileCanvasMode}
                 onPan={() => {
                   setSimpleMobilePanel(null);
+                  setMobileCanvasMode("pan");
                   handleToolChange("pan");
+                }}
+                onEdit={() => {
+                  setSimpleMobilePanel(null);
+                  setMobileCanvasMode("edit");
+                  handleToolChange("pan");
+                  setNotice("Edit Mode aktif. Tap objek atau titik untuk memilih, lalu geser atau pakai Fine Adjustment.");
                 }}
                 onDraw={() => {
                   setSimpleMobilePanel(null);
+                  setMobileCanvasMode("edit");
                   handleToolChange("draw");
                 }}
                 onTools={() => {
+                  setMobileCanvasMode("edit");
                   if (isSimpleUiMode) {
                     setSimpleMobilePanel((prev) =>
                       prev === "tools" ? null : "tools",
@@ -23852,6 +24748,11 @@ export default function XrayCalibrationWorkspace({
                   setActiveRightPanel("tool");
                   setMobileControlsOpen(true);
                 }}
+                onUndo={undoHistory}
+                onRedo={redoHistory}
+                onUnlock={() => resetCanvasInteractionState()}
+                canUndo={historyState.undo > 0}
+                canRedo={historyState.redo > 0}
               />
               <div
                 className={`absolute top-2 right-2 z-20 flex gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 ${SOFT_FLOAT_SURFACE_CLASS}`}

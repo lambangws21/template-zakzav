@@ -65,15 +65,53 @@ export default function ImagingWorkspaceShell() {
   }, []);
 
   const effectiveWorkspace = isMobileViewport ? "simple" : activeWorkspace;
+  const isSimpleWorkspace = effectiveWorkspace === "simple";
+  const showWorkspaceSwitcher = !isMobileViewport && !isSimpleWorkspace;
 
   const activeWorkspaceInfo = useMemo(
     () => WORKSPACE_OPTIONS.find((item) => item.key === effectiveWorkspace),
     [effectiveWorkspace],
   );
 
+  useEffect(() => {
+    if (!isSimpleWorkspace) return undefined;
+
+    const body = document.body;
+    const root = document.documentElement;
+    const previous = {
+      bodyOverflow: body.style.overflow,
+      bodyOverscrollBehavior: body.style.overscrollBehavior,
+      bodyHeight: body.style.height,
+      rootOverflow: root.style.overflow,
+      rootOverscrollBehavior: root.style.overscrollBehavior,
+      rootHeight: root.style.height,
+    };
+
+    window.scrollTo(0, 0);
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    body.style.height = "100dvh";
+    root.style.overflow = "hidden";
+    root.style.overscrollBehavior = "none";
+    root.style.height = "100%";
+
+    return () => {
+      body.style.overflow = previous.bodyOverflow;
+      body.style.overscrollBehavior = previous.bodyOverscrollBehavior;
+      body.style.height = previous.bodyHeight;
+      root.style.overflow = previous.rootOverflow;
+      root.style.overscrollBehavior = previous.rootOverscrollBehavior;
+      root.style.height = previous.rootHeight;
+    };
+  }, [isSimpleWorkspace]);
+
   return (
-    <div className="min-h-screen w-full">
-      <div className="sticky top-0 z-30 hidden border-b border-slate-200 bg-white/95 backdrop-blur lg:block">
+    <div className={isSimpleWorkspace ? "h-[100dvh] w-full overflow-hidden" : "min-h-screen w-full"}>
+      <div
+        className={`sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur ${
+          showWorkspaceSwitcher ? "hidden lg:block" : "hidden"
+        }`}
+      >
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-3 py-3 sm:px-4 lg:px-6">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {WORKSPACE_OPTIONS.map((workspace) => (
