@@ -5,9 +5,7 @@ import {
   LockOpen,
   MousePointer2,
   PenTool,
-  Redo2,
   SlidersHorizontal,
-  Undo2,
 } from "lucide-react";
 
 const MOBILE_NAVIGATION_STYLES = `
@@ -69,11 +67,7 @@ export default function MobileNavigation({
   onEdit,
   onDraw,
   onTools,
-  onUndo,
-  onRedo,
   onUnlock,
-  canUndo = false,
-  canRedo = false,
 }) {
   const tabColumns = tabs.length > 0 ? tabs.length : 1;
 
@@ -136,22 +130,6 @@ export default function MobileNavigation({
             />
           </div>
           <div className="mobile-nav-tray flex shrink-0 items-center gap-1 rounded-full p-1">
-            <ToolButton
-              active={false}
-              icon={Undo2}
-              label="Undo"
-              onClick={onUndo}
-              disabled={!canUndo}
-              className="w-12 disabled:opacity-35"
-            />
-            <ToolButton
-              active={false}
-              icon={Redo2}
-              label="Redo"
-              onClick={onRedo}
-              disabled={!canRedo}
-              className="w-12 disabled:opacity-35"
-            />
             <ToolButton
               active={false}
               icon={LockOpen}

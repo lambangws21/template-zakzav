@@ -169,11 +169,11 @@ export default function QuickPanel({
 
   return (
     <div
-      className={`w-[min(88vw,320px)] shrink-0 rounded-[36px] p-5 text-slate-800 neu-card ${className}`}
+      className={`w-[min(84vw,320px)] shrink-0 rounded-[36px] p-5 text-slate-800 neu-card ${className}`}
     >
       <style>{QUICK_PANEL_STYLES}</style>
 
-      <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-4">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#eef2f7] text-blue-600 shadow-[3px_3px_8px_#cbd5e1,-3px_-3px_8px_#ffffff]">
             <Sliders className="h-4 w-4" />
@@ -203,9 +203,9 @@ export default function QuickPanel({
         </div>
       </div>
 
-      <div className="mt-5 space-y-2 rounded-2xl border border-white/60 p-3.5 text-xs font-bold text-slate-700 neu-pressed">
+      <div className="mt-2.5 space-y-2 rounded-2xl border border-white/60 p-2.5 text-[11px] font-bold text-slate-700 neu-pressed">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[10px] font-extrabold tracking-wider text-slate-400 uppercase">
+          <span className="text-[9px] font-extrabold tracking-wider text-slate-400 uppercase">
             Step aktif
           </span>
           <span className="rounded-md border border-white bg-white/60 px-2 py-0.5 font-mono text-[11px] text-slate-800">
@@ -293,7 +293,7 @@ export default function QuickPanel({
             HIP
           </QuickButton>
         </div>
-
+      <div className="grid grid-cols-2 gap-3">        
         <QuickButton
           icon={History}
           onClick={onHistory}
@@ -311,6 +311,7 @@ export default function QuickPanel({
         >
           Reset Workspace
         </QuickButton>
+        </div>
       </div>
 
       <div className="mt-5 space-y-4 rounded-[28px] border border-white/40 bg-[#eef2f7] p-4 shadow-[inset_4px_4px_8px_#cbd5e1,inset_-4px_-4px_8px_#ffffff]">
