@@ -81,6 +81,7 @@ import {
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import ImplantLayer from "./ImplantLayer";
 import CalibrationWizard from "./KalibrasiWizzard";
+import LayerManager from "./LayerManager";
 import ModalStarter from "./ModalStarter";
 import MobileNavigation from "./MobileNavigation";
 import PanelActions from "./PanelActions";
@@ -103,6 +104,8 @@ const ANNOTATION_COLOR_OPTIONS = [
   "#facc15",
 ];
 const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
+const A5_PORTRAIT_WIDTH_MM = 148;
+const A5_PORTRAIT_HEIGHT_MM = 210;
 const VIEW_PAN_VISIBLE_MARGIN = 96;
 const DEFAULT_SNAP_SETTINGS = {
   endpoint: true,
@@ -667,7 +670,132 @@ function buildFreeCutLayerFromPoints({
     contrast: 100,
     level: 100,
     lockScale: false,
+    hidden: false,
     maskPoints: normalizedPoints.map((point) => ({
+      x: point.x - width / 2,
+      y: point.y - height / 2,
+    })),
+  };
+}
+
+function buildFreeCutLayerFromLayerPoints({
+  sourceLayer,
+  sourceImage,
+  polygonPoints,
+  layerId,
+  name,
+}) {
+  if (
+    typeof document === "undefined" ||
+    !sourceLayer ||
+    !sourceImage ||
+    !Array.isArray(polygonPoints) ||
+    polygonPoints.length < MIN_FREE_CUT_POINTS
+  ) {
+    return null;
+  }
+
+  const sourceWidth = Math.max(1, Number(sourceLayer.sourceWidth || 0));
+  const sourceHeight = Math.max(1, Number(sourceLayer.sourceHeight || 0));
+  const displaySize = getLayerDisplaySize(sourceLayer);
+  const displayScaleX = Math.max(1, displaySize.width) / sourceWidth;
+  const displayScaleY = Math.max(1, displaySize.height) / sourceHeight;
+
+  const sourcePoints = polygonPoints.map((point) => {
+    const maskPoint = toLayerMaskPoint(point, sourceLayer, {
+      clampToBounds: true,
+    });
+    return {
+      x: clamp(maskPoint.x + sourceWidth / 2, 0, sourceWidth),
+      y: clamp(maskPoint.y + sourceHeight / 2, 0, sourceHeight),
+    };
+  });
+
+  const rawBounds = getPolygonBounds(sourcePoints);
+  if (!rawBounds) return null;
+
+  const sourceX = clamp(Math.floor(rawBounds.x), 0, sourceWidth - 1);
+  const sourceY = clamp(Math.floor(rawBounds.y), 0, sourceHeight - 1);
+  const sourceRight = clamp(
+    Math.ceil(rawBounds.x + rawBounds.width),
+    sourceX + 1,
+    sourceWidth,
+  );
+  const sourceBottom = clamp(
+    Math.ceil(rawBounds.y + rawBounds.height),
+    sourceY + 1,
+    sourceHeight,
+  );
+  const width = Math.max(1, sourceRight - sourceX);
+  const height = Math.max(1, sourceBottom - sourceY);
+  if (width < 8 || height < 8) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const normalizedSourcePoints = sourcePoints.map((point) => ({
+    x: point.x - sourceX,
+    y: point.y - sourceY,
+  }));
+
+  ctx.save();
+  tracePolygonPath(ctx, normalizedSourcePoints);
+  ctx.clip();
+  ctx.filter = getLayerFilterValue(sourceLayer);
+  ctx.globalAlpha = clamp(sourceLayer.opacity ?? 1, 0.05, 1);
+  ctx.drawImage(
+    sourceImage,
+    Number(sourceLayer.sourceX || 0) + sourceX,
+    Number(sourceLayer.sourceY || 0) + sourceY,
+    width,
+    height,
+    0,
+    0,
+    width,
+    height,
+  );
+  ctx.restore();
+
+  let imageSrc = "";
+  try {
+    imageSrc = canvas.toDataURL("image/png");
+  } catch {
+    imageSrc = "";
+  }
+
+  const localCenter = {
+    x: (sourceX + width / 2 - sourceWidth / 2) * displayScaleX,
+    y: (sourceY + height / 2 - sourceHeight / 2) * displayScaleY,
+  };
+  const layerCenter = transformLayerLocalPoint(sourceLayer, localCenter);
+
+  return {
+    id: layerId,
+    kind: "free-cut",
+    image: canvas,
+    imageSrc,
+    name: name || `Free Cut ${layerId}`,
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: width,
+    sourceHeight: height,
+    displayWidth: Math.max(1, width * displayScaleX),
+    displayHeight: Math.max(1, height * displayScaleY),
+    centerX: layerCenter.x,
+    centerY: layerCenter.y,
+    rotation: Number(sourceLayer.rotation || 0),
+    flipX: Boolean(sourceLayer.flipX),
+    flipY: Boolean(sourceLayer.flipY),
+    opacity: 1,
+    contrast: 100,
+    level: 100,
+    lockScale: false,
+    hidden: false,
+    sourceLayerId: sourceLayer.id,
+    maskPoints: normalizedSourcePoints.map((point) => ({
       x: point.x - width / 2,
       y: point.y - height / 2,
     })),
@@ -719,6 +847,7 @@ function buildFreeLineLayerFromPoints({
     contrast: 100,
     level: 100,
     lockScale: false,
+    hidden: false,
     fillColor,
     drawMode,
     curveStrength: clamp(
@@ -1764,6 +1893,130 @@ function getImageContentBounds(image) {
   }
 }
 
+function getA5PhysicalSizeForImage(width, height) {
+  const isLandscape = Number(width) > Number(height);
+  return {
+    widthMm: isLandscape ? A5_PORTRAIT_HEIGHT_MM : A5_PORTRAIT_WIDTH_MM,
+    heightMm: isLandscape ? A5_PORTRAIT_WIDTH_MM : A5_PORTRAIT_HEIGHT_MM,
+    label: isLandscape ? "A5 landscape" : "A5 portrait",
+  };
+}
+
+function resolveTemplatePhysicalSize({
+  physicalSize,
+  physicalWidthMm,
+  physicalHeightMm,
+  width,
+  height,
+}) {
+  const widthMm = Number(physicalWidthMm);
+  const heightMm = Number(physicalHeightMm);
+  if (Number.isFinite(widthMm) && widthMm > 0 && Number.isFinite(heightMm) && heightMm > 0) {
+    return { widthMm, heightMm, label: `${widthMm} x ${heightMm} mm` };
+  }
+  if (String(physicalSize || "").toUpperCase() === "A5") {
+    return getA5PhysicalSizeForImage(width, height);
+  }
+  return null;
+}
+
+function makeWhiteBackgroundTransparent(image) {
+  if (typeof document === "undefined" || !image) return null;
+
+  const rawWidth = image.naturalWidth || image.width || 0;
+  const rawHeight = image.naturalHeight || image.height || 0;
+  if (!rawWidth || !rawHeight) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = rawWidth;
+  canvas.height = rawHeight;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+
+  try {
+    ctx.drawImage(image, 0, 0, rawWidth, rawHeight);
+    const imageData = ctx.getImageData(0, 0, rawWidth, rawHeight);
+    const pixels = imageData.data;
+    let changedPixels = 0;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const alpha = pixels[index + 3];
+      if (alpha <= 0) continue;
+
+      const red = pixels[index];
+      const green = pixels[index + 1];
+      const blue = pixels[index + 2];
+      const minChannel = Math.min(red, green, blue);
+      const maxChannel = Math.max(red, green, blue);
+      const spread = maxChannel - minChannel;
+
+      if (minChannel >= 244 && spread <= 18) {
+        pixels[index + 3] = 0;
+        changedPixels += 1;
+      } else if (minChannel >= 235 && spread <= 14) {
+        pixels[index + 3] = Math.round(alpha * 0.24);
+        changedPixels += 1;
+      }
+    }
+
+    if (changedPixels === 0) return null;
+
+    ctx.putImageData(imageData, 0, 0);
+    let imageSrc = "";
+    try {
+      imageSrc = canvas.toDataURL("image/png");
+    } catch {
+      imageSrc = "";
+    }
+    return { image: canvas, imageSrc, changedPixels };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeImageToPhysicalAspect(image, physicalSize) {
+  if (typeof document === "undefined" || !image || !physicalSize) return null;
+
+  const rawWidth = image.naturalWidth || image.width || 0;
+  const rawHeight = image.naturalHeight || image.height || 0;
+  const targetAspect = physicalSize.widthMm / physicalSize.heightMm;
+  if (!rawWidth || !rawHeight || !Number.isFinite(targetAspect) || targetAspect <= 0) {
+    return null;
+  }
+
+  const rawAspect = rawWidth / rawHeight;
+  let canvasWidth = rawWidth;
+  let canvasHeight = rawHeight;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (Math.abs(rawAspect - targetAspect) <= 0.01) return null;
+
+  if (rawAspect > targetAspect) {
+    canvasHeight = Math.round(rawWidth / targetAspect);
+    offsetY = Math.round((canvasHeight - rawHeight) / 2);
+  } else {
+    canvasWidth = Math.round(rawHeight * targetAspect);
+    offsetX = Math.round((canvasWidth - rawWidth) / 2);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, canvasWidth);
+  canvas.height = Math.max(1, canvasHeight);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(image, offsetX, offsetY);
+
+  let imageSrc = "";
+  try {
+    imageSrc = canvas.toDataURL("image/png");
+  } catch {
+    imageSrc = "";
+  }
+  return { image: canvas, imageSrc };
+}
+
 function getMedian(values) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -1839,7 +2092,7 @@ function estimateTemplateRulerPxPerMm(image) {
   try {
     ctx.drawImage(image, 0, 0, scanWidth, scanHeight);
     const pixels = ctx.getImageData(0, 0, scanWidth, scanHeight).data;
-    const isGreenPixel = (index) => {
+    const isStrictRulerPixel = (index) => {
       const r = pixels[index];
       const g = pixels[index + 1];
       const b = pixels[index + 2];
@@ -1847,50 +2100,110 @@ function estimateTemplateRulerPxPerMm(image) {
       return a > 50 && g > 90 && g > r * 1.65 && g > b * 1.65;
     };
 
-    const verticalBandWidth = clamp(Math.round(scanWidth * 0.075), 18, 46);
-    const verticalProjection = new Array(scanHeight).fill(0);
-    for (let y = 0; y < scanHeight; y += 1) {
-      let count = 0;
-      for (let x = 0; x < verticalBandWidth; x += 1) {
-        if (isGreenPixel((y * scanWidth + x) * 4)) count += 1;
-      }
-      verticalProjection[y] = count;
-    }
+    const isLooseRulerPixel = (index) => {
+      const r = pixels[index];
+      const g = pixels[index + 1];
+      const b = pixels[index + 2];
+      const a = pixels[index + 3];
+      return (
+        a > 50 &&
+        g > 80 &&
+        g > r * 1.35 &&
+        (g > b * 1.12 || b > r * 1.45)
+      );
+    };
 
+    const buildVerticalProjection = (startX, width, isRulerPixel) => {
+      const projection = new Array(scanHeight).fill(0);
+      const x0 = clamp(Math.round(startX), 0, Math.max(0, scanWidth - 1));
+      const x1 = clamp(
+        Math.round(startX + width),
+        x0 + 1,
+        Math.max(1, scanWidth),
+      );
+      for (let y = 0; y < scanHeight; y += 1) {
+        let count = 0;
+        for (let x = x0; x < x1; x += 1) {
+          if (isRulerPixel((y * scanWidth + x) * 4)) count += 1;
+        }
+        projection[y] = count;
+      }
+      return projection;
+    };
+
+    const buildHorizontalProjection = (startY, height, isRulerPixel) => {
+      const projection = new Array(scanWidth).fill(0);
+      const y0 = clamp(Math.round(startY), 0, Math.max(0, scanHeight - 1));
+      const y1 = clamp(
+        Math.round(startY + height),
+        y0 + 1,
+        Math.max(1, scanHeight),
+      );
+      for (let x = 0; x < scanWidth; x += 1) {
+        let count = 0;
+        for (let y = y0; y < y1; y += 1) {
+          if (isRulerPixel((y * scanWidth + x) * 4)) count += 1;
+        }
+        projection[x] = count;
+      }
+      return projection;
+    };
+
+    const verticalBandWidth = clamp(Math.round(scanWidth * 0.075), 18, 52);
     const horizontalBandHeight = clamp(Math.round(scanHeight * 0.07), 18, 52);
-    const horizontalProjection = new Array(scanWidth).fill(0);
-    for (let x = 0; x < scanWidth; x += 1) {
-      let count = 0;
-      for (let y = 0; y < horizontalBandHeight; y += 1) {
-        if (isGreenPixel((y * scanWidth + x) * 4)) count += 1;
-      }
-      horizontalProjection[x] = count;
-    }
 
-    const vertical = getProjectionTickSpacing(
-      verticalProjection,
-      Math.max(4, Math.round(verticalBandWidth * 0.18)),
-    );
-    const horizontal = getProjectionTickSpacing(
-      horizontalProjection,
-      Math.max(4, Math.round(horizontalBandHeight * 0.18)),
-    );
-    const candidates = [
-      vertical
-        ? {
-            axis: "vertical",
-            pxPerMm: vertical.spacing / scanScale,
-            confidence: vertical.diffCount,
-          }
-        : null,
-      horizontal
-        ? {
-            axis: "horizontal",
-            pxPerMm: horizontal.spacing / scanScale,
-            confidence: horizontal.diffCount,
-          }
-        : null,
-    ].filter(Boolean);
+    const collectCandidates = (isRulerPixel) => {
+      const scanRegions = [
+        {
+          axis: "vertical-left",
+          projection: buildVerticalProjection(0, verticalBandWidth, isRulerPixel),
+          threshold: Math.max(4, Math.round(verticalBandWidth * 0.18)),
+        },
+        {
+          axis: "vertical-right",
+          projection: buildVerticalProjection(
+            scanWidth - verticalBandWidth,
+            verticalBandWidth,
+            isRulerPixel,
+          ),
+          threshold: Math.max(4, Math.round(verticalBandWidth * 0.18)),
+        },
+        {
+          axis: "horizontal-top",
+          projection: buildHorizontalProjection(0, horizontalBandHeight, isRulerPixel),
+          threshold: Math.max(4, Math.round(horizontalBandHeight * 0.18)),
+        },
+        {
+          axis: "horizontal-bottom",
+          projection: buildHorizontalProjection(
+            scanHeight - horizontalBandHeight,
+            horizontalBandHeight,
+            isRulerPixel,
+          ),
+          threshold: Math.max(4, Math.round(horizontalBandHeight * 0.18)),
+        },
+      ];
+
+      return scanRegions
+        .map((region) => {
+          const spacing = getProjectionTickSpacing(
+            region.projection,
+            region.threshold,
+          );
+          if (!spacing) return null;
+          return {
+            axis: region.axis,
+            pxPerMm: spacing.spacing / scanScale,
+            confidence: spacing.diffCount,
+          };
+        })
+        .filter(Boolean);
+    };
+
+    let candidates = collectCandidates(isStrictRulerPixel);
+    if (candidates.length === 0) {
+      candidates = collectCandidates(isLooseRulerPixel);
+    }
 
     if (candidates.length === 0) return null;
     candidates.sort((a, b) => b.confidence - a.confidence);
@@ -3012,6 +3325,7 @@ export default function XrayCalibrationWorkspace({
   const measureLegendPreferenceLoadedRef = useRef(false);
   const snapModifierPressedRef = useRef(false);
   const autoFitSignatureRef = useRef("");
+  const physicalTemplateScaleSignatureRef = useRef("");
   const simpleMobileViewportRef = useRef(false);
   const mobilePrecisionPreviousViewRef = useRef(null);
   const mobilePrecisionAutoZoomedRef = useRef(false);
@@ -3522,6 +3836,7 @@ export default function XrayCalibrationWorkspace({
   const selectedFreeLineCurveRadius = useMemo(() => {
     if (
       !selectedCutLayer ||
+      selectedCutLayer.hidden ||
       selectedCutLayer.kind !== "free-line" ||
       selectedFreeLinePointIndex === null
     ) {
@@ -3714,16 +4029,6 @@ export default function XrayCalibrationWorkspace({
       setToolConfigModal("layerSettings");
     },
     [focusLayerSettings, selectedCutLayerId],
-  );
-  const openSimpleLayerDropdown = useCallback(
-    (layerId = selectedCutLayerId) => {
-      if (layerId) {
-        focusLayerCanvas(layerId, { openPanel: false });
-      }
-      setSimpleLayerDropdownOpen(true);
-      setNotice("Atur layer dari dropdown Layer di header.");
-    },
-    [focusLayerCanvas, selectedCutLayerId],
   );
   const selectLayerFromCanvas = useCallback(
     (
@@ -4082,6 +4387,15 @@ export default function XrayCalibrationWorkspace({
           : { ...item, ...updater };
       }),
     );
+  }, []);
+
+  const toggleCutLayerVisibility = useCallback((layerId) => {
+    setCutLayers((prev) =>
+      prev.map((layer) =>
+        layer.id === layerId ? { ...layer, hidden: !layer.hidden } : layer,
+      ),
+    );
+    setNotice("Visibility layer diperbarui.");
   }, []);
 
   const scheduleCutLayersUpdate = useCallback(
@@ -4878,6 +5192,20 @@ export default function XrayCalibrationWorkspace({
         contrast: Number.isFinite(layer.contrast) ? layer.contrast : 100,
         level: Number.isFinite(layer.level) ? layer.level : 100,
         lockScale: Boolean(layer.lockScale),
+        hidden: Boolean(layer.hidden),
+        autoScaleFromCalibration: Boolean(layer.autoScaleFromCalibration),
+        rulerPxPerMm: Number.isFinite(Number(layer.rulerPxPerMm))
+          ? Number(layer.rulerPxPerMm)
+          : null,
+        physicalSize: layer.physicalSize || null,
+        physicalSizeLabel: layer.physicalSizeLabel || "",
+        physicalWidthMm: Number.isFinite(layer.physicalWidthMm)
+          ? layer.physicalWidthMm
+          : null,
+        physicalHeightMm: Number.isFinite(layer.physicalHeightMm)
+          ? layer.physicalHeightMm
+          : null,
+        transparentWhiteBackground: Boolean(layer.transparentWhiteBackground),
         fillColor: layer.fillColor || "",
         drawMode: layer.drawMode || DEFAULT_FREE_LINE_MODE,
         curveStrength: Number.isFinite(layer.curveStrength)
@@ -5077,7 +5405,14 @@ export default function XrayCalibrationWorkspace({
   );
 
   const selectedLayerToolbarAnchor = useMemo(() => {
-    if (!selectedCutLayer || !viewport.width || !viewport.height) return null;
+    if (
+      !selectedCutLayer ||
+      selectedCutLayer.hidden ||
+      !viewport.width ||
+      !viewport.height
+    ) {
+      return null;
+    }
     const corners = getLayerCorners(selectedCutLayer).map((corner) =>
       imageToScreenPoint(corner.x, corner.y),
     );
@@ -5995,14 +6330,32 @@ export default function XrayCalibrationWorkspace({
       return false;
     }
 
-    const nextLayer = buildFreeCutLayerFromPoints({
-      sourceImage: image,
-      sourceOffsetX: cropRect?.x || 0,
-      sourceOffsetY: cropRect?.y || 0,
-      polygonPoints: draftCut.points,
-      layerId: nextCutLayerIdRef.current,
-      name: `Free Cut ${nextCutLayerIdRef.current}`,
-    });
+    const targetLayer =
+      draftCut.targetLayerId !== null && draftCut.targetLayerId !== undefined
+        ? cutLayers.find((layer) => layer.id === draftCut.targetLayerId) || null
+        : null;
+    const canCutTargetLayer =
+      targetLayer &&
+      !targetLayer.hidden &&
+      isImageBackedLayerKind(targetLayer.kind) &&
+      targetLayer.image;
+
+    const nextLayer = canCutTargetLayer
+      ? buildFreeCutLayerFromLayerPoints({
+          sourceLayer: targetLayer,
+          sourceImage: targetLayer.image,
+          polygonPoints: draftCut.points,
+          layerId: nextCutLayerIdRef.current,
+          name: `Free Cut ${nextCutLayerIdRef.current} from ${targetLayer.name || `Layer #${targetLayer.id}`}`,
+        })
+      : buildFreeCutLayerFromPoints({
+          sourceImage: image,
+          sourceOffsetX: cropRect?.x || 0,
+          sourceOffsetY: cropRect?.y || 0,
+          polygonPoints: draftCut.points,
+          layerId: nextCutLayerIdRef.current,
+          name: `Free Cut ${nextCutLayerIdRef.current}`,
+        });
 
     if (!nextLayer) {
       setDraftCut(null);
@@ -6022,7 +6375,9 @@ export default function XrayCalibrationWorkspace({
     setHistoryPaused(false);
     setNotice(
       nextLayer.imageSrc
-        ? "Free cut berhasil dibuat sebagai layer baru."
+        ? canCutTargetLayer
+          ? `Free cut dari ${targetLayer.name || `Layer #${targetLayer.id}`} berhasil dibuat sebagai layer baru.`
+          : "Free cut berhasil dibuat sebagai layer baru."
         : "Free cut berhasil dibuat. Layer ini tampil normal, tetapi sumber remote tidak bisa diekspor ulang.",
     );
     setTool(getIdleTool());
@@ -6032,6 +6387,7 @@ export default function XrayCalibrationWorkspace({
     return true;
   }, [
     cropRect,
+    cutLayers,
     draftCut,
     focusLayerSettings,
     getIdleTool,
@@ -6397,6 +6753,26 @@ export default function XrayCalibrationWorkspace({
                 contrast: clamp(Number(layer.contrast ?? 100), 10, 300),
                 level: clamp(Number(layer.level ?? 100), 10, 300),
                 lockScale: Boolean(layer.lockScale),
+                hidden: Boolean(layer.hidden),
+                autoScaleFromCalibration: Boolean(
+                  layer.autoScaleFromCalibration,
+                ),
+                rulerPxPerMm: Number.isFinite(Number(layer.rulerPxPerMm))
+                  ? Number(layer.rulerPxPerMm)
+                  : null,
+                physicalSize: layer.physicalSize || null,
+                physicalSizeLabel: layer.physicalSizeLabel || "",
+                physicalWidthMm: Number.isFinite(Number(layer.physicalWidthMm))
+                  ? Number(layer.physicalWidthMm)
+                  : null,
+                physicalHeightMm: Number.isFinite(
+                  Number(layer.physicalHeightMm),
+                )
+                  ? Number(layer.physicalHeightMm)
+                  : null,
+                transparentWhiteBackground: Boolean(
+                  layer.transparentWhiteBackground,
+                ),
                 fillColor: layer.fillColor || "",
                 drawMode:
                   layer.drawMode === "point" ? "point" : DEFAULT_FREE_LINE_MODE,
@@ -8135,6 +8511,7 @@ export default function XrayCalibrationWorkspace({
 
       for (let i = cutLayers.length - 1; i >= 0; i -= 1) {
         const layer = cutLayers[i];
+        if (layer.hidden) continue;
         const controlPoints = getLayerControlPoints(layer);
 
         for (const controlPoint of controlPoints) {
@@ -8161,6 +8538,7 @@ export default function XrayCalibrationWorkspace({
     (imagePoint) => {
       for (let i = cutLayers.length - 1; i >= 0; i -= 1) {
         const layer = cutLayers[i];
+        if (layer.hidden) continue;
         const maskPoints = getLayerMaskDisplayPoints(layer);
         if (maskPoints) {
           const local = toLayerShapeLocal(imagePoint, layer);
@@ -8280,6 +8658,7 @@ export default function XrayCalibrationWorkspace({
       );
 
       for (const layer of cutLayers) {
+        if (layer.hidden) continue;
         const displaySize = getLayerDisplaySize(layer);
 
         imageCtx.save();
@@ -9321,7 +9700,9 @@ export default function XrayCalibrationWorkspace({
         : null;
     const secondarySelectedCutLayers = cutLayers.filter(
       (layer) =>
-        selectedCutLayerIdsSet.has(layer.id) && layer.id !== selectedCutLayerId,
+        !layer.hidden &&
+        selectedCutLayerIdsSet.has(layer.id) &&
+        layer.id !== selectedCutLayerId,
     );
     for (const layer of secondarySelectedCutLayers) {
       const corners = getLayerCorners(layer);
@@ -9344,7 +9725,7 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.stroke();
       overlayCtx.restore();
     }
-    if (activeCutLayer) {
+    if (activeCutLayer && !activeCutLayer.hidden) {
       const isPulsingLayer =
         selectionPulse?.type === "layer" &&
         selectionPulse.id === activeCutLayer.id;
@@ -10302,6 +10683,10 @@ export default function XrayCalibrationWorkspace({
       opacity = DEFAULT_TEMPLATE_LAYER_OPACITY,
       sizeMode = "template",
       autoScaleFromCalibration = false,
+      physicalSize = null,
+      physicalWidthMm = null,
+      physicalHeightMm = null,
+      transparentWhiteBackground = false,
     }) => {
       if (!image || !modelWidth || !modelHeight) {
         setNotice(
@@ -10310,17 +10695,62 @@ export default function XrayCalibrationWorkspace({
         return false;
       }
 
-      const rawW = layerImage?.naturalWidth || layerImage?.width || 0;
-      const rawH = layerImage?.naturalHeight || layerImage?.height || 0;
+      let workingLayerImage = layerImage;
+      let workingImageSrc = imageSrc;
+      let transparentBackgroundApplied = false;
+
+      if (transparentWhiteBackground) {
+        const transparentImage = makeWhiteBackgroundTransparent(layerImage);
+        if (transparentImage?.image) {
+          workingLayerImage = transparentImage.image;
+          workingImageSrc = transparentImage.imageSrc || workingImageSrc;
+          transparentBackgroundApplied = true;
+        }
+      }
+
+      let rawW =
+        workingLayerImage?.naturalWidth || workingLayerImage?.width || 0;
+      let rawH =
+        workingLayerImage?.naturalHeight || workingLayerImage?.height || 0;
       if (!rawW || !rawH) {
         setNotice("Layer gagal diproses. Dimensi file tidak valid.");
         return false;
       }
 
       const shouldMatchBase = sizeMode === "match-base";
-      const contentBounds = shouldMatchBase
+      let physicalTemplateSize = resolveTemplatePhysicalSize({
+        physicalSize,
+        physicalWidthMm,
+        physicalHeightMm,
+        width: rawW,
+        height: rawH,
+      });
+
+      if (physicalTemplateSize) {
+        const normalizedImage = normalizeImageToPhysicalAspect(
+          workingLayerImage,
+          physicalTemplateSize,
+        );
+        if (normalizedImage?.image) {
+          workingLayerImage = normalizedImage.image;
+          workingImageSrc = normalizedImage.imageSrc || workingImageSrc;
+          rawW =
+            workingLayerImage?.naturalWidth || workingLayerImage?.width || 0;
+          rawH =
+            workingLayerImage?.naturalHeight || workingLayerImage?.height || 0;
+          physicalTemplateSize = resolveTemplatePhysicalSize({
+            physicalSize,
+            physicalWidthMm,
+            physicalHeightMm,
+            width: rawW,
+            height: rawH,
+          });
+        }
+      }
+
+      const contentBounds = shouldMatchBase || physicalTemplateSize
         ? null
-        : getImageContentBounds(layerImage);
+        : getImageContentBounds(workingLayerImage);
       const srcX = contentBounds?.x || 0;
       const srcY = contentBounds?.y || 0;
       const srcW = contentBounds?.width || rawW;
@@ -10353,7 +10783,7 @@ export default function XrayCalibrationWorkspace({
       const targetMaxHeight = modelHeight * 0.42;
       const templateRulerScale =
         autoScaleFromCalibration && mmPerPixel !== null && !shouldMatchBase
-          ? estimateTemplateRulerPxPerMm(layerImage)
+          ? estimateTemplateRulerPxPerMm(workingLayerImage)
           : null;
       const calibratedDisplayWidth = templateRulerScale
         ? clamp(
@@ -10362,6 +10792,22 @@ export default function XrayCalibrationWorkspace({
             Math.max(18, modelWidth * 3),
           )
         : null;
+      const physicalDisplayWidth =
+        !templateRulerScale && physicalTemplateSize && mmPerPixel !== null
+          ? clamp(
+              physicalTemplateSize.widthMm / mmPerPixel,
+              18,
+              Math.max(18, modelWidth * 3),
+            )
+          : null;
+      const physicalDisplayHeight =
+        !templateRulerScale && physicalTemplateSize && mmPerPixel !== null
+          ? clamp(
+              physicalTemplateSize.heightMm / mmPerPixel,
+              18,
+              Math.max(18, modelHeight * 3),
+            )
+          : null;
       const calibratedDisplayHeight = templateRulerScale
         ? clamp(
             srcH / templateRulerScale.pxPerMm / mmPerPixel,
@@ -10381,7 +10827,9 @@ export default function XrayCalibrationWorkspace({
               1,
             );
       const displayWidth =
-        calibratedDisplayWidth !== null
+        physicalDisplayWidth !== null
+          ? physicalDisplayWidth
+          : calibratedDisplayWidth !== null
           ? calibratedDisplayWidth
           : inheritedTemplateSize
             ? Math.max(18, inheritedTemplateSize.width)
@@ -10389,7 +10837,9 @@ export default function XrayCalibrationWorkspace({
               ? modelWidth
               : Math.max(18, srcW * scale);
       const displayHeight =
-        calibratedDisplayHeight !== null
+        physicalDisplayHeight !== null
+          ? physicalDisplayHeight
+          : calibratedDisplayHeight !== null
           ? calibratedDisplayHeight
           : inheritedTemplateSize
             ? Math.max(18, inheritedTemplateSize.height)
@@ -10400,8 +10850,8 @@ export default function XrayCalibrationWorkspace({
       const nextLayer = {
         id: nextCutLayerIdRef.current,
         kind: "upload",
-        image: layerImage,
-        imageSrc,
+        image: workingLayerImage,
+        imageSrc: workingImageSrc,
         name: name || `Layer ${nextCutLayerIdRef.current}`,
         sourceX: srcX,
         sourceY: srcY,
@@ -10419,6 +10869,14 @@ export default function XrayCalibrationWorkspace({
         contrast: 100,
         level: 100,
         lockScale: false,
+        hidden: false,
+        autoScaleFromCalibration: Boolean(autoScaleFromCalibration),
+        rulerPxPerMm: templateRulerScale?.pxPerMm || null,
+        physicalSize: physicalTemplateSize ? physicalSize || "custom" : null,
+        physicalSizeLabel: physicalTemplateSize?.label || "",
+        physicalWidthMm: physicalTemplateSize?.widthMm || null,
+        physicalHeightMm: physicalTemplateSize?.heightMm || null,
+        transparentWhiteBackground: Boolean(transparentWhiteBackground),
       };
 
       nextCutLayerIdRef.current += 1;
@@ -10438,12 +10896,18 @@ export default function XrayCalibrationWorkspace({
           ? " Kalibrasi belum aktif: klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi."
           : templateRulerScale
             ? ` Scale implant otomatis mengikuti garis kalibrasi aktif dari ruler template ${templateRulerScale.axis}.`
+          : physicalTemplateSize
+            ? ` Template diset ${physicalTemplateSize.label} dan otomatis mengikuti skala kalibrasi.`
             : " Ruler template tidak terbaca otomatis; pilih layer lalu pakai Ruler atau isi Scale real manual."
+        : "";
+      const transparentText = transparentBackgroundApplied
+        ? " Background putih template dibuat transparan."
         : "";
       setNotice(
         (noticeText ||
           `Layer "${nextLayer.name}" ditambahkan di atas layer bawah.`) +
           trimText +
+          transparentText +
           calibrationText,
       );
       return true;
@@ -10460,6 +10924,74 @@ export default function XrayCalibrationWorkspace({
       selectedCutLayer,
     ],
   );
+
+  useEffect(() => {
+    if (mmPerPixel === null || !modelWidth || !modelHeight) return;
+
+    const scalableLayers = cutLayers
+      .filter(
+        (layer) =>
+          layer.autoScaleFromCalibration &&
+          !layer.lockScale &&
+          !Number.isFinite(Number(layer.rulerPxPerMm)) &&
+          Number.isFinite(Number(layer.physicalWidthMm)) &&
+          Number(layer.physicalWidthMm) > 0 &&
+          Number.isFinite(Number(layer.physicalHeightMm)) &&
+          Number(layer.physicalHeightMm) > 0,
+      )
+      .map(
+        (layer) =>
+          `${layer.id}:${layer.physicalWidthMm}:${layer.physicalHeightMm}:${layer.lockScale}`,
+      )
+      .join("|");
+
+    if (!scalableLayers) return;
+
+    const signature = `${mmPerPixel}:${modelWidth}:${modelHeight}:${scalableLayers}`;
+    if (physicalTemplateScaleSignatureRef.current === signature) return;
+    physicalTemplateScaleSignatureRef.current = signature;
+
+    setCutLayers((prev) => {
+      let changed = false;
+      const nextLayers = prev.map((layer) => {
+        if (
+          !layer.autoScaleFromCalibration ||
+          layer.lockScale ||
+          Number.isFinite(Number(layer.rulerPxPerMm)) ||
+          !Number.isFinite(Number(layer.physicalWidthMm)) ||
+          !Number.isFinite(Number(layer.physicalHeightMm))
+        ) {
+          return layer;
+        }
+
+        const nextDisplayWidth = clamp(
+          Number(layer.physicalWidthMm) / mmPerPixel,
+          18,
+          Math.max(18, modelWidth * 3),
+        );
+        const nextDisplayHeight = clamp(
+          Number(layer.physicalHeightMm) / mmPerPixel,
+          18,
+          Math.max(18, modelHeight * 3),
+        );
+
+        if (
+          Math.abs(Number(layer.displayWidth || 0) - nextDisplayWidth) < 0.5 &&
+          Math.abs(Number(layer.displayHeight || 0) - nextDisplayHeight) < 0.5
+        ) {
+          return layer;
+        }
+
+        changed = true;
+        return {
+          ...layer,
+          displayWidth: nextDisplayWidth,
+          displayHeight: nextDisplayHeight,
+        };
+      });
+      return changed ? nextLayers : prev;
+    });
+  }, [cutLayers, mmPerPixel, modelHeight, modelWidth]);
 
   const useSheetImageAsMain = useCallback(
     async (imageItem) => {
@@ -11084,6 +11616,16 @@ export default function XrayCalibrationWorkspace({
 
       if (tool === "cut") {
         const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
+        const activeCutTargetLayer =
+          draftCut?.targetLayerId !== null &&
+          draftCut?.targetLayerId !== undefined
+            ? cutLayers.find((layer) => layer.id === draftCut.targetLayerId) ||
+              null
+            : selectedCutLayer &&
+                !selectedCutLayer.hidden &&
+                isImageBackedLayerKind(selectedCutLayer.kind)
+              ? selectedCutLayer
+              : null;
 
         setSelectedLineId(null);
         setSelectedFreeLinePointIndex(null);
@@ -11119,6 +11661,7 @@ export default function XrayCalibrationWorkspace({
 
           const nextPoints = [...draftCut.points, snappedPlacementPoint];
           setDraftCut({
+            targetLayerId: draftCut.targetLayerId ?? activeCutTargetLayer?.id ?? null,
             points: nextPoints,
             hoverPoint: snappedPlacementPoint,
           });
@@ -11132,12 +11675,15 @@ export default function XrayCalibrationWorkspace({
         }
 
         setDraftCut({
+          targetLayerId: activeCutTargetLayer?.id ?? null,
           points: [snappedPlacementPoint],
           hoverPoint: snappedPlacementPoint,
         });
         setHistoryPaused(true);
         setNotice(
-          "Free cut: klik beberapa titik mengikuti bentuk objek, lalu klik titik awal atau tekan Enter untuk selesai.",
+          activeCutTargetLayer
+            ? `Free cut layer aktif: ${activeCutTargetLayer.name || `Layer #${activeCutTargetLayer.id}`}. Klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai.`
+            : "Free cut: klik beberapa titik mengikuti bentuk objek, lalu klik titik awal atau tekan Enter untuk selesai.",
         );
         return;
       }
@@ -12449,6 +12995,7 @@ export default function XrayCalibrationWorkspace({
       selectLayerFromCanvas,
       selectAnnotationFromCanvas,
       selectPlanningGuideForEdit,
+      selectedCutLayer,
       selectedCutLayerIds,
       selectedCutLayerIdsSet,
       setHistoryPaused,
@@ -14213,6 +14760,38 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
+    const physicalWidthMm = Number(selectedCutLayer.physicalWidthMm);
+    const physicalHeightMm = Number(selectedCutLayer.physicalHeightMm);
+    if (
+      Number.isFinite(physicalWidthMm) &&
+      physicalWidthMm > 0 &&
+      Number.isFinite(physicalHeightMm) &&
+      physicalHeightMm > 0
+    ) {
+      const nextWidth = clamp(
+        physicalWidthMm / mmPerPixel,
+        16,
+        Math.max(16, modelWidth * 3),
+      );
+      const nextHeight = clamp(
+        physicalHeightMm / mmPerPixel,
+        16,
+        Math.max(16, modelHeight * 3),
+      );
+
+      setCutLayers((prev) =>
+        prev.map((layer) =>
+          layer.id === selectedCutLayer.id
+            ? { ...layer, displayWidth: nextWidth, displayHeight: nextHeight }
+            : layer,
+        ),
+      );
+      setNotice(
+        `Template #${selectedCutLayer.id} disesuaikan sebagai ${selectedCutLayer.physicalSizeLabel || "ukuran fisik"} (${physicalWidthMm} x ${physicalHeightMm} mm).`,
+      );
+      return;
+    }
+
     const rulerScale = estimateTemplateRulerPxPerMm(selectedCutLayer.image);
     if (!rulerScale) {
       setNotice(
@@ -14887,6 +15466,12 @@ export default function XrayCalibrationWorkspace({
           sizeMode: "inherit-template",
           noticeText: `Template "${template.name}" ditambahkan ke canvas.`,
           autoScaleFromCalibration: Boolean(template.autoScaleFromCalibration),
+          physicalSize: template.physicalSize || null,
+          physicalWidthMm: template.physicalWidthMm ?? null,
+          physicalHeightMm: template.physicalHeightMm ?? null,
+          transparentWhiteBackground: Boolean(
+            template.transparentWhiteBackground,
+          ),
         });
       } catch {
         setNotice("Gagal load template dari library.");
@@ -14929,6 +15514,12 @@ export default function XrayCalibrationWorkspace({
       sourceWidth: 0,
       sourceHeight: 0,
       autoScaleFromCalibration: true,
+      physicalSize: selectedImplantLibraryItem.physicalSize || null,
+      physicalWidthMm: selectedImplantLibraryItem.physicalWidthMm ?? null,
+      physicalHeightMm: selectedImplantLibraryItem.physicalHeightMm ?? null,
+      transparentWhiteBackground: Boolean(
+        selectedImplantLibraryItem.transparentWhiteBackground,
+      ),
     }).then((added) => {
       if (!added || mmPerPixel !== null) return;
       if (isSimpleUiMode) {
@@ -16154,6 +16745,20 @@ export default function XrayCalibrationWorkspace({
       active: isSimpleUiMode ? simpleMobilePanel === "implant" : false,
     },
     {
+      id: "layer",
+      label: "Layer",
+      onClick: () => {
+        if (isSimpleUiMode) {
+          setSimpleMobilePanel((prev) => (prev === "layer" ? null : "layer"));
+          return;
+        }
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("tool");
+        setMobileControlsOpen(true);
+      },
+      active: isSimpleUiMode ? simpleMobilePanel === "layer" : false,
+    },
+    {
       id: "measure",
       label: "Calib",
       onClick: () => {
@@ -16240,11 +16845,15 @@ export default function XrayCalibrationWorkspace({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className={`fixed inset-0 z-[94] flex items-center justify-center p-4 ${
-              toolConfigModal === "layerSettings"
-                ? "bg-slate-950/24 backdrop-blur-sm"
-                : "bg-slate-950/35"
-            }`}
+            className={
+              toolConfigModal === "layerSettings" && isSimpleUiMode
+                ? "pointer-events-none fixed inset-0 z-[94] flex items-start justify-end p-3 pt-[74px] sm:p-4 sm:pt-[84px] lg:pt-[78px]"
+                : `fixed inset-0 z-[94] flex items-center justify-center p-4 ${
+                    toolConfigModal === "layerSettings"
+                      ? "bg-slate-950/24 backdrop-blur-sm"
+                      : "bg-slate-950/35"
+                  }`
+            }
             onClick={(event) => {
               if (event.target === event.currentTarget) {
                 setToolConfigModal(null);
@@ -16258,7 +16867,9 @@ export default function XrayCalibrationWorkspace({
               transition={PANEL_SPRING}
               className={
                 toolConfigModal === "layerSettings"
-                  ? "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-white/80 bg-[#eef2f7] p-5 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.74)]"
+                  ? isSimpleUiMode
+                    ? "pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(92vw,360px)] overflow-y-auto rounded-[28px] border border-white/80 bg-[#eef2f7]/96 p-3 text-slate-900 shadow-[8px_8px_22px_rgba(148,163,184,0.28),-8px_-8px_22px_rgba(255,255,255,0.84),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-xl"
+                    : "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-white/80 bg-[#eef2f7] p-5 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.74)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
                       toolConfigModal === "layerLayout"
@@ -16272,7 +16883,9 @@ export default function XrayCalibrationWorkspace({
               <div
                 className={
                   toolConfigModal === "layerSettings"
-                    ? "mb-4 flex items-center justify-between gap-3"
+                    ? isSimpleUiMode
+                      ? "mb-2 flex items-center justify-between gap-3"
+                      : "mb-4 flex items-center justify-between gap-3"
                     : "mb-2 flex items-center justify-between gap-3"
                 }
               >
@@ -16294,14 +16907,18 @@ export default function XrayCalibrationWorkspace({
                     }
                     className={
                       toolConfigModal === "layerSettings"
-                        ? "h-5 w-5 text-cyan-800"
+                        ? isSimpleUiMode
+                          ? "h-4 w-4 text-cyan-800"
+                          : "h-5 w-5 text-cyan-800"
                         : "h-4 w-4 text-cyan-700"
                     }
                   />
                   <div
                     className={
                       toolConfigModal === "layerSettings"
-                        ? "text-lg font-extrabold text-slate-950"
+                        ? isSimpleUiMode
+                          ? "text-sm font-extrabold text-slate-950"
+                          : "text-lg font-extrabold text-slate-950"
                         : "text-sm font-semibold text-slate-900"
                     }
                   >
@@ -16324,7 +16941,9 @@ export default function XrayCalibrationWorkspace({
                   onClick={() => setToolConfigModal(null)}
                   className={
                     toolConfigModal === "layerSettings"
-                      ? "rounded-full border border-white/70 bg-[#eef2f7] px-5 py-2 text-xs font-semibold text-slate-700 shadow-[4px_4px_10px_rgba(148,163,184,0.42),-4px_-4px_10px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
+                      ? isSimpleUiMode
+                        ? "rounded-full border border-white/70 bg-[#eef2f7] px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.3),-3px_-3px_8px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
+                        : "rounded-full border border-white/70 bg-[#eef2f7] px-5 py-2 text-xs font-semibold text-slate-700 shadow-[4px_4px_10px_rgba(148,163,184,0.42),-4px_-4px_10px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
                       : `${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`
                   }
                 >
@@ -16420,6 +17039,356 @@ export default function XrayCalibrationWorkspace({
               ) : null}
 
               {toolConfigModal === "layerSettings" ? (
+                isSimpleUiMode ? (
+                <div className="flex flex-col gap-2.5">
+                  {!selectedCutLayer || !selectedLayerMetrics ? (
+                    <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                      Pilih satu layer dulu dari daftar layer.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="rounded-[20px] border border-white/75 bg-[#eef2f7] px-3 py-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.22),inset_-3px_-3px_8px_rgba(255,255,255,0.84)]">
+                        <div className="text-[9px] font-black tracking-widest text-cyan-800 uppercase">
+                          Active Target
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-xs font-black text-slate-900">
+                            {selectedCutLayer.name ||
+                              getLayerDefaultName(selectedCutLayer)}
+                          </div>
+                          <div className="shrink-0 rounded-full border border-white/75 bg-white/45 px-2 py-0.5 font-mono text-[9px] font-bold text-slate-500">
+                            {selectedCutLayerIndex + 1}/{cutLayers.length}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-[10px] font-semibold text-slate-500">
+                          W{" "}
+                          {formatTemplateLayerRealSize(
+                            selectedLayerMetrics.widthMm,
+                          )}{" "}
+                          | H{" "}
+                          {formatTemplateLayerRealSize(
+                            selectedLayerMetrics.heightMm,
+                          )}
+                        </div>
+                      </div>
+
+                      {selectedCutLayer.kind === "free-line" ? (
+                        <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[3px_3px_8px_rgba(148,163,184,0.18),-3px_-3px_8px_rgba(255,255,255,0.76)]">
+                          <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                            Shape
+                          </div>
+                          <input
+                            type="text"
+                            value={
+                              selectedCutLayer.name ||
+                              getLayerDefaultName(selectedCutLayer)
+                            }
+                            onChange={(event) =>
+                              updateLayerById(selectedCutLayer.id, {
+                                name: event.target.value,
+                              })
+                            }
+                            className="mb-2 w-full rounded-xl border border-white/90 bg-[#edf1f6] px-3 py-2 text-xs font-bold text-slate-800 outline-none shadow-[inset_2px_2px_4px_rgba(196,207,220,0.7),inset_-2px_-2px_4px_#ffffff]"
+                            placeholder="Nama layer"
+                          />
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
+                              <ColorSwatchButton
+                                key={`simple-modal-free-color-${color}`}
+                                color={color}
+                                active={
+                                  (selectedCutLayer.fillColor ||
+                                    DEFAULT_FREE_LINE_COLOR) === color
+                                }
+                                label={`Warna shape ${color}`}
+                                onClick={() =>
+                                  updateLayerById(selectedCutLayer.id, {
+                                    fillColor: color,
+                                  })
+                                }
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
+                        <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                          Fungsi
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {[
+                            {
+                              key: "move",
+                              icon: "pan",
+                              label: "Move",
+                              tone: "text-cyan-700",
+                              onClick: () => {
+                                handleToolChange("pan");
+                                focusLayerCanvas(selectedCutLayer.id, {
+                                  openPanel: false,
+                                });
+                              },
+                            },
+                            {
+                              key: "center",
+                              icon: "fit",
+                              label: "Center",
+                              tone: "text-blue-700",
+                              disabled: !modelWidth || !modelHeight,
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  centerX: modelWidth / 2,
+                                  centerY: modelHeight / 2,
+                                }),
+                            },
+                            {
+                              key: "duplicate",
+                              icon: "layers",
+                              label: "Copy",
+                              tone: "text-indigo-700",
+                              onClick: duplicateSelectedCutLayer,
+                            },
+                            {
+                              key: "visibility",
+                              icon: selectedCutLayer.hidden ? "eyeOff" : "eye",
+                              label: selectedCutLayer.hidden ? "Show" : "Hide",
+                              tone: "text-slate-700",
+                              onClick: () =>
+                                toggleCutLayerVisibility(selectedCutLayer.id),
+                            },
+                            {
+                              key: "lock",
+                              icon: selectedCutLayer.lockScale ? "lock" : "unlock",
+                              label: selectedCutLayer.lockScale ? "Unlock" : "Lock",
+                              tone: "text-amber-700",
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  lockScale: !item.lockScale,
+                                })),
+                            },
+                            {
+                              key: "default",
+                              icon: "reset",
+                              label: "Default",
+                              tone: "text-emerald-700",
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  contrast: 100,
+                                  level: 100,
+                                  rotation: 0,
+                                  opacity: 1,
+                                  flipX: false,
+                                  flipY: false,
+                                }),
+                            },
+                            {
+                              key: "flip-h",
+                              icon: "flipH",
+                              label: "Flip H",
+                              tone: "text-slate-700",
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  flipX: !item.flipX,
+                                })),
+                            },
+                            {
+                              key: "delete",
+                              icon: "trash",
+                              label: "Delete",
+                              tone: "text-rose-600",
+                              onClick: removeSelectedCutLayer,
+                            },
+                          ].map((action) => (
+                            <button
+                              key={action.key}
+                              type="button"
+                              onClick={action.onClick}
+                              disabled={action.disabled}
+                              className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl border border-white/70 bg-[#eef2f7] px-1.5 py-2 text-[9px] font-black shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.tone}`}
+                            >
+                              <Icon name={action.icon} className="h-4 w-4" />
+                              <span>{action.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
+                        <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                          Susunan
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {[
+                            ["back", "moveDown", "Bawah"],
+                            ["down", "moveDown", "Turun"],
+                            ["up", "moveUp", "Naik"],
+                            ["front", "moveUp", "Atas"],
+                          ].map(([direction, icon, label]) => (
+                            <button
+                              key={direction}
+                              type="button"
+                              onClick={() => moveSelectedCutLayersInStack(direction)}
+                              disabled={!selectedCutLayerIds.length}
+                              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border border-white/70 bg-[#eef2f7] px-1.5 py-2 text-[9px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Icon name={icon} className="h-4 w-4" />
+                              <span>{label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {isImageBackedLayerKind(selectedCutLayer.kind) ? (
+                        <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[3px_3px_8px_rgba(148,163,184,0.18),-3px_-3px_8px_rgba(255,255,255,0.76)]">
+                          <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                            Ruler & Scale
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={trimSelectedTemplateLayer}
+                              disabled={!selectedLayerCanTrim}
+                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                            >
+                              Trim
+                            </button>
+                            <button
+                              type="button"
+                              onClick={applyTemplateRulerScale}
+                              disabled={!selectedLayerCanApplyRulerScale}
+                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                            >
+                              Ruler
+                            </button>
+                            <button
+                              type="button"
+                              onClick={applyTemplateRealSize}
+                              disabled={!selectedLayerCanApplyRealSize}
+                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                            >
+                              Scale
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-2 rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
+                        {[
+                          {
+                            key: "size",
+                            label: "Scale",
+                            value: selectedLayerMetrics.width,
+                            valueText: `${selectedLayerMetrics.width}px`,
+                            min: 16,
+                            max: selectedLayerMetrics.widthMax,
+                            disabled: selectedCutLayer.lockScale,
+                            onChange: (nextValue) =>
+                              updateLayerById(selectedCutLayer.id, (item) => {
+                                const size = getLayerDisplaySize(item);
+                                const ratio =
+                                  Math.max(1, size.height) /
+                                  Math.max(1, size.width);
+                                const nextWidth = clamp(
+                                  nextValue,
+                                  16,
+                                  selectedLayerMetrics.widthMax,
+                                );
+                                return {
+                                  ...item,
+                                  displayWidth: nextWidth,
+                                  displayHeight: clamp(
+                                    nextWidth * ratio,
+                                    16,
+                                    selectedLayerMetrics.heightMax,
+                                  ),
+                                };
+                              }),
+                          },
+                          {
+                            key: "rotation",
+                            label: "Rotate",
+                            value: selectedLayerMetrics.rotation,
+                            valueText: `${selectedLayerMetrics.rotation}°`,
+                            min: -180,
+                            max: 180,
+                            onChange: (nextValue) =>
+                              updateLayerById(selectedCutLayer.id, {
+                                rotation: (nextValue + 360) % 360,
+                              }),
+                          },
+                          {
+                            key: "opacity",
+                            label: "Opacity",
+                            value: selectedLayerMetrics.opacity,
+                            valueText: `${selectedLayerMetrics.opacity}%`,
+                            min: 10,
+                            max: 100,
+                            onChange: (nextValue) =>
+                              updateLayerById(selectedCutLayer.id, {
+                                opacity: clamp(nextValue / 100, 0.05, 1),
+                              }),
+                          },
+                          ...(isImageBackedLayerKind(selectedCutLayer.kind)
+                            ? [
+                                {
+                                  key: "contrast",
+                                  label: "Contrast",
+                                  value: selectedLayerMetrics.contrast,
+                                  valueText: `${selectedLayerMetrics.contrast}%`,
+                                  min: 10,
+                                  max: 300,
+                                  onChange: (nextValue) =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      contrast: clamp(nextValue, 10, 300),
+                                    }),
+                                },
+                                {
+                                  key: "level",
+                                  label: "Level",
+                                  value: selectedLayerMetrics.level,
+                                  valueText: `${selectedLayerMetrics.level}%`,
+                                  min: 10,
+                                  max: 300,
+                                  onChange: (nextValue) =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      level: clamp(nextValue, 10, 300),
+                                    }),
+                                },
+                              ]
+                            : []),
+                        ].map((control) => (
+                          <label
+                            key={control.key}
+                            className="block rounded-2xl border border-white/60 bg-white/35 px-3 py-2"
+                          >
+                            <span className="flex items-center justify-between gap-3 text-[10px] font-black text-slate-600">
+                              <span>{control.label}</span>
+                              <span className="font-mono text-slate-900">
+                                {control.valueText}
+                              </span>
+                            </span>
+                            <input
+                              type="range"
+                              min={control.min}
+                              max={control.max}
+                              step={1}
+                              value={control.value}
+                              disabled={control.disabled}
+                              onChange={(event) =>
+                                control.onChange(Number(event.target.value))
+                              }
+                              className="mt-2 h-2 w-full cursor-pointer accent-cyan-700 disabled:cursor-not-allowed disabled:opacity-45"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                ) : (
                 <div className="flex flex-col gap-2">
                   {!selectedCutLayer || !selectedLayerMetrics ? (
                     <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
@@ -16428,17 +17397,35 @@ export default function XrayCalibrationWorkspace({
                   ) : (
                     <>
                       <div
-                        className="rounded-full border border-white/75 bg-[#eef2f7] px-4 py-3 text-sm text-slate-800 shadow-[inset_4px_4px_9px_rgba(148,163,184,0.24),inset_-4px_-4px_9px_rgba(255,255,255,0.82)]"
+                        className="rounded-[22px] border border-white/75 bg-[#eef2f7] px-4 py-3 text-sm text-slate-800 shadow-[inset_4px_4px_9px_rgba(148,163,184,0.24),inset_-4px_-4px_9px_rgba(255,255,255,0.82)]"
                         style={{
                           color: selectedLayerPalette?.text || "#334155",
                         }}
                       >
-                        {selectedCutLayer.name ||
-                          getLayerDefaultName(selectedCutLayer)}{" "}
-                        | {selectedCutLayerIndex + 1}/{cutLayers.length}
-                        {hasLayerMultiSelection
-                          ? ` • primary dari ${selectedCutLayerIds.length} layer`
-                          : ""}
+                        <div className="mb-1 text-[10px] font-extrabold tracking-widest text-cyan-800 uppercase">
+                          Active Target
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-black">
+                            {selectedCutLayer.name ||
+                              getLayerDefaultName(selectedCutLayer)}
+                          </span>
+                          <span className="shrink-0 rounded-full border border-white/75 bg-white/45 px-2.5 py-1 font-mono text-[10px] text-slate-600">
+                            {selectedCutLayerIndex + 1}/{cutLayers.length} | W{" "}
+                            {formatTemplateLayerRealSize(
+                              selectedLayerMetrics.widthMm,
+                            )}{" "}
+                            | H{" "}
+                            {formatTemplateLayerRealSize(
+                              selectedLayerMetrics.heightMm,
+                            )}
+                          </span>
+                        </div>
+                        {hasLayerMultiSelection ? (
+                          <div className="mt-1 text-[10px] font-semibold text-slate-500">
+                            Primary dari {selectedCutLayerIds.length} layer.
+                          </div>
+                        ) : null}
                       </div>
                       <div
                         className={`grid gap-1.5 rounded-full border border-white/70 bg-[#eef2f7] p-1.5 shadow-[inset_5px_5px_12px_rgba(148,163,184,0.22),inset_-5px_-5px_12px_rgba(255,255,255,0.86)] ${
@@ -16480,6 +17467,85 @@ export default function XrayCalibrationWorkspace({
                         >
                           View
                         </button>
+                      </div>
+
+                      <div className="rounded-[22px] border border-white/70 bg-[#eef2f7] p-3 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
+                        <div className="mb-2 text-[10px] font-extrabold tracking-widest text-slate-500 uppercase">
+                          Aksi & Susunan Layer
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleToolChange("pan");
+                              focusLayerCanvas(selectedCutLayer.id, {
+                                openPanel: false,
+                              });
+                            }}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold text-cyan-800`}
+                          >
+                            Move
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateLayerById(selectedCutLayer.id, {
+                                centerX: modelWidth / 2,
+                                centerY: modelHeight / 2,
+                              })
+                            }
+                            disabled={!modelWidth || !modelHeight}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold text-blue-700 disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Center
+                          </button>
+                          <button
+                            type="button"
+                            onClick={duplicateSelectedCutLayer}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold text-indigo-700`}
+                          >
+                            Duplicate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSelectedCutLayersInStack("down")}
+                            disabled={!selectedCutLayerIds.length}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Turun
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSelectedCutLayersInStack("up")}
+                            disabled={!selectedCutLayerIds.length}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Naik
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSelectedCutLayersInStack("back")}
+                            disabled={!selectedCutLayerIds.length}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Bawah
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSelectedCutLayersInStack("front")}
+                            disabled={!selectedCutLayerIds.length}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            Atas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={removeSelectedCutLayer}
+                            className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold text-rose-600`}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
 
                       {layerSettingsTab === "transform" ? (
@@ -17337,6 +18403,7 @@ export default function XrayCalibrationWorkspace({
                     </>
                   )}
                 </div>
+                )
               ) : null}
 
               {toolConfigModal === "centerFinder" ? (
@@ -18866,31 +19933,119 @@ export default function XrayCalibrationWorkspace({
                   </button>
                 </div>
 
-                <select
-                  value={selectedCutLayer?.id ?? ""}
-                  onChange={(event) => {
-                    const rawLayerId = event.target.value;
-                    if (!rawLayerId) return;
-                    const nextLayerId = Number(rawLayerId);
-                    if (!Number.isFinite(nextLayerId)) return;
-                    selectLayerFromCanvas(nextLayerId, { openPanel: false });
+                <div className="mb-3 rounded-[24px] border border-white/70 bg-[#eef2f7] p-3 shadow-[inset_2px_2px_6px_rgba(148,163,184,0.18),inset_-2px_-2px_6px_rgba(255,255,255,0.82)]">
+                  <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                    <div>
+                      <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                        Gambar Utama
+                      </div>
+                      <div className="text-xs font-black text-slate-800">
+                        Content contrast / level
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContrast(100);
+                        setLevel(100);
+                      }}
+                      className="rounded-xl border border-white/70 bg-[#eef2f7] px-3 py-2 text-[10px] font-black text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)]"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {[
+                      {
+                        key: "main-contrast",
+                        label: "Contrast",
+                        value: contrast,
+                        min: 20,
+                        max: 220,
+                        onChange: setContrast,
+                      },
+                      {
+                        key: "main-level",
+                        label: "Level",
+                        value: level,
+                        min: 20,
+                        max: 220,
+                        onChange: setLevel,
+                      },
+                    ].map((control) => (
+                      <label
+                        key={control.key}
+                        className="rounded-2xl border border-white/60 bg-white/35 px-3 py-2"
+                      >
+                        <span className="flex items-center justify-between text-[10px] font-black text-slate-600">
+                          <span>{control.label}</span>
+                          <span className="font-mono text-slate-900">
+                            {control.value}%
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          min={control.min}
+                          max={control.max}
+                          step={1}
+                          value={control.value}
+                          onChange={(event) =>
+                            control.onChange(Number(event.target.value))
+                          }
+                          className="mt-2 h-2 w-full accent-cyan-700"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <LayerManager
+                  layers={cutLayers}
+                  selectedLayerId={selectedCutLayerId}
+                  onSelectLayer={(layerId) => {
+                    selectLayerFromCanvas(layerId, { openPanel: false });
                     setSimpleLayerDropdownOpen(true);
                   }}
-                  disabled={!cutLayers.length}
-                  className="mb-3 w-full cursor-pointer appearance-none rounded-2xl border border-white bg-[#eef2f7] px-4 py-2.5 text-xs font-black text-slate-700 outline-none shadow-[inset_1.5px_1.5px_3px_rgba(165,180,203,0.4),inset_-1.5px_-1.5px_3px_#ffffff] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">
-                    {cutLayers.length ? "Pilih layer aktif" : "Belum ada layer"}
-                  </option>
-                  {cutLayers.map((layer, layerIndex) => (
-                    <option key={layer.id} value={layer.id}>
-                      {layer.name || getLayerDefaultName(layer)} |{" "}
-                      {layerIndex + 1}/{cutLayers.length}
-                    </option>
-                  ))}
-                </select>
+                  onToggleLayerVisibility={toggleCutLayerVisibility}
+                  onMoveLayer={moveCutLayerInStack}
+                  onOpenSettings={(layerId) => {
+                    selectLayerFromCanvas(layerId, { openPanel: false });
+                    setSimpleLayerDropdownOpen(false);
+                    openLayerSettingsModal(layerId);
+                  }}
+                  className="mb-3"
+                  maxHeightClass="max-h-[min(36vh,300px)]"
+                />
 
-                <div className="max-h-[calc(100dvh-220px)] space-y-4 overflow-y-auto pr-1 sm:max-h-[62vh]">
+                <div className="rounded-2xl border border-white/70 bg-white/35 px-3.5 py-3 text-[11px] font-bold text-slate-600 shadow-[inset_1.5px_1.5px_4px_rgba(165,180,203,0.28),inset_-1.5px_-1.5px_4px_#ffffff]">
+                  {selectedCutLayer ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-black text-slate-800">
+                          {selectedCutLayer.name ||
+                            getLayerDefaultName(selectedCutLayer)}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-slate-500">
+                          Active target dan aksi susunan layer ada di modal.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSimpleLayerDropdownOpen(false);
+                          openLayerSettingsModal(selectedCutLayer.id);
+                        }}
+                        className="shrink-0 rounded-xl border border-white/70 bg-[#eef2f7] px-3 py-2 text-[10px] font-black text-cyan-800 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)] transition active:scale-95"
+                      >
+                        Buka Settings
+                      </button>
+                    </div>
+                  ) : (
+                    <span>Pilih layer, lalu tekan settings untuk membuka modal.</span>
+                  )}
+                </div>
+
+                <div className="hidden">
                 {!selectedCutLayer || !selectedLayerMetrics ? (
                   <div className="rounded-2xl border border-white/60 bg-[#eef2f7] px-3.5 py-3 text-[11px] font-bold text-slate-500 shadow-[inset_1.5px_1.5px_4px_rgba(165,180,203,0.48),inset_-1.5px_-1.5px_4px_#ffffff]">
                     Pilih layer dari daftar untuk mengatur ukuran, posisi,
@@ -24350,9 +25505,7 @@ export default function XrayCalibrationWorkspace({
                         <button
                           type="button"
                           onClick={() =>
-                            isSimpleUiMode
-                              ? openSimpleLayerDropdown(selectedCutLayer.id)
-                              : openLayerSettingsModal(selectedCutLayer.id)
+                            openLayerSettingsModal(selectedCutLayer.id)
                           }
                           className={`flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                             showLayerToolbarName ? "gap-1.5 pr-2" : "pr-1.5"
@@ -24390,9 +25543,7 @@ export default function XrayCalibrationWorkspace({
                           icon="settings"
                           label="Buka layer settings"
                           onClick={() =>
-                            isSimpleUiMode
-                              ? openSimpleLayerDropdown(selectedCutLayer.id)
-                              : openLayerSettingsModal(selectedCutLayer.id)
+                            openLayerSettingsModal(selectedCutLayer.id)
                           }
                         />
                       </div>
@@ -24404,9 +25555,7 @@ export default function XrayCalibrationWorkspace({
                       <button
                         type="button"
                         onClick={() =>
-                          isSimpleUiMode
-                            ? openSimpleLayerDropdown(selectedCutLayer.id)
-                            : openLayerSettingsModal(selectedCutLayer.id)
+                          openLayerSettingsModal(selectedCutLayer.id)
                         }
                         className={`mr-1 flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
                           showLayerToolbarName ? "gap-2 pr-2" : "pr-1.5"
@@ -24468,9 +25617,7 @@ export default function XrayCalibrationWorkspace({
                         icon="settings"
                         label="Buka layer settings"
                         onClick={() =>
-                          isSimpleUiMode
-                            ? openSimpleLayerDropdown(selectedCutLayer.id)
-                            : openLayerSettingsModal(selectedCutLayer.id)
+                          openLayerSettingsModal(selectedCutLayer.id)
                         }
                       />
                     </div>
@@ -24701,46 +25848,6 @@ export default function XrayCalibrationWorkspace({
                       canRedo={historyState.redo > 0}
                     />
                   )}
-
-                  <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-[22px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl">
-                    <button
-                      type="button"
-                      onClick={() => zoomBy(1 / 1.15)}
-                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
-                    >
-                      Zoom {(view.scale * 100).toFixed(0)}%
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToolChange("pan")}
-                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
-                    >
-                      {activeToolLabel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openSimpleCalibrationModal()}
-                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
-                    >
-                      {hasCalibration ? measurementUnit : "uncalibrated"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={undoHistory}
-                      disabled={historyState.undo < 1}
-                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      History
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => resetWorkspaceState()}
-                      className="rounded-2xl border border-white/70 bg-[#eef2f7] px-3 py-2 text-rose-600 shadow-[3px_3px_8px_rgba(148,163,184,0.32),-3px_-3px_8px_rgba(255,255,255,0.8)]"
-                      title="Reset workspace tanpa menghapus gambar utama"
-                    >
-                      Reset
-                    </button>
-                  </div>
                 </div>
               ) : null}
               <AnimatePresence>
@@ -24840,6 +25947,110 @@ export default function XrayCalibrationWorkspace({
                         canUndo={historyState.undo > 0}
                         canRedo={historyState.redo > 0}
                       />
+                    ) : simpleMobilePanel === "layer" ? (
+                      <div className="mx-auto max-h-[min(56vh,500px)] w-[min(94vw,440px)] overflow-y-auto rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
+                          <div>
+                            <h2 className="text-xs font-black tracking-wider uppercase">
+                              Layer
+                            </h2>
+                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
+                              Manage & image clarity
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSimpleMobilePanel(null)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                            aria-label="Tutup layer mobile"
+                            title="Tutup"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="mb-3 rounded-[24px] border border-white/70 bg-[#eef2f7] p-3 shadow-[inset_2px_2px_6px_rgba(148,163,184,0.18),inset_-2px_-2px_6px_rgba(255,255,255,0.82)]">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                                Gambar Utama
+                              </div>
+                              <div className="text-xs font-black text-slate-800">
+                                Contrast / Level
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setContrast(100);
+                                setLevel(100);
+                              }}
+                              className="min-h-10 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-[10px] font-black text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)]"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {[
+                              {
+                                key: "mobile-main-contrast",
+                                label: "Contrast",
+                                value: contrast,
+                                min: 20,
+                                max: 220,
+                                onChange: setContrast,
+                              },
+                              {
+                                key: "mobile-main-level",
+                                label: "Level",
+                                value: level,
+                                min: 20,
+                                max: 220,
+                                onChange: setLevel,
+                              },
+                            ].map((control) => (
+                              <label
+                                key={control.key}
+                                className="block rounded-2xl border border-white/60 bg-white/35 px-3 py-2"
+                              >
+                                <span className="flex items-center justify-between text-[10px] font-black text-slate-600">
+                                  <span>{control.label}</span>
+                                  <span className="font-mono text-slate-900">
+                                    {control.value}%
+                                  </span>
+                                </span>
+                                <input
+                                  type="range"
+                                  min={control.min}
+                                  max={control.max}
+                                  step={1}
+                                  value={control.value}
+                                  onChange={(event) =>
+                                    control.onChange(Number(event.target.value))
+                                  }
+                                  className="mt-2 h-2 w-full accent-cyan-700"
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <LayerManager
+                          layers={cutLayers}
+                          selectedLayerId={selectedCutLayerId}
+                          onSelectLayer={(layerId) =>
+                            selectLayerFromCanvas(layerId, { openPanel: false })
+                          }
+                          onToggleLayerVisibility={toggleCutLayerVisibility}
+                          onMoveLayer={moveCutLayerInStack}
+                          onOpenSettings={(layerId) => {
+                            selectLayerFromCanvas(layerId, { openPanel: false });
+                            setSimpleMobilePanel(null);
+                            openLayerSettingsModal(layerId);
+                          }}
+                          maxHeightClass="max-h-[min(28vh,260px)]"
+                        />
+                      </div>
                     ) : simpleMobilePanel === "implant" ? (
                       <ImplantLayer
                         className="mx-auto max-h-[min(54vh,480px)] w-[min(94vw,420px)] overflow-y-auto backdrop-blur-xl"
@@ -25213,6 +26424,36 @@ export default function XrayCalibrationWorkspace({
                             onChange: (nextValue) =>
                               updateLayerById(selectedCutLayer.id, {
                                 rotation: normalizeRotationDegrees(nextValue),
+                              }),
+                          },
+                          {
+                            key: "contrast",
+                            label: "Contrast",
+                            value: selectedLayerMetrics.contrast,
+                            min: 10,
+                            max: 300,
+                            unit: "%",
+                            disabled: !isImageBackedLayerKind(
+                              selectedCutLayer.kind,
+                            ),
+                            onChange: (nextValue) =>
+                              updateLayerById(selectedCutLayer.id, {
+                                contrast: clamp(nextValue, 10, 300),
+                              }),
+                          },
+                          {
+                            key: "level",
+                            label: "Level",
+                            value: selectedLayerMetrics.level,
+                            min: 10,
+                            max: 300,
+                            unit: "%",
+                            disabled: !isImageBackedLayerKind(
+                              selectedCutLayer.kind,
+                            ),
+                            onChange: (nextValue) =>
+                              updateLayerById(selectedCutLayer.id, {
+                                level: clamp(nextValue, 10, 300),
                               }),
                           },
                           {
