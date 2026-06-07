@@ -45,7 +45,7 @@ function ToolButton({
   return (
     <button
       type="button"
-      className={`inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full transition-all ${
+      className={`inline-flex h-9 min-w-10 shrink-0 items-center justify-center rounded-full transition-all ${
         active ? "mobile-nav-pressed" : "mobile-nav-raised"
       } ${className}`}
       aria-label={label}
@@ -90,7 +90,7 @@ export default function MobileNavigation({
               key={tab.id}
               type="button"
               onClick={tab.onClick}
-              className={`inline-flex h-8 min-w-0 items-center justify-center rounded-full px-1.5 text-[9px] font-bold transition-all ${
+              className={`inline-flex h-8 min-w-0 items-center justify-center rounded-full px-1.5 text-[8px] font-bold transition-all ${
                 tab.active
                   ? "mobile-nav-pressed text-slate-900"
                   : "text-slate-500 hover:text-slate-800"

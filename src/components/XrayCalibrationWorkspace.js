@@ -3600,6 +3600,8 @@ export default function XrayCalibrationWorkspace({
   const [simpleGuideModalOpen, setSimpleGuideModalOpen] = useState(false);
   const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
+  const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
+    useState(false);
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -4379,6 +4381,7 @@ export default function XrayCalibrationWorkspace({
     setSelectedPlanningGuideId(null);
     setSelectedAnnotationId(null);
     setSelectionPulse(null);
+    setMobileObjectSettingsOpen(false);
     clearMobileHandleAssist();
     clearMobileAngleHandleAssist();
     clearMobileHkaHandleAssist();
@@ -11516,17 +11519,68 @@ export default function XrayCalibrationWorkspace({
           const angleId = findClosestAngleId(hitImagePoint);
           const lineId = findClosestLineId(hitImagePoint);
           const planningGuideId = findClosestPlanningGuideId(hitImagePoint);
+          const targetAnnotation = annotations.find(
+            (annotation) => annotation.id === annotationId,
+          );
+          const targetLayer = cutLayers.find(
+            (layer) => layer.id === layerId,
+          );
+          const targetLine = lines.find((line) => line.id === lineId);
+          const targetCircle = circles.find((circle) => circle.id === circleId);
+          const targetPlanningGuide = planningGuides.find(
+            (guide) => guide.id === planningGuideId,
+          );
 
           setMobileCanvasMode("edit");
           setTool("pan");
-          if (annotationId !== null) {
+          setMobileObjectSettingsOpen(false);
+          if (annotationId !== null && targetAnnotation) {
             selectAnnotationFromCanvas(annotationId, { openPanel: false });
-            setNotice("Anotasi dipilih. Atur dari bottom sheet.");
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-annotation",
+              annotationId,
+              startImageX: hitImagePoint.x,
+              startImageY: hitImagePoint.y,
+              originX: targetAnnotation.x,
+              originY: targetAnnotation.y,
+            };
+            setNotice("Anotasi dipilih. Tetap tahan dan geser untuk move.");
             return;
           }
-          if (layerId !== null) {
+          if (layerId !== null && targetLayer) {
             selectLayerFromCanvas(layerId, { openPanel: false });
-            setNotice("Layer dipilih. Setting langsung tersedia di bawah.");
+            if (targetLayer.lockScale) {
+              setNotice("Layer dipilih. Layer terkunci, buka lock dari Setting.");
+              return;
+            }
+            const selectedMoveLayerIds = getRelatedLayerIds(targetLayer.id, {
+              includeGroup: true,
+            });
+            const movableLayerIds = selectedMoveLayerIds.filter((moveLayerId) => {
+              const layer = cutLayers.find((item) => item.id === moveLayerId);
+              return layer && !layer.lockScale;
+            });
+            if (!movableLayerIds.length) {
+              setNotice("Layer dipilih, tapi semua layer terkait terkunci.");
+              return;
+            }
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-cut-layer",
+              layerIds: movableLayerIds,
+              startImageX: hitImagePoint.x,
+              startImageY: hitImagePoint.y,
+              origins: movableLayerIds.map((moveLayerId) => {
+                const layer = cutLayers.find((item) => item.id === moveLayerId);
+                return {
+                  layerId: moveLayerId,
+                  originCenterX: Number(layer?.centerX || 0),
+                  originCenterY: Number(layer?.centerY || 0),
+                };
+              }),
+            };
+            setNotice("Layer dipilih. Tetap tahan dan geser untuk move.");
             return;
           }
           if (hkaId !== null) {
@@ -11538,10 +11592,10 @@ export default function XrayCalibrationWorkspace({
             setSelectedAnnotationId(null);
             setSelectedPlanningGuideId(null);
             triggerSelectionPulse("hka", hkaId);
-            setNotice("HKA dipilih. Atur dari bottom sheet.");
+            setNotice("HKA dipilih. Tekan Setting untuk pengaturan.");
             return;
           }
-          if (circleId !== null) {
+          if (circleId !== null && targetCircle) {
             setSelectedCircleId(circleId);
             setSelectedLineId(null);
             setSelectedAngleId(null);
@@ -11550,7 +11604,16 @@ export default function XrayCalibrationWorkspace({
             setSelectedAnnotationId(null);
             setSelectedPlanningGuideId(null);
             triggerSelectionPulse("circle", circleId);
-            setNotice("Circle dipilih. Atur dari bottom sheet.");
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-circle-center",
+              circleId,
+              startImageX: hitImagePoint.x,
+              startImageY: hitImagePoint.y,
+              originCenterX: targetCircle.cx,
+              originCenterY: targetCircle.cy,
+            };
+            setNotice("Circle dipilih. Tetap tahan dan geser untuk move.");
             return;
           }
           if (angleId !== null) {
@@ -11562,10 +11625,10 @@ export default function XrayCalibrationWorkspace({
             setSelectedAnnotationId(null);
             setSelectedPlanningGuideId(null);
             triggerSelectionPulse("angle", angleId);
-            setNotice("Angle dipilih. Atur dari bottom sheet.");
+            setNotice("Angle dipilih. Tekan Setting untuk pengaturan.");
             return;
           }
-          if (lineId !== null) {
+          if (lineId !== null && targetLine) {
             setSelectedLineId(lineId);
             setSelectedAngleId(null);
             setSelectedCircleId(null);
@@ -11574,12 +11637,42 @@ export default function XrayCalibrationWorkspace({
             setSelectedAnnotationId(null);
             setSelectedPlanningGuideId(null);
             triggerSelectionPulse("line", lineId);
-            setNotice("Line dipilih. Atur dari bottom sheet.");
+            if (isLineLocked(lineId)) {
+              setNotice("Line dipilih. Line terkunci, buka lock dari Setting.");
+              return;
+            }
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-line",
+              lineId,
+              startImageX: hitImagePoint.x,
+              startImageY: hitImagePoint.y,
+              origin: {
+                x1: targetLine.x1,
+                y1: targetLine.y1,
+                x2: targetLine.x2,
+                y2: targetLine.y2,
+              },
+            };
+            setNotice("Line dipilih. Tetap tahan dan geser untuk move.");
             return;
           }
-          if (planningGuideId !== null) {
+          if (planningGuideId !== null && targetPlanningGuide) {
             selectPlanningGuideForEdit(planningGuideId, { openPanel: false });
-            setNotice("Guide dipilih. Atur dari bottom sheet.");
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-planning-guide",
+              guideId: planningGuideId,
+              startImageX: hitImagePoint.x,
+              startImageY: hitImagePoint.y,
+              origin: {
+                startX: targetPlanningGuide.anchorStart.x,
+                startY: targetPlanningGuide.anchorStart.y,
+                endX: targetPlanningGuide.anchorEnd.x,
+                endY: targetPlanningGuide.anchorEnd.y,
+              },
+            };
+            setNotice("Guide dipilih. Tetap tahan dan geser untuk move.");
           }
         }, MOBILE_LONG_PRESS_MS);
       }
@@ -16978,6 +17071,16 @@ export default function XrayCalibrationWorkspace({
       selectedAnnotation ||
       selectedPlanningGuide,
   );
+  useEffect(() => {
+    if (!hasMobileObjectSelection) {
+      setMobileObjectSettingsOpen(false);
+    }
+  }, [hasMobileObjectSelection]);
+  useEffect(() => {
+    if (simpleMobilePanel) {
+      setMobileObjectSettingsOpen(false);
+    }
+  }, [simpleMobilePanel]);
   const activeMeasurementWorkflowKey =
     tool === "draw"
       ? "line"
@@ -26715,7 +26818,7 @@ export default function XrayCalibrationWorkspace({
 	              </AnimatePresence>
               {isSimpleUiMode && isMobileViewport && !image ? (
                 <div className="pointer-events-auto absolute top-3 left-3 z-30 max-w-[calc(100vw-1.5rem)] rounded-[24px] border border-white/75 bg-[#eef2f7]/95 px-3 py-3 text-slate-700 shadow-[3px_3px_10px_rgba(148,163,184,0.26),-3px_-3px_10px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                  <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
                     Alur cepat
                   </div>
                   <div className="mt-1 text-xs font-extrabold text-slate-800">
@@ -26781,6 +26884,24 @@ export default function XrayCalibrationWorkspace({
                     >
                       <Redo2 className="h-3 w-3" />
                     </button>
+                    {hasMobileObjectSelection ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSimpleMobilePanel(null);
+                          setMobileObjectSettingsOpen((prev) => !prev);
+                        }}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/50 text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] ${
+                          mobileObjectSettingsOpen
+                            ? "bg-slate-900/82 text-white"
+                            : "bg-[#eef2f7]/58"
+                        }`}
+                        aria-label="Buka setting object"
+                        title="Setting"
+                      >
+                        <SlidersHorizontal className="h-3 w-3" />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -26925,6 +27046,7 @@ export default function XrayCalibrationWorkspace({
               {isSimpleUiMode &&
               isMobileViewport &&
               hasMobileObjectSelection &&
+              mobileObjectSettingsOpen &&
               !simpleMobilePanel ? (
                 <motion.div
                   initial={{ opacity: 0, y: 18, scale: 0.98 }}
@@ -26944,7 +27066,7 @@ export default function XrayCalibrationWorkspace({
                     </div>
                     <button
                       type="button"
-                      onClick={clearActiveCanvasSelection}
+                      onClick={() => setMobileObjectSettingsOpen(false)}
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/50 bg-[#eef2f7]/62 text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"
                       aria-label="Tutup setting object"
                       title="Tutup"
