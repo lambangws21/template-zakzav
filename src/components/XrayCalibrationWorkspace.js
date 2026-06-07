@@ -1144,20 +1144,11 @@ function getHkaDraftNotice(mode, pointsPlaced) {
 function isMobilePrecisionInteractionMode(mode) {
   return [
     "move-handle",
-    "move-line",
-    "move-line-label",
     "move-angle-handle",
-    "move-angle-label",
     "move-circle-center",
     "move-circle-radius",
     "move-hka-handle",
-    "move-hka-label",
     "move-planning-guide-handle",
-    "move-planning-guide",
-    "move-planning-guide-label",
-    "move-cut-layer",
-    "resize-cut-layer",
-    "rotate-cut-layer",
     "move-free-line-point",
     "move-free-line-curve-handle",
     "move-annotation",
@@ -3454,6 +3445,20 @@ export default function XrayCalibrationWorkspace({
   const mobilePrecisionAutoZoomedRef = useRef(false);
   const mobileCutLayerRafRef = useRef(null);
   const mobileCutLayerRafUpdaterRef = useRef(null);
+  const mobileLinesRafRef = useRef(null);
+  const mobileLinesRafUpdaterRef = useRef(null);
+  const mobileAnglesRafRef = useRef(null);
+  const mobileAnglesRafUpdaterRef = useRef(null);
+  const mobileCirclesRafRef = useRef(null);
+  const mobileCirclesRafUpdaterRef = useRef(null);
+  const mobileHkaRafRef = useRef(null);
+  const mobileHkaRafUpdaterRef = useRef(null);
+  const mobileAnnotationsRafRef = useRef(null);
+  const mobileAnnotationsRafUpdaterRef = useRef(null);
+  const mobilePlanningGuidesRafRef = useRef(null);
+  const mobilePlanningGuidesRafUpdaterRef = useRef(null);
+  const mobilePrecisionOverlayRafRef = useRef(null);
+  const mobilePrecisionOverlayPendingRef = useRef(null);
   const mobileGesturePointersRef = useRef(new Map());
   const mobileGestureRef = useRef(null);
   const mobileLongPressTimeoutRef = useRef(null);
@@ -4648,6 +4653,94 @@ export default function XrayCalibrationWorkspace({
     setNotice("Visibility layer diperbarui.");
   }, []);
 
+  const scheduleMobileStateUpdate = useCallback(
+    (setter, rafRef, updaterRef, updater) => {
+      if (!isMobileViewport || typeof window === "undefined") {
+        setter(updater);
+        return;
+      }
+
+      updaterRef.current = updater;
+      if (rafRef.current !== null) return;
+
+      rafRef.current = window.requestAnimationFrame(() => {
+        const pendingUpdater = updaterRef.current;
+        updaterRef.current = null;
+        rafRef.current = null;
+        if (pendingUpdater) {
+          setter(pendingUpdater);
+        }
+      });
+    },
+    [isMobileViewport],
+  );
+
+  const scheduleLinesUpdate = useCallback(
+    (updater) =>
+      scheduleMobileStateUpdate(
+        setLines,
+        mobileLinesRafRef,
+        mobileLinesRafUpdaterRef,
+        updater,
+      ),
+    [scheduleMobileStateUpdate],
+  );
+
+  const scheduleAnglesUpdate = useCallback(
+    (updater) =>
+      scheduleMobileStateUpdate(
+        setAngles,
+        mobileAnglesRafRef,
+        mobileAnglesRafUpdaterRef,
+        updater,
+      ),
+    [scheduleMobileStateUpdate],
+  );
+
+  const scheduleCirclesUpdate = useCallback(
+    (updater) =>
+      scheduleMobileStateUpdate(
+        setCircles,
+        mobileCirclesRafRef,
+        mobileCirclesRafUpdaterRef,
+        updater,
+      ),
+    [scheduleMobileStateUpdate],
+  );
+
+  const scheduleHkaUpdate = useCallback(
+    (updater) =>
+      scheduleMobileStateUpdate(
+        setHkaSets,
+        mobileHkaRafRef,
+        mobileHkaRafUpdaterRef,
+        updater,
+      ),
+    [scheduleMobileStateUpdate],
+  );
+
+  const scheduleAnnotationsUpdate = useCallback(
+    (updater) =>
+      scheduleMobileStateUpdate(
+        setAnnotations,
+        mobileAnnotationsRafRef,
+        mobileAnnotationsRafUpdaterRef,
+        updater,
+      ),
+    [scheduleMobileStateUpdate],
+  );
+
+  const schedulePlanningGuidesUpdate = useCallback(
+    (updater) =>
+      scheduleMobileStateUpdate(
+        setPlanningGuides,
+        mobilePlanningGuidesRafRef,
+        mobilePlanningGuidesRafUpdaterRef,
+        updater,
+      ),
+    [scheduleMobileStateUpdate],
+  );
+
   const scheduleCutLayersUpdate = useCallback(
     (updater) => {
       if (!isMobileViewport || typeof window === "undefined") {
@@ -4672,12 +4765,34 @@ export default function XrayCalibrationWorkspace({
 
   useEffect(() => {
     return () => {
-      if (
-        mobileCutLayerRafRef.current !== null &&
-        typeof window !== "undefined"
-      ) {
-        window.cancelAnimationFrame(mobileCutLayerRafRef.current);
-      }
+      if (typeof window === "undefined") return;
+      [
+        mobileCutLayerRafRef,
+        mobileLinesRafRef,
+        mobileAnglesRafRef,
+        mobileCirclesRafRef,
+        mobileHkaRafRef,
+        mobileAnnotationsRafRef,
+        mobilePlanningGuidesRafRef,
+        mobilePrecisionOverlayRafRef,
+      ].forEach((rafRef) => {
+        if (rafRef.current !== null) {
+          window.cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+      });
+      [
+        mobileCutLayerRafUpdaterRef,
+        mobileLinesRafUpdaterRef,
+        mobileAnglesRafUpdaterRef,
+        mobileCirclesRafUpdaterRef,
+        mobileHkaRafUpdaterRef,
+        mobileAnnotationsRafUpdaterRef,
+        mobilePlanningGuidesRafUpdaterRef,
+        mobilePrecisionOverlayPendingRef,
+      ].forEach((pendingRef) => {
+        pendingRef.current = null;
+      });
     };
   }, []);
 
@@ -6283,12 +6398,26 @@ export default function XrayCalibrationWorkspace({
       if (!isSimpleUiMode || !isMobileViewport || !screenPoint || !imagePoint) {
         return;
       }
-      setMobilePrecisionOverlay({
+      const nextOverlay = {
         screenX: screenPoint.x,
         screenY: screenPoint.y,
         imageX: imagePoint.x,
         imageY: imagePoint.y,
         label,
+      };
+      if (typeof window === "undefined") {
+        setMobilePrecisionOverlay(nextOverlay);
+        return;
+      }
+      mobilePrecisionOverlayPendingRef.current = nextOverlay;
+      if (mobilePrecisionOverlayRafRef.current !== null) return;
+      mobilePrecisionOverlayRafRef.current = window.requestAnimationFrame(() => {
+        mobilePrecisionOverlayRafRef.current = null;
+        const pendingOverlay = mobilePrecisionOverlayPendingRef.current;
+        mobilePrecisionOverlayPendingRef.current = null;
+        if (pendingOverlay) {
+          setMobilePrecisionOverlay(pendingOverlay);
+        }
       });
     },
     [isMobileViewport, isSimpleUiMode],
@@ -6353,6 +6482,14 @@ export default function XrayCalibrationWorkspace({
       mobilePrecisionPreviousViewRef.current = null;
     }
     mobilePrecisionAutoZoomedRef.current = false;
+    if (
+      mobilePrecisionOverlayRafRef.current !== null &&
+      typeof window !== "undefined"
+    ) {
+      window.cancelAnimationFrame(mobilePrecisionOverlayRafRef.current);
+      mobilePrecisionOverlayRafRef.current = null;
+    }
+    mobilePrecisionOverlayPendingRef.current = null;
     setMobilePrecisionOverlay(null);
   }, []);
 
@@ -13911,7 +14048,7 @@ export default function XrayCalibrationWorkspace({
         } = interactionRef.current;
         const dx = movePoint.x - startImageX;
         const dy = movePoint.y - startImageY;
-        setAnnotations((prev) =>
+        scheduleAnnotationsUpdate((prev) =>
           prev.map((annotation) =>
             annotation.id === annotationId
               ? {
@@ -14086,7 +14223,7 @@ export default function XrayCalibrationWorkspace({
             excludeRefs: [`guide:${guideId}`],
           },
         );
-        setPlanningGuides((prev) =>
+        schedulePlanningGuidesUpdate((prev) =>
           prev.map((guide) => {
             if (guide.id !== guideId) return guide;
             if (handleKey === "start") {
@@ -14120,7 +14257,7 @@ export default function XrayCalibrationWorkspace({
         dx = clamp(dx, -minX, modelWidth - maxX);
         dy = clamp(dy, -minY, modelHeight - maxY);
 
-        setPlanningGuides((prev) =>
+        schedulePlanningGuidesUpdate((prev) =>
           prev.map((guide) =>
             guide.id === guideId
               ? {
@@ -14140,7 +14277,7 @@ export default function XrayCalibrationWorkspace({
           interactionRef.current;
         const dx = point.x - startX;
         const dy = point.y - startY;
-        setPlanningGuides((prev) =>
+        schedulePlanningGuidesUpdate((prev) =>
           prev.map((guide) =>
             guide.id === guideId
               ? {
@@ -14357,7 +14494,7 @@ export default function XrayCalibrationWorkspace({
           },
         );
 
-        setLines((prev) =>
+        scheduleLinesUpdate((prev) =>
           prev.map((line) => {
             if (line.id !== lineId) return line;
             if (handleKey === "start") {
@@ -14386,7 +14523,7 @@ export default function XrayCalibrationWorkspace({
         dx = clamp(dx, -minX, modelWidth - maxX);
         dy = clamp(dy, -minY, modelHeight - maxY);
 
-        setLines((prev) =>
+        scheduleLinesUpdate((prev) =>
           prev.map((line) =>
             line.id === lineId
               ? {
@@ -14409,7 +14546,7 @@ export default function XrayCalibrationWorkspace({
         if (isLineLocked(lineId)) return;
         const dx = point.x - startX;
         const dy = point.y - startY;
-        setLines((prev) =>
+        scheduleLinesUpdate((prev) =>
           prev.map((line) =>
             line.id === lineId
               ? {
@@ -14441,7 +14578,7 @@ export default function XrayCalibrationWorkspace({
             excludeRefs: [`angle:${angleId}`],
           },
         );
-        setAngles((prev) =>
+        scheduleAnglesUpdate((prev) =>
           prev.map((item) => {
             if (item.id !== angleId) return item;
             if (handleKey === "p1")
@@ -14460,7 +14597,7 @@ export default function XrayCalibrationWorkspace({
           interactionRef.current;
         const dx = point.x - startX;
         const dy = point.y - startY;
-        setAngles((prev) =>
+        scheduleAnglesUpdate((prev) =>
           prev.map((item) =>
             item.id === angleId
               ? {
@@ -14480,7 +14617,7 @@ export default function XrayCalibrationWorkspace({
           interactionRef.current;
         const dx = point.x - startX;
         const dy = point.y - startY;
-        setHkaSets((prev) =>
+        scheduleHkaUpdate((prev) =>
           prev.map((item) =>
             item.id === hkaId
               ? {
@@ -14510,7 +14647,7 @@ export default function XrayCalibrationWorkspace({
           x: originCenterX + dx,
           y: originCenterY + dy,
         });
-        setCircles((prev) =>
+        scheduleCirclesUpdate((prev) =>
           prev.map((item) =>
             item.id === circleId
               ? { ...item, cx: nextCenterPoint.x, cy: nextCenterPoint.y }
@@ -14529,7 +14666,7 @@ export default function XrayCalibrationWorkspace({
             excludeRefs: [`circle:${circleId}`],
           },
         );
-        setCircles((prev) =>
+        scheduleCirclesUpdate((prev) =>
           prev.map((item) => {
             if (item.id !== circleId) return item;
             const nextRadius = clamp(
@@ -14564,7 +14701,7 @@ export default function XrayCalibrationWorkspace({
             excludeRefs: [`hka:${hkaId}`],
           },
         );
-        setHkaSets((prev) =>
+        scheduleHkaUpdate((prev) =>
           prev.map((item) => {
             if (item.id !== hkaId) return item;
             const nextItem = {
@@ -14619,9 +14756,14 @@ export default function XrayCalibrationWorkspace({
       modelHeight,
       modelWidth,
       resolveSnapWithPreview,
+      scheduleAnnotationsUpdate,
+      scheduleAnglesUpdate,
+      scheduleCirclesUpdate,
       scheduleCutLayersUpdate,
+      scheduleHkaUpdate,
+      scheduleLinesUpdate,
+      schedulePlanningGuidesUpdate,
       scheduleViewportUpdate,
-      setPlanningGuides,
       screenToImagePoint,
       tool,
       updateMobilePrecisionOverlay,
