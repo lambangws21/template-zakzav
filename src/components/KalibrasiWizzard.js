@@ -77,18 +77,18 @@ export default function CalibrationWizard({
         : "border-rose-100 bg-rose-50 text-rose-800";
 
   const stepTitle = useMemo(() => {
-    if (step === 1) return "Pilih metode kalibrasi";
-    if (step === 2) return "Tentukan nilai referensi";
-    if (step === 3) return isLineMode ? "Gambar garis kalibrasi" : "Validasi zoom source";
+    if (step === 1) return "Metode & ketebalan garis";
+    if (step === 2) return isLineMode ? "Gambar garis kalibrasi" : "Validasi zoom source";
+    if (step === 3) return "Tentukan nilai referensi";
     return "Finalisasi dan QC";
   }, [isLineMode, step]);
 
   useEffect(() => {
     if (open) {
-      setStep(calibrationReferenceLine || calibrationMode === "zoom" ? 4 : 1);
+      setStep(1);
       setShowQCDetail(false);
     }
-  }, [calibrationMode, calibrationReferenceLine, open]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -189,19 +189,137 @@ export default function CalibrationWizard({
               </div>
               <p className="px-1 text-[11px] leading-relaxed font-medium text-slate-500">
                 {isLineMode
-                  ? "Gunakan garis pada marker/ruler X-ray sebagai acuan skala. Logika perhitungan tetap memakai faktor kalibrasi workspace."
+                  ? "Gunakan garis pada marker/ruler X-ray sebagai acuan skala. Atur ketebalan dulu agar garis mudah terlihat saat digambar."
                   : "Gunakan nilai mm/px pada zoom 100% dan zoom source. Mode ini tetap memakai logic zoom kalibrasi lama."}
               </p>
+              {isLineMode ? (
+                <div className="space-y-4 rounded-2xl border border-white/60 p-4 calib-neu-flat">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-slate-700 uppercase">
+                      Ketebalan garis
+                    </span>
+                    <span className="font-mono text-xs font-black text-blue-600">
+                      {strokeValue.toFixed(1)}x
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => updateStroke(strokeValue - 0.1)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 calib-neu-button"
+                      aria-label="Kurangi ketebalan garis"
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="8"
+                      step="0.1"
+                      value={strokeValue}
+                      onChange={(event) => updateStroke(event.target.value)}
+                      className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-300 accent-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateStroke(strokeValue + 0.1)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 calib-neu-button"
+                      aria-label="Tambah ketebalan garis"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1.5, 2.5, 4].map((value) => (
+                      <button
+                        key={`calib-stroke-${value}`}
+                        type="button"
+                        onClick={() => updateStroke(value)}
+                        className={`min-h-9 rounded-xl text-[10px] font-black ${
+                          Math.abs(strokeValue - value) < 0.05
+                            ? "calib-active-blue"
+                            : "text-slate-600 calib-neu-button"
+                        }`}
+                      >
+                        {value}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
           {step === 2 ? (
             <div className="space-y-4">
+              <div className="space-y-4 rounded-2xl border border-white/60 p-5 text-center calib-neu-pressed">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-500 shadow-inner">
+                  {isLineMode ? (
+                    <MousePointer2 className="h-8 w-8 animate-bounce" />
+                  ) : (
+                    <Ruler className="h-8 w-8" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-xs font-black text-slate-800 uppercase">
+                    {isLineMode ? "Tarik garis di kanvas" : "Mode zoom siap"}
+                  </h3>
+                  <p className="px-2 text-[11px] leading-relaxed font-medium text-slate-500">
+                    {isLineMode
+                      ? "Tap atau drag 2 titik ujung marker/ruler pada kanvas. Nilai real diisi pada langkah berikutnya."
+                      : "Pastikan zoom source dan mm/px @100% sudah sesuai sebelum simpan."}
+                  </p>
+                </div>
+                {isLineMode ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={onManualDraw}
+                      className="col-span-3 min-h-11 rounded-xl bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase"
+                    >
+                      Gambar manual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onCreatePresetLine?.(100)}
+                      className="min-h-10 rounded-xl text-[10px] font-black text-slate-600 calib-neu-button"
+                    >
+                      10 cm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onCreatePresetLine?.(130)}
+                      className="min-h-10 rounded-xl text-[10px] font-black text-slate-600 calib-neu-button"
+                    >
+                      13 cm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onCreatePresetLine?.(150)}
+                      className="min-h-10 rounded-xl text-[10px] font-black text-slate-600 calib-neu-button"
+                    >
+                      15 cm
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              <div className="rounded-2xl border border-white/70 px-3 py-2 text-[11px] font-bold text-slate-600 calib-neu-flat">
+                {isLineMode
+                  ? calibrationReferenceLine
+                    ? `${referenceLabel} | ${selectedLengthText || "panjang belum terbaca"}`
+                    : "Belum ada line terpilih."
+                  : `Zoom source ${sourceZoomPercent || "-"}%.`}
+              </div>
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <div className="space-y-4">
               <div className="space-y-5 rounded-2xl border border-white/60 p-4 calib-neu-flat">
                 <div className="flex gap-3">
                   <div className="flex-1 space-y-1.5">
                     <span className="ml-1 text-[9px] font-bold text-slate-400 uppercase">
-                      {isLineMode ? "Nilai Aktual" : "mm/px @100%"}
+                      {isLineMode ? "Nilai referensi real" : "mm/px @100%"}
                     </span>
                     <input
                       type="number"
@@ -264,119 +382,54 @@ export default function CalibrationWizard({
                     </button>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 px-1 text-blue-600">
-                <Info className="h-3.5 w-3.5" />
-                <span className="text-[10px] font-bold">
-                  Standard referensi umum adalah 10 cm.
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          {step === 3 ? (
-            <div className="space-y-4">
-              <div className="space-y-4 rounded-2xl border border-white/60 p-5 text-center calib-neu-pressed">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-500 shadow-inner">
-                  {isLineMode ? (
-                    <MousePointer2 className="h-8 w-8 animate-bounce" />
-                  ) : (
-                    <Ruler className="h-8 w-8" />
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-xs font-black text-slate-800 uppercase">
-                    {isLineMode ? "Tarik garis di kanvas" : "Mode zoom siap"}
-                  </h3>
-                  <p className="px-2 text-[11px] leading-relaxed font-medium text-slate-500">
-                    {isLineMode
-                      ? `Hubungkan marker/ruler sesuai nilai ${actualValue || "-"} ${actualUnit}.`
-                      : "Pastikan zoom source dan mm/px @100% sudah sesuai sebelum simpan."}
-                  </p>
-                </div>
                 {isLineMode ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={onCreatePresetFromInput}
-                      className="min-h-11 rounded-xl bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase"
-                    >
-                      Buat dari nilai
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onManualDraw}
-                      className="min-h-11 rounded-xl px-3 text-[10px] font-black text-slate-600 uppercase calib-neu-button"
-                    >
-                      Gambar manual
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onCreatePresetLine?.(100)}
-                      className="min-h-10 rounded-xl text-[10px] font-black text-slate-600 calib-neu-button"
-                    >
-                      10 cm
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onCreatePresetLine?.(130)}
-                      className="min-h-10 rounded-xl text-[10px] font-black text-slate-600 calib-neu-button"
-                    >
-                      13 cm
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={onCreatePresetFromInput}
+                    className="min-h-11 w-full rounded-xl bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase"
+                  >
+                    Buat ruler dari nilai referensi
+                  </button>
                 ) : null}
               </div>
               <div className="rounded-2xl border border-white/70 px-3 py-2 text-[11px] font-bold text-slate-600 calib-neu-flat">
                 {isLineMode
                   ? calibrationReferenceLine
                     ? `${referenceLabel} | ${selectedLengthText || "panjang belum terbaca"}`
-                    : "Belum ada line terpilih."
+                    : "Belum ada line terpilih. Kembali ke langkah gambar garis."
                   : `Zoom source ${sourceZoomPercent || "-"}%.`}
+              </div>
+              <div className="flex items-center gap-2 px-1 text-blue-600">
+                <Info className="h-3.5 w-3.5" />
+                <span className="text-[10px] font-bold">
+                  Isi nilai real marker/ruler. Contoh umum: 10 cm, 13 cm, atau sesuai marker X-ray.
+                </span>
               </div>
             </div>
           ) : null}
 
           {step === 4 ? (
             <div className="space-y-4">
-              {isLineMode ? (
-                <div className="space-y-4 rounded-2xl border border-white/60 p-4 calib-neu-flat">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-700 uppercase">
-                      Ketebalan garis
-                    </span>
-                    <span className="font-mono text-xs font-black text-blue-600">
-                      {strokeValue.toFixed(1)}x
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={() => updateStroke(strokeValue - 0.1)}
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 calib-neu-button"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </button>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="8"
-                      step="0.1"
-                      value={strokeValue}
-                      onChange={(event) => updateStroke(event.target.value)}
-                      className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-300 accent-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => updateStroke(strokeValue + 0.1)}
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 calib-neu-button"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </div>
+              <div className="rounded-2xl border border-white/70 p-3 text-[11px] font-bold text-slate-600 calib-neu-flat">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Metode</span>
+                  <span className="text-slate-900">
+                    {isLineMode ? "Garis Real" : "Zoom %"}
+                  </span>
                 </div>
-              ) : null}
-
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span>Referensi</span>
+                  <span className="text-slate-900">
+                    {isLineMode ? `${actualValue || "-"} ${actualUnit}` : `${mmPerPixelAt100Value || "-"} mm/px`}
+                  </span>
+                </div>
+                {isLineMode ? (
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <span>Ketebalan</span>
+                    <span className="text-slate-900">{strokeValue.toFixed(1)}x</span>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={() => setShowQCDetail((current) => !current)}

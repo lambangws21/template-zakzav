@@ -35,6 +35,7 @@ import {
   MoveDown,
   MoveUp,
   Package,
+  Palette,
   PencilLine,
   Plus,
   RefreshCcw,
@@ -93,6 +94,8 @@ const MAX_SCALE = 12;
 const STORY_STORAGE_KEY = "xray_workspace_story_v1";
 const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
 const MEASURE_LEGEND_VISIBILITY_KEY = "xray_measure_legend_visible_v1";
+const WHATS_NEW_STORAGE_KEY = "xray_workspace_whats_new_seen_v2";
+const WHATS_NEW_VERSION = "2026-06-07-mobile-gesture-color-drive";
 const DEFAULT_TEMPLATE_LAYER_OPACITY = 0.55;
 const DEFAULT_ANNOTATION_COLOR = "#f97316";
 const ANNOTATION_COLOR_OPTIONS = [
@@ -260,9 +263,10 @@ const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
 const MOBILE_DOUBLE_TAP_MS = 320;
 const MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN = 72;
-const MOBILE_TOUCH_TARGET_SCREEN = 48;
-const MOBILE_HANDLE_TARGET_SCREEN = 56;
-const MOBILE_ROTATE_HANDLE_TARGET_SCREEN = 60;
+const MOBILE_LONG_PRESS_CANCEL_DISTANCE_SCREEN = 30;
+const MOBILE_TOUCH_TARGET_SCREEN = 52;
+const MOBILE_HANDLE_TARGET_SCREEN = 64;
+const MOBILE_ROTATE_HANDLE_TARGET_SCREEN = 74;
 const MOBILE_PRECISION_AUTO_ZOOM_SCALE = 1.45;
 const MOBILE_PRECISION_AUTO_ZOOM_BOOST = 1.45;
 const MOBILE_PRECISION_AUTO_ZOOM_STEP = 0.18;
@@ -272,10 +276,12 @@ const MOBILE_LONG_PRESS_MS = 460;
 const MOBILE_DOUBLE_TAP_MS_RESET = 360;
 const MOBILE_DOUBLE_TAP_DISTANCE_SCREEN = 28;
 const DEFAULT_LINE_STROKE_WIDTH = 2;
+const DEFAULT_LINE_COLOR = "#38bdf8";
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
 const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
 const DEFAULT_HKA_STROKE_WIDTH = 2;
+const DEFAULT_CIRCLE_COLOR = "#8b5cf6";
 const DEFAULT_CIRCLE_STROKE_WIDTH = 2;
 const DEFAULT_PLANNING_GUIDE_STROKE_WIDTH = 2;
 const DEFAULT_FREE_LINE_COLOR = "#3b82f6";
@@ -292,6 +298,24 @@ const ANGLE_COLOR_OPTIONS = [
   "#3b82f6",
   "#8b5cf6",
   "#ec4899",
+];
+const LINE_COLOR_OPTIONS = [
+  "#38bdf8",
+  "#22c55e",
+  "#f43f5e",
+  "#f59e0b",
+  "#8b5cf6",
+  "#111827",
+  "#94a3b8",
+];
+const CIRCLE_COLOR_OPTIONS = [
+  "#8b5cf6",
+  "#06b6d4",
+  "#22c55e",
+  "#f59e0b",
+  "#f43f5e",
+  "#111827",
+  "#94a3b8",
 ];
 const FREE_SHAPE_COLOR_OPTIONS = [
   "#3b82f6",
@@ -747,6 +771,7 @@ function buildFreeCutLayerFromPoints({
     level: 100,
     lockScale: false,
     hidden: false,
+    curveStrength: DEFAULT_FREE_LINE_CURVE_POINT,
     maskPoints: normalizedPoints.map((point) => ({
       x: point.x - width / 2,
       y: point.y - height / 2,
@@ -871,6 +896,7 @@ function buildFreeCutLayerFromLayerPoints({
     lockScale: false,
     hidden: false,
     sourceLayerId: sourceLayer.id,
+    curveStrength: DEFAULT_FREE_LINE_CURVE_POINT,
     maskPoints: normalizedSourcePoints.map((point) => ({
       x: point.x - width / 2,
       y: point.y - height / 2,
@@ -1534,6 +1560,15 @@ function getLayerDisplaySize(layer) {
     width: layer.displayWidth || layer.sourceWidth,
     height: layer.displayHeight || layer.sourceHeight,
   };
+}
+
+function isEditableMaskLayer(layer) {
+  return Boolean(
+    layer &&
+      (layer.kind === "free-line" || layer.kind === "free-cut") &&
+      Array.isArray(layer.maskPoints) &&
+      layer.maskPoints.length >= MIN_FREE_CUT_POINTS,
+  );
 }
 
 function transformLayerLocalPoint(layer, point) {
@@ -2712,6 +2747,18 @@ function escapeHtml(value) {
   });
 }
 
+function createCombinedReportCanvas(imageCanvas, overlayCanvas) {
+  if (!imageCanvas || !overlayCanvas) return null;
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = imageCanvas.width;
+  outCanvas.height = imageCanvas.height;
+  const ctx = outCanvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(imageCanvas, 0, 0);
+  ctx.drawImage(overlayCanvas, 0, 0);
+  return outCanvas;
+}
+
 function InfoTooltip({ text }) {
   const [open, setOpen] = useState(false);
 
@@ -3511,6 +3558,8 @@ export default function XrayCalibrationWorkspace({
   const [mmPerPixelAt100Input, setMmPerPixelAt100Input] = useState("0.63");
   const [actualMmInput, setActualMmInput] = useState("13");
   const [actualUnit, setActualUnit] = useState("cm");
+  const [calibrationDraftStrokeWidth, setCalibrationDraftStrokeWidth] =
+    useState(DEFAULT_LINE_STROKE_WIDTH);
   const [templateRealSizeInput, setTemplateRealSizeInput] = useState("");
   const [templateRealSizeUnit, setTemplateRealSizeUnit] = useState("cm");
   const [templateRealSizeAxis, setTemplateRealSizeAxis] = useState("height");
@@ -3540,6 +3589,7 @@ export default function XrayCalibrationWorkspace({
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
     useState(null);
   const [mobileCanvasMode, setMobileCanvasMode] = useState("pan");
+  const [mobileToolMode, setMobileToolMode] = useState("move");
   const [mobileCanvasLocked, setMobileCanvasLocked] = useState(false);
   const [mobilePrecisionOverlay, setMobilePrecisionOverlay] = useState(null);
   const [selectionPulse, setSelectionPulse] = useState(null);
@@ -3590,6 +3640,27 @@ export default function XrayCalibrationWorkspace({
     },
     [],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (window.localStorage.getItem(WHATS_NEW_STORAGE_KEY) !== WHATS_NEW_VERSION) {
+        setWhatsNewModalOpen(true);
+      }
+    } catch {
+      setWhatsNewModalOpen(true);
+    }
+  }, []);
+
+  const closeWhatsNewModal = useCallback(() => {
+    setWhatsNewModalOpen(false);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(WHATS_NEW_STORAGE_KEY, WHATS_NEW_VERSION);
+    } catch {
+      // ignore localStorage write failure
+    }
+  }, []);
   const [highlightCalibrationPanel, setHighlightCalibrationPanel] =
     useState(false);
   const [simpleCalibrationModalOpen, setSimpleCalibrationModalOpen] =
@@ -3602,6 +3673,11 @@ export default function XrayCalibrationWorkspace({
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
   const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
     useState(false);
+  const [simpleColorPanelOpen, setSimpleColorPanelOpen] = useState(false);
+  const [whatsNewModalOpen, setWhatsNewModalOpen] = useState(false);
+  const [googleDriveUploadModalOpen, setGoogleDriveUploadModalOpen] =
+    useState(false);
+  const [googleDriveUploadBusy, setGoogleDriveUploadBusy] = useState(false);
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -5178,7 +5254,7 @@ export default function XrayCalibrationWorkspace({
     if (type === "femoralOffset") return "#10b981";
     if (type === "globalOffset") return "#8b5cf6";
     if (type === "lld") return "#f97316";
-    return "#38bdf8";
+    return DEFAULT_LINE_COLOR;
   }, []);
 
   const getLineVisualStyle = useCallback(
@@ -5201,6 +5277,10 @@ export default function XrayCalibrationWorkspace({
       const type = line?.type || "normal";
       let color = lineTypeColor(type);
       let dashPattern = [];
+
+      if (line?.color) {
+        color = line.color;
+      }
 
       if (type === "offset") {
         dashPattern = [10, 4];
@@ -5462,6 +5542,7 @@ export default function XrayCalibrationWorkspace({
       mmPerPixelAt100Input,
       actualMmInput,
       actualUnit,
+      calibrationDraftStrokeWidth,
       hkaInputMode,
       hkaSide,
       templateRealSizeInput,
@@ -5511,6 +5592,7 @@ export default function XrayCalibrationWorkspace({
       activityLog,
       actualMmInput,
       actualUnit,
+      calibrationDraftStrokeWidth,
       annotations,
       angles,
       calibrationLineId,
@@ -6432,7 +6514,7 @@ export default function XrayCalibrationWorkspace({
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
-        strokeWidth: DEFAULT_LINE_STROKE_WIDTH,
+        strokeWidth: calibrationDraftStrokeWidth,
       };
       nextLineIdRef.current += 1;
 
@@ -6464,6 +6546,7 @@ export default function XrayCalibrationWorkspace({
     },
     [
       calibrationLineId,
+      calibrationDraftStrokeWidth,
       focusCalibrationStep,
       image,
       isCoarsePointer,
@@ -7146,6 +7229,14 @@ export default function XrayCalibrationWorkspace({
         setMmPerPixelAt100Input(payload.mmPerPixelAt100Input || "0.63");
         setActualMmInput(payload.actualMmInput || "13");
         setActualUnit(payload.actualUnit || "cm");
+        setCalibrationDraftStrokeWidth(
+          clamp(
+            Number(payload.calibrationDraftStrokeWidth) ||
+              DEFAULT_LINE_STROKE_WIDTH,
+            0.5,
+            8,
+          ),
+        );
         setHkaInputMode(payload.hkaInputMode || "full");
         setHkaSide(normalizeHkaSide(payload.hkaSide));
         setTemplateRealSizeInput(payload.templateRealSizeInput || "");
@@ -7666,6 +7757,7 @@ export default function XrayCalibrationWorkspace({
       mmPerPixelAt100Input,
       actualMmInput,
       actualUnit,
+      calibrationDraftStrokeWidth,
       measurementUnit,
       linePreset,
       contrast,
@@ -7690,6 +7782,7 @@ export default function XrayCalibrationWorkspace({
     [
       actualMmInput,
       actualUnit,
+      calibrationDraftStrokeWidth,
       annotations,
       angles,
       calibrationMode,
@@ -7790,6 +7883,14 @@ export default function XrayCalibrationWorkspace({
     setMmPerPixelAt100Input(snapshot.mmPerPixelAt100Input || "0.63");
     setActualMmInput(snapshot.actualMmInput);
     setActualUnit(snapshot.actualUnit);
+    setCalibrationDraftStrokeWidth(
+      clamp(
+        Number(snapshot.calibrationDraftStrokeWidth) ||
+          DEFAULT_LINE_STROKE_WIDTH,
+        0.5,
+        8,
+      ),
+    );
     setMeasurementUnit(snapshot.measurementUnit);
     setLinePreset(snapshot.linePreset);
     setContrast(snapshot.contrast);
@@ -8422,7 +8523,7 @@ export default function XrayCalibrationWorkspace({
 
   const findFreeLinePointHandle = useCallback(
     (imagePoint) => {
-      if (!selectedCutLayer || selectedCutLayer.kind !== "free-line") {
+      if (!isEditableMaskLayer(selectedCutLayer)) {
         return null;
       }
       const thresholdInImage =
@@ -8452,8 +8553,7 @@ export default function XrayCalibrationWorkspace({
   const findFreeLineCurveHandle = useCallback(
     (imagePoint) => {
       if (
-        !selectedCutLayer ||
-        selectedCutLayer.kind !== "free-line" ||
+        !isEditableMaskLayer(selectedCutLayer) ||
         selectedFreeLinePointIndex === null
       ) {
         return null;
@@ -8985,6 +9085,15 @@ export default function XrayCalibrationWorkspace({
           imageCtx.filter = isImageBacked
             ? getLayerFilterValue(layer)
             : "none";
+          const localMaskPoints = getLayerMaskDisplayPoints(layer);
+          if (localMaskPoints?.length >= MIN_FREE_CUT_POINTS) {
+            traceSmoothClosedPath(
+              imageCtx,
+              localMaskPoints,
+              getFreeLineCurveStrength(layer),
+            );
+            imageCtx.clip();
+          }
           imageCtx.drawImage(
             sourceImage,
             srcX,
@@ -9469,7 +9578,7 @@ export default function XrayCalibrationWorkspace({
         selectionPulse?.type === "circle" && selectionPulse.id === circle.id;
       const isEmphasized = isSelected || isPulsing;
       const showExpandedInfo = isSelected || isHovered;
-      const color = isSelected ? "#a78bfa" : "#8b5cf6";
+      const color = circle.color || (isSelected ? "#a78bfa" : DEFAULT_CIRCLE_COLOR);
       const strokeWidth = Math.max(
         1.2,
         Number.isFinite(circle.strokeWidth)
@@ -11500,17 +11609,17 @@ export default function XrayCalibrationWorkspace({
             Math.hypot(
               currentPoint.x - pressState.startX,
               currentPoint.y - pressState.startY,
-            ) > 12
+            ) > MOBILE_LONG_PRESS_CANCEL_DISTANCE_SCREEN
           ) {
             return;
           }
 
           const hitImagePoint = clampToImageBounds(
-            screenToImagePoint(pressState.startX, pressState.startY),
+            screenToImagePoint(currentPoint.x, currentPoint.y),
           );
           const hitScreenPoint = {
-            x: pressState.startX,
-            y: pressState.startY,
+            x: currentPoint.x,
+            y: currentPoint.y,
           };
           const annotationId = findAnnotationByPoint(hitScreenPoint);
           const layerId = findCutLayerByPoint(hitImagePoint);
@@ -12152,12 +12261,32 @@ export default function XrayCalibrationWorkspace({
           return;
         }
 
-        const hitCutLayerHandle = findCutLayerHandle(imagePoint);
+        const allowLayerTransformHandle =
+          !(isSimpleUiMode && isMobileViewport && isTouchLikePointer) ||
+          mobileToolMode !== "move";
+        const hitCutLayerHandle = allowLayerTransformHandle
+          ? findCutLayerHandle(imagePoint)
+          : null;
         if (hitCutLayerHandle) {
           const targetLayer = cutLayers.find(
             (layer) => layer.id === hitCutLayerHandle.layerId,
           );
           if (!targetLayer) return;
+          const isRotateHandle = hitCutLayerHandle.handleKey === "rotate";
+          if (
+            isSimpleUiMode &&
+            isMobileViewport &&
+            isTouchLikePointer &&
+            ((mobileToolMode === "scale" && isRotateHandle) ||
+              (mobileToolMode === "rotate" && !isRotateHandle))
+          ) {
+            setNotice(
+              mobileToolMode === "scale"
+                ? "Scale Mode aktif. Gunakan handle sudut/sisi, bukan rotate."
+                : "Rotate Mode aktif. Gunakan handle rotate.",
+            );
+            return;
+          }
           focusLayerCanvas(targetLayer.id);
           setSelectedFreeLinePointIndex(null);
           setSelectedLineId(null);
@@ -12176,7 +12305,7 @@ export default function XrayCalibrationWorkspace({
             return;
           }
           setHistoryPaused(true);
-          if (hitCutLayerHandle.handleKey === "rotate") {
+          if (isRotateHandle) {
             interactionRef.current = {
               mode: "rotate-cut-layer",
               layerId: targetLayer.id,
@@ -12803,12 +12932,32 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericCutLayerHandle = findCutLayerHandle(imagePoint);
+      const allowGenericLayerTransformHandle =
+        !(isSimpleUiMode && isMobileViewport && isTouchLikePointer) ||
+        mobileToolMode !== "move";
+      const genericCutLayerHandle = allowGenericLayerTransformHandle
+        ? findCutLayerHandle(imagePoint)
+        : null;
       if (genericCutLayerHandle) {
         const targetLayer = cutLayers.find(
           (layer) => layer.id === genericCutLayerHandle.layerId,
         );
         if (!targetLayer) return;
+        const isRotateHandle = genericCutLayerHandle.handleKey === "rotate";
+        if (
+          isSimpleUiMode &&
+          isMobileViewport &&
+          isTouchLikePointer &&
+          ((mobileToolMode === "scale" && isRotateHandle) ||
+            (mobileToolMode === "rotate" && !isRotateHandle))
+        ) {
+          setNotice(
+            mobileToolMode === "scale"
+              ? "Scale Mode aktif. Gunakan handle sudut/sisi, bukan rotate."
+              : "Rotate Mode aktif. Gunakan handle rotate.",
+          );
+          return;
+        }
         focusLayerCanvas(targetLayer.id, { openPanel: false });
         triggerSelectionPulse("layer", targetLayer.id);
         setSelectedFreeLinePointIndex(null);
@@ -12825,7 +12974,7 @@ export default function XrayCalibrationWorkspace({
         });
         if (!targetLayer.lockScale && tool === "pan") {
           setHistoryPaused(true);
-          if (genericCutLayerHandle.handleKey === "rotate") {
+          if (isRotateHandle) {
             interactionRef.current = {
               mode: "rotate-cut-layer",
               layerId: targetLayer.id,
@@ -13392,6 +13541,7 @@ export default function XrayCalibrationWorkspace({
           x2: start.x,
           y2: start.y,
           type: linePreset,
+          strokeWidth: calibrationDraftStrokeWidth,
         });
         setHistoryPaused(true);
         setNotice("Line: titik awal tersimpan. Tap titik akhir.");
@@ -13404,6 +13554,7 @@ export default function XrayCalibrationWorkspace({
         x2: start.x,
         y2: start.y,
         type: linePreset,
+        strokeWidth: calibrationDraftStrokeWidth,
       });
       setHistoryPaused(true);
       interactionRef.current = {
@@ -13479,6 +13630,7 @@ export default function XrayCalibrationWorkspace({
       guideBuilderReference,
       hasCalibration,
       hkaSide,
+      calibrationDraftStrokeWidth,
       isCoarsePointer,
       isMobileViewport,
       isSimpleUiMode,
@@ -13488,6 +13640,7 @@ export default function XrayCalibrationWorkspace({
       lines,
       mobileCanvasLocked,
       mobileCanvasMode,
+      mobileToolMode,
       planningGuides,
       linePreset,
       resolveSnappedImagePoint,
@@ -13529,7 +13682,7 @@ export default function XrayCalibrationWorkspace({
         if (
           longPressState?.pointerId === event.pointerId &&
           Math.hypot(point.x - longPressState.startX, point.y - longPressState.startY) >
-            12
+            MOBILE_LONG_PRESS_CANCEL_DISTANCE_SCREEN
         ) {
           clearMobileLongPress();
         }
@@ -13779,7 +13932,7 @@ export default function XrayCalibrationWorkspace({
         const { layerId, pointIndex } = interactionRef.current;
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) => {
-            if (layer.id !== layerId || layer.kind !== "free-line") {
+            if (layer.id !== layerId || !isEditableMaskLayer(layer)) {
               return layer;
             }
             const nextMaskPoint = toLayerMaskPoint(movePoint, layer, {
@@ -13812,10 +13965,13 @@ export default function XrayCalibrationWorkspace({
                   return nextPointItem;
                 })
               : [];
-            return normalizeFreeLineLayerBounds({
+            const nextLayer = {
               ...layer,
               maskPoints: nextMaskPoints,
-            });
+            };
+            return layer.kind === "free-line"
+              ? normalizeFreeLineLayerBounds(nextLayer)
+              : nextLayer;
           }),
         );
         return;
@@ -13828,7 +13984,7 @@ export default function XrayCalibrationWorkspace({
         const { layerId, pointIndex, handleKey } = interactionRef.current;
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) => {
-            if (layer.id !== layerId || layer.kind !== "free-line") {
+            if (layer.id !== layerId || !isEditableMaskLayer(layer)) {
               return layer;
             }
             const nextMaskPoints = Array.isArray(layer.maskPoints)
@@ -13856,10 +14012,13 @@ export default function XrayCalibrationWorkspace({
                   return nextPointItem;
                 })
               : [];
-            return normalizeFreeLineLayerBounds({
+            const nextLayer = {
               ...layer,
               maskPoints: nextMaskPoints,
-            });
+            };
+            return layer.kind === "free-line"
+              ? normalizeFreeLineLayerBounds(nextLayer)
+              : nextLayer;
           }),
         );
         return;
@@ -14487,7 +14646,9 @@ export default function XrayCalibrationWorkspace({
           labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
           labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
           labelOpacity: DEFAULT_LABEL_OPACITY,
-          strokeWidth: DEFAULT_LINE_STROKE_WIDTH,
+          strokeWidth: Number.isFinite(draftLine.strokeWidth)
+            ? draftLine.strokeWidth
+            : calibrationDraftStrokeWidth,
         };
         nextLineIdRef.current += 1;
         setLines((prev) => [...prev, nextLine]);
@@ -14608,6 +14769,7 @@ export default function XrayCalibrationWorkspace({
     clearMobileLongPress,
     clearSnapPreview,
     completeDraftFreeLine,
+    calibrationDraftStrokeWidth,
     draftCirclePoints,
     draftFreeLine,
     draftLine,
@@ -16526,26 +16688,25 @@ export default function XrayCalibrationWorkspace({
     );
   }, []);
 
+  const createReportCanvasSnapshot = useCallback((errorContext = "Export") => {
+    const imageCanvas = imageCanvasRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
+    const outCanvas = createCombinedReportCanvas(imageCanvas, overlayCanvas);
+    if (!outCanvas) {
+      setNotice(`Canvas belum siap untuk ${errorContext}.`);
+      return null;
+    }
+    return outCanvas;
+  }, []);
+
   const exportReportPng = useCallback(() => {
     if (!hasCalibration) {
       focusCalibrationStep("Export report dikunci sampai kalibrasi aktif.");
       return;
     }
 
-    const imageCanvas = imageCanvasRef.current;
-    const overlayCanvas = overlayCanvasRef.current;
-    if (!imageCanvas || !overlayCanvas) {
-      setNotice("Canvas belum siap untuk export.");
-      return;
-    }
-
-    const outCanvas = document.createElement("canvas");
-    outCanvas.width = imageCanvas.width;
-    outCanvas.height = imageCanvas.height;
-    const ctx = outCanvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(imageCanvas, 0, 0);
-    ctx.drawImage(overlayCanvas, 0, 0);
+    const outCanvas = createReportCanvasSnapshot("export PNG");
+    if (!outCanvas) return;
 
     try {
       outCanvas.toBlob((blob) => {
@@ -16567,7 +16728,7 @@ export default function XrayCalibrationWorkspace({
         "Export PNG gagal karena gambar tidak origin-clean (CORS). Pastikan file storage bisa diakses dengan CORS/public read.",
       );
     }
-  }, [focusCalibrationStep, hasCalibration, imageName]);
+  }, [createReportCanvasSnapshot, focusCalibrationStep, hasCalibration, imageName]);
 
   const exportReportPdf = useCallback(() => {
     if (!hasCalibration) {
@@ -16575,20 +16736,8 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
-    const imageCanvas = imageCanvasRef.current;
-    const overlayCanvas = overlayCanvasRef.current;
-    if (!imageCanvas || !overlayCanvas) {
-      setNotice("Canvas belum siap untuk export.");
-      return;
-    }
-
-    const outCanvas = document.createElement("canvas");
-    outCanvas.width = imageCanvas.width;
-    outCanvas.height = imageCanvas.height;
-    const ctx = outCanvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(imageCanvas, 0, 0);
-    ctx.drawImage(overlayCanvas, 0, 0);
+    const outCanvas = createReportCanvasSnapshot("export PDF");
+    if (!outCanvas) return;
 
     let imageData = "";
     try {
@@ -16675,12 +16824,97 @@ export default function XrayCalibrationWorkspace({
     reportWindow.print();
     setNotice("Jendela PDF report dibuka. Pilih Save as PDF.");
   }, [
+    createReportCanvasSnapshot,
     focusCalibrationStep,
     hasCalibration,
     imageName,
     measurementRows,
     planSteps,
     templateInventoryRows,
+  ]);
+
+  const uploadReportToGoogleDrive = useCallback(async () => {
+    if (!hasCalibration) {
+      focusCalibrationStep("Upload Drive dikunci sampai kalibrasi aktif.");
+      return;
+    }
+
+    const endpoint = String(sheetMainImageEndpoint || "").trim();
+    if (!endpoint) {
+      setNotice("Masukkan URL Apps Script Google Drive terlebih dahulu.");
+      return;
+    }
+
+    const outCanvas = createReportCanvasSnapshot("upload Drive");
+    if (!outCanvas) return;
+
+    let imageDataUrl = "";
+    try {
+      imageDataUrl = outCanvas.toDataURL("image/png");
+    } catch {
+      setNotice(
+        "Upload Drive gagal karena gambar tidak origin-clean (CORS). Pastikan file storage bisa diakses dengan CORS/public read.",
+      );
+      return;
+    }
+
+    const baseName = (imageName || "xray-report").replace(/\.[^.]+$/, "");
+    const fileName = `${baseName}-report.png`;
+    const imageBase64 = imageDataUrl.split(",")[1] || "";
+
+    setGoogleDriveUploadBusy(true);
+    try {
+      const response = await fetch("/api/google-sheet-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: endpoint,
+          action: "create",
+          fileName,
+          mimeType: "image/png",
+          imageBase64,
+          imageDataUrl,
+          item: {
+            name: `${baseName} Report`,
+            tags: "xray-report,simple-ui,templating",
+            fileName,
+            mimeType: "image/png",
+            imageBase64,
+            imageDataUrl,
+            source: "xray-workspace",
+            calibration: mmPerPixel !== null ? `${mmPerPixel} mm/px` : "",
+            measurementCount: measurementRows.length,
+            templateCount: templateInventoryRows.length,
+            createdAt: new Date().toISOString(),
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok === false) {
+        const remoteError =
+          payload?.remote?.error || payload?.error || "Apps Script menolak upload.";
+        throw new Error(remoteError);
+      }
+      setGoogleDriveUploadModalOpen(false);
+      setNotice("Upload Google Drive berhasil dikirim.");
+    } catch (error) {
+      setNotice(
+        `Upload Google Drive gagal: ${
+          error instanceof Error ? error.message : "Terjadi kesalahan."
+        }`,
+      );
+    } finally {
+      setGoogleDriveUploadBusy(false);
+    }
+  }, [
+    createReportCanvasSnapshot,
+    focusCalibrationStep,
+    hasCalibration,
+    imageName,
+    measurementRows.length,
+    mmPerPixel,
+    sheetMainImageEndpoint,
+    templateInventoryRows.length,
   ]);
 
   useEffect(() => {
@@ -17071,11 +17305,37 @@ export default function XrayCalibrationWorkspace({
       selectedAnnotation ||
       selectedPlanningGuide,
   );
+  const hasColorEditableSelection = Boolean(
+    selectedLine || selectedCircle || selectedHka || selectedAnnotation,
+  );
+  const simpleColorPanelTitle = selectedLine
+    ? `Line #${selectedLine.id}`
+    : selectedCircle
+      ? `Circle #${selectedCircle.id}`
+      : selectedHka
+        ? `HKA #${selectedHka.id}`
+        : selectedAnnotation
+          ? selectedAnnotation.text || `Text #${selectedAnnotation.id}`
+          : "Color";
+  const openSimpleColorPanel = useCallback(() => {
+    if (!hasColorEditableSelection) {
+      setNotice("Pilih Line, Text, Circle, atau HKA dulu untuk mengubah warna.");
+      return;
+    }
+    setSimpleMobilePanel(null);
+    setMobileObjectSettingsOpen(false);
+    setSimpleColorPanelOpen(true);
+  }, [hasColorEditableSelection]);
   useEffect(() => {
     if (!hasMobileObjectSelection) {
       setMobileObjectSettingsOpen(false);
     }
   }, [hasMobileObjectSelection]);
+  useEffect(() => {
+    if (!hasColorEditableSelection) {
+      setSimpleColorPanelOpen(false);
+    }
+  }, [hasColorEditableSelection]);
   useEffect(() => {
     if (simpleMobilePanel) {
       setMobileObjectSettingsOpen(false);
@@ -17410,6 +17670,24 @@ export default function XrayCalibrationWorkspace({
         onExit={goToCalibrationPanel}
         onConfirm={goToCalibrationPanel}
       />
+      <input
+        ref={mainUploadInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageUpload}
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      <input
+        ref={compareUploadInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleCompareUpload}
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
       <AnimatePresence>
         {actionToast ? (
           <motion.div
@@ -17425,6 +17703,370 @@ export default function XrayCalibrationWorkspace({
             }`}
           >
             {actionToast.text}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {whatsNewModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[98] flex items-center justify-center bg-slate-950/24 p-4 backdrop-blur-sm"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                closeWhatsNewModal();
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.96 }}
+              transition={MOBILE_PANEL_TRANSITION}
+              className="w-full max-w-sm rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.28),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
+                    What&apos;s New
+                  </div>
+                  <h2 className="mt-1 text-base font-black text-slate-950">
+                    Update Simple UI
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeWhatsNewModal}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                  aria-label="Tutup What's New"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-3 space-y-2 text-xs font-semibold leading-relaxed text-slate-600">
+                <p>Gesture mobile dipisah menjadi Move, Scale, dan Rotate.</p>
+                <p>Long-press sekarang bisa langsung drag object yang dipilih.</p>
+                <p>Line, Text, Circle, dan HKA punya pilihan warna di Simple UI.</p>
+                <p>HKA kanan/kiri otomatis menghitung ulang varus atau valgus.</p>
+                <p>Free Cut bisa diedit titiknya dan dihaluskan dengan tension.</p>
+                <p>Panel Export sekarang berisi PNG, PDF, Compare, dan Upload Drive.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeWhatsNewModal}
+                className="mt-4 min-h-10 w-full rounded-2xl bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_7px_rgba(15,23,42,0.24)]"
+              >
+                Mengerti
+              </button>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {googleDriveUploadModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
+            onClick={(event) => {
+              if (
+                event.target === event.currentTarget &&
+                !googleDriveUploadBusy
+              ) {
+                setGoogleDriveUploadModalOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={MOBILE_PANEL_TRANSITION}
+              className="w-full max-w-md rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.26),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
+                    Google Drive
+                  </div>
+                  <h2 className="mt-1 text-base font-black text-slate-950">
+                    Upload report PNG
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Mengirim snapshot workspace aktif ke Apps Script / Drive.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGoogleDriveUploadModalOpen(false)}
+                  disabled={googleDriveUploadBusy}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                  aria-label="Tutup upload Google Drive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <label className="mt-4 block text-[10px] font-black tracking-widest text-slate-500 uppercase">
+                Apps Script URL
+                <input
+                  value={sheetMainImageEndpoint}
+                  onChange={(event) =>
+                    setSheetMainImageEndpoint(event.target.value)
+                  }
+                  disabled={googleDriveUploadBusy}
+                  className="mt-2 w-full rounded-2xl border border-white/70 bg-white/45 px-3 py-3 text-xs font-semibold text-slate-700 outline-none shadow-[inset_2px_2px_5px_rgba(148,163,184,0.24),inset_-2px_-2px_5px_rgba(255,255,255,0.86)] disabled:opacity-60"
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                />
+              </label>
+              <div className="mt-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[11px] font-semibold text-slate-500">
+                Host: {sheetMainImageEndpointHost || "-"}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGoogleDriveUploadModalOpen(false)}
+                  disabled={googleDriveUploadBusy}
+                  className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] px-4 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={uploadReportToGoogleDrive}
+                  disabled={
+                    googleDriveUploadBusy ||
+                    !hasCalibration ||
+                    !String(sheetMainImageEndpoint || "").trim()
+                  }
+                  className="min-h-11 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.24)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {googleDriveUploadBusy ? "Uploading..." : "Upload"}
+                </button>
+              </div>
+              {!hasCalibration ? (
+                <p className="mt-3 text-[11px] font-semibold text-rose-500">
+                  Kalibrasi harus aktif sebelum upload report.
+                </p>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {simpleColorPanelOpen && hasColorEditableSelection ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/18 p-4 backdrop-blur-[2px]"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setSimpleColorPanelOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={MOBILE_PANEL_TRANSITION}
+              className="w-full max-w-sm rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.26),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+            >
+              <div className="mb-3 flex items-start justify-between gap-3 border-b border-slate-300/20 pb-3">
+                <div>
+                  <div className="text-[10px] font-black tracking-widest text-fuchsia-700 uppercase">
+                    Color Panel
+                  </div>
+                  <h2 className="mt-1 text-base font-black text-slate-950">
+                    {simpleColorPanelTitle}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSimpleColorPanelOpen(false)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                  aria-label="Tutup color panel"
+                  title="Tutup"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {selectedLine ? (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    Line Color
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {LINE_COLOR_OPTIONS.map((color) => (
+                      <ColorSwatchButton
+                        key={`quick-line-color-${color}`}
+                        color={color}
+                        active={
+                          (selectedLine.color ||
+                            lineTypeColor(selectedLine.type || "normal")) ===
+                          color
+                        }
+                        label={`Warna line ${color}`}
+                        onClick={() =>
+                          setLines((prev) =>
+                            prev.map((line) =>
+                              line.id === selectedLine.id
+                                ? { ...line, color }
+                                : line,
+                            ),
+                          )
+                        }
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={
+                        selectedLine.color ||
+                        lineTypeColor(selectedLine.type || "normal")
+                      }
+                      onChange={(event) =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, color: event.target.value }
+                              : line,
+                          ),
+                        )
+                      }
+                      className="h-9 w-12 cursor-pointer rounded-xl border border-white/70 bg-transparent"
+                      aria-label="Custom line color"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedCircle ? (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    Circle Color
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {CIRCLE_COLOR_OPTIONS.map((color) => (
+                      <ColorSwatchButton
+                        key={`quick-circle-color-${color}`}
+                        color={color}
+                        active={
+                          (selectedCircle.color || DEFAULT_CIRCLE_COLOR) ===
+                          color
+                        }
+                        label={`Warna circle ${color}`}
+                        onClick={() =>
+                          setCircles((prev) =>
+                            prev.map((circle) =>
+                              circle.id === selectedCircle.id
+                                ? { ...circle, color }
+                                : circle,
+                            ),
+                          )
+                        }
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={selectedCircle.color || DEFAULT_CIRCLE_COLOR}
+                      onChange={(event) =>
+                        setCircles((prev) =>
+                          prev.map((circle) =>
+                            circle.id === selectedCircle.id
+                              ? { ...circle, color: event.target.value }
+                              : circle,
+                          ),
+                        )
+                      }
+                      className="h-9 w-12 cursor-pointer rounded-xl border border-white/70 bg-transparent"
+                      aria-label="Custom circle color"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedHka && selectedHkaMetrics ? (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    HKA Color
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {HKA_COLOR_OPTIONS.map((color) => (
+                      <ColorSwatchButton
+                        key={`quick-hka-color-${color}`}
+                        color={color}
+                        active={selectedHkaMetrics.lineColor === color}
+                        label={`Warna HKA ${color}`}
+                        onClick={() =>
+                          updateHkaById(selectedHka.id, { lineColor: color })
+                        }
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={selectedHkaMetrics.lineColor}
+                      onChange={(event) =>
+                        updateHkaById(selectedHka.id, {
+                          lineColor: event.target.value,
+                        })
+                      }
+                      className="h-9 w-12 cursor-pointer rounded-xl border border-white/70 bg-transparent"
+                      aria-label="Custom HKA color"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedAnnotation ? (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    Text Color
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {ANNOTATION_COLOR_OPTIONS.map((color) => (
+                      <ColorSwatchButton
+                        key={`quick-text-color-${color}`}
+                        color={color}
+                        active={
+                          (selectedAnnotation.color ||
+                            DEFAULT_ANNOTATION_COLOR) === color
+                        }
+                        label={`Warna text ${color}`}
+                        onClick={() =>
+                          updateAnnotationById(selectedAnnotation.id, {
+                            color,
+                          })
+                        }
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={
+                        selectedAnnotation.color || DEFAULT_ANNOTATION_COLOR
+                      }
+                      onChange={(event) =>
+                        updateAnnotationById(selectedAnnotation.id, {
+                          color: event.target.value,
+                        })
+                      }
+                      className="h-9 w-12 cursor-pointer rounded-xl border border-white/70 bg-transparent"
+                      aria-label="Custom text color"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setSimpleColorPanelOpen(false)}
+                className="mt-4 min-h-10 w-full rounded-2xl bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_7px_rgba(15,23,42,0.24)]"
+              >
+                Selesai
+              </button>
+            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -19424,9 +20066,10 @@ export default function XrayCalibrationWorkspace({
           calibrationReferenceLine &&
           Number.isFinite(calibrationReferenceLine.strokeWidth)
             ? calibrationReferenceLine.strokeWidth
-            : DEFAULT_LINE_STROKE_WIDTH
+            : calibrationDraftStrokeWidth
         }
         onLineStrokeWidthChange={(nextValue) => {
+          setCalibrationDraftStrokeWidth(nextValue);
           if (!calibrationReferenceLine) return;
           setLines((prev) =>
             prev.map((line) =>
@@ -21438,7 +22081,6 @@ export default function XrayCalibrationWorkspace({
             </div>
             <input
               id="xray-upload"
-              ref={mainUploadInputRef}
               type="file"
               accept="image/*"
               onChange={handleImageUpload}
@@ -21482,13 +22124,6 @@ export default function XrayCalibrationWorkspace({
                   <InfoTooltip text="Split mode untuk pre-op vs post-op atau kiri vs kanan. Upload gambar compare lalu aktifkan mode compare." />
                 ) : null}
               </div>
-              <input
-                ref={compareUploadInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleCompareUpload}
-                className="hidden"
-              />
               <div className="flex items-center justify-between gap-1.5">
                 <IconButton
                   icon="upload"
@@ -21559,6 +22194,13 @@ export default function XrayCalibrationWorkspace({
                   icon="save"
                   label="Export PDF"
                   onClick={exportReportPdf}
+                  disabled={!hasCalibration}
+                  className="h-8 w-8 shrink-0"
+                />
+                <IconButton
+                  icon="upload"
+                  label="Upload ke Google Drive"
+                  onClick={() => setGoogleDriveUploadModalOpen(true)}
                   disabled={!hasCalibration}
                   className="h-8 w-8 shrink-0"
                 />
@@ -26443,6 +27085,26 @@ export default function XrayCalibrationWorkspace({
                       onHistory={undoHistory}
                       canHistory={historyState.undo > 0}
                       onReset={() => resetWorkspaceState()}
+                      onOpenColorPanel={openSimpleColorPanel}
+                      canOpenColorPanel={hasColorEditableSelection}
+                      onUploadBefore={() => compareUploadInputRef.current?.click()}
+                      onUploadAfter={() => mainUploadInputRef.current?.click()}
+                      onToggleCompare={() => {
+                        if (!compareImageSrc) {
+                          compareUploadInputRef.current?.click();
+                          return;
+                        }
+                        setCompareMode((prev) => !prev);
+                      }}
+                      compareActive={compareMode}
+                      compareDisabled={false}
+                      compareLabel={
+                        compareImageName
+                          ? `Before: ${compareImageName}`
+                          : "Before kosong"
+                      }
+                      onUploadDrive={() => setGoogleDriveUploadModalOpen(true)}
+                      canUploadDrive={hasCalibration}
                       implantItems={LOCAL_IMPLANT_LIBRARY}
                       selectedImplantType={selectedImplantType}
                       selectedImplantItemId={selectedImplantLibraryId}
@@ -26491,7 +27153,7 @@ export default function XrayCalibrationWorkspace({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 16, scale: 0.98 }}
                     transition={MOBILE_PANEL_TRANSITION}
-	                    className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+142px)] z-40 lg:hidden"
+	                    className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+172px)] z-40 lg:hidden"
                   >
 	                    {simpleMobilePanel === "upload" ? (
 	                      <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
@@ -26734,6 +27396,17 @@ export default function XrayCalibrationWorkspace({
 	                          >
 	                            Export PDF
 	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => {
+	                              setSimpleMobilePanel(null);
+	                              setGoogleDriveUploadModalOpen(true);
+	                            }}
+	                            disabled={!hasCalibration}
+	                            className="col-span-2 min-h-12 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
+	                          >
+	                            Upload Google Drive
+	                          </button>
 	                        </div>
 	                        <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-black text-slate-600">
 	                          <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
@@ -26744,6 +27417,68 @@ export default function XrayCalibrationWorkspace({
 	                          </div>
 	                          <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
 	                            Calib {hasCalibration ? "ON" : "OFF"}
+	                          </div>
+	                        </div>
+	                        <div className="mt-3 rounded-[22px] border border-white/60 bg-white/30 p-2">
+	                          <div className="mb-2 flex items-center justify-between gap-2">
+	                            <div>
+	                              <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
+	                                Compare
+	                              </div>
+	                              <div className="text-[10px] font-black text-slate-700">
+	                                Before / After Templating
+	                              </div>
+	                            </div>
+	                            <span className="rounded-full bg-white/45 px-2 py-1 text-[8px] font-black text-slate-500">
+	                              {compareMode ? "ON" : "OFF"}
+	                            </span>
+	                          </div>
+	                          <div className="grid grid-cols-2 gap-1.5">
+	                            <button
+	                              type="button"
+	                              onClick={() => compareUploadInputRef.current?.click()}
+	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+	                            >
+	                              Upload Before
+	                            </button>
+	                            <button
+	                              type="button"
+	                              onClick={() => mainUploadInputRef.current?.click()}
+	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+	                            >
+	                              Upload After
+	                            </button>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                if (!compareImageSrc) {
+	                                  compareUploadInputRef.current?.click();
+	                                  return;
+	                                }
+	                                setCompareMode((prev) => !prev);
+	                              }}
+	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-cyan-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+	                            >
+	                              {compareMode ? "Hide Compare" : "Show Compare"}
+	                            </button>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                setCompareImageSrc(null);
+	                                setCompareImage(null);
+	                                setCompareImageName("");
+	                                setCompareMode(false);
+	                              }}
+	                              disabled={!compareImageSrc}
+	                              className="min-h-10 rounded-2xl border border-rose-200 bg-rose-50/80 px-2 text-[9px] font-black text-rose-600 disabled:opacity-45"
+	                            >
+	                              Clear Before
+	                            </button>
+	                          </div>
+	                          <div className="mt-2 truncate text-[9px] font-semibold text-slate-500">
+	                            {compareImageName
+	                              ? `Before: ${compareImageName}`
+	                              : "Before belum dipilih."}
 	                          </div>
 	                        </div>
 	                      </div>
@@ -26835,8 +27570,8 @@ export default function XrayCalibrationWorkspace({
               ) : null}
 
               {isSimpleUiMode && isMobileViewport ? (
-                <div className="pointer-events-none absolute top-1 right-1 left-1 z-30 flex items-start justify-between gap-1">
-                  <div className="pointer-events-auto min-w-0 rounded-[14px] border border-white/45 bg-[#eef2f7]/48 px-1.5 py-1 text-slate-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] backdrop-blur-sm">
+                <div className="pointer-events-none absolute top-2 right-2 left-2 z-30 flex items-start justify-between gap-2">
+                  <div className="pointer-events-auto min-w-0 max-w-[58vw] rounded-[14px] border border-white/45 bg-[#eef2f7]/48 px-1.5 py-1 text-slate-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] backdrop-blur-sm">
                     <div className="truncate text-[8px] font-black">
                       {mobileModeStatusLabel}
                     </div>
@@ -26844,7 +27579,7 @@ export default function XrayCalibrationWorkspace({
                       {measurementWorkflowGuideItems.find((item) => item.active)
                         ?.status || "Tap object lalu geser titik"}
                     </div>
-                    <div className="mt-0.5 flex max-w-[calc(100vw-86px)] gap-0.5 overflow-x-auto">
+                    <div className="mt-0.5 flex max-w-full gap-1 overflow-x-auto pb-0.5">
                       {mobileWorkflowSteps.map((step) => (
                         <button
                           key={`mobile-wizard-${step.id}`}
@@ -26900,6 +27635,21 @@ export default function XrayCalibrationWorkspace({
                         title="Setting"
                       >
                         <SlidersHorizontal className="h-3 w-3" />
+                      </button>
+                    ) : null}
+                    {hasColorEditableSelection ? (
+                      <button
+                        type="button"
+                        onClick={openSimpleColorPanel}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/50 text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] ${
+                          simpleColorPanelOpen
+                            ? "bg-slate-900/82 text-white"
+                            : "bg-[#eef2f7]/58"
+                        }`}
+                        aria-label="Buka color panel"
+                        title="Color"
+                      >
+                        <Palette className="h-3 w-3" />
                       </button>
                     ) : null}
                   </div>
@@ -26973,7 +27723,7 @@ export default function XrayCalibrationWorkspace({
               isMobileViewport &&
               hasMobileFineAdjustmentTarget &&
               !hasMobileObjectSelection ? (
-                <div className="pointer-events-auto absolute right-1.5 bottom-[calc(env(safe-area-inset-bottom)+136px)] z-30 rounded-[18px] border border-white/45 bg-[#eef2f7]/48 p-1.5 text-slate-700 shadow-[1px_1px_5px_rgba(148,163,184,0.2)] backdrop-blur-sm">
+                <div className="pointer-events-auto absolute right-2 bottom-[calc(env(safe-area-inset-bottom)+176px)] z-30 rounded-[18px] border border-white/45 bg-[#eef2f7]/48 p-1.5 text-slate-700 shadow-[1px_1px_5px_rgba(148,163,184,0.2)] backdrop-blur-sm">
                   <div className="grid grid-cols-3 gap-1">
                     <span />
                     <button
@@ -27053,7 +27803,7 @@ export default function XrayCalibrationWorkspace({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 14, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
-                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+104px)] z-40 mx-auto max-h-[min(30vh,300px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] border border-white/45 bg-[#eef2f7]/58 p-2 text-slate-800 shadow-[2px_2px_8px_rgba(148,163,184,0.2)] backdrop-blur-sm"
+                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+182px)] z-40 mx-auto max-h-[min(24vh,240px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] border border-white/45 bg-[#eef2f7]/58 p-2 text-slate-800 shadow-[2px_2px_8px_rgba(148,163,184,0.2)] backdrop-blur-sm"
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -27258,6 +28008,42 @@ export default function XrayCalibrationWorkspace({
                           </label>
                         ))}
                       </div>
+                      {isEditableMaskLayer(selectedCutLayer) ? (
+                        <CompactSliderField
+                          label="Curve / tension"
+                          valueText={`${selectedLayerMetrics.curveStrength}%`}
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={selectedLayerMetrics.curveStrength}
+                          controlStyle="range"
+                          onChange={(event) =>
+                            updateLayerById(selectedCutLayer.id, {
+                              curveStrength: Number(event.target.value) / 100,
+                            })
+                          }
+                          onDecrease={() =>
+                            updateLayerById(selectedCutLayer.id, (item) => ({
+                              ...item,
+                              curveStrength: clamp(
+                                getFreeLineCurveStrength(item) - 0.04,
+                                0,
+                                1,
+                              ),
+                            }))
+                          }
+                          onIncrease={() =>
+                            updateLayerById(selectedCutLayer.id, (item) => ({
+                              ...item,
+                              curveStrength: clamp(
+                                getFreeLineCurveStrength(item) + 0.04,
+                                0,
+                                1,
+                              ),
+                            }))
+                          }
+                        />
+                      ) : null}
                       <div className="grid grid-cols-5 gap-2">
                         <button
                           type="button"
@@ -27370,6 +28156,62 @@ export default function XrayCalibrationWorkspace({
                           )
                         }
                       />
+                      <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                        <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                          Line Color
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {LINE_COLOR_OPTIONS.map((color) => (
+                            <ColorSwatchButton
+                              key={`mobile-line-color-${color}`}
+                              color={color}
+                              active={
+                                (selectedLine.color ||
+                                  lineTypeColor(selectedLine.type || "normal")) === color
+                              }
+                              label={`Warna line ${color}`}
+                              onClick={() =>
+                                setLines((prev) =>
+                                  prev.map((line) =>
+                                    line.id === selectedLine.id
+                                      ? { ...line, color }
+                                      : line,
+                                  ),
+                                )
+                              }
+                            />
+                          ))}
+                          <label
+                            className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70"
+                            title="Custom line color"
+                          >
+                            <span
+                              className="h-4 w-4 rounded-full"
+                              style={{
+                                background:
+                                  "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
+                              }}
+                            />
+                            <input
+                              type="color"
+                              value={
+                                selectedLine.color ||
+                                lineTypeColor(selectedLine.type || "normal")
+                              }
+                              onChange={(event) =>
+                                setLines((prev) =>
+                                  prev.map((line) =>
+                                    line.id === selectedLine.id
+                                      ? { ...line, color: event.target.value }
+                                      : line,
+                                  ),
+                                )
+                              }
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                            />
+                          </label>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-3 gap-2">
                         <button
                           type="button"
@@ -27449,6 +28291,59 @@ export default function XrayCalibrationWorkspace({
 
                   {!selectedCutLayer && selectedCircle ? (
                     <div className="space-y-2">
+                      <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                        <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                          Circle Color
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {CIRCLE_COLOR_OPTIONS.map((color) => (
+                            <ColorSwatchButton
+                              key={`mobile-circle-color-${color}`}
+                              color={color}
+                              active={
+                                (selectedCircle.color ||
+                                  DEFAULT_CIRCLE_COLOR) === color
+                              }
+                              label={`Warna circle ${color}`}
+                              onClick={() =>
+                                setCircles((prev) =>
+                                  prev.map((circle) =>
+                                    circle.id === selectedCircle.id
+                                      ? { ...circle, color }
+                                      : circle,
+                                  ),
+                                )
+                              }
+                            />
+                          ))}
+                          <label
+                            className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70"
+                            title="Custom circle color"
+                          >
+                            <span
+                              className="h-4 w-4 rounded-full"
+                              style={{
+                                background:
+                                  "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
+                              }}
+                            />
+                            <input
+                              type="color"
+                              value={selectedCircle.color || DEFAULT_CIRCLE_COLOR}
+                              onChange={(event) =>
+                                setCircles((prev) =>
+                                  prev.map((circle) =>
+                                    circle.id === selectedCircle.id
+                                      ? { ...circle, color: event.target.value }
+                                      : circle,
+                                  ),
+                                )
+                              }
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                            />
+                          </label>
+                        </div>
+                      </div>
                       <CompactSliderField
                         label="Diameter"
                         valueText={`${Math.round(selectedCircle.radius * 2)}px`}
@@ -27469,6 +28364,29 @@ export default function XrayCalibrationWorkspace({
                           )
                         }
                       />
+                      <CompactSliderField
+                        label="Circle width"
+                        valueText={`${Number(selectedCircle.strokeWidth || DEFAULT_CIRCLE_STROKE_WIDTH).toFixed(1)}x`}
+                        min={0.5}
+                        max={8}
+                        step={0.5}
+                        value={Number(
+                          selectedCircle.strokeWidth || DEFAULT_CIRCLE_STROKE_WIDTH,
+                        )}
+                        controlStyle="range"
+                        onChange={(event) =>
+                          setCircles((prev) =>
+                            prev.map((circle) =>
+                              circle.id === selectedCircle.id
+                                ? {
+                                    ...circle,
+                                    strokeWidth: Number(event.target.value),
+                                  }
+                                : circle,
+                            ),
+                          )
+                        }
+                      />
                       <button
                         type="button"
                         onClick={removeSelectedLine}
@@ -27483,6 +28401,69 @@ export default function XrayCalibrationWorkspace({
                     <div className="space-y-2">
                       <div className="rounded-2xl border border-white/60 bg-white/35 px-3 py-2 text-xs font-black">
                         {selectedHkaMetrics.label}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {[
+                          { key: "right", label: "Kanan" },
+                          { key: "left", label: "Kiri" },
+                        ].map((sideItem) => (
+                          <button
+                            key={`mobile-hka-side-${sideItem.key}`}
+                            type="button"
+                            onClick={() =>
+                              updateHkaSideById(selectedHka.id, sideItem.key)
+                            }
+                            className={`min-h-8 rounded-xl border border-white/50 px-2 text-[8px] font-black ${
+                              selectedHkaMetrics.side === sideItem.key
+                                ? "bg-slate-900/82 text-white"
+                                : "bg-[#eef2f7]/62 text-slate-700"
+                            }`}
+                          >
+                            Kaki {sideItem.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                        <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                          HKA Color
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {HKA_COLOR_OPTIONS.map((color) => (
+                            <ColorSwatchButton
+                              key={`mobile-hka-color-${color}`}
+                              color={color}
+                              active={selectedHkaMetrics.lineColor === color}
+                              label={`Warna HKA ${color}`}
+                              onClick={() =>
+                                updateHkaById(selectedHka.id, {
+                                  lineColor: color,
+                                })
+                              }
+                            />
+                          ))}
+                          <label
+                            className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70"
+                            title="Custom HKA color"
+                          >
+                            <span
+                              className="h-4 w-4 rounded-full"
+                              style={{
+                                background:
+                                  "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
+                              }}
+                            />
+                            <input
+                              type="color"
+                              value={selectedHkaMetrics.lineColor}
+                              onChange={(event) =>
+                                updateHkaById(selectedHka.id, {
+                                  lineColor: event.target.value,
+                                })
+                              }
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                            />
+                          </label>
+                        </div>
                       </div>
                       <CompactSliderField
                         label="HKA width"
@@ -27519,6 +28500,54 @@ export default function XrayCalibrationWorkspace({
                         }
                         className="min-h-20 w-full rounded-2xl border border-white/75 bg-white/45 px-3 py-2 text-xs font-semibold outline-none"
                       />
+                      <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                        <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                          Text Color
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {ANNOTATION_COLOR_OPTIONS.map((color) => (
+                            <ColorSwatchButton
+                              key={`mobile-annotation-color-${color}`}
+                              color={color}
+                              active={
+                                (selectedAnnotation.color ||
+                                  DEFAULT_ANNOTATION_COLOR) === color
+                              }
+                              label={`Warna teks ${color}`}
+                              onClick={() =>
+                                updateAnnotationById(selectedAnnotation.id, {
+                                  color,
+                                })
+                              }
+                            />
+                          ))}
+                          <label
+                            className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70"
+                            title="Custom text color"
+                          >
+                            <span
+                              className="h-4 w-4 rounded-full"
+                              style={{
+                                background:
+                                  "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
+                              }}
+                            />
+                            <input
+                              type="color"
+                              value={
+                                selectedAnnotation.color ||
+                                DEFAULT_ANNOTATION_COLOR
+                              }
+                              onChange={(event) =>
+                                updateAnnotationById(selectedAnnotation.id, {
+                                  color: event.target.value,
+                                })
+                              }
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                            />
+                          </label>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={removeSelectedAnnotation}
@@ -27561,18 +28590,34 @@ export default function XrayCalibrationWorkspace({
 	                className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 px-2 lg:hidden"
 	                tabs={mobileNavigationTabs}
 	                canvasMode={mobileCanvasMode}
+	                toolMode={mobileToolMode}
 	                canvasLocked={mobileCanvasLocked}
 	                onPan={() => {
 	                  setSimpleMobilePanel(null);
 	                  setMobileCanvasLocked(false);
 	                  setMobileCanvasMode("pan");
+	                  setMobileToolMode("move");
 	                  handleToolChange("pan");
 	                }}
                 onEdit={() => {
                   setSimpleMobilePanel(null);
                   setMobileCanvasMode("edit");
+	                  setMobileToolMode("move");
 	                  handleToolChange("pan");
 	                  setNotice("Edit Mode aktif. Tap objek atau titik untuk memilih, lalu geser atau pakai Fine Adjustment.");
+	                }}
+	                onToolModeChange={(nextMode) => {
+	                  setSimpleMobilePanel(null);
+	                  setMobileCanvasMode("edit");
+	                  setMobileToolMode(nextMode);
+	                  handleToolChange("pan");
+	                  setNotice(
+	                    nextMode === "move"
+	                      ? "Tool Mode: Move. Drag badan layer/object untuk memindahkan."
+	                      : nextMode === "scale"
+	                        ? "Tool Mode: Scale. Drag handle sudut/sisi untuk resize."
+	                        : "Tool Mode: Rotate. Drag handle rotate untuk memutar.",
+	                  );
 	                }}
 	                onToggleCanvasLock={() => {
 	                  setMobileCanvasLocked((prev) => {

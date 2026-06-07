@@ -6,13 +6,16 @@ import {
   ChevronDown,
   Compass,
   FileText,
+  GitCompare,
   History,
   Info,
   Layers,
   Move,
+  Palette,
   RotateCcw,
   Scaling,
   Sliders,
+  Upload,
 } from "lucide-react";
 import {
   getImplantLibraryItemsByType,
@@ -134,6 +137,16 @@ export default function QuickPanel({
   onHistory,
   canHistory = true,
   onReset,
+  onOpenColorPanel,
+  canOpenColorPanel = false,
+  onUploadBefore,
+  onUploadAfter,
+  onToggleCompare,
+  compareActive = false,
+  compareDisabled = true,
+  compareLabel = "Before kosong",
+  onUploadDrive,
+  canUploadDrive = false,
   implantItems = [],
   selectedImplantType = "cup",
   selectedImplantItemId = "",
@@ -311,6 +324,63 @@ export default function QuickPanel({
         >
           Reset Workspace
         </QuickButton>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3 rounded-[28px] border border-white/40 bg-[#eef2f7] p-4 shadow-[inset_3px_3px_7px_#cbd5e1,inset_-3px_-3px_7px_#ffffff]">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="text-[10px] font-black tracking-wider text-slate-500 uppercase">
+            Actions
+          </span>
+          <span className="max-w-[128px] truncate rounded-full bg-white/55 px-2 py-0.5 text-[8px] font-black text-slate-500">
+            {compareLabel}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <QuickButton
+            icon={Palette}
+            iconClassName="text-fuchsia-500"
+            onClick={onOpenColorPanel}
+            disabled={!canOpenColorPanel}
+            className="py-2 text-[10px]"
+          >
+            Color
+          </QuickButton>
+          <QuickButton
+            icon={Upload}
+            iconClassName="text-sky-500"
+            onClick={onUploadBefore}
+            className="py-2 text-[10px]"
+          >
+            Before
+          </QuickButton>
+          <QuickButton
+            icon={Upload}
+            iconClassName="text-emerald-500"
+            onClick={onUploadAfter}
+            className="py-2 text-[10px]"
+          >
+            After
+          </QuickButton>
+          <QuickButton
+            icon={GitCompare}
+            iconClassName="text-violet-500"
+            active={compareActive}
+            onClick={onToggleCompare}
+            disabled={compareDisabled}
+            className="py-2 text-[10px]"
+          >
+            Compare
+          </QuickButton>
+          <QuickButton
+            icon={Upload}
+            iconClassName="text-cyan-600"
+            onClick={onUploadDrive}
+            disabled={!canUploadDrive}
+            className="col-span-2 py-2 text-[10px]"
+          >
+            Upload Drive
+          </QuickButton>
         </div>
       </div>
 

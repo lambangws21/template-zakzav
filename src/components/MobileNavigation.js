@@ -64,9 +64,11 @@ export default function MobileNavigation({
   className = "",
   tabs = [],
   canvasMode = "pan",
+  toolMode = "move",
   canvasLocked = false,
   onPan,
   onEdit,
+  onToolModeChange,
   onToggleCanvasLock,
   onZoomIn,
   onZoomOut,
@@ -119,6 +121,21 @@ export default function MobileNavigation({
               onClick={onEdit}
               className="flex-1"
             />
+            {[
+              ["move", "Move"],
+              ["scale", "Scale"],
+              ["rotate", "Rot"],
+            ].map(([mode, label]) => (
+              <ToolButton
+                key={`mobile-tool-mode-${mode}`}
+                active={toolMode === mode}
+                label={label}
+                onClick={() => onToolModeChange?.(mode)}
+                className="min-w-12 px-1 text-[8px] font-black text-slate-600"
+              >
+                {label}
+              </ToolButton>
+            ))}
             <ToolButton
               active={canvasLocked}
               icon={canvasLocked ? Lock : LockOpen}
