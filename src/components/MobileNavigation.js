@@ -2,10 +2,13 @@
 
 import {
   Hand,
+  Lock,
   LockOpen,
+  Maximize2,
   MousePointer2,
-  PenTool,
-  SlidersHorizontal,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 const MOBILE_NAVIGATION_STYLES = `
@@ -42,7 +45,7 @@ function ToolButton({
   return (
     <button
       type="button"
-      className={`inline-flex h-12 min-w-12 shrink-0 items-center justify-center rounded-full transition-all ${
+      className={`inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full transition-all ${
         active ? "mobile-nav-pressed" : "mobile-nav-raised"
       } ${className}`}
       aria-label={label}
@@ -50,7 +53,7 @@ function ToolButton({
       {...props}
     >
       {Icon ? (
-        <Icon className={`h-4 w-4 ${active ? "text-blue-600" : "text-slate-600"}`} />
+        <Icon className={`h-3.5 w-3.5 ${active ? "text-blue-600" : "text-slate-600"}`} />
       ) : null}
       {children}
     </button>
@@ -60,13 +63,15 @@ function ToolButton({
 export default function MobileNavigation({
   className = "",
   tabs = [],
-  activeTool = "pan",
-  activeToolLabel = "Tools",
   canvasMode = "pan",
+  canvasLocked = false,
   onPan,
   onEdit,
-  onDraw,
-  onTools,
+  onToggleCanvasLock,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
+  onFit,
   onUnlock,
 }) {
   const tabColumns = tabs.length > 0 ? tabs.length : 1;
@@ -75,7 +80,7 @@ export default function MobileNavigation({
     <div className={`w-full ${className}`}>
       <style>{MOBILE_NAVIGATION_STYLES}</style>
 
-      <div className="flex w-full flex-col gap-1.5 rounded-[28px] border border-slate-200/60 bg-[#eef2f7]/92 p-1.5 shadow-[2px_2px_7px_rgba(148,163,184,0.22),-2px_-2px_7px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+      <div className="flex w-full flex-col gap-1 rounded-[22px] border border-slate-200/60 bg-[#eef2f7]/92 p-1 shadow-[2px_2px_6px_rgba(148,163,184,0.2),-2px_-2px_6px_rgba(255,255,255,0.76)] backdrop-blur-xl">
         <div
           className="mobile-nav-tray grid min-w-0 gap-1 rounded-full p-1"
           style={{ gridTemplateColumns: `repeat(${tabColumns}, minmax(0, 1fr))` }}
@@ -85,7 +90,7 @@ export default function MobileNavigation({
               key={tab.id}
               type="button"
               onClick={tab.onClick}
-              className={`inline-flex h-10 min-w-0 items-center justify-center rounded-full px-2 text-[10px] font-bold transition-all ${
+              className={`inline-flex h-8 min-w-0 items-center justify-center rounded-full px-1.5 text-[9px] font-bold transition-all ${
                 tab.active
                   ? "mobile-nav-pressed text-slate-900"
                   : "text-slate-500 hover:text-slate-800"
@@ -98,8 +103,8 @@ export default function MobileNavigation({
           ))}
         </div>
 
-        <div className="flex min-w-0 items-center gap-1.5">
-          <div className="mobile-nav-tray flex min-w-0 flex-1 items-center gap-1 rounded-full p-1">
+        <div className="flex min-w-0 items-center gap-1">
+          <div className="mobile-nav-tray flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-full p-1">
             <ToolButton
               active={canvasMode === "pan"}
               icon={Hand}
@@ -115,17 +120,34 @@ export default function MobileNavigation({
               className="flex-1"
             />
             <ToolButton
-              active={activeTool === "draw"}
-              icon={PenTool}
-              label="Line Draw"
-              onClick={onDraw}
+              active={canvasLocked}
+              icon={canvasLocked ? Lock : LockOpen}
+              label={canvasLocked ? "Unlock Canvas Move" : "Lock Canvas"}
+              onClick={onToggleCanvasLock}
               className="flex-1"
             />
             <ToolButton
-              active={activeTool === "tools"}
-              icon={SlidersHorizontal}
-              label={activeToolLabel}
-              onClick={onTools}
+              icon={ZoomOut}
+              label="Zoom Out"
+              onClick={onZoomOut}
+              className="flex-1"
+            />
+            <ToolButton
+              icon={RotateCcw}
+              label="Reset 100%"
+              onClick={onResetZoom}
+              className="flex-1"
+            />
+            <ToolButton
+              icon={ZoomIn}
+              label="Zoom In"
+              onClick={onZoomIn}
+              className="flex-1"
+            />
+            <ToolButton
+              icon={Maximize2}
+              label="Fit Screen"
+              onClick={onFit}
               className="flex-1"
             />
           </div>
@@ -135,7 +157,7 @@ export default function MobileNavigation({
               icon={LockOpen}
               label="Unlock Canvas"
               onClick={onUnlock}
-              className="w-12 text-rose-600"
+              className="w-10 text-rose-600"
             />
           </div>
         </div>

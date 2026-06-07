@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  Circle,
   Compass,
   GitBranch,
   Grid,
@@ -49,6 +50,7 @@ const TOOL_ICON_MAP = {
   freeLine: LineSquiggle,
   freeLinePoint: Waypoints,
   angle: Compass,
+  circle: Circle,
   hka: GitBranch,
   hkaAuto: GitBranch,
   guideBuilder: Grid,
@@ -62,6 +64,7 @@ const TOOL_COLOR_MAP = {
   freeLine: "text-emerald-500",
   freeLinePoint: "text-indigo-500",
   angle: "text-amber-500",
+  circle: "text-violet-500",
   hkaAuto: "text-purple-500",
   guideBuilder: "text-teal-500",
   annotation: "text-orange-500",
@@ -74,6 +77,7 @@ function getToolGroup(item) {
   if (
     item.key === "draw" ||
     item.key === "angle" ||
+    item.key === "circle" ||
     item.key === "annotation" ||
     item.freeLineMode === "freehand" ||
     item.freeLineMode === "point"
