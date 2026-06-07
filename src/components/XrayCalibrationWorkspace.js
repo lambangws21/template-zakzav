@@ -44,6 +44,7 @@ import {
   RotateCw,
   RulerDimensionLine,
   Save,
+  Scaling,
   Spline,
   LineSquiggle,
   Target,
@@ -2801,6 +2802,7 @@ const ICON_COMPONENTS = {
   flipH: FlipHorizontal2,
   flipV: FlipVertical2,
   resetCrop: Crop,
+  scale: Scaling,
   preset: RulerDimensionLine,
   saveCal: BadgeCheck,
   trash: Trash2,
@@ -3005,6 +3007,7 @@ function LayerToolbarActionButton({
   onClick,
   active = false,
   className = "",
+  iconClassName = "h-4 w-4",
 }) {
   return (
     <motion.button
@@ -3021,8 +3024,8 @@ function LayerToolbarActionButton({
         active,
       )} ${className}`}
     >
-      <Icon name={icon} className="h-4 w-4" />
-    </motion.button>
+    <Icon name={icon} className={iconClassName} />
+  </motion.button>
   );
 }
 
@@ -3666,12 +3669,15 @@ export default function XrayCalibrationWorkspace({
       // ignore localStorage write failure
     }
   }, []);
+
   const [highlightCalibrationPanel, setHighlightCalibrationPanel] =
     useState(false);
   const [simpleCalibrationModalOpen, setSimpleCalibrationModalOpen] =
     useState(false);
   const [simpleLayerDropdownOpen, setSimpleLayerDropdownOpen] =
     useState(false);
+  const [simpleLayerFloatingPopup, setSimpleLayerFloatingPopup] =
+    useState(null);
   const [simplePlanningModal, setSimplePlanningModal] = useState(null);
   const [simpleGuideModalOpen, setSimpleGuideModalOpen] = useState(false);
   const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
@@ -3690,6 +3696,13 @@ export default function XrayCalibrationWorkspace({
   const [notice, setNotice] = useState(
     "Upload gambar lalu tarik garis. Garis yang sudah ada bisa di-adjust dengan drag titik ujung atau geser garis.",
   );
+
+  useEffect(() => {
+    if (!isSimpleUiMode || !selectedCutLayerId) {
+      setSimpleLayerFloatingPopup(null);
+    }
+  }, [isSimpleUiMode, selectedCutLayerId]);
+
   const [actionToast, setActionToast] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
   const [planNote, setPlanNote] = useState("");
@@ -5144,10 +5157,6 @@ export default function XrayCalibrationWorkspace({
         setNotice("Pilih layer dulu untuk rotasi.");
         return;
       }
-      if (selectedCutLayer.lockScale) {
-        setNotice("Layer terkunci. Buka Lock dulu untuk rotasi.");
-        return;
-      }
       updateLayerById(selectedCutLayer.id, (layer) => ({
         ...layer,
         rotation: normalizeRotationDegrees(Number(layer.rotation || 0) + deltaDegrees),
@@ -5842,12 +5851,24 @@ export default function XrayCalibrationWorkspace({
     }
     const horizontalPadding = isMobileViewport ? 72 : 96;
     const topOffset = isMobileViewport ? 44 : 62;
+    const floatingControlHeight = isSimpleUiMode
+      ? isMobileViewport
+        ? 124
+        : 104
+      : isMobileViewport
+        ? 52
+        : 58;
+    const bottomSafeArea = isMobileViewport ? 168 : 18;
+    const maxTopY = Math.max(
+      10,
+      viewport.height - bottomSafeArea - floatingControlHeight,
+    );
     const centerX = clamp(
       (minX + maxX) / 2,
       horizontalPadding,
       Math.max(horizontalPadding, viewport.width - horizontalPadding),
     );
-    const topY = Math.max(10, minY - topOffset);
+    const topY = clamp(minY - topOffset, 10, maxTopY);
     if (!Number.isFinite(centerX) || !Number.isFinite(topY)) return null;
     return {
       centerX,
@@ -5856,6 +5877,7 @@ export default function XrayCalibrationWorkspace({
   }, [
     imageToScreenPoint,
     isMobileViewport,
+    isSimpleUiMode,
     selectedCutLayer,
     viewport.height,
     viewport.width,
@@ -11321,9 +11343,13 @@ export default function XrayCalibrationWorkspace({
         Math.min(modelWidth, modelHeight) * TEMPLATE_INITIAL_MAX_FRACTION;
       const targetMaxWidth = modelWidth * 0.42;
       const targetMaxHeight = modelHeight * 0.42;
-      const templateRulerScale =
-        autoScaleFromCalibration && mmPerPixel !== null && !shouldMatchBase
+      const detectedTemplateRulerScale =
+        autoScaleFromCalibration && !shouldMatchBase
           ? estimateTemplateRulerPxPerMm(workingLayerImage)
+          : null;
+      const templateRulerScale =
+        detectedTemplateRulerScale && mmPerPixel !== null
+          ? detectedTemplateRulerScale
           : null;
       const calibratedDisplayWidth = templateRulerScale
         ? clamp(
@@ -11411,7 +11437,7 @@ export default function XrayCalibrationWorkspace({
         lockScale: false,
         hidden: false,
         autoScaleFromCalibration: Boolean(autoScaleFromCalibration),
-        rulerPxPerMm: templateRulerScale?.pxPerMm || null,
+        rulerPxPerMm: detectedTemplateRulerScale?.pxPerMm || null,
         physicalSize: physicalTemplateSize ? physicalSize || "custom" : null,
         physicalSizeLabel: physicalTemplateSize?.label || "",
         physicalWidthMm: physicalTemplateSize?.widthMm || null,
@@ -11433,7 +11459,9 @@ export default function XrayCalibrationWorkspace({
         : "";
       const calibrationText = autoScaleFromCalibration
         ? mmPerPixel === null
-          ? " Kalibrasi belum aktif: klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi."
+          ? detectedTemplateRulerScale
+            ? ` Ruler template ${detectedTemplateRulerScale.axis} terdeteksi; layer akan auto-scale setelah kalibrasi aktif.`
+            : " Kalibrasi belum aktif: klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi."
           : templateRulerScale
             ? ` Scale implant otomatis mengikuti garis kalibrasi aktif dari ruler template ${templateRulerScale.axis}.`
           : physicalTemplateSize
@@ -11469,19 +11497,21 @@ export default function XrayCalibrationWorkspace({
     if (mmPerPixel === null || !modelWidth || !modelHeight) return;
 
     const scalableLayers = cutLayers
-      .filter(
-        (layer) =>
-          layer.autoScaleFromCalibration &&
-          !layer.lockScale &&
-          !Number.isFinite(Number(layer.rulerPxPerMm)) &&
+      .filter((layer) => {
+        if (!layer.autoScaleFromCalibration || layer.lockScale) return false;
+        const rulerPxPerMm = Number(layer.rulerPxPerMm);
+        const hasRulerScale =
+          Number.isFinite(rulerPxPerMm) && rulerPxPerMm > 0;
+        const hasPhysicalSize =
           Number.isFinite(Number(layer.physicalWidthMm)) &&
           Number(layer.physicalWidthMm) > 0 &&
           Number.isFinite(Number(layer.physicalHeightMm)) &&
-          Number(layer.physicalHeightMm) > 0,
-      )
+          Number(layer.physicalHeightMm) > 0;
+        return hasRulerScale || hasPhysicalSize;
+      })
       .map(
         (layer) =>
-          `${layer.id}:${layer.physicalWidthMm}:${layer.physicalHeightMm}:${layer.lockScale}`,
+          `${layer.id}:${layer.rulerPxPerMm}:${layer.physicalWidthMm}:${layer.physicalHeightMm}:${layer.sourceWidth}:${layer.sourceHeight}:${layer.lockScale}`,
       )
       .join("|");
 
@@ -11494,26 +11524,49 @@ export default function XrayCalibrationWorkspace({
     setCutLayers((prev) => {
       let changed = false;
       const nextLayers = prev.map((layer) => {
-        if (
-          !layer.autoScaleFromCalibration ||
-          layer.lockScale ||
-          Number.isFinite(Number(layer.rulerPxPerMm)) ||
-          !Number.isFinite(Number(layer.physicalWidthMm)) ||
-          !Number.isFinite(Number(layer.physicalHeightMm))
-        ) {
+        if (!layer.autoScaleFromCalibration || layer.lockScale) {
           return layer;
         }
 
-        const nextDisplayWidth = clamp(
-          Number(layer.physicalWidthMm) / mmPerPixel,
-          18,
-          Math.max(18, modelWidth * 3),
-        );
-        const nextDisplayHeight = clamp(
-          Number(layer.physicalHeightMm) / mmPerPixel,
-          18,
-          Math.max(18, modelHeight * 3),
-        );
+        const rulerPxPerMm = Number(layer.rulerPxPerMm);
+        const hasRulerScale =
+          Number.isFinite(rulerPxPerMm) && rulerPxPerMm > 0;
+        const physicalWidthMm = Number(layer.physicalWidthMm);
+        const physicalHeightMm = Number(layer.physicalHeightMm);
+        const hasPhysicalSize =
+          Number.isFinite(physicalWidthMm) &&
+          physicalWidthMm > 0 &&
+          Number.isFinite(physicalHeightMm) &&
+          physicalHeightMm > 0;
+
+        if (!hasRulerScale && !hasPhysicalSize) return layer;
+
+        const nextDisplayWidth = hasRulerScale
+          ? clamp(
+              Number(layer.sourceWidth || layer.displayWidth || 18) /
+                rulerPxPerMm /
+                mmPerPixel,
+              18,
+              Math.max(18, modelWidth * 3),
+            )
+          : clamp(
+              physicalWidthMm / mmPerPixel,
+              18,
+              Math.max(18, modelWidth * 3),
+            );
+        const nextDisplayHeight = hasRulerScale
+          ? clamp(
+              Number(layer.sourceHeight || layer.displayHeight || 18) /
+                rulerPxPerMm /
+                mmPerPixel,
+              18,
+              Math.max(18, modelHeight * 3),
+            )
+          : clamp(
+              physicalHeightMm / mmPerPixel,
+              18,
+              Math.max(18, modelHeight * 3),
+            );
 
         if (
           Math.abs(Number(layer.displayWidth || 0) - nextDisplayWidth) < 0.5 &&
@@ -11796,19 +11849,14 @@ export default function XrayCalibrationWorkspace({
           }
           if (layerId !== null && targetLayer) {
             selectLayerFromCanvas(layerId, { openPanel: false });
-            if (targetLayer.lockScale) {
-              setNotice("Layer dipilih. Layer terkunci, buka lock dari Setting.");
-              return;
-            }
             const selectedMoveLayerIds = getRelatedLayerIds(targetLayer.id, {
               includeGroup: true,
             });
-            const movableLayerIds = selectedMoveLayerIds.filter((moveLayerId) => {
-              const layer = cutLayers.find((item) => item.id === moveLayerId);
-              return layer && !layer.lockScale;
-            });
+            const movableLayerIds = selectedMoveLayerIds.filter((moveLayerId) =>
+              cutLayers.some((item) => item.id === moveLayerId),
+            );
             if (!movableLayerIds.length) {
-              setNotice("Layer dipilih, tapi semua layer terkait terkunci.");
+              setNotice("Layer dipilih, tapi layer terkait tidak ditemukan.");
               return;
             }
             setHistoryPaused(true);
@@ -12435,9 +12483,9 @@ export default function XrayCalibrationWorkspace({
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
           syncMobileCanvasSelection("tool");
-          if (targetLayer.lockScale) {
+          if (targetLayer.lockScale && !isRotateHandle) {
             setNotice(
-              "Layer terkunci. Buka lock dulu untuk resize atau rotate.",
+              "Scale layer terkunci. Buka Lock Scale dulu untuk resize.",
             );
             return;
           }
@@ -12499,19 +12547,14 @@ export default function XrayCalibrationWorkspace({
             );
             return;
           }
-          if (targetLayer.lockScale) {
-            setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
-            return;
-          }
           const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
             ? selectedCutLayerIds
             : getRelatedLayerIds(targetLayer.id, { includeGroup: true });
-          const movableLayerIds = selectedMoveLayerIds.filter((layerId) => {
-            const layer = cutLayers.find((item) => item.id === layerId);
-            return layer && !layer.lockScale;
-          });
+          const movableLayerIds = selectedMoveLayerIds.filter((layerId) =>
+            cutLayers.some((item) => item.id === layerId),
+          );
           if (!movableLayerIds.length) {
-            setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+            setNotice("Layer terkait tidak ditemukan.");
             return;
           }
           setHistoryPaused(true);
@@ -13109,7 +13152,11 @@ export default function XrayCalibrationWorkspace({
           noticeText:
             "Layer dipilih. Drag handle untuk resize atau rotate langsung di canvas.",
         });
-        if (!targetLayer.lockScale && tool === "pan") {
+        if (targetLayer.lockScale && !isRotateHandle) {
+          setNotice("Scale layer terkunci. Buka Lock Scale dulu untuk resize.");
+          return;
+        }
+        if (tool === "pan") {
           setHistoryPaused(true);
           if (isRotateHandle) {
             interactionRef.current = {
@@ -13172,16 +13219,15 @@ export default function XrayCalibrationWorkspace({
           );
           return;
         }
-        if (!targetLayer.lockScale && tool === "pan") {
+        if (tool === "pan") {
           const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
             ? selectedCutLayerIds
             : getRelatedLayerIds(targetLayer.id, { includeGroup: true });
-          const movableLayerIds = selectedMoveLayerIds.filter((layerId) => {
-            const layer = cutLayers.find((item) => item.id === layerId);
-            return layer && !layer.lockScale;
-          });
+          const movableLayerIds = selectedMoveLayerIds.filter((layerId) =>
+            cutLayers.some((item) => item.id === layerId),
+          );
           if (!movableLayerIds.length) {
-            setNotice("Layer terkunci. Buka lock dulu untuk memindahkan.");
+            setNotice("Layer terkait tidak ditemukan.");
             return;
           }
           setHistoryPaused(true);
@@ -14462,12 +14508,10 @@ export default function XrayCalibrationWorkspace({
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layer.id === layerId
-              ? layer.lockScale
-                ? layer
-                : {
-                    ...layer,
-                    rotation: nextRotation,
-                  }
+              ? {
+                  ...layer,
+                  rotation: nextRotation,
+                }
               : layer,
           ),
         );
@@ -16135,6 +16179,29 @@ export default function XrayCalibrationWorkspace({
     event.target.value = "";
   }, []);
 
+  const toggleCompareModePreservingWorkspace = useCallback(() => {
+    if (compareMode) {
+      setCompareMode(false);
+      setNotice("Keluar Compare. Workspace dan template tetap dipertahankan.");
+      return;
+    }
+    if (!compareImageSrc) {
+      compareUploadInputRef.current?.click();
+      return;
+    }
+    setCompareMode(true);
+    setNotice(
+      "Compare aktif. Before tampil di panel compare, After memakai workspace templating aktif.",
+    );
+  }, [compareImageSrc, compareMode]);
+
+  const useActiveWorkspaceAsCompareAfter = useCallback(() => {
+    setCompareMode(false);
+    setNotice(
+      "After memakai workspace aktif. Tidak ada upload ulang, layer/template tetap aman.",
+    );
+  }, []);
+
   const saveSelectedLayerToLibrary = useCallback(async () => {
     if (!selectedCutLayer) {
       setNotice("Pilih cut layer dulu untuk disimpan sebagai template.");
@@ -16336,6 +16403,125 @@ export default function XrayCalibrationWorkspace({
     openSimpleCalibrationModal,
     selectedImplantLibraryItem,
   ]);
+
+  const replaceSelectedLayerWithSelectedImplant = useCallback(async () => {
+    if (!selectedCutLayer) {
+      setNotice("Pilih layer/template di canvas dulu untuk diganti.");
+      return;
+    }
+    if (!isImageBackedLayerKind(selectedCutLayer.kind)) {
+      setNotice("Replace template hanya untuk layer gambar/template.");
+      return;
+    }
+    if (!selectedImplantLibraryItem) {
+      setNotice("Pilih implant pengganti dari dropdown terlebih dahulu.");
+      return;
+    }
+
+    try {
+      const loaded = await loadImageFromCandidates(
+        buildDriveImageCandidates(selectedImplantLibraryItem.imageSrc),
+      );
+      let nextImage = loaded.image;
+      let nextImageSrc = loaded.src;
+      let transparentBackgroundApplied = false;
+
+      if (selectedImplantLibraryItem.transparentWhiteBackground) {
+        const transparentImage = makeWhiteBackgroundTransparent(nextImage);
+        if (transparentImage?.image) {
+          nextImage = transparentImage.image;
+          nextImageSrc = transparentImage.imageSrc || nextImageSrc;
+          transparentBackgroundApplied = true;
+        }
+      }
+
+      let rawW = nextImage.naturalWidth || nextImage.width || 0;
+      let rawH = nextImage.naturalHeight || nextImage.height || 0;
+      if (!rawW || !rawH) {
+        setNotice("Template pengganti tidak valid.");
+        return;
+      }
+
+      let physicalTemplateSize = resolveTemplatePhysicalSize({
+        physicalSize: selectedImplantLibraryItem.physicalSize || null,
+        physicalWidthMm: selectedImplantLibraryItem.physicalWidthMm ?? null,
+        physicalHeightMm: selectedImplantLibraryItem.physicalHeightMm ?? null,
+        width: rawW,
+        height: rawH,
+      });
+
+      if (physicalTemplateSize) {
+        const normalizedImage = normalizeImageToPhysicalAspect(
+          nextImage,
+          physicalTemplateSize,
+        );
+        if (normalizedImage?.image) {
+          nextImage = normalizedImage.image;
+          nextImageSrc = normalizedImage.imageSrc || nextImageSrc;
+          rawW = nextImage.naturalWidth || nextImage.width || 0;
+          rawH = nextImage.naturalHeight || nextImage.height || 0;
+          physicalTemplateSize = resolveTemplatePhysicalSize({
+            physicalSize: selectedImplantLibraryItem.physicalSize || null,
+            physicalWidthMm:
+              selectedImplantLibraryItem.physicalWidthMm ?? null,
+            physicalHeightMm:
+              selectedImplantLibraryItem.physicalHeightMm ?? null,
+            width: rawW,
+            height: rawH,
+          });
+        }
+      }
+
+      const contentBounds = physicalTemplateSize
+        ? null
+        : getImageContentBounds(nextImage);
+      const detectedTemplateRulerScale = estimateTemplateRulerPxPerMm(nextImage);
+      const srcX = contentBounds?.x || 0;
+      const srcY = contentBounds?.y || 0;
+      const srcW = contentBounds?.width || rawW;
+      const srcH = contentBounds?.height || rawH;
+
+      setCutLayers((prev) =>
+        prev.map((layer) =>
+          layer.id === selectedCutLayer.id
+            ? {
+                ...layer,
+                image: nextImage,
+                imageSrc: nextImageSrc,
+                name: selectedImplantLibraryItem.label,
+                sourceX: srcX,
+                sourceY: srcY,
+                sourceWidth: srcW,
+                sourceHeight: srcH,
+                autoScaleFromCalibration: false,
+                rulerPxPerMm: detectedTemplateRulerScale?.pxPerMm || null,
+                physicalSize: physicalTemplateSize
+                  ? selectedImplantLibraryItem.physicalSize || "custom"
+                  : null,
+                physicalSizeLabel: physicalTemplateSize?.label || "",
+                physicalWidthMm: physicalTemplateSize?.widthMm || null,
+                physicalHeightMm: physicalTemplateSize?.heightMm || null,
+                transparentWhiteBackground: Boolean(
+                  selectedImplantLibraryItem.transparentWhiteBackground,
+                ),
+              }
+            : layer,
+        ),
+      );
+
+      const rulerText = detectedTemplateRulerScale
+        ? ` Ruler ${detectedTemplateRulerScale.axis} tersimpan untuk tombol Scale Ruler.`
+        : "";
+      const transparentText = transparentBackgroundApplied
+        ? " Background putih dibuat transparan."
+        : "";
+      setNotice(
+        `Layer diganti ke "${selectedImplantLibraryItem.label}". Posisi, rotasi, opacity, dan ukuran tampilan dipertahankan.${transparentText}${rulerText}`,
+      );
+    } catch {
+      setNotice("Gagal mengganti template layer.");
+    }
+  }, [selectedCutLayer, selectedImplantLibraryItem]);
 
   const useGoogleSheetImageAsLayer = useCallback(
     (sheetImage) => {
@@ -16842,7 +17028,7 @@ export default function XrayCalibrationWorkspace({
   }, []);
 
   const exportReportPng = useCallback(() => {
-    if (!hasCalibration) {
+    if (!hasCalibration && !isSimpleUiMode) {
       focusCalibrationStep("Export report dikunci sampai kalibrasi aktif.");
       return;
     }
@@ -16870,10 +17056,16 @@ export default function XrayCalibrationWorkspace({
         "Export PNG gagal karena gambar tidak origin-clean (CORS). Pastikan file storage bisa diakses dengan CORS/public read.",
       );
     }
-  }, [createReportCanvasSnapshot, focusCalibrationStep, hasCalibration, imageName]);
+  }, [
+    createReportCanvasSnapshot,
+    focusCalibrationStep,
+    hasCalibration,
+    imageName,
+    isSimpleUiMode,
+  ]);
 
   const exportReportPdf = useCallback(() => {
-    if (!hasCalibration) {
+    if (!hasCalibration && !isSimpleUiMode) {
       focusCalibrationStep("Export report dikunci sampai kalibrasi aktif.");
       return;
     }
@@ -16970,13 +17162,14 @@ export default function XrayCalibrationWorkspace({
     focusCalibrationStep,
     hasCalibration,
     imageName,
+    isSimpleUiMode,
     measurementRows,
     planSteps,
     templateInventoryRows,
   ]);
 
   const uploadReportToGoogleDrive = useCallback(async () => {
-    if (!hasCalibration) {
+    if (!hasCalibration && !isSimpleUiMode) {
       focusCalibrationStep("Upload Drive dikunci sampai kalibrasi aktif.");
       return;
     }
@@ -17053,6 +17246,7 @@ export default function XrayCalibrationWorkspace({
     focusCalibrationStep,
     hasCalibration,
     imageName,
+    isSimpleUiMode,
     measurementRows.length,
     mmPerPixel,
     sheetMainImageEndpoint,
@@ -17577,6 +17771,54 @@ export default function XrayCalibrationWorkspace({
   const selectedLayerRotationValue = selectedCutLayer
     ? Math.round(normalizeRotationDegrees(Number(selectedCutLayer.rotation || 0)))
     : 0;
+  const selectedLayerScalePercent =
+    selectedCutLayer && selectedLayerMetrics
+      ? clamp(
+          Math.round(
+            (selectedLayerMetrics.width /
+              Math.max(
+                1,
+                Number(
+                  selectedCutLayer.sourceWidth || selectedLayerMetrics.width,
+                ),
+              )) *
+              100,
+          ),
+          10,
+          300,
+        )
+      : 100;
+  const canReplaceSelectedTemplateLayer = Boolean(
+    selectedCutLayer && isImageBackedLayerKind(selectedCutLayer.kind),
+  );
+  const applySelectedLayerScalePercent = (nextPercent) => {
+    if (!selectedCutLayer || !selectedLayerMetrics) return;
+    if (selectedCutLayer.lockScale) {
+      setNotice("Scale template terkunci. Buka Lock S dulu.");
+      return;
+    }
+    const nextScalePercent = clamp(Number(nextPercent), 10, 300);
+    const sourceWidth = Math.max(
+      1,
+      Number(selectedCutLayer.sourceWidth || selectedLayerMetrics.width),
+    );
+    const currentAspect =
+      selectedLayerMetrics.height / Math.max(1, selectedLayerMetrics.width);
+    const nextWidth = clamp(
+      (sourceWidth * nextScalePercent) / 100,
+      16,
+      selectedLayerMetrics.widthMax,
+    );
+    const nextHeight = clamp(
+      nextWidth * currentAspect,
+      16,
+      selectedLayerMetrics.heightMax,
+    );
+    updateLayerById(selectedCutLayer.id, {
+      displayWidth: nextWidth,
+      displayHeight: nextHeight,
+    });
+  };
   const hkaWizardDefinition = getHkaModeDefinition(hkaInputMode);
   const hkaWizardNextPoint =
     tool === "hkaAuto"
@@ -17979,7 +18221,8 @@ export default function XrayCalibrationWorkspace({
                   onClick={uploadReportToGoogleDrive}
                   disabled={
                     googleDriveUploadBusy ||
-                    !hasCalibration ||
+                    !image ||
+                    (!isSimpleUiMode && !hasCalibration) ||
                     !String(sheetMainImageEndpoint || "").trim()
                   }
                   className="min-h-11 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.24)] disabled:cursor-not-allowed disabled:opacity-45"
@@ -17987,7 +18230,7 @@ export default function XrayCalibrationWorkspace({
                   {googleDriveUploadBusy ? "Uploading..." : "Upload"}
                 </button>
               </div>
-              {!hasCalibration ? (
+              {!hasCalibration && !isSimpleUiMode ? (
                 <p className="mt-3 text-[11px] font-semibold text-rose-500">
                   Kalibrasi harus aktif sebelum upload report.
                 </p>
@@ -22275,10 +22518,10 @@ export default function XrayCalibrationWorkspace({
                 />
                 <IconButton
                   icon="compare"
-                  label="Toggle Compare Mode"
-                  onClick={() => setCompareMode((prev) => !prev)}
+                  label={compareMode ? "Keluar Compare" : "Toggle Compare Mode"}
+                  onClick={toggleCompareModePreservingWorkspace}
                   active={compareMode}
-                  disabled={!compareImageSrc}
+                  disabled={!compareImageSrc && !compareMode}
                   className="h-8 w-8 shrink-0"
                 />
                 <IconButton
@@ -22616,6 +22859,11 @@ export default function XrayCalibrationWorkspace({
               onSelectType={setSelectedImplantType}
               onSelectItemId={setSelectedImplantLibraryId}
               onUseSelected={useSelectedImplantLibraryAsLayer}
+              onReplaceSelected={replaceSelectedLayerWithSelectedImplant}
+              canReplaceSelected={Boolean(
+                selectedCutLayer &&
+                  isImageBackedLayerKind(selectedCutLayer.kind),
+              )}
               scaleInstruction={implantLibraryScaleInstruction}
               compact={isLeftSidebarCompact}
               disabled={!image || !modelWidth || !modelHeight}
@@ -26944,25 +27192,49 @@ export default function XrayCalibrationWorkspace({
                             </span>
                           ) : null}
                         </button>
-                        <LayerToolbarActionButton
-                          icon={showLayerToolbarName ? "eyeOff" : "eye"}
-                          label={
-                            showLayerToolbarName
-                              ? "Sembunyikan nama layer"
-                              : "Tampilkan nama layer"
-                          }
-                          onClick={() =>
-                            setShowLayerToolbarName((prev) => !prev)
-                          }
-                          active={!showLayerToolbarName}
-                        />
-                        <LayerToolbarActionButton
-                          icon="settings"
-                          label="Buka layer settings"
-                          onClick={() =>
-                            openLayerSettingsModal(selectedCutLayer.id)
-                          }
-                        />
+                        {isSimpleUiMode ? (
+                          <>
+                            <LayerToolbarActionButton
+                              icon="package"
+                              label="Ganti template"
+                              active={simpleLayerFloatingPopup === "template"}
+                              onClick={() =>
+                                setSimpleLayerFloatingPopup((prev) =>
+                                  prev === "template" ? null : "template",
+                                )
+                              }
+                            />
+                            <LayerToolbarActionButton
+                              icon="settings"
+                              label="Buka layer settings"
+                              onClick={() =>
+                                openLayerSettingsModal(selectedCutLayer.id)
+                              }
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <LayerToolbarActionButton
+                              icon={showLayerToolbarName ? "eyeOff" : "eye"}
+                              label={
+                                showLayerToolbarName
+                                  ? "Sembunyikan nama layer"
+                                  : "Tampilkan nama layer"
+                              }
+                              onClick={() =>
+                                setShowLayerToolbarName((prev) => !prev)
+                              }
+                              active={!showLayerToolbarName}
+                            />
+                            <LayerToolbarActionButton
+                              icon="settings"
+                              label="Buka layer settings"
+                              onClick={() =>
+                                openLayerSettingsModal(selectedCutLayer.id)
+                              }
+                            />
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -26994,51 +27266,246 @@ export default function XrayCalibrationWorkspace({
                           </span>
                         ) : null}
                       </button>
-                      <LayerToolbarActionButton
-                        icon={showLayerToolbarName ? "eyeOff" : "eye"}
-                        label={
-                          showLayerToolbarName
-                            ? "Sembunyikan nama layer"
-                            : "Tampilkan nama layer"
-                        }
-                        onClick={() => setShowLayerToolbarName((prev) => !prev)}
-                        active={!showLayerToolbarName}
-                      />
-                      <LayerToolbarActionButton
-                        icon={selectedCutLayer.lockScale ? "lock" : "unlock"}
-                        label={
-                          selectedCutLayer.lockScale
-                            ? "Unlock layer"
-                            : "Lock layer"
-                        }
-                        onClick={() =>
-                          updateLayerById(selectedCutLayer.id, (item) => ({
-                            ...item,
-                            lockScale: !item.lockScale,
-                          }))
-                        }
-                        active={selectedCutLayer.lockScale}
-                      />
-                      <LayerToolbarActionButton
-                        icon="plus"
-                        label="Duplicate layer"
-                        onClick={duplicateSelectedCutLayer}
-                      />
-                      <LayerToolbarActionButton
-                        icon="trash"
-                        label="Hapus layer"
-                        onClick={removeSelectedCutLayer}
-                        className="text-rose-600"
-                      />
-                      <LayerToolbarActionButton
-                        icon="settings"
-                        label="Buka layer settings"
-                        onClick={() =>
-                          openLayerSettingsModal(selectedCutLayer.id)
-                        }
-                      />
+                      {isSimpleUiMode ? (
+                        <>
+                          <LayerToolbarActionButton
+                            icon="package"
+                            label="Ganti template"
+                            active={simpleLayerFloatingPopup === "template"}
+                            onClick={() =>
+                              setSimpleLayerFloatingPopup((prev) =>
+                                prev === "template" ? null : "template",
+                              )
+                            }
+                          />
+                          <LayerToolbarActionButton
+                            icon="settings"
+                            label="Buka layer settings"
+                            onClick={() =>
+                              openLayerSettingsModal(selectedCutLayer.id)
+                            }
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <LayerToolbarActionButton
+                            icon={showLayerToolbarName ? "eyeOff" : "eye"}
+                            label={
+                              showLayerToolbarName
+                                ? "Sembunyikan nama layer"
+                                : "Tampilkan nama layer"
+                            }
+                            onClick={() =>
+                              setShowLayerToolbarName((prev) => !prev)
+                            }
+                            active={!showLayerToolbarName}
+                          />
+                          <LayerToolbarActionButton
+                            icon={selectedCutLayer.lockScale ? "lock" : "unlock"}
+                            label={
+                              selectedCutLayer.lockScale
+                                ? "Unlock Scale"
+                                : "Lock Scale"
+                            }
+                            onClick={() =>
+                              updateLayerById(selectedCutLayer.id, (item) => ({
+                                ...item,
+                                lockScale: !item.lockScale,
+                              }))
+                            }
+                            active={selectedCutLayer.lockScale}
+                          />
+                          <LayerToolbarActionButton
+                            icon="plus"
+                            label="Duplicate layer"
+                            onClick={duplicateSelectedCutLayer}
+                          />
+                          <LayerToolbarActionButton
+                            icon="trash"
+                            label="Hapus layer"
+                            onClick={removeSelectedCutLayer}
+                            className="text-rose-600"
+                          />
+                          <LayerToolbarActionButton
+                            icon="settings"
+                            label="Buka layer settings"
+                            onClick={() =>
+                              openLayerSettingsModal(selectedCutLayer.id)
+                            }
+                          />
+                        </>
+                      )}
                     </div>
                   )}
+                  <AnimatePresence>
+                    {isSimpleUiMode &&
+                    selectedLayerMetrics &&
+                    simpleLayerFloatingPopup ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                        transition={MOBILE_PANEL_TRANSITION}
+                        className="pointer-events-auto mt-1.5 w-[min(76vw,300px)] rounded-[20px] border border-white/58 bg-[#eef2f7]/88 p-2 text-slate-700 shadow-[2px_2px_8px_rgba(148,163,184,0.18)] backdrop-blur-md"
+                      >
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                            Ganti Template
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSimpleLayerFloatingPopup(null)}
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-slate-500 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+                            aria-label="Tutup popup layer"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-[1fr_auto] gap-1.5">
+                            <select
+                              value={selectedImplantLibraryId}
+                              onChange={(event) =>
+                                setSelectedImplantLibraryId(event.target.value)
+                              }
+                              disabled={!canReplaceSelectedTemplateLayer}
+                              className="min-h-9 min-w-0 rounded-2xl border border-white/70 bg-[#edf1f6] px-2 text-[10px] font-black text-slate-700 outline-none shadow-[inset_1.5px_1.5px_3px_rgba(148,163,184,0.24),inset_-1.5px_-1.5px_3px_rgba(255,255,255,0.82)] disabled:opacity-45"
+                              title="Pilih template pengganti"
+                            >
+                              {LOCAL_IMPLANT_LIBRARY.map((item) => (
+                                <option
+                                  key={`floating-replace-${item.id}`}
+                                  value={item.id}
+                                >
+                                  {item.label}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void replaceSelectedLayerWithSelectedImplant();
+                                setSimpleLayerFloatingPopup(null);
+                              }}
+                              disabled={!canReplaceSelectedTemplateLayer}
+                              className="min-h-9 rounded-2xl border border-white/70 bg-slate-900 px-3 text-[9px] font-black text-white shadow-[2px_2px_6px_rgba(15,23,42,0.18)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              Ganti
+                            </button>
+                          </div>
+                          <div>
+                            <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black text-slate-500">
+                              <span>
+                                {selectedCutLayer.lockScale
+                                  ? "Lock Scale aktif"
+                                  : "Scale"}
+                              </span>
+                              <span>{selectedLayerScalePercent}%</span>
+                            </div>
+                            <div className="grid grid-cols-[30px_1fr_30px] items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => scaleSelectedLayerBy(0.97)}
+                                disabled={selectedCutLayer.lockScale}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                aria-label="Scale kurang"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="range"
+                                min={10}
+                                max={300}
+                                step={1}
+                                value={selectedLayerScalePercent}
+                                disabled={selectedCutLayer.lockScale}
+                                onChange={(event) =>
+                                  applySelectedLayerScalePercent(
+                                    Number(event.target.value),
+                                  )
+                                }
+                                className="h-2 w-full accent-cyan-700 disabled:opacity-40"
+                                aria-label="Scale template"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => scaleSelectedLayerBy(1.03)}
+                                disabled={selectedCutLayer.lockScale}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                aria-label="Scale tambah"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <div className="mt-1 text-[8px] font-semibold text-slate-500">
+                              Rotate tetap aktif. Lock hanya menonaktifkan re-scale.
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-6 gap-1">
+                            <LayerToolbarActionButton
+                              icon={showLayerToolbarName ? "eyeOff" : "eye"}
+                              label={
+                                showLayerToolbarName
+                                  ? "Sembunyikan nama layer"
+                                  : "Tampilkan nama layer"
+                              }
+                              onClick={() =>
+                                setShowLayerToolbarName((prev) => !prev)
+                              }
+                              active={!showLayerToolbarName}
+                              className="h-8 w-8"
+                              iconClassName="h-3.5 w-3.5"
+                            />
+                            <LayerToolbarActionButton
+                              icon={selectedCutLayer.lockScale ? "lock" : "unlock"}
+                              label={
+                                selectedCutLayer.lockScale
+                                  ? "Unlock Scale"
+                                  : "Lock Scale"
+                              }
+                              onClick={() =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  lockScale: !item.lockScale,
+                                }))
+                              }
+                              active={selectedCutLayer.lockScale}
+                              className="h-8 w-8"
+                              iconClassName="h-3.5 w-3.5"
+                            />
+                            <LayerToolbarActionButton
+                              icon="rotateLeft"
+                              label="Rotate -1"
+                              onClick={() => rotateSelectedLayerBy(-1)}
+                              className="h-8 w-8"
+                              iconClassName="h-3.5 w-3.5"
+                            />
+                            <LayerToolbarActionButton
+                              icon="rotateRight"
+                              label="Rotate +1"
+                              onClick={() => rotateSelectedLayerBy(1)}
+                              className="h-8 w-8"
+                              iconClassName="h-3.5 w-3.5"
+                            />
+                            <LayerToolbarActionButton
+                              icon="plus"
+                              label="Duplicate layer"
+                              onClick={duplicateSelectedCutLayer}
+                              className="h-8 w-8"
+                              iconClassName="h-3.5 w-3.5"
+                            />
+                            <LayerToolbarActionButton
+                              icon="trash"
+                              label="Hapus layer"
+                              onClick={removeSelectedCutLayer}
+                              className="h-8 w-8 text-rose-600"
+                              iconClassName="h-3.5 w-3.5"
+                            />
+                          </div>
+                        </div>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
                 </motion.div>
               ) : null}
               {selectedCutLayer?.kind === "free-line" &&
@@ -27230,14 +27697,8 @@ export default function XrayCalibrationWorkspace({
                       onOpenColorPanel={openSimpleColorPanel}
                       canOpenColorPanel={hasColorEditableSelection}
                       onUploadBefore={() => compareUploadInputRef.current?.click()}
-                      onUploadAfter={() => mainUploadInputRef.current?.click()}
-                      onToggleCompare={() => {
-                        if (!compareImageSrc) {
-                          compareUploadInputRef.current?.click();
-                          return;
-                        }
-                        setCompareMode((prev) => !prev);
-                      }}
+                      onUploadAfter={useActiveWorkspaceAsCompareAfter}
+                      onToggleCompare={toggleCompareModePreservingWorkspace}
                       compareActive={compareMode}
                       compareDisabled={false}
                       compareLabel={
@@ -27245,14 +27706,24 @@ export default function XrayCalibrationWorkspace({
                           ? `Before: ${compareImageName}`
                           : "Before kosong"
                       }
+                      onExportPng={exportReportPng}
+                      onExportPdf={exportReportPdf}
+                      canExport={Boolean(image)}
                       onUploadDrive={() => setGoogleDriveUploadModalOpen(true)}
-                      canUploadDrive={hasCalibration}
+                      canUploadDrive={Boolean(image)}
                       implantItems={LOCAL_IMPLANT_LIBRARY}
                       selectedImplantType={selectedImplantType}
                       selectedImplantItemId={selectedImplantLibraryId}
                       onSelectImplantType={setSelectedImplantType}
                       onSelectImplantItemId={setSelectedImplantLibraryId}
                       onUseSelectedImplant={useSelectedImplantLibraryAsLayer}
+                      onReplaceSelectedImplant={
+                        replaceSelectedLayerWithSelectedImplant
+                      }
+                      canReplaceSelectedImplant={Boolean(
+                        selectedCutLayer &&
+                          isImageBackedLayerKind(selectedCutLayer.kind),
+                      )}
                       implantDisabled={!image || !modelWidth || !modelHeight}
                       implantInstruction={implantLibraryScaleInstruction}
                     />
@@ -27487,6 +27958,15 @@ export default function XrayCalibrationWorkspace({
                           useSelectedImplantLibraryAsLayer();
                           setMobileCanvasMode("edit");
                         }}
+                        onReplaceSelected={() => {
+                          setSimpleMobilePanel(null);
+                          void replaceSelectedLayerWithSelectedImplant();
+                          setMobileCanvasMode("edit");
+                        }}
+                        canReplaceSelected={Boolean(
+                          selectedCutLayer &&
+                            isImageBackedLayerKind(selectedCutLayer.kind),
+                        )}
                         onClose={() => setSimpleMobilePanel(null)}
                         disabled={!image || !modelWidth || !modelHeight}
                         scaleInstruction={implantLibraryScaleInstruction}
@@ -27522,7 +28002,7 @@ export default function XrayCalibrationWorkspace({
 	                              setSimpleMobilePanel(null);
 	                              exportReportPng();
 	                            }}
-	                            disabled={!hasCalibration}
+	                            disabled={!image}
 	                            className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
 	                          >
 	                            Export PNG
@@ -27533,7 +28013,7 @@ export default function XrayCalibrationWorkspace({
 	                              setSimpleMobilePanel(null);
 	                              exportReportPdf();
 	                            }}
-	                            disabled={!hasCalibration}
+	                            disabled={!image}
 	                            className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
 	                          >
 	                            Export PDF
@@ -27544,7 +28024,7 @@ export default function XrayCalibrationWorkspace({
 	                              setSimpleMobilePanel(null);
 	                              setGoogleDriveUploadModalOpen(true);
 	                            }}
-	                            disabled={!hasCalibration}
+	                            disabled={!image}
 	                            className="col-span-2 min-h-12 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
 	                          >
 	                            Upload Google Drive
@@ -27585,23 +28065,17 @@ export default function XrayCalibrationWorkspace({
 	                            </button>
 	                            <button
 	                              type="button"
-	                              onClick={() => mainUploadInputRef.current?.click()}
+	                              onClick={useActiveWorkspaceAsCompareAfter}
 	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
 	                            >
-	                              Upload After
+	                              After Aktif
 	                            </button>
 	                            <button
 	                              type="button"
-	                              onClick={() => {
-	                                if (!compareImageSrc) {
-	                                  compareUploadInputRef.current?.click();
-	                                  return;
-	                                }
-	                                setCompareMode((prev) => !prev);
-	                              }}
+	                              onClick={toggleCompareModePreservingWorkspace}
 	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-cyan-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
 	                            >
-	                              {compareMode ? "Hide Compare" : "Show Compare"}
+	                              {compareMode ? "Exit Compare" : "Show Compare"}
 	                            </button>
 	                            <button
 	                              type="button"
@@ -27984,11 +28458,13 @@ export default function XrayCalibrationWorkspace({
 	                          {
 	                            key: "scale-down",
 	                            label: "S-",
+	                            disabled: selectedCutLayer.lockScale,
 	                            onClick: () => scaleSelectedLayerBy(0.97),
 	                          },
 	                          {
 	                            key: "scale-up",
 	                            label: "S+",
+	                            disabled: selectedCutLayer.lockScale,
 	                            onClick: () => scaleSelectedLayerBy(1.03),
 	                          },
 	                          {
@@ -28002,7 +28478,9 @@ export default function XrayCalibrationWorkspace({
 	                          },
 	                          {
 	                            key: "lock",
-	                            label: selectedCutLayer.lockScale ? "Unlock" : "Lock",
+	                            label: selectedCutLayer.lockScale
+	                              ? "Unlock S"
+	                              : "Lock S",
 	                            onClick: () =>
 	                              updateLayerById(selectedCutLayer.id, (item) => ({
 	                                ...item,
@@ -28014,7 +28492,8 @@ export default function XrayCalibrationWorkspace({
 	                            key={`mobile-template-action-${action.key}`}
 	                            type="button"
 	                            onClick={action.onClick}
-	                            className="min-h-8 rounded-xl border border-white/50 bg-[#eef2f7]/62 px-1 text-[8px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+	                            disabled={action.disabled}
+	                            className="min-h-8 rounded-xl border border-white/50 bg-[#eef2f7]/62 px-1 text-[8px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] disabled:opacity-40"
 	                          >
 	                            {action.label}
 	                          </button>
@@ -28028,6 +28507,7 @@ export default function XrayCalibrationWorkspace({
                             value: selectedLayerMetrics.width,
                             min: 16,
                             max: selectedLayerMetrics.widthMax,
+                            stepSize: 4,
                             unit: "px",
                             disabled: selectedCutLayer.lockScale,
                             onChange: (nextValue) =>
@@ -28045,6 +28525,7 @@ export default function XrayCalibrationWorkspace({
                             value: selectedLayerMetrics.height,
                             min: 16,
                             max: selectedLayerMetrics.heightMax,
+                            stepSize: 4,
                             unit: "px",
                             disabled: selectedCutLayer.lockScale,
                             onChange: (nextValue) =>
@@ -28062,6 +28543,7 @@ export default function XrayCalibrationWorkspace({
                             value: selectedLayerMetrics.rotation,
                             min: -180,
                             max: 180,
+                            stepSize: 1,
                             unit: "°",
                             onChange: (nextValue) =>
                               updateLayerById(selectedCutLayer.id, {
@@ -28074,6 +28556,7 @@ export default function XrayCalibrationWorkspace({
                             value: selectedLayerMetrics.contrast,
                             min: 10,
                             max: 300,
+                            stepSize: 5,
                             unit: "%",
                             disabled: !isImageBackedLayerKind(
                               selectedCutLayer.kind,
@@ -28089,6 +28572,7 @@ export default function XrayCalibrationWorkspace({
                             value: selectedLayerMetrics.level,
                             min: 10,
                             max: 300,
+                            stepSize: 5,
                             unit: "%",
                             disabled: !isImageBackedLayerKind(
                               selectedCutLayer.kind,
@@ -28104,6 +28588,7 @@ export default function XrayCalibrationWorkspace({
                             value: selectedLayerMetrics.opacity,
                             min: 10,
                             max: 100,
+                            stepSize: 5,
                             unit: "%",
                             onChange: (nextValue) =>
                               updateLayerById(selectedCutLayer.id, {
@@ -28135,18 +28620,56 @@ export default function XrayCalibrationWorkspace({
                                 </span>
                               </span>
                             </span>
-                            <input
-                              type="range"
-                              min={control.min}
-                              max={control.max}
-                              step={1}
-                              value={control.value}
-                              disabled={control.disabled}
-                              onChange={(event) =>
-                                control.onChange(Number(event.target.value))
-                              }
-                              className="mt-2 h-2 w-full accent-cyan-700 disabled:opacity-40"
-                            />
+                            <div className="mt-2 grid grid-cols-[32px_1fr_32px] items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  control.onChange(
+                                    clamp(
+                                      Number(control.value) -
+                                        (control.stepSize || 1),
+                                      control.min,
+                                      control.max,
+                                    ),
+                                  )
+                                }
+                                disabled={control.disabled}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                aria-label={`${control.label} kurang`}
+                              >
+                                -
+                              </button>
+                              <input
+                                type="range"
+                                min={control.min}
+                                max={control.max}
+                                step={1}
+                                value={control.value}
+                                disabled={control.disabled}
+                                onChange={(event) =>
+                                  control.onChange(Number(event.target.value))
+                                }
+                                className="h-2 w-full accent-cyan-700 disabled:opacity-40"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  control.onChange(
+                                    clamp(
+                                      Number(control.value) +
+                                        (control.stepSize || 1),
+                                      control.min,
+                                      control.max,
+                                    ),
+                                  )
+                                }
+                                disabled={control.disabled}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                aria-label={`${control.label} tambah`}
+                              >
+                                +
+                              </button>
+                            </div>
                           </label>
                         ))}
                       </div>
@@ -28221,7 +28744,7 @@ export default function XrayCalibrationWorkspace({
                           }
                           className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
-                          {selectedCutLayer.lockScale ? "Unlock" : "Lock"}
+                          {selectedCutLayer.lockScale ? "Unlock S" : "Lock S"}
                         </button>
                         <button
                           type="button"
@@ -28879,6 +29402,13 @@ export default function XrayCalibrationWorkspace({
                 className="relative h-[34vh] min-h-[220px] w-full overflow-hidden bg-slate-950/95 sm:h-[68vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-170px)]"
               >
                 <canvas ref={compareCanvasRef} className="absolute inset-0" />
+                <button
+                  type="button"
+                  onClick={toggleCompareModePreservingWorkspace}
+                  className={`absolute top-2 right-2 z-10 px-3 py-2 text-[10px] font-black text-slate-700 ${SOFT_RAISED_CLASS}`}
+                >
+                  Exit Compare
+                </button>
               </div>
             ) : null}
           </div>

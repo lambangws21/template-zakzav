@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Compass,
+  Download,
   FileText,
   GitCompare,
   History,
@@ -145,6 +146,9 @@ export default function QuickPanel({
   compareActive = false,
   compareDisabled = true,
   compareLabel = "Before kosong",
+  onExportPng,
+  onExportPdf,
+  canExport = false,
   onUploadDrive,
   canUploadDrive = false,
   implantItems = [],
@@ -153,6 +157,8 @@ export default function QuickPanel({
   onSelectImplantType,
   onSelectImplantItemId,
   onUseSelectedImplant,
+  onReplaceSelectedImplant,
+  canReplaceSelectedImplant = false,
   implantDisabled = false,
   implantInstruction = "",
 }) {
@@ -360,7 +366,7 @@ export default function QuickPanel({
             onClick={onUploadAfter}
             className="py-2 text-[10px]"
           >
-            After
+            After Aktif
           </QuickButton>
           <QuickButton
             icon={GitCompare}
@@ -370,7 +376,25 @@ export default function QuickPanel({
             disabled={compareDisabled}
             className="py-2 text-[10px]"
           >
-            Compare
+            {compareActive ? "Exit Compare" : "Compare"}
+          </QuickButton>
+          <QuickButton
+            icon={Download}
+            iconClassName="text-cyan-600"
+            onClick={onExportPng}
+            disabled={!canExport}
+            className="py-2 text-[10px]"
+          >
+            PNG
+          </QuickButton>
+          <QuickButton
+            icon={FileText}
+            iconClassName="text-slate-700"
+            onClick={onExportPdf}
+            disabled={!canExport}
+            className="py-2 text-[10px]"
+          >
+            PDF
           </QuickButton>
           <QuickButton
             icon={Upload}
@@ -444,15 +468,29 @@ export default function QuickPanel({
           <ChevronDown className="pointer-events-none absolute top-3 right-3.5 h-4 w-4 text-slate-500" />
         </div>
 
-        <button
-          type="button"
-          onClick={onUseSelectedImplant}
-          disabled={implantDisabled || !selectedImplant}
-          className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-emerald-300 bg-emerald-200/70 py-3 text-xs font-black text-emerald-800 shadow-[3px_3px_8px_rgba(16,185,129,0.15),_inset_0_-2px_0_rgba(0,0,0,0.05)] transition-all hover:scale-[1.01] hover:bg-emerald-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          <Check className="h-4 w-4" />
-          <span>Pakai</span>
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onUseSelectedImplant}
+            disabled={implantDisabled || !selectedImplant}
+            className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-emerald-300 bg-emerald-200/70 px-2 py-3 text-[11px] font-black text-emerald-800 shadow-[3px_3px_8px_rgba(16,185,129,0.15),_inset_0_-2px_0_rgba(0,0,0,0.05)] transition-all hover:scale-[1.01] hover:bg-emerald-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Check className="h-4 w-4" />
+            <span>Pakai</span>
+          </button>
+          <button
+            type="button"
+            onClick={onReplaceSelectedImplant}
+            disabled={
+              implantDisabled || !selectedImplant || !canReplaceSelectedImplant
+            }
+            className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-cyan-300 bg-cyan-100/75 px-2 py-3 text-[11px] font-black text-cyan-800 shadow-[3px_3px_8px_rgba(6,182,212,0.13),_inset_0_-2px_0_rgba(0,0,0,0.04)] transition-all hover:scale-[1.01] hover:bg-cyan-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            title="Ganti layer/template aktif tanpa mengubah posisi dan ukuran tampilannya"
+          >
+            <Scaling className="h-4 w-4" />
+            <span>Ganti</span>
+          </button>
+        </div>
       </div>
     </div>
   );

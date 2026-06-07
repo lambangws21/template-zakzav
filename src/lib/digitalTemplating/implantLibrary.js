@@ -76,6 +76,17 @@ export const LOCAL_IMPLANT_LIBRARY = [
     transparentWhiteBackground: true,
   },
   {
+    id: "bipolar-40-43",
+    brand: "Zimmer",
+    system: "Bipolar",
+    type: "cup",
+    size: "40-43",
+    label: "Bipolar OD 40-43",
+    imageSrc: "/images/cup/bipolar/Ringloc_OD_40mm_43mm_with_ruler.png",
+    physicalSize: "A5",
+    transparentWhiteBackground: true,
+  },
+  {
     id: "bipolar-44-49",
     brand: "Zimmer",
     system: "Bipolar",
@@ -86,6 +97,7 @@ export const LOCAL_IMPLANT_LIBRARY = [
     physicalSize: "A5",
     transparentWhiteBackground: true,
   },
+ 
   {
     id: "bipolar-50-54",
     brand: "Zimmer",

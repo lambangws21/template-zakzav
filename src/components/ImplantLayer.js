@@ -66,6 +66,8 @@ export default function ImplantLayer({
   onSelectType,
   onSelectItemId,
   onUseSelected,
+  onReplaceSelected,
+  canReplaceSelected = false,
   onClose,
   disabled = false,
   scaleInstruction = "",
@@ -257,16 +259,28 @@ export default function ImplantLayer({
         </div>
       ) : null}
 
-      <button
-        type="button"
-        onClick={onUseSelected}
-        disabled={disabled || !selectedItem}
-        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-200/80 px-4 py-3 text-xs font-black text-emerald-800 shadow-[3px_3px_8px_rgba(16,185,129,0.14),-3px_-3px_8px_rgba(255,255,255,0.78)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-        title="Tambahkan implant sebagai layer template"
-      >
-        <Check className="h-4 w-4" />
-        Pakai Template
-      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onUseSelected}
+          disabled={disabled || !selectedItem}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-200/80 px-3 py-3 text-xs font-black text-emerald-800 shadow-[3px_3px_8px_rgba(16,185,129,0.14),-3px_-3px_8px_rgba(255,255,255,0.78)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          title="Tambahkan implant sebagai layer template baru"
+        >
+          <Check className="h-4 w-4" />
+          Pakai
+        </button>
+        <button
+          type="button"
+          onClick={onReplaceSelected}
+          disabled={disabled || !selectedItem || !canReplaceSelected}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-cyan-300 bg-cyan-100/75 px-3 py-3 text-xs font-black text-cyan-800 shadow-[3px_3px_8px_rgba(6,182,212,0.12),-3px_-3px_8px_rgba(255,255,255,0.78)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          title="Ganti layer/template aktif tanpa mengubah posisi dan ukuran tampilan"
+        >
+          <FolderOpen className="h-4 w-4" />
+          Ganti
+        </button>
+      </div>
 
       {!compact ? (
         <div className="flex items-center justify-center gap-2 text-[10px] font-black tracking-wider text-slate-400 uppercase">
