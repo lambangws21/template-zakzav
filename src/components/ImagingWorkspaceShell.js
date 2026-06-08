@@ -45,11 +45,22 @@ const WORKSPACE_OPTIONS = [
   },
 ];
 
+function WorkspaceLoadingFallback() {
+  return (
+    <div className="flex h-[100dvh] w-full items-center justify-center bg-[#f3f6fa] text-sm font-semibold text-slate-600">
+      Loading Workspace...
+    </div>
+  );
+}
+
 export default function ImagingWorkspaceShell() {
   const [activeWorkspace, setActiveWorkspace] = useState("simple");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
+    setHasMounted(true);
+
     const viewportQuery = window.matchMedia("(max-width: 1023px)");
     const updateMobileState = () => {
       const nextIsMobile = viewportQuery.matches;
@@ -104,6 +115,10 @@ export default function ImagingWorkspaceShell() {
       root.style.height = previous.rootHeight;
     };
   }, [isSimpleWorkspace]);
+
+  if (!hasMounted) {
+    return <WorkspaceLoadingFallback />;
+  }
 
   return (
     <div className={isSimpleWorkspace ? "h-[100dvh] w-full overflow-hidden" : "min-h-screen w-full"}>

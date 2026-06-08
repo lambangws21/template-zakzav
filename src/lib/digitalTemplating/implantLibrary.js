@@ -397,7 +397,11 @@ export const LOCAL_IMPLANT_LIBRARY = [
     label: "NexGen C",
     imageSrc: "/images/implant/nexgen/C-1.png",
   },
-];
+].map((item) => ({
+  ...item,
+  physicalSize: item.physicalSize || "A5",
+  transparentWhiteBackground: item.transparentWhiteBackground ?? true,
+}));
 
 export const LOCAL_IMPLANT_LIBRARY_TYPES = ["stem", "cup", "knee"];
 

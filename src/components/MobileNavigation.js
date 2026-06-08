@@ -6,7 +6,10 @@ import {
   LockOpen,
   Maximize2,
   MousePointer2,
+  Move,
   RotateCcw,
+  RotateCw,
+  Scaling,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -122,16 +125,17 @@ export default function MobileNavigation({
               className="flex-1"
             />
             {[
-              ["move", "Move"],
-              ["scale", "Scale"],
-              ["rotate", "Rot"],
-            ].map(([mode, label]) => (
+              ["move", "Geser", Move],
+              ["scale", "Size", Scaling],
+              ["rotate", "Putar", RotateCw],
+            ].map(([mode, label, Icon]) => (
               <ToolButton
                 key={`mobile-tool-mode-${mode}`}
                 active={toolMode === mode}
+                icon={Icon}
                 label={label}
                 onClick={() => onToolModeChange?.(mode)}
-                className="min-w-12 px-1 text-[8px] font-black text-slate-600"
+                className="min-w-[3.4rem] gap-1 px-1 text-[8px] font-black text-slate-600"
               >
                 {label}
               </ToolButton>
@@ -139,7 +143,7 @@ export default function MobileNavigation({
             <ToolButton
               active={canvasLocked}
               icon={canvasLocked ? Lock : LockOpen}
-              label={canvasLocked ? "Unlock Canvas Move" : "Lock Canvas"}
+              label={canvasLocked ? "Unlock Canvas" : "Lock Canvas"}
               onClick={onToggleCanvasLock}
               className="flex-1"
             />

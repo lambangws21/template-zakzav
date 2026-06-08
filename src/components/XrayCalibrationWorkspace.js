@@ -74,6 +74,7 @@ import {
   classifyAlignment,
 } from "../lib/hka/hkaCalculator";
 import { calculateFTA, predictHKAAFromFTA } from "../lib/hka/ftaCalculator";
+import useMobileCanvasGestures from "../hooks/useMobileCanvasGestures";
 import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
 import {
   getImplantLibraryItemById,
@@ -3222,10 +3223,12 @@ function CompactSliderField({
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
 
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [isKnobDragging, updateKnobValueFromPoint]);
 
@@ -3411,7 +3414,6 @@ export default function XrayCalibrationWorkspace({
   const interactionRef = useRef({ mode: null, startX: 0, startY: 0 });
   const interactionStartedAtRef = useRef(0);
   const interactionCanvasRectRef = useRef(null);
-  const activePointerIdRef = useRef(null);
   const activeSnapTargetRef = useRef(null);
   const activeSnapTargetSignatureRef = useRef(getSnapTargetSignature(null));
   const objectUrlRef = useRef(null);
@@ -3462,11 +3464,6 @@ export default function XrayCalibrationWorkspace({
   const mobilePlanningGuidesRafUpdaterRef = useRef(null);
   const mobilePrecisionOverlayRafRef = useRef(null);
   const mobilePrecisionOverlayPendingRef = useRef(null);
-  const mobileGesturePointersRef = useRef(new Map());
-  const mobileGestureRef = useRef(null);
-  const mobileLongPressTimeoutRef = useRef(null);
-  const mobileLongPressPointerRef = useRef(null);
-  const mobileLastTapRef = useRef({ time: 0, x: 0, y: 0 });
   const viewportRafRef = useRef(null);
   const pendingViewportUpdateRef = useRef(null);
 
@@ -3599,6 +3596,35 @@ export default function XrayCalibrationWorkspace({
   const [mobileCanvasMode, setMobileCanvasMode] = useState("pan");
   const [mobileToolMode, setMobileToolMode] = useState("move");
   const [mobileCanvasLocked, setMobileCanvasLocked] = useState(false);
+  const {
+    activePointerIdRef,
+    gesturePointersRef: mobileGesturePointersRef,
+    pinchGestureRef: mobileGestureRef,
+    capturePointer: captureMobilePointer,
+    releaseActivePointerCapture,
+    trackGesturePointer: trackMobileGesturePointer,
+    removeGesturePointer: removeMobileGesturePointer,
+    clearGesturePointers: clearMobileGesturePointers,
+    getGestureSnapshot: getMobileGestureSnapshot,
+    consumeDoubleTap: consumeMobileDoubleTap,
+    clearLongPress: clearMobileLongPress,
+    startLongPress: startMobileLongPress,
+    cancelLongPressIfMoved: cancelMobileLongPressIfMoved,
+    startPinchGesture: startMobilePinchGesture,
+    clearPinchGesture: clearMobilePinchGesture,
+    shouldBlockTransformHandle,
+    getTransformHandleGuardNotice,
+    resetGestureState: resetMobileGestureState,
+  } = useMobileCanvasGestures({
+    enabled: isSimpleUiMode && isMobileViewport,
+    overlayCanvasRef,
+    mobileCanvasMode,
+    mobileToolMode,
+    longPressMs: MOBILE_LONG_PRESS_MS,
+    longPressCancelDistance: MOBILE_LONG_PRESS_CANCEL_DISTANCE_SCREEN,
+    doubleTapMs: MOBILE_DOUBLE_TAP_MS_RESET,
+    doubleTapDistance: MOBILE_DOUBLE_TAP_DISTANCE_SCREEN,
+  });
   const [mobilePrecisionOverlay, setMobilePrecisionOverlay] = useState(null);
   const [selectionPulse, setSelectionPulse] = useState(null);
   const [hoveredMeasurementInfo, setHoveredMeasurementInfo] = useState(null);
@@ -3899,11 +3925,19 @@ export default function XrayCalibrationWorkspace({
     [cutLayers, selectedCutLayerId],
   );
   useEffect(() => {
+    const validLayerIds = new Set(cutLayers.map((layer) => layer.id));
+    if (
+      selectedCutLayerId !== null &&
+      !validLayerIds.has(selectedCutLayerId)
+    ) {
+      setSelectedCutLayerId(null);
+      setSelectedCutLayerExtraIds([]);
+      return;
+    }
     setSelectedCutLayerExtraIds((prev) => {
       if (selectedCutLayerId === null) {
         return prev.length ? [] : prev;
       }
-      const validLayerIds = new Set(cutLayers.map((layer) => layer.id));
       const next = prev.filter(
         (layerId) =>
           layerId !== selectedCutLayerId && validLayerIds.has(layerId),
@@ -3914,6 +3948,7 @@ export default function XrayCalibrationWorkspace({
   const selectedCutLayerIds = useMemo(() => {
     if (selectedCutLayerId === null) return [];
     const validLayerIds = new Set(cutLayers.map((layer) => layer.id));
+    if (!validLayerIds.has(selectedCutLayerId)) return [];
     return [
       selectedCutLayerId,
       ...selectedCutLayerExtraIds.filter(
@@ -6517,21 +6552,10 @@ export default function XrayCalibrationWorkspace({
 
   const resetCanvasInteractionState = useCallback(
     (message = "Canvas di-unlock. State drag/rotate/scale dan selection direset.") => {
-      if (
-        overlayCanvasRef.current &&
-        activePointerIdRef.current !== null &&
-        overlayCanvasRef.current.hasPointerCapture?.(activePointerIdRef.current)
-      ) {
-        try {
-          overlayCanvasRef.current.releasePointerCapture(activePointerIdRef.current);
-        } catch {
-          // ignore stale pointer capture
-        }
-      }
+      resetMobileGestureState();
       interactionRef.current = { mode: null, startX: 0, startY: 0 };
       interactionStartedAtRef.current = 0;
       interactionCanvasRectRef.current = null;
-      activePointerIdRef.current = null;
       mobileLineTapRef.current = {
         targetType: null,
         lineId: null,
@@ -6551,7 +6575,7 @@ export default function XrayCalibrationWorkspace({
       restoreMobilePrecisionView();
       setNotice(message);
     },
-    [clearActiveCanvasSelection, restoreMobilePrecisionView],
+    [clearActiveCanvasSelection, resetMobileGestureState, restoreMobilePrecisionView],
   );
 
   const scrollToPanel = useCallback((panelRef) => {
@@ -7861,28 +7885,6 @@ export default function XrayCalibrationWorkspace({
       y: event.clientY - rect.top,
     };
   }, []);
-
-  const getMobileGestureSnapshot = useCallback(() => {
-    const points = Array.from(mobileGesturePointersRef.current.values());
-    if (points.length < 2) return null;
-    const first = points[0];
-    const second = points[1];
-    const centerX = (first.x + second.x) / 2;
-    const centerY = (first.y + second.y) / 2;
-    const distance = Math.hypot(second.x - first.x, second.y - first.y);
-    if (!Number.isFinite(distance) || distance <= 1) return null;
-    return { centerX, centerY, distance };
-  }, []);
-
-  const clearMobileLongPress = useCallback(() => {
-    if (mobileLongPressTimeoutRef.current !== null) {
-      window.clearTimeout(mobileLongPressTimeoutRef.current);
-      mobileLongPressTimeoutRef.current = null;
-    }
-    mobileLongPressPointerRef.current = null;
-  }, []);
-
-  useEffect(() => () => clearMobileLongPress(), [clearMobileLongPress]);
 
   const getHistorySnapshot = useCallback(
     () => ({
@@ -11682,18 +11684,7 @@ export default function XrayCalibrationWorkspace({
       if (!image) return;
 
       event.preventDefault();
-      if (
-        overlayCanvasRef.current &&
-        Number.isFinite(event.pointerId) &&
-        !overlayCanvasRef.current.hasPointerCapture?.(event.pointerId)
-      ) {
-        try {
-          overlayCanvasRef.current.setPointerCapture(event.pointerId);
-          activePointerIdRef.current = event.pointerId;
-        } catch {
-          activePointerIdRef.current = null;
-        }
-      }
+      captureMobilePointer(event);
       interactionCanvasRectRef.current =
         overlayCanvasRef.current?.getBoundingClientRect() || null;
       interactionStartedAtRef.current = Date.now();
@@ -11729,30 +11720,16 @@ export default function XrayCalibrationWorkspace({
         Number.isFinite(event.pointerId)
       ) {
         const pointerId = event.pointerId;
-        mobileGesturePointersRef.current.set(pointerId, {
-          x: point.x,
-          y: point.y,
-        });
+        trackMobileGesturePointer(pointerId, point);
         clearMobileLongPress();
 
-        const previousTap = mobileLastTapRef.current;
-        const now = Date.now();
-        const tapDistance = Math.hypot(
-          point.x - previousTap.x,
-          point.y - previousTap.y,
-        );
-        if (
-          now - previousTap.time <= MOBILE_DOUBLE_TAP_MS_RESET &&
-          tapDistance <= MOBILE_DOUBLE_TAP_DISTANCE_SCREEN
-        ) {
-          mobileLastTapRef.current = { time: 0, x: 0, y: 0 };
-          mobileGesturePointersRef.current.clear();
+        if (consumeMobileDoubleTap(point)) {
+          clearMobileGesturePointers();
           interactionRef.current = { mode: null, startX: 0, startY: 0 };
           fitImageToViewport();
           setNotice("Zoom canvas di-reset.");
           return;
         }
-        mobileLastTapRef.current = { time: now, x: point.x, y: point.y };
 
 	        const gestureSnapshot = getMobileGestureSnapshot();
 	        if (gestureSnapshot) {
@@ -11762,16 +11739,15 @@ export default function XrayCalibrationWorkspace({
 	            );
 	            return;
 	          }
-	          const anchor = screenToImagePoint(
+          const anchor = screenToImagePoint(
 	            gestureSnapshot.centerX,
             gestureSnapshot.centerY,
           );
-          mobileGestureRef.current = {
-            startDistance: gestureSnapshot.distance,
-            startScale: view.scale,
-            anchorX: anchor.x,
-            anchorY: anchor.y,
-          };
+          startMobilePinchGesture({
+            snapshot: gestureSnapshot,
+            anchor,
+            scale: view.scale,
+          });
           interactionRef.current = {
             mode: "gesture",
             startX: gestureSnapshot.centerX,
@@ -11783,192 +11759,201 @@ export default function XrayCalibrationWorkspace({
           return;
         }
 
-        mobileLongPressPointerRef.current = {
-          pointerId,
-          startX: point.x,
-          startY: point.y,
-        };
-        mobileLongPressTimeoutRef.current = window.setTimeout(() => {
-          const pressState = mobileLongPressPointerRef.current;
-          const currentPoint = mobileGesturePointersRef.current.get(
-            pointerId,
-          );
-          mobileLongPressTimeoutRef.current = null;
-          if (!pressState || !currentPoint) return;
-          if (
-            Math.hypot(
-              currentPoint.x - pressState.startX,
-              currentPoint.y - pressState.startY,
-            ) > MOBILE_LONG_PRESS_CANCEL_DISTANCE_SCREEN
-          ) {
-            return;
-          }
+        const longPressAnnotationId = findAnnotationByPoint(point);
+        const longPressLayerId = findCutLayerByPoint(imagePoint);
+        const longPressHkaId = findClosestHkaId(imagePoint);
+        const longPressCircleId = findClosestCircleId(imagePoint);
+        const longPressAngleId = findClosestAngleId(imagePoint);
+        const longPressLineId = findClosestLineId(imagePoint);
+        const longPressPlanningGuideId = findClosestPlanningGuideId(imagePoint);
+        const hasMobileLongPressTarget =
+          tool === "pan" &&
+          mobileCanvasMode === "pan" &&
+          (longPressAnnotationId !== null ||
+            longPressLayerId !== null ||
+            longPressHkaId !== null ||
+            longPressCircleId !== null ||
+            longPressAngleId !== null ||
+            longPressLineId !== null ||
+            longPressPlanningGuideId !== null);
 
-          const hitImagePoint = clampToImageBounds(
-            screenToImagePoint(currentPoint.x, currentPoint.y),
-          );
-          const hitScreenPoint = {
-            x: currentPoint.x,
-            y: currentPoint.y,
-          };
-          const annotationId = findAnnotationByPoint(hitScreenPoint);
-          const layerId = findCutLayerByPoint(hitImagePoint);
-          const hkaId = findClosestHkaId(hitImagePoint);
-          const circleId = findClosestCircleId(hitImagePoint);
-          const angleId = findClosestAngleId(hitImagePoint);
-          const lineId = findClosestLineId(hitImagePoint);
-          const planningGuideId = findClosestPlanningGuideId(hitImagePoint);
-          const targetAnnotation = annotations.find(
-            (annotation) => annotation.id === annotationId,
-          );
-          const targetLayer = cutLayers.find(
-            (layer) => layer.id === layerId,
-          );
-          const targetLine = lines.find((line) => line.id === lineId);
-          const targetCircle = circles.find((circle) => circle.id === circleId);
-          const targetPlanningGuide = planningGuides.find(
-            (guide) => guide.id === planningGuideId,
-          );
-
-          setMobileCanvasMode("edit");
-          setTool("pan");
-          setMobileObjectSettingsOpen(false);
-          if (annotationId !== null && targetAnnotation) {
-            selectAnnotationFromCanvas(annotationId, { openPanel: false });
-            setHistoryPaused(true);
-            interactionRef.current = {
-              mode: "move-annotation",
-              annotationId,
-              startImageX: hitImagePoint.x,
-              startImageY: hitImagePoint.y,
-              originX: targetAnnotation.x,
-              originY: targetAnnotation.y,
-            };
-            setNotice("Anotasi dipilih. Tetap tahan dan geser untuk move.");
-            return;
-          }
-          if (layerId !== null && targetLayer) {
-            selectLayerFromCanvas(layerId, { openPanel: false });
-            const selectedMoveLayerIds = getRelatedLayerIds(targetLayer.id, {
-              includeGroup: true,
-            });
-            const movableLayerIds = selectedMoveLayerIds.filter((moveLayerId) =>
-              cutLayers.some((item) => item.id === moveLayerId),
+        if (hasMobileLongPressTarget) {
+          startMobileLongPress(pointerId, point, ({ point: currentPoint }) => {
+            const hitImagePoint = clampToImageBounds(
+              screenToImagePoint(currentPoint.x, currentPoint.y),
             );
-            if (!movableLayerIds.length) {
-              setNotice("Layer dipilih, tapi layer terkait tidak ditemukan.");
+            const annotationId = longPressAnnotationId;
+            const layerId = longPressLayerId;
+            const hkaId = longPressHkaId;
+            const circleId = longPressCircleId;
+            const angleId = longPressAngleId;
+            const lineId = longPressLineId;
+            const planningGuideId = longPressPlanningGuideId;
+            const targetAnnotation = annotations.find(
+              (annotation) => annotation.id === annotationId,
+            );
+            const targetLayer = cutLayers.find(
+              (layer) => layer.id === layerId,
+            );
+            const targetLine = lines.find((line) => line.id === lineId);
+            const targetCircle = circles.find(
+              (circle) => circle.id === circleId,
+            );
+            const targetPlanningGuide = planningGuides.find(
+              (guide) => guide.id === planningGuideId,
+            );
+
+            setMobileCanvasMode("edit");
+            setTool("pan");
+            setMobileToolMode("move");
+            setMobileObjectSettingsOpen(false);
+            if (annotationId !== null && targetAnnotation) {
+              selectAnnotationFromCanvas(annotationId, { openPanel: false });
+              setHistoryPaused(true);
+              interactionRef.current = {
+                mode: "move-annotation",
+                annotationId,
+                startImageX: hitImagePoint.x,
+                startImageY: hitImagePoint.y,
+                originX: targetAnnotation.x,
+                originY: targetAnnotation.y,
+              };
+              setNotice("Anotasi dipilih. Tetap tahan dan geser untuk move.");
               return;
             }
-            setHistoryPaused(true);
-            interactionRef.current = {
-              mode: "move-cut-layer",
-              layerIds: movableLayerIds,
-              startImageX: hitImagePoint.x,
-              startImageY: hitImagePoint.y,
-              origins: movableLayerIds.map((moveLayerId) => {
-                const layer = cutLayers.find((item) => item.id === moveLayerId);
-                return {
-                  layerId: moveLayerId,
-                  originCenterX: Number(layer?.centerX || 0),
-                  originCenterY: Number(layer?.centerY || 0),
-                };
-              }),
-            };
-            setNotice("Layer dipilih. Tetap tahan dan geser untuk move.");
-            return;
-          }
-          if (hkaId !== null) {
-            setSelectedHkaId(hkaId);
-            setSelectedLineId(null);
-            setSelectedAngleId(null);
-            setSelectedCircleId(null);
-            setSelectedCutLayerId(null);
-            setSelectedAnnotationId(null);
-            setSelectedPlanningGuideId(null);
-            triggerSelectionPulse("hka", hkaId);
-            setNotice("HKA dipilih. Tekan Setting untuk pengaturan.");
-            return;
-          }
-          if (circleId !== null && targetCircle) {
-            setSelectedCircleId(circleId);
-            setSelectedLineId(null);
-            setSelectedAngleId(null);
-            setSelectedHkaId(null);
-            setSelectedCutLayerId(null);
-            setSelectedAnnotationId(null);
-            setSelectedPlanningGuideId(null);
-            triggerSelectionPulse("circle", circleId);
-            setHistoryPaused(true);
-            interactionRef.current = {
-              mode: "move-circle-center",
-              circleId,
-              startImageX: hitImagePoint.x,
-              startImageY: hitImagePoint.y,
-              originCenterX: targetCircle.cx,
-              originCenterY: targetCircle.cy,
-            };
-            setNotice("Circle dipilih. Tetap tahan dan geser untuk move.");
-            return;
-          }
-          if (angleId !== null) {
-            setSelectedAngleId(angleId);
-            setSelectedLineId(null);
-            setSelectedCircleId(null);
-            setSelectedHkaId(null);
-            setSelectedCutLayerId(null);
-            setSelectedAnnotationId(null);
-            setSelectedPlanningGuideId(null);
-            triggerSelectionPulse("angle", angleId);
-            setNotice("Angle dipilih. Tekan Setting untuk pengaturan.");
-            return;
-          }
-          if (lineId !== null && targetLine) {
-            setSelectedLineId(lineId);
-            setSelectedAngleId(null);
-            setSelectedCircleId(null);
-            setSelectedHkaId(null);
-            setSelectedCutLayerId(null);
-            setSelectedAnnotationId(null);
-            setSelectedPlanningGuideId(null);
-            triggerSelectionPulse("line", lineId);
-            if (isLineLocked(lineId)) {
-              setNotice("Line dipilih. Line terkunci, buka lock dari Setting.");
+            if (layerId !== null && targetLayer) {
+              selectLayerFromCanvas(layerId, { openPanel: false });
+              const selectedMoveLayerIds = getRelatedLayerIds(targetLayer.id, {
+                includeGroup: true,
+              });
+              const movableLayerIds = selectedMoveLayerIds.filter((moveLayerId) =>
+                cutLayers.some((item) => item.id === moveLayerId),
+              );
+              if (!movableLayerIds.length) {
+                setNotice("Layer dipilih, tapi layer terkait tidak ditemukan.");
+                return;
+              }
+              setHistoryPaused(true);
+              interactionRef.current = {
+                mode: "move-cut-layer",
+                layerIds: movableLayerIds,
+                startImageX: hitImagePoint.x,
+                startImageY: hitImagePoint.y,
+                origins: movableLayerIds.map((moveLayerId) => {
+                  const layer = cutLayers.find(
+                    (item) => item.id === moveLayerId,
+                  );
+                  return {
+                    layerId: moveLayerId,
+                    originCenterX: Number(layer?.centerX || 0),
+                    originCenterY: Number(layer?.centerY || 0),
+                  };
+                }),
+              };
+              setNotice("Layer dipilih. Tetap tahan dan geser untuk move.");
               return;
             }
-            setHistoryPaused(true);
-            interactionRef.current = {
-              mode: "move-line",
-              lineId,
-              startImageX: hitImagePoint.x,
-              startImageY: hitImagePoint.y,
-              origin: {
-                x1: targetLine.x1,
-                y1: targetLine.y1,
-                x2: targetLine.x2,
-                y2: targetLine.y2,
-              },
-            };
-            setNotice("Line dipilih. Tetap tahan dan geser untuk move.");
-            return;
-          }
-          if (planningGuideId !== null && targetPlanningGuide) {
-            selectPlanningGuideForEdit(planningGuideId, { openPanel: false });
-            setHistoryPaused(true);
-            interactionRef.current = {
-              mode: "move-planning-guide",
-              guideId: planningGuideId,
-              startImageX: hitImagePoint.x,
-              startImageY: hitImagePoint.y,
-              origin: {
-                startX: targetPlanningGuide.anchorStart.x,
-                startY: targetPlanningGuide.anchorStart.y,
-                endX: targetPlanningGuide.anchorEnd.x,
-                endY: targetPlanningGuide.anchorEnd.y,
-              },
-            };
-            setNotice("Guide dipilih. Tetap tahan dan geser untuk move.");
-          }
-        }, MOBILE_LONG_PRESS_MS);
+            if (hkaId !== null) {
+              setSelectedHkaId(hkaId);
+              setSelectedLineId(null);
+              setSelectedAngleId(null);
+              setSelectedCircleId(null);
+              setSelectedCutLayerId(null);
+              setSelectedAnnotationId(null);
+              setSelectedPlanningGuideId(null);
+              triggerSelectionPulse("hka", hkaId);
+              setNotice("HKA dipilih. Tekan Setting untuk pengaturan.");
+              return;
+            }
+            if (circleId !== null && targetCircle) {
+              setSelectedCircleId(circleId);
+              setSelectedLineId(null);
+              setSelectedAngleId(null);
+              setSelectedHkaId(null);
+              setSelectedCutLayerId(null);
+              setSelectedAnnotationId(null);
+              setSelectedPlanningGuideId(null);
+              triggerSelectionPulse("circle", circleId);
+              setHistoryPaused(true);
+              interactionRef.current = {
+                mode: "move-circle-center",
+                circleId,
+                startImageX: hitImagePoint.x,
+                startImageY: hitImagePoint.y,
+                originCenterX: targetCircle.cx,
+                originCenterY: targetCircle.cy,
+              };
+              setNotice("Circle dipilih. Tetap tahan dan geser untuk move.");
+              return;
+            }
+            if (angleId !== null) {
+              setSelectedAngleId(angleId);
+              setSelectedLineId(null);
+              setSelectedCircleId(null);
+              setSelectedHkaId(null);
+              setSelectedCutLayerId(null);
+              setSelectedAnnotationId(null);
+              setSelectedPlanningGuideId(null);
+              triggerSelectionPulse("angle", angleId);
+              setNotice("Angle dipilih. Tekan Setting untuk pengaturan.");
+              return;
+            }
+            if (lineId !== null && targetLine) {
+              setSelectedLineId(lineId);
+              setSelectedAngleId(null);
+              setSelectedCircleId(null);
+              setSelectedHkaId(null);
+              setSelectedCutLayerId(null);
+              setSelectedAnnotationId(null);
+              setSelectedPlanningGuideId(null);
+              triggerSelectionPulse("line", lineId);
+              if (isLineLocked(lineId)) {
+                setNotice("Line dipilih. Line terkunci, buka lock dari Setting.");
+                return;
+              }
+              setHistoryPaused(true);
+              interactionRef.current = {
+                mode: "move-line",
+                lineId,
+                startImageX: hitImagePoint.x,
+                startImageY: hitImagePoint.y,
+                origin: {
+                  x1: targetLine.x1,
+                  y1: targetLine.y1,
+                  x2: targetLine.x2,
+                  y2: targetLine.y2,
+                },
+              };
+              setNotice("Line dipilih. Tetap tahan dan geser untuk move.");
+              return;
+            }
+            if (planningGuideId !== null && targetPlanningGuide) {
+              selectPlanningGuideForEdit(planningGuideId, { openPanel: false });
+              setHistoryPaused(true);
+              interactionRef.current = {
+                mode: "move-planning-guide",
+                guideId: planningGuideId,
+                startImageX: hitImagePoint.x,
+                startImageY: hitImagePoint.y,
+                origin: {
+                  startX: targetPlanningGuide.anchorStart.x,
+                  startY: targetPlanningGuide.anchorStart.y,
+                  endX: targetPlanningGuide.anchorEnd.x,
+                  endY: targetPlanningGuide.anchorEnd.y,
+                },
+              };
+              setNotice("Guide dipilih. Tetap tahan dan geser untuk move.");
+            }
+          }, { allowMovement: true });
+          interactionRef.current = {
+            mode: "mobile-long-press-pending",
+            startX: point.x,
+            startY: point.y,
+            startPanX: view.panX,
+            startPanY: view.panY,
+          };
+          return;
+        }
       }
 
       if (
@@ -12458,18 +12443,8 @@ export default function XrayCalibrationWorkspace({
           );
           if (!targetLayer) return;
           const isRotateHandle = hitCutLayerHandle.handleKey === "rotate";
-          if (
-            isSimpleUiMode &&
-            isMobileViewport &&
-            isTouchLikePointer &&
-            ((mobileToolMode === "scale" && isRotateHandle) ||
-              (mobileToolMode === "rotate" && !isRotateHandle))
-          ) {
-            setNotice(
-              mobileToolMode === "scale"
-                ? "Scale Mode aktif. Gunakan handle sudut/sisi, bukan rotate."
-                : "Rotate Mode aktif. Gunakan handle rotate.",
-            );
+          if (shouldBlockTransformHandle({ isTouchLikePointer, isRotateHandle })) {
+            setNotice(getTransformHandleGuardNotice());
             return;
           }
           focusLayerCanvas(targetLayer.id);
@@ -12545,6 +12520,47 @@ export default function XrayCalibrationWorkspace({
                 ? `Layer #${targetLayer.id} dilepas dari multi-select.`
                 : `Layer #${targetLayer.id} ditambahkan ke multi-select.`,
             );
+            return;
+          }
+          if (
+            isSimpleUiMode &&
+            isMobileViewport &&
+            isTouchLikePointer &&
+            mobileToolMode === "scale"
+          ) {
+            if (targetLayer.lockScale) {
+              setNotice("Scale layer terkunci. Buka Lock Scale dulu.");
+              return;
+            }
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "mobile-scale-cut-layer",
+              layerId: targetLayer.id,
+              startX: point.x,
+              startY: point.y,
+              startDisplayWidth: Number(targetLayer.displayWidth || 16),
+              startDisplayHeight: Number(targetLayer.displayHeight || 16),
+            };
+            setNotice(
+              "Size layer aktif. Drag kanan/atas untuk membesarkan, kiri/bawah untuk mengecilkan.",
+            );
+            return;
+          }
+          if (
+            isSimpleUiMode &&
+            isMobileViewport &&
+            isTouchLikePointer &&
+            mobileToolMode === "rotate"
+          ) {
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "mobile-rotate-cut-layer",
+              layerId: targetLayer.id,
+              startX: point.x,
+              startY: point.y,
+              startRotation: Number(targetLayer.rotation || 0),
+            };
+            setNotice("Putar layer aktif. Geser kiri/kanan untuk rotasi halus.");
             return;
           }
           const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
@@ -13124,18 +13140,8 @@ export default function XrayCalibrationWorkspace({
         );
         if (!targetLayer) return;
         const isRotateHandle = genericCutLayerHandle.handleKey === "rotate";
-        if (
-          isSimpleUiMode &&
-          isMobileViewport &&
-          isTouchLikePointer &&
-          ((mobileToolMode === "scale" && isRotateHandle) ||
-            (mobileToolMode === "rotate" && !isRotateHandle))
-        ) {
-          setNotice(
-            mobileToolMode === "scale"
-              ? "Scale Mode aktif. Gunakan handle sudut/sisi, bukan rotate."
-              : "Rotate Mode aktif. Gunakan handle rotate.",
-          );
+        if (shouldBlockTransformHandle({ isTouchLikePointer, isRotateHandle })) {
+          setNotice(getTransformHandleGuardNotice());
           return;
         }
         focusLayerCanvas(targetLayer.id, { openPanel: false });
@@ -13220,6 +13226,47 @@ export default function XrayCalibrationWorkspace({
           return;
         }
         if (tool === "pan") {
+          if (
+            isSimpleUiMode &&
+            isMobileViewport &&
+            isTouchLikePointer &&
+            mobileToolMode === "scale"
+          ) {
+            if (targetLayer.lockScale) {
+              setNotice("Scale layer terkunci. Buka Lock Scale dulu.");
+              return;
+            }
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "mobile-scale-cut-layer",
+              layerId: targetLayer.id,
+              startX: point.x,
+              startY: point.y,
+              startDisplayWidth: Number(targetLayer.displayWidth || 16),
+              startDisplayHeight: Number(targetLayer.displayHeight || 16),
+            };
+            setNotice(
+              "Size layer aktif. Drag kanan/atas untuk membesarkan, kiri/bawah untuk mengecilkan.",
+            );
+            return;
+          }
+          if (
+            isSimpleUiMode &&
+            isMobileViewport &&
+            isTouchLikePointer &&
+            mobileToolMode === "rotate"
+          ) {
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "mobile-rotate-cut-layer",
+              layerId: targetLayer.id,
+              startX: point.x,
+              startY: point.y,
+              startRotation: Number(targetLayer.rotation || 0),
+            };
+            setNotice("Putar layer aktif. Geser kiri/kanan untuk rotasi halus.");
+            return;
+          }
           const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
             ? selectedCutLayerIds
             : getRelatedLayerIds(targetLayer.id, { includeGroup: true });
@@ -13770,6 +13817,7 @@ export default function XrayCalibrationWorkspace({
       appendCenterFinderCircle,
       appendCircleMeasurement,
       appendLineMeasurement,
+      captureMobilePointer,
       findClosestAngleHandle,
       findClosestAngleId,
       findAngleLabelByPoint,
@@ -13802,10 +13850,13 @@ export default function XrayCalibrationWorkspace({
       fitImageToViewport,
       focusLayerCanvas,
       focusPlanningGuideCanvas,
+      clearMobileGesturePointers,
+      consumeMobileDoubleTap,
       getIdleTool,
       getRelatedLayerIds,
       getLocalPoint,
       getMobileGestureSnapshot,
+      getTransformHandleGuardNotice,
       image,
       focusCalibrationStep,
       freeLineMode,
@@ -13834,8 +13885,12 @@ export default function XrayCalibrationWorkspace({
       selectedCutLayerIds,
       selectedCutLayerIdsSet,
       setHistoryPaused,
+      shouldBlockTransformHandle,
       screenToImagePoint,
+      startMobileLongPress,
+      startMobilePinchGesture,
       syncMobileCanvasSelection,
+      trackMobileGesturePointer,
       shouldUseMobileOneShotTool,
       tool,
       toLayerLocal,
@@ -13857,17 +13912,10 @@ export default function XrayCalibrationWorkspace({
         Number.isFinite(event.pointerId) &&
         mobileGesturePointersRef.current.has(event.pointerId)
       ) {
-        mobileGesturePointersRef.current.set(event.pointerId, {
-          x: point.x,
-          y: point.y,
-        });
-        const longPressState = mobileLongPressPointerRef.current;
-        if (
-          longPressState?.pointerId === event.pointerId &&
-          Math.hypot(point.x - longPressState.startX, point.y - longPressState.startY) >
-            MOBILE_LONG_PRESS_CANCEL_DISTANCE_SCREEN
-        ) {
-          clearMobileLongPress();
+        captureMobilePointer(event);
+        trackMobileGesturePointer(event.pointerId, point);
+        if (interactionRef.current.mode !== "mobile-long-press-pending") {
+          cancelMobileLongPressIfMoved(event.pointerId, point);
         }
       }
 
@@ -13893,6 +13941,11 @@ export default function XrayCalibrationWorkspace({
             { relaxed: true },
           ),
         );
+        return;
+      }
+
+      if (interactionRef.current.mode === "mobile-long-press-pending") {
+        event.preventDefault();
         return;
       }
 
@@ -14251,6 +14304,46 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      if (interactionRef.current.mode === "mobile-scale-cut-layer") {
+        clearSnapPreview();
+        const {
+          layerId,
+          startX,
+          startY,
+          startDisplayWidth = 16,
+          startDisplayHeight = 16,
+        } = interactionRef.current;
+        const deltaX = point.x - startX;
+        const deltaY = point.y - startY;
+        const scaleDelta = (deltaX - deltaY) / 180;
+        const scaleFactor = clamp(1 + scaleDelta, 0.08, 8);
+        const nextDisplayWidth = clamp(
+          startDisplayWidth * scaleFactor,
+          16,
+          Math.max(16, modelWidth * 2),
+        );
+        const nextDisplayHeight = clamp(
+          startDisplayHeight * scaleFactor,
+          16,
+          Math.max(16, modelHeight * 2),
+        );
+
+        scheduleCutLayersUpdate((prev) =>
+          prev.map((layer) =>
+            layer.id === layerId
+              ? layer.lockScale
+                ? layer
+                : {
+                    ...layer,
+                    displayWidth: nextDisplayWidth,
+                    displayHeight: nextDisplayHeight,
+                  }
+              : layer,
+          ),
+        );
+        return;
+      }
+
       if (interactionRef.current.mode === "move-planning-guide-handle") {
         const movePoint = screenToImagePoint(point.x, point.y);
         const {
@@ -14464,6 +14557,47 @@ export default function XrayCalibrationWorkspace({
                     flipX: nextFlipX,
                     flipY: nextFlipY,
                   }
+              : layer,
+          ),
+        );
+        return;
+      }
+
+      if (interactionRef.current.mode === "mobile-rotate-cut-layer") {
+        clearSnapPreview();
+        const {
+          layerId,
+          startX,
+          startY,
+          startRotation,
+        } = interactionRef.current;
+        const dx = point.x - startX;
+        const dy = point.y - startY;
+        const deltaDeg = dx * 0.45 + dy * 0.12;
+        const nextRotation =
+          Math.round(
+            normalizeRotationDegrees(Number(startRotation || 0) + deltaDeg) *
+              10,
+          ) / 10;
+        if (
+          Number.isFinite(interactionRef.current.lastRotation) &&
+          Math.abs(
+            getSignedAngleDeltaDegrees(
+              interactionRef.current.lastRotation,
+              nextRotation,
+            ),
+          ) < 0.15
+        ) {
+          return;
+        }
+        interactionRef.current.lastRotation = nextRotation;
+        scheduleCutLayersUpdate((prev) =>
+          prev.map((layer) =>
+            layer.id === layerId
+              ? {
+                  ...layer,
+                  rotation: nextRotation,
+                }
               : layer,
           ),
         );
@@ -14769,6 +14903,8 @@ export default function XrayCalibrationWorkspace({
     },
     [
       angles,
+      cancelMobileLongPressIfMoved,
+      captureMobilePointer,
       clampViewport,
       clampToImageBounds,
       circles,
@@ -14810,16 +14946,13 @@ export default function XrayCalibrationWorkspace({
       scheduleViewportUpdate,
       screenToImagePoint,
       tool,
+      trackMobileGesturePointer,
       updateMobilePrecisionOverlay,
     ],
   );
 
   const handlePointerUp = useCallback((event) => {
-    if (Number.isFinite(event?.pointerId)) {
-      mobileGesturePointersRef.current.delete(event.pointerId);
-    } else {
-      mobileGesturePointersRef.current.clear();
-    }
+    removeMobileGesturePointer(event?.pointerId);
     clearMobileLongPress();
     const completedInteractionMode = interactionRef.current.mode;
 
@@ -14922,28 +15055,15 @@ export default function XrayCalibrationWorkspace({
       );
     }
     if (completedInteractionMode === "gesture") {
-      mobileGesturePointersRef.current.clear();
-      mobileGestureRef.current = null;
+      clearMobileGesturePointers();
+      clearMobilePinchGesture();
       setView((prev) => clampViewToViewport(prev, { relaxed: true }));
     }
 
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     interactionStartedAtRef.current = 0;
     interactionCanvasRectRef.current = null;
-    if (
-      overlayCanvasRef.current &&
-      activePointerIdRef.current !== null &&
-      overlayCanvasRef.current.hasPointerCapture?.(activePointerIdRef.current)
-    ) {
-      try {
-        overlayCanvasRef.current.releasePointerCapture(
-          activePointerIdRef.current,
-        );
-      } catch {
-        // ignore release failure
-      }
-    }
-    activePointerIdRef.current = null;
+    releaseActivePointerCapture();
     resetMobileLineTapTarget();
     setHistoryPaused(false);
     setGuideBuilderPreviewPoint(null);
@@ -14952,6 +15072,8 @@ export default function XrayCalibrationWorkspace({
   }, [
     appendCircleMeasurement,
     clampViewToViewport,
+    clearMobileGesturePointers,
+    clearMobilePinchGesture,
     clearMobileLongPress,
     clearSnapPreview,
     completeDraftFreeLine,
@@ -14965,11 +15087,31 @@ export default function XrayCalibrationWorkspace({
     isMobileViewport,
     isSimpleUiMode,
     isCoarsePointer,
+    releaseActivePointerCapture,
+    removeMobileGesturePointer,
     resetMobileLineTapTarget,
     restoreMobilePrecisionView,
     setGuideBuilderPreviewPoint,
     shouldUseMobileOneShotTool,
   ]);
+
+  const handleTouchFallbackEnd = useCallback(
+    (event) => {
+      const activePointerId = activePointerIdRef.current;
+      const canvas = overlayCanvasRef.current;
+      const hasActivePointer =
+        activePointerId !== null &&
+        (mobileGesturePointersRef.current.has(activePointerId) ||
+          canvas?.hasPointerCapture?.(activePointerId));
+
+      if (isSimpleUiMode && isMobileViewport && hasActivePointer) {
+        return;
+      }
+
+      handlePointerUp(event);
+    },
+    [handlePointerUp, isMobileViewport, isSimpleUiMode],
+  );
 
   const handlePointerLeave = useCallback(() => {
     setHoveredMeasurementInfo(null);
@@ -14991,7 +15133,31 @@ export default function XrayCalibrationWorkspace({
       }
       handlePointerUp();
     };
+    const finishPointerCancel = (event) => {
+      if (
+        isSimpleUiMode &&
+        isMobileViewport &&
+        activePointerIdRef.current !== null &&
+        Number.isFinite(event?.pointerId) &&
+        event.pointerId === activePointerIdRef.current &&
+        mobileGesturePointersRef.current.has(event.pointerId)
+      ) {
+        return;
+      }
+      finishPointerInteraction(event);
+    };
     const finishAnyInteraction = () => {
+      const activePointerId = activePointerIdRef.current;
+      const canvas = overlayCanvasRef.current;
+      if (
+        isSimpleUiMode &&
+        isMobileViewport &&
+        activePointerId !== null &&
+        (mobileGesturePointersRef.current.has(activePointerId) ||
+          canvas?.hasPointerCapture?.(activePointerId))
+      ) {
+        return;
+      }
       if (interactionRef.current.mode) {
         handlePointerUp();
       }
@@ -15003,7 +15169,7 @@ export default function XrayCalibrationWorkspace({
     };
 
     window.addEventListener("pointerup", finishPointerInteraction, true);
-    window.addEventListener("pointercancel", finishPointerInteraction, true);
+    window.addEventListener("pointercancel", finishPointerCancel, true);
     window.addEventListener("touchend", finishAnyInteraction, true);
     window.addEventListener("touchcancel", finishAnyInteraction, true);
     window.addEventListener("blur", finishAnyInteraction);
@@ -15012,7 +15178,7 @@ export default function XrayCalibrationWorkspace({
       window.removeEventListener("pointerup", finishPointerInteraction, true);
       window.removeEventListener(
         "pointercancel",
-        finishPointerInteraction,
+        finishPointerCancel,
         true,
       );
       window.removeEventListener("touchend", finishAnyInteraction, true);
@@ -15020,7 +15186,7 @@ export default function XrayCalibrationWorkspace({
       window.removeEventListener("blur", finishAnyInteraction);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [handlePointerUp]);
+  }, [handlePointerUp, isMobileViewport, isSimpleUiMode]);
 
   useEffect(() => {
     if (!isSimpleUiMode || !isMobileViewport) return undefined;
@@ -15032,11 +15198,11 @@ export default function XrayCalibrationWorkspace({
       const canvas = overlayCanvasRef.current;
       const hasCapture =
         activePointerId !== null && canvas?.hasPointerCapture?.(activePointerId);
-      const elapsedMs = interactionStartedAtRef.current
-        ? Date.now() - interactionStartedAtRef.current
-        : 0;
+      const hasTrackedPointer =
+        activePointerId !== null &&
+        mobileGesturePointersRef.current.has(activePointerId);
 
-      if (!hasCapture || elapsedMs > 20000) {
+      if (!hasCapture && !hasTrackedPointer) {
         resetCanvasInteractionState(
           "Canvas otomatis di-unlock karena pointer interaction terlihat macet.",
         );
@@ -15960,6 +16126,9 @@ export default function XrayCalibrationWorkspace({
     setDraftFreeLineTargetLayerId(null);
     setCutLayers([]);
     setSelectedCutLayerId(null);
+    setSelectedCutLayerExtraIds([]);
+    setSelectedFreeLinePointIndex(null);
+    setSimpleLayerFloatingPopup(null);
     nextCutLayerIdRef.current = 1;
     setNotice("Semua cut layer dihapus. Background asli tetap.");
   }, []);
@@ -15981,20 +16150,25 @@ export default function XrayCalibrationWorkspace({
       setDraftAxisBuilderPoints([]);
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
+      setDraftFreeLineTargetLayerId(null);
       setGuideBuilderPreviewPoint(null);
       setGuideBuilderMode("parallel");
       setDraftLine(null);
       setDraftCut(null);
       setCutLayers([]);
+      setAnnotations([]);
       setCompareMode(false);
       setCompareImage(null);
       setCompareImageSrc(null);
       setCompareImageName("");
       setSelectedCutLayerId(null);
+      setSelectedCutLayerExtraIds([]);
+      setSelectedFreeLinePointIndex(null);
       setSelectedLineId(null);
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
+      setSelectedAnnotationId(null);
       setCalibrationLineId(null);
       setLockedLineIds(new Set());
       setMmPerPixel(null);
@@ -16010,8 +16184,13 @@ export default function XrayCalibrationWorkspace({
       setActionToast(null);
       setHkaSideModalOpen(false);
       setSimpleLayerDropdownOpen(false);
+      setSimpleLayerFloatingPopup(null);
       setSimplePlanningModal(null);
       setSimpleGuideModalOpen(false);
+      setSimpleMobilePanel(null);
+      setMobileObjectSettingsOpen(false);
+      setSimpleColorPanelOpen(false);
+      setToolConfigModal(null);
       setMeasureAnatomyTab("knee");
       setHkaInputMode("full");
       setHkaSide("right");
@@ -16047,6 +16226,10 @@ export default function XrayCalibrationWorkspace({
       setView({ scale: 1, panX: 0, panY: 0 });
       setActiveRightPanel("tool");
       setMobilePanelMode("workspace");
+      setMobileCanvasMode("pan");
+      setMobileToolMode("move");
+      setMobileCanvasLocked(false);
+      resetMobileGestureState();
       setMobileControlsOpen(!isMobileViewport);
 
       if (clearImage) {
@@ -16076,6 +16259,7 @@ export default function XrayCalibrationWorkspace({
       imageHeight,
       imageWidth,
       isMobileViewport,
+      resetMobileGestureState,
       resetHistoryStacks,
     ],
   );
@@ -28339,7 +28523,7 @@ export default function XrayCalibrationWorkspace({
               isMobileViewport &&
               hasMobileFineAdjustmentTarget &&
               !hasMobileObjectSelection ? (
-                <div className="pointer-events-auto absolute right-2 bottom-[calc(env(safe-area-inset-bottom)+176px)] z-30 rounded-[18px] border border-white/45 bg-[#eef2f7]/48 p-1.5 text-slate-700 shadow-[1px_1px_5px_rgba(148,163,184,0.2)] backdrop-blur-sm">
+                <div className="pointer-events-auto absolute right-2 bottom-[calc(env(safe-area-inset-bottom)+150px)] z-30 rounded-[18px] border border-white/45 bg-[#eef2f7]/48 p-1.5 text-slate-700 shadow-[1px_1px_5px_rgba(148,163,184,0.2)] backdrop-blur-sm">
                   <div className="grid grid-cols-3 gap-1">
                     <span />
                     <button
@@ -28419,7 +28603,7 @@ export default function XrayCalibrationWorkspace({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 14, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
-                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+182px)] z-40 mx-auto max-h-[min(24vh,240px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] border border-white/45 bg-[#eef2f7]/58 p-2 text-slate-800 shadow-[2px_2px_8px_rgba(148,163,184,0.2)] backdrop-blur-sm"
+                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+150px)] z-40 mx-auto max-h-[min(22vh,220px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] border border-white/45 bg-[#eef2f7]/58 p-2 text-slate-800 shadow-[2px_2px_8px_rgba(148,163,184,0.2)] backdrop-blur-sm"
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -29278,10 +29462,10 @@ export default function XrayCalibrationWorkspace({
 	                  handleToolChange("pan");
 	                  setNotice(
 	                    nextMode === "move"
-	                      ? "Tool Mode: Move. Drag badan layer/object untuk memindahkan."
+	                      ? "Tool Mode: Geser. Drag badan layer/object untuk memindahkan."
 	                      : nextMode === "scale"
-	                        ? "Tool Mode: Scale. Drag handle sudut/sisi untuk resize."
-	                        : "Tool Mode: Rotate. Drag handle rotate untuk memutar.",
+	                        ? "Tool Mode: Size. Drag badan layer atau handle untuk resize."
+	                        : "Tool Mode: Putar. Drag badan layer atau handle rotate untuk memutar.",
 	                  );
 	                }}
 	                onToggleCanvasLock={() => {
@@ -29371,6 +29555,9 @@ export default function XrayCalibrationWorkspace({
                 style={{
                   touchAction: "none",
                   overscrollBehavior: "none",
+                  WebkitTouchCallout: "none",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
                   transform: "translate3d(0, 0, 0)",
                   transformOrigin: "0 0",
                 }}
@@ -29381,17 +29568,19 @@ export default function XrayCalibrationWorkspace({
                 style={{
                   touchAction: "none",
                   overscrollBehavior: "none",
+                  WebkitTouchCallout: "none",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
                   transform: "translate3d(0, 0, 0)",
                   transformOrigin: "0 0",
                 }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
+                onPointerCancel={handleTouchFallbackEnd}
                 onPointerLeave={handlePointerLeave}
-                onLostPointerCapture={handlePointerUp}
-                onTouchEnd={handlePointerUp}
-                onTouchCancel={handlePointerUp}
+                onTouchEnd={handleTouchFallbackEnd}
+                onTouchCancel={handleTouchFallbackEnd}
                 onContextMenu={(event) => event.preventDefault()}
               />
             </div>
