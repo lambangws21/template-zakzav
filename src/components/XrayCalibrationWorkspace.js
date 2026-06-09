@@ -68,6 +68,7 @@ import {
   DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
   parseSheetRawText,
 } from "../lib/googleSheetImageUtils";
+import { buildGoogleDriveDirectImageUrl } from "../lib/googleDriveImage";
 import { signedCoronalAngle as getHkaSignedCoronalAngle } from "../lib/hka/geometry";
 import {
   calculateFullLengthHKA,
@@ -94,6 +95,57 @@ import TemplateStoragePicker from "./TemplateStoragePicker";
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
 const STORY_STORAGE_KEY = "xray_workspace_story_v1";
+const IMAGE_IDB_NAME = "zakzav_workspace";
+const IMAGE_IDB_STORE = "last_image";
+const IMAGE_IDB_KEY = "main";
+
+function openImageIDB() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") { reject(new Error("no idb")); return; }
+    const req = indexedDB.open(IMAGE_IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore(IMAGE_IDB_STORE);
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveImageToIDB(dataUrl, name) {
+  try {
+    const db = await openImageIDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IMAGE_IDB_STORE, "readwrite");
+      tx.objectStore(IMAGE_IDB_STORE).put({ dataUrl, name }, IMAGE_IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch { /* silent fail */ }
+}
+
+async function loadImageFromIDB() {
+  try {
+    const db = await openImageIDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IMAGE_IDB_STORE, "readonly");
+      const req = tx.objectStore(IMAGE_IDB_STORE).get(IMAGE_IDB_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+async function clearImageFromIDB() {
+  try {
+    const db = await openImageIDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IMAGE_IDB_STORE, "readwrite");
+      tx.objectStore(IMAGE_IDB_STORE).delete(IMAGE_IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch { /* silent fail */ }
+}
 const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
 const MEASURE_LEGEND_VISIBILITY_KEY = "xray_measure_legend_visible_v1";
 const WHATS_NEW_STORAGE_KEY = "xray_workspace_whats_new_seen_v2";
@@ -339,6 +391,20 @@ const HKA_COLOR_OPTIONS = [
   "#111827",
   "#94a3b8",
 ];
+const IMAGE_PROCESSING_MODES = [
+  { key: "normal", label: "Normal", desc: "Tampilan asli dengan contrast/level." },
+  { key: "enhance", label: "Enhance", desc: "Histogram equalization untuk X-ray." },
+  { key: "clahe", label: "CLAHE", desc: "Equalisasi adaptif per-region, terbaik untuk tulang." },
+  { key: "gamma", label: "Gamma", desc: "Koreksi gamma — terangkan area gelap." },
+  { key: "edge", label: "Edge", desc: "Sobel edge detection kontur tulang." },
+  { key: "invert", label: "Invert", desc: "Balik hitam/putih." },
+  { key: "sharpen", label: "Sharpen", desc: "Tajamkan detail tulang/template." },
+  { key: "detectMarker", label: "Detect Marker", desc: "Cari marker/ruler kalibrasi otomatis." },
+];
+const IMAGE_PROCESSING_MODE_LABELS = IMAGE_PROCESSING_MODES.reduce(
+  (acc, mode) => ({ ...acc, [mode.key]: mode.label }),
+  {},
+);
 const PLANNING_GUIDE_COLOR_OPTIONS = [
   "#38bdf8",
   "#22c55e",
@@ -361,6 +427,9 @@ const TOOL_CONFIG_MODAL_DEFAULT_SIZES = {
 };
 const TOOL_CONFIG_MODAL_MIN_WIDTH = 420;
 const TOOL_CONFIG_MODAL_MIN_HEIGHT = 260;
+const IMG_PROC_PREVIEW_MAX_SIDE = 1100;
+const IMG_PROC_DETECT_MAX_SIDE = 900;
+const IMG_PROC_DEBOUNCE_MS = 260;
 let mobilePanelPreviewTimeoutId = null;
 
 function clamp(value, min, max) {
@@ -496,6 +565,16 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function isTransientImageSrc(src) {
+  const raw = String(src || "").trim();
+  return raw.startsWith("blob:") || raw.startsWith("data:");
+}
+
+function getPersistableImageSrc(src) {
+  const raw = String(src || "").trim();
+  return raw && !isTransientImageSrc(raw) ? raw : "";
+}
+
 async function loadImageFromCandidates(candidates) {
   const sources = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
   let lastError = null;
@@ -532,6 +611,377 @@ function getLayerFilterValue(layer) {
   const layerContrast = clamp(Number(layer?.contrast ?? 100), 10, 300);
   const layerLevel = clamp(Number(layer?.level ?? 100), 10, 300);
   return `contrast(${layerContrast}%) brightness(${layerLevel}%)`;
+}
+
+function normalizeImageProcessingMode(mode) {
+  return IMAGE_PROCESSING_MODE_LABELS[mode] ? mode : "normal";
+}
+
+function getLimitedProcessingSize(width, height, maxSide) {
+  const safeWidth = Math.max(1, Math.round(Number(width) || 1));
+  const safeHeight = Math.max(1, Math.round(Number(height) || 1));
+  const limit = Math.max(256, Number(maxSide) || IMG_PROC_PREVIEW_MAX_SIDE);
+  const scale = Math.min(1, limit / Math.max(safeWidth, safeHeight));
+
+  return {
+    width: Math.max(1, Math.round(safeWidth * scale)),
+    height: Math.max(1, Math.round(safeHeight * scale)),
+    scale,
+  };
+}
+
+function applyContrastLevelToImageData(imageData, contrastPercent, levelPercent) {
+  const data = imageData.data;
+  const contrastFactor = clamp(Number(contrastPercent) || 100, 10, 300) / 100;
+  const levelFactor = clamp(Number(levelPercent) || 100, 10, 300) / 100;
+
+  for (let index = 0; index < data.length; index += 4) {
+    for (let channel = 0; channel < 3; channel += 1) {
+      const value = data[index + channel];
+      data[index + channel] = clamp(
+        Math.round((value - 128) * contrastFactor + 128 * levelFactor),
+        0,
+        255,
+      );
+    }
+  }
+}
+
+function equalizeXrayImageData(imageData) {
+  const data = imageData.data;
+  const histogram = new Array(256).fill(0);
+  const grayValues = new Uint8ClampedArray(data.length / 4);
+
+  for (let index = 0, pixel = 0; index < data.length; index += 4, pixel += 1) {
+    const gray = Math.round(
+      data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114,
+    );
+    grayValues[pixel] = gray;
+    histogram[gray] += 1;
+  }
+
+  const totalPixels = grayValues.length;
+  let cumulative = 0;
+  let cdfMin = 0;
+  const lut = new Uint8ClampedArray(256);
+  for (let value = 0; value < 256; value += 1) {
+    cumulative += histogram[value];
+    if (!cdfMin && cumulative > 0) cdfMin = cumulative;
+    lut[value] = clamp(
+      Math.round(((cumulative - cdfMin) / Math.max(1, totalPixels - cdfMin)) * 255),
+      0,
+      255,
+    );
+  }
+
+  for (let index = 0, pixel = 0; index < data.length; index += 4, pixel += 1) {
+    const equalized = lut[grayValues[pixel]];
+    data[index] = equalized;
+    data[index + 1] = equalized;
+    data[index + 2] = equalized;
+  }
+}
+
+function invertImageData(imageData) {
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    data[index] = 255 - data[index];
+    data[index + 1] = 255 - data[index + 1];
+    data[index + 2] = 255 - data[index + 2];
+  }
+}
+
+function sharpenImageData(imageData) {
+  const { width, height, data } = imageData;
+  const source = new Uint8ClampedArray(data);
+  const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const targetIndex = (y * width + x) * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        let sum = 0;
+        let kernelIndex = 0;
+        for (let ky = -1; ky <= 1; ky += 1) {
+          for (let kx = -1; kx <= 1; kx += 1) {
+            const sourceIndex = ((y + ky) * width + (x + kx)) * 4 + channel;
+            sum += source[sourceIndex] * kernel[kernelIndex];
+            kernelIndex += 1;
+          }
+        }
+        data[targetIndex + channel] = clamp(Math.round(sum), 0, 255);
+      }
+    }
+  }
+}
+
+function edgeDetectImageData(imageData, threshold) {
+  const { width, height, data } = imageData;
+  const source = new Uint8ClampedArray(data);
+  const gray = new Uint8ClampedArray(width * height);
+  const sobelX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+  const sobelY = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      gray[y * width + x] = Math.round(
+        source[index] * 0.299 + source[index + 1] * 0.587 + source[index + 2] * 0.114,
+      );
+    }
+  }
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      let gx = 0;
+      let gy = 0;
+      let kernelIndex = 0;
+      for (let ky = -1; ky <= 1; ky += 1) {
+        for (let kx = -1; kx <= 1; kx += 1) {
+          const value = gray[(y + ky) * width + (x + kx)];
+          gx += value * sobelX[kernelIndex];
+          gy += value * sobelY[kernelIndex];
+          kernelIndex += 1;
+        }
+      }
+      const magnitude = clamp(Math.round(Math.hypot(gx, gy)), 0, 255);
+      const val = magnitude > (threshold || 0) ? magnitude : 0;
+      const targetIndex = (y * width + x) * 4;
+      data[targetIndex] = val;
+      data[targetIndex + 1] = val;
+      data[targetIndex + 2] = val;
+      data[targetIndex + 3] = 255;
+    }
+  }
+}
+
+function gammaImageData(imageData, gamma) {
+  const data = imageData.data;
+  const g = clamp(Number(gamma) || 1, 0.1, 5);
+  const lut = new Uint8ClampedArray(256);
+  for (let i = 0; i < 256; i++) {
+    lut[i] = clamp(Math.round(255 * Math.pow(i / 255, 1 / g)), 0, 255);
+  }
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = lut[data[i]];
+    data[i + 1] = lut[data[i + 1]];
+    data[i + 2] = lut[data[i + 2]];
+  }
+}
+
+function claheImageData(imageData, clipLimit, tileGridSize) {
+  const { width, height, data } = imageData;
+  const tiles = Math.max(2, Math.round(tileGridSize) || 8);
+  const clip = Math.max(0.5, Number(clipLimit) || 3);
+  const tileW = Math.ceil(width / tiles);
+  const tileH = Math.ceil(height / tiles);
+
+  const gray = new Uint8ClampedArray(width * height);
+  for (let i = 0; i < width * height; i++) {
+    gray[i] = Math.round(data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114);
+  }
+
+  const luts = [];
+  for (let ty = 0; ty < tiles; ty++) {
+    luts.push([]);
+    for (let tx = 0; tx < tiles; tx++) {
+      const x0 = tx * tileW;
+      const y0 = ty * tileH;
+      const x1 = Math.min(x0 + tileW, width);
+      const y1 = Math.min(y0 + tileH, height);
+      const hist = new Int32Array(256);
+      let count = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          hist[gray[y * width + x]]++;
+          count++;
+        }
+      }
+      const limit = Math.max(1, Math.round((clip * count) / 256));
+      let excess = 0;
+      for (let i = 0; i < 256; i++) {
+        if (hist[i] > limit) { excess += hist[i] - limit; hist[i] = limit; }
+      }
+      const add = Math.floor(excess / 256);
+      const rem = excess % 256;
+      for (let i = 0; i < 256; i++) { hist[i] += add + (i < rem ? 1 : 0); }
+      const lut = new Uint8ClampedArray(256);
+      let cdf = 0; let cdfMin = -1;
+      for (let i = 0; i < 256; i++) {
+        cdf += hist[i];
+        if (cdfMin < 0 && cdf > 0) cdfMin = cdf;
+        lut[i] = clamp(Math.round(((cdf - cdfMin) / Math.max(1, count - cdfMin)) * 255), 0, 255);
+      }
+      luts[ty].push(lut);
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const tx = x / tileW - 0.5;
+      const ty = y / tileH - 0.5;
+      const tx0 = clamp(Math.floor(tx), 0, tiles - 1);
+      const ty0 = clamp(Math.floor(ty), 0, tiles - 1);
+      const tx1 = clamp(tx0 + 1, 0, tiles - 1);
+      const ty1 = clamp(ty0 + 1, 0, tiles - 1);
+      const fx = clamp(tx - Math.floor(tx), 0, 1);
+      const fy = clamp(ty - Math.floor(ty), 0, 1);
+      const g = gray[y * width + x];
+      const eq = Math.round(
+        luts[ty0][tx0][g] * (1 - fx) * (1 - fy) +
+        luts[ty0][tx1][g] * fx * (1 - fy) +
+        luts[ty1][tx0][g] * (1 - fx) * fy +
+        luts[ty1][tx1][g] * fx * fy,
+      );
+      const idx = (y * width + x) * 4;
+      data[idx] = eq; data[idx + 1] = eq; data[idx + 2] = eq;
+    }
+  }
+}
+
+function createProcessedXrayCanvas({
+  image,
+  sourceX,
+  sourceY,
+  sourceWidth,
+  sourceHeight,
+  targetWidth,
+  targetHeight,
+  mode,
+  contrastPercent,
+  levelPercent,
+  filterIntensity = 100,
+  gammaValue = 1.5,
+  edgeThreshold = 40,
+  claheClip = 3.0,
+  claheTiles = 8,
+}) {
+  if (typeof document === "undefined" || !image || !targetWidth || !targetHeight) {
+    return null;
+  }
+
+  const normalizedMode = normalizeImageProcessingMode(mode);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(targetWidth));
+  canvas.height = Math.max(1, Math.round(targetHeight));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+  );
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  applyContrastLevelToImageData(imageData, contrastPercent, levelPercent);
+
+  if (normalizedMode !== "normal") {
+    const intensity = clamp(Number(filterIntensity) || 100, 0, 200);
+    const origPixels = intensity !== 100 ? new Uint8ClampedArray(imageData.data) : null;
+
+    if (normalizedMode === "enhance") {
+      equalizeXrayImageData(imageData);
+      sharpenImageData(imageData);
+    } else if (normalizedMode === "clahe") {
+      claheImageData(imageData, claheClip, claheTiles);
+    } else if (normalizedMode === "gamma") {
+      gammaImageData(imageData, gammaValue);
+    } else if (normalizedMode === "invert") {
+      invertImageData(imageData);
+    } else if (normalizedMode === "sharpen") {
+      sharpenImageData(imageData);
+    } else if (normalizedMode === "edge") {
+      edgeDetectImageData(imageData, edgeThreshold);
+    }
+
+    if (origPixels) {
+      const t = intensity / 100;
+      const d = imageData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = clamp(Math.round(origPixels[i] * (1 - t) + d[i] * t), 0, 255);
+        d[i + 1] = clamp(Math.round(origPixels[i + 1] * (1 - t) + d[i + 1] * t), 0, 255);
+        d[i + 2] = clamp(Math.round(origPixels[i + 2] * (1 - t) + d[i + 2] * t), 0, 255);
+      }
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+function detectCalibrationMarkerLineFromCanvas(canvas) {
+  if (!canvas) return null;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  const { width, height } = canvas;
+  if (width < 24 || height < 24) return null;
+
+  const imageData = context.getImageData(0, 0, width, height);
+  edgeDetectImageData(imageData);
+  const data = imageData.data;
+  const points = [];
+  const step = Math.max(2, Math.floor(Math.max(width, height) / 420));
+  const margin = Math.max(8, Math.round(Math.min(width, height) * 0.018));
+  for (let y = margin; y < height - margin; y += step) {
+    for (let x = margin; x < width - margin; x += step) {
+      const value = data[(y * width + x) * 4];
+      if (value >= 208) {
+        points.push({ x, y });
+      }
+    }
+  }
+  if (points.length < 32) return null;
+
+  const diag = Math.hypot(width, height);
+  const rhoStep = Math.max(3, Math.round(diag / 280));
+  let best = null;
+  for (let angle = 0; angle < 180; angle += 4) {
+    const theta = (angle * Math.PI) / 180;
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+    const bins = new Map();
+    for (const point of points) {
+      const rho = Math.round((point.x * cos + point.y * sin) / rhoStep);
+      bins.set(rho, (bins.get(rho) || 0) + 1);
+    }
+    for (const [rho, count] of bins.entries()) {
+      if (!best || count > best.count) {
+        best = { angle, theta, cos, sin, rho: rho * rhoStep, count };
+      }
+    }
+  }
+  if (!best || best.count < 18) return null;
+
+  const ux = -best.sin;
+  const uy = best.cos;
+  const linePoints = points
+    .filter((point) => Math.abs(point.x * best.cos + point.y * best.sin - best.rho) <= rhoStep * 1.8)
+    .map((point) => ({
+      ...point,
+      projection: point.x * ux + point.y * uy,
+    }))
+    .sort((a, b) => a.projection - b.projection);
+  if (linePoints.length < 16) return null;
+
+  const first = linePoints[0];
+  const last = linePoints[linePoints.length - 1];
+  const length = Math.hypot(last.x - first.x, last.y - first.y);
+  if (length < Math.min(width, height) * 0.08) return null;
+
+  return {
+    x1: clamp(first.x, 0, width),
+    y1: clamp(first.y, 0, height),
+    x2: clamp(last.x, 0, width),
+    y2: clamp(last.y, 0, height),
+    confidence: clamp(best.count / Math.max(1, linePoints.length), 0, 1),
+  };
 }
 
 function getLayerDefaultName(layer) {
@@ -2740,15 +3190,35 @@ function escapeHtml(value) {
   });
 }
 
-function createCombinedReportCanvas(imageCanvas, overlayCanvas) {
+function createCombinedReportCanvas(
+  imageCanvas,
+  overlayCanvas,
+  { exportScale = 1, sharpen = false, background = null } = {},
+) {
   if (!imageCanvas || !overlayCanvas) return null;
   const outCanvas = document.createElement("canvas");
-  outCanvas.width = imageCanvas.width;
-  outCanvas.height = imageCanvas.height;
+  const scale = clamp(Number(exportScale) || 1, 1, 4);
+  outCanvas.width = Math.max(1, Math.round(imageCanvas.width * scale));
+  outCanvas.height = Math.max(1, Math.round(imageCanvas.height * scale));
   const ctx = outCanvas.getContext("2d");
   if (!ctx) return null;
-  ctx.drawImage(imageCanvas, 0, 0);
-  ctx.drawImage(overlayCanvas, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (background) {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+  }
+  ctx.drawImage(imageCanvas, 0, 0, outCanvas.width, outCanvas.height);
+  ctx.drawImage(overlayCanvas, 0, 0, outCanvas.width, outCanvas.height);
+  if (sharpen) {
+    try {
+      const imageData = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
+      sharpenImageData(imageData);
+      ctx.putImageData(imageData, 0, 0);
+    } catch {
+      // If the canvas is tainted by a remote image, export will handle the error.
+    }
+  }
   return outCanvas;
 }
 
@@ -3403,11 +3873,16 @@ export default function XrayCalibrationWorkspace({
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
   const overlayCanvasRef = useRef(null);
+  const processedXrayCanvasRef = useRef(null);
+  const processedXrayRequestIdRef = useRef(0);
   const mobileLoupeCanvasRef = useRef(null);
   const compareCanvasRef = useRef(null);
   const mainUploadInputRef = useRef(null);
   const layerUploadInputRef = useRef(null);
   const compareUploadInputRef = useRef(null);
+  const mainImageFileRef = useRef(null);
+  const compareImageFileRef = useRef(null);
+  const layerObjectUrlsRef = useRef(new Set());
   const measurePanelRef = useRef(null);
   const layerSettingsPanelRef = useRef(null);
   const exportPanelRef = useRef(null);
@@ -3425,6 +3900,7 @@ export default function XrayCalibrationWorkspace({
   const sidebarResizeRef = useRef(null);
   const templateSyncingRef = useRef(false);
   const sheetImageSyncingRef = useRef(false);
+  const createReportCanvasSnapshotRef = useRef(null);
   const mobileLineTapRef = useRef({
     targetType: null,
     lineId: null,
@@ -3474,6 +3950,7 @@ export default function XrayCalibrationWorkspace({
   });
   const [image, setImage] = useState(null);
   const [mainImageSrc, setMainImageSrc] = useState(null);
+  const [hasTemporaryMainImage, setHasTemporaryMainImage] = useState(false);
   const [compareImage, setCompareImage] = useState(null);
   const [compareImageSrc, setCompareImageSrc] = useState(null);
   const [compareImageName, setCompareImageName] = useState("");
@@ -3577,6 +4054,18 @@ export default function XrayCalibrationWorkspace({
   const [showMeasureLegend, setShowMeasureLegend] = useState(false);
   const [contrast, setContrast] = useState(100);
   const [level, setLevel] = useState(100);
+  const [imageProcessingMode, setImageProcessingMode] = useState("normal");
+  const [imageProcessingModalOpen, setImageProcessingModalOpen] =
+    useState(false);
+  const [imageProcessingBusy, setImageProcessingBusy] = useState(false);
+  const [processedXrayVersion, setProcessedXrayVersion] = useState(0);
+  const [zakVisorParams, setZakVisorParams] = useState({
+    intensity: 100,
+    gamma: 1.5,
+    edgeThreshold: 40,
+    claheClip: 3.0,
+    claheTiles: 8,
+  });
   const [rotation, setRotation] = useState(0);
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
@@ -3715,6 +4204,12 @@ export default function XrayCalibrationWorkspace({
   const [googleDriveUploadModalOpen, setGoogleDriveUploadModalOpen] =
     useState(false);
   const [googleDriveUploadBusy, setGoogleDriveUploadBusy] = useState(false);
+  const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateTags, setSaveTemplateTags] = useState("");
+  const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
+  const [saveTemplatePreviewUrl, setSaveTemplatePreviewUrl] = useState("");
+  const [libraryModalOpen, setLibraryModalOpen] = useState(false);
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -3768,6 +4263,99 @@ export default function XrayCalibrationWorkspace({
     () => getOrientedSize(modelWidth, modelHeight, rotation),
     [modelHeight, modelWidth, rotation],
   );
+
+  useEffect(() => {
+    const activeMode = normalizeImageProcessingMode(imageProcessingMode);
+    processedXrayRequestIdRef.current += 1;
+    const requestId = processedXrayRequestIdRef.current;
+    processedXrayCanvasRef.current = null;
+    setProcessedXrayVersion((version) => version + 1);
+
+    if (
+      typeof window === "undefined" ||
+      activeMode === "normal" ||
+      !image ||
+      imageWidth <= 0 ||
+      imageHeight <= 0 ||
+      modelWidth <= 0 ||
+      modelHeight <= 0
+    ) {
+      setImageProcessingBusy(false);
+      return undefined;
+    }
+
+    setImageProcessingBusy(true);
+
+    let cancelled = false;
+    const processingSize = getLimitedProcessingSize(
+      modelWidth,
+      modelHeight,
+      IMG_PROC_PREVIEW_MAX_SIDE,
+    );
+    const sourceX = cropRect?.x || 0;
+    const sourceY = cropRect?.y || 0;
+    const sourceWidth = cropRect?.width || imageWidth;
+    const sourceHeight = cropRect?.height || imageHeight;
+
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled || requestId !== processedXrayRequestIdRef.current) {
+        setImageProcessingBusy(false);
+        return;
+      }
+
+      let processedCanvas = null;
+      try {
+        processedCanvas = createProcessedXrayCanvas({
+          image,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          targetWidth: processingSize.width,
+          targetHeight: processingSize.height,
+          mode: activeMode,
+          contrastPercent: 100,
+          levelPercent: 100,
+          filterIntensity: zakVisorParams.intensity,
+          gammaValue: zakVisorParams.gamma,
+          edgeThreshold: zakVisorParams.edgeThreshold,
+          claheClip: zakVisorParams.claheClip,
+          claheTiles: zakVisorParams.claheTiles,
+        });
+      } catch (error) {
+        console.warn("Image processing failed:", error);
+        processedCanvas = null;
+      }
+
+      if (cancelled || requestId !== processedXrayRequestIdRef.current) {
+        setImageProcessingBusy(false);
+        return;
+      }
+
+      processedXrayCanvasRef.current = processedCanvas;
+      setImageProcessingBusy(false);
+      setNotice(`Mode ${IMAGE_PROCESSING_MODE_LABELS[activeMode] || activeMode} aktif.`);
+      setProcessedXrayVersion((version) => version + 1);
+    }, IMG_PROC_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    cropRect?.height,
+    cropRect?.width,
+    cropRect?.x,
+    cropRect?.y,
+    image,
+    imageHeight,
+    imageProcessingMode,
+    imageWidth,
+    modelHeight,
+    modelWidth,
+    zakVisorParams,
+  ]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
@@ -5563,7 +6151,8 @@ export default function XrayCalibrationWorkspace({
           : rulerTargetLabel
             ? `Target ${rulerTargetLabel}`
             : "Kalibrasi belum aktif";
-      const taggedLabel = `${lineTypeLabel(line.type)}: ${baseLabel}`;
+      const displayName = String(line.name || "").trim();
+      const taggedLabel = `${displayName || lineTypeLabel(line.type)}: ${baseLabel}`;
       return isLineLocked(line.id) ? `${taggedLabel} [LOCK]` : taggedLabel;
     },
     [formatMeasurementFromPx, isLineLocked, lineTypeLabel, mmPerPixel],
@@ -5663,7 +6252,7 @@ export default function XrayCalibrationWorkspace({
           : undefined,
         isFreeLineDraftLayer: Boolean(layer.isFreeLineDraftLayer),
         imageSrc: isImageBackedLayerKind(layer.kind)
-          ? layer.imageSrc || ""
+          ? getPersistableImageSrc(layer.imageSrc)
           : "",
         maskPoints: Array.isArray(layer.maskPoints)
           ? layer.maskPoints.map((point) => cloneMaskPoint(point))
@@ -5676,9 +6265,9 @@ export default function XrayCalibrationWorkspace({
     () => ({
       version: 1,
       savedAt: Date.now(),
-      mainImageSrc,
+      mainImageSrc: getPersistableImageSrc(mainImageSrc),
       imageName,
-      compareImageSrc,
+      compareImageSrc: getPersistableImageSrc(compareImageSrc),
       compareImageName,
       compareMode,
       view,
@@ -5711,6 +6300,7 @@ export default function XrayCalibrationWorkspace({
       linePreset,
       contrast,
       level,
+      imageProcessingMode,
       rotation,
       flipX,
       flipY,
@@ -5768,6 +6358,7 @@ export default function XrayCalibrationWorkspace({
       hkaInputMode,
       hkaSide,
       imageName,
+      imageProcessingMode,
       leftSidebarWidth,
       level,
       lines,
@@ -6627,6 +7218,110 @@ export default function XrayCalibrationWorkspace({
     [],
   );
 
+  const detectCalibrationMarker = useCallback(() => {
+    if (!image || !modelWidth || !modelHeight || !cropRect) {
+      setNotice("Upload X-ray dulu sebelum Detect Marker.");
+      return;
+    }
+
+    setImageProcessingBusy(true);
+    window.requestAnimationFrame(() => {
+      try {
+        const markerProcessingSize = getLimitedProcessingSize(
+          modelWidth,
+          modelHeight,
+          IMG_PROC_DETECT_MAX_SIDE,
+        );
+        const markerCanvas = createProcessedXrayCanvas({
+          image,
+          sourceX: cropRect.x || 0,
+          sourceY: cropRect.y || 0,
+          sourceWidth: cropRect.width || imageWidth,
+          sourceHeight: cropRect.height || imageHeight,
+          targetWidth: markerProcessingSize.width,
+          targetHeight: markerProcessingSize.height,
+          mode: "edge",
+          contrastPercent: Math.max(contrast, 135),
+          levelPercent: level,
+        });
+        const detectedMarkerLine = detectCalibrationMarkerLineFromCanvas(markerCanvas);
+          const markerLine = detectedMarkerLine
+            ? {
+                ...detectedMarkerLine,
+                x1:
+                  detectedMarkerLine.x1 *
+                  (modelWidth / markerProcessingSize.width),
+                y1:
+                  detectedMarkerLine.y1 *
+                  (modelHeight / markerProcessingSize.height),
+                x2:
+                  detectedMarkerLine.x2 *
+                  (modelWidth / markerProcessingSize.width),
+                y2:
+                  detectedMarkerLine.y2 *
+                  (modelHeight / markerProcessingSize.height),
+              }
+            : null;
+          if (!markerLine) {
+            setNotice(
+              "Marker kalibrasi belum terdeteksi otomatis. Pakai mode Edge/Enhance lalu pilih marker manual.",
+            );
+            setImageProcessingMode("edge");
+            setImageProcessingModalOpen(false);
+            return;
+          }
+
+          const nextLine = appendLineMeasurement({
+            x1: markerLine.x1,
+            y1: markerLine.y1,
+            x2: markerLine.x2,
+            y2: markerLine.y2,
+            type: "ruler",
+            name: "Marker Kalibrasi",
+            color: "#22c55e",
+            strokeWidth: Math.max(calibrationDraftStrokeWidth, 2.4),
+          });
+
+          if (nextLine) {
+            setCalibrationLineId(nextLine.id);
+            setLinePreset("ruler");
+            setTool(getIdleTool());
+            setImageProcessingMode("enhance");
+            setImageProcessingModalOpen(false);
+            const message =
+              "Marker kalibrasi terdeteksi dan dibuat sebagai line. Isi nilai referensi real lalu Simpan Kalibrasi.";
+            if (isSimpleUiMode) {
+              openSimpleCalibrationModal(message);
+            } else {
+              focusCalibrationStep(message);
+            }
+            setNotice(message);
+          }
+      } catch {
+        setNotice(
+          "Detect Marker gagal membaca pixel canvas. Coba pakai file lokal atau pastikan gambar origin-clean.",
+        );
+      } finally {
+        setImageProcessingBusy(false);
+      }
+    });
+  }, [
+    appendLineMeasurement,
+    calibrationDraftStrokeWidth,
+    contrast,
+    cropRect,
+    focusCalibrationStep,
+    getIdleTool,
+    image,
+    imageHeight,
+    imageWidth,
+    isSimpleUiMode,
+    level,
+    modelHeight,
+    modelWidth,
+    openSimpleCalibrationModal,
+  ]);
+
   const focusMeasureStep = useCallback(() => {
     setMobileControlsOpen(true);
     setMobilePanelMode("workspace");
@@ -7199,9 +7894,30 @@ export default function XrayCalibrationWorkspace({
       if (compareObjectUrlRef.current) {
         URL.revokeObjectURL(compareObjectUrlRef.current);
       }
+      layerObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      layerObjectUrlsRef.current.clear();
+      mainImageFileRef.current = null;
+      compareImageFileRef.current = null;
     },
     [],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const clearTemporaryStory = () => {
+      if (!mainImageFileRef.current && !hasTemporaryMainImage) return;
+      try {
+        window.localStorage.removeItem(STORY_STORAGE_KEY);
+      } catch (_ignored) {}
+    };
+
+    window.addEventListener("pagehide", clearTemporaryStory);
+    window.addEventListener("beforeunload", clearTemporaryStory);
+    return () => {
+      window.removeEventListener("pagehide", clearTemporaryStory);
+      window.removeEventListener("beforeunload", clearTemporaryStory);
+    };
+  }, [hasTemporaryMainImage]);
 
   useEffect(() => {
     setActivityLog((prev) => {
@@ -7245,6 +7961,19 @@ export default function XrayCalibrationWorkspace({
       try {
         const raw = window.localStorage.getItem(STORY_STORAGE_KEY);
         if (!raw) {
+          const idbEntry = await loadImageFromIDB();
+          if (idbEntry?.dataUrl && !cancelled) {
+            const idbImage = await loadImageFromSrc(idbEntry.dataUrl).catch(() => null);
+            if (idbImage && !cancelled) {
+              applyMainImageToWorkspace({
+                nextImage: idbImage,
+                nextImageName: idbEntry.name || "xray-image",
+                noticeText: `Gambar "${idbEntry.name || "X-ray"}" dipulihkan dari cache lokal.`,
+              });
+              setMainImageSrc(idbEntry.dataUrl);
+              setHasTemporaryMainImage(true);
+            }
+          }
           restoredRef.current = true;
           return;
         }
@@ -7252,6 +7981,29 @@ export default function XrayCalibrationWorkspace({
         const payload = JSON.parse(raw);
         if (!payload || !payload.mainImageSrc) {
           restoredRef.current = true;
+          return;
+        }
+        if (isTransientImageSrc(payload.mainImageSrc)) {
+          window.localStorage.removeItem(STORY_STORAGE_KEY);
+          const idbEntry = await loadImageFromIDB();
+          if (idbEntry?.dataUrl && !cancelled) {
+            const idbImage = await loadImageFromSrc(idbEntry.dataUrl).catch(() => null);
+            if (idbImage && !cancelled) {
+              applyMainImageToWorkspace({
+                nextImage: idbImage,
+                nextImageName: idbEntry.name || "xray-image",
+                noticeText: `Gambar "${idbEntry.name || "X-ray"}" dipulihkan dari cache lokal.`,
+              });
+              setMainImageSrc(idbEntry.dataUrl);
+              setHasTemporaryMainImage(true);
+              restoredRef.current = true;
+            }
+          } else if (!cancelled) {
+            restoredRef.current = true;
+            setNotice(
+              "Cache lama berisi gambar besar dan sudah dibersihkan. Upload ulang X-ray untuk mulai.",
+            );
+          }
           return;
         }
 
@@ -7372,8 +8124,11 @@ export default function XrayCalibrationWorkspace({
 
         setImage(restoredImage);
         setMainImageSrc(payload.mainImageSrc);
+        setHasTemporaryMainImage(false);
         setImageName(payload.imageName || "restored-image");
-        setCompareImageSrc(payload.compareImageSrc || null);
+        setCompareImageSrc(
+          getPersistableImageSrc(payload.compareImageSrc) || null,
+        );
         setCompareImageName(payload.compareImageName || "");
         setCompareMode(Boolean(payload.compareMode));
         setCropRect(
@@ -7429,6 +8184,9 @@ export default function XrayCalibrationWorkspace({
         setLinePreset(payload.linePreset || "normal");
         setContrast(Number(payload.contrast) || 100);
         setLevel(Number(payload.level) || 100);
+        setImageProcessingMode(
+          normalizeImageProcessingMode(payload.imageProcessingMode),
+        );
         setRotation(Number(payload.rotation) || 0);
         setFlipX(Boolean(payload.flipX));
         setFlipY(Boolean(payload.flipY));
@@ -7785,13 +8543,14 @@ export default function XrayCalibrationWorkspace({
           throw new Error(`HTTP ${apiResponse.status}`);
         }
         const apiPayload = await apiResponse.json();
-        if (!apiPayload?.ok || typeof apiPayload.payload !== "string") {
+        const remoteData = apiPayload?.remote;
+        if (!apiPayload?.ok || !remoteData) {
           throw new Error(
             apiPayload?.error || "Format payload endpoint tidak valid.",
           );
         }
 
-        const normalizedItems = parseSheetRawText(apiPayload.payload);
+        const normalizedItems = parseSheetRawText(remoteData);
         setSheetMainImages(normalizedItems);
         setSelectedSheetMainImageId((prev) => {
           if (normalizedItems.length === 0) return null;
@@ -8056,12 +8815,15 @@ export default function XrayCalibrationWorkspace({
     setLinePreset(snapshot.linePreset);
     setContrast(snapshot.contrast);
     setLevel(snapshot.level);
+    setImageProcessingMode(
+      normalizeImageProcessingMode(snapshot.imageProcessingMode),
+    );
     setRotation(snapshot.rotation);
     setFlipX(snapshot.flipX);
     setFlipY(snapshot.flipY);
     setCropRect(snapshot.cropRect ? { ...snapshot.cropRect } : null);
     setCompareMode(Boolean(snapshot.compareMode));
-    setCompareImageSrc(snapshot.compareImageSrc || null);
+    setCompareImageSrc(getPersistableImageSrc(snapshot.compareImageSrc) || null);
     setCompareImageName(snapshot.compareImageName || "");
     setSnapToLandmarks(snapshot.snapToLandmarks ?? true);
     setSnapSettings(normalizeSnapSettings(snapshot.snapSettings));
@@ -9136,6 +9898,8 @@ export default function XrayCalibrationWorkspace({
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
     }
+    const activeImageProcessingMode =
+      normalizeImageProcessingMode(imageProcessingMode);
     const filterValue = `contrast(${contrast}%) brightness(${level}%)`;
     imageCanvas.style.filter = "none";
     overlayCanvas.style.filter = "none";
@@ -9198,19 +9962,27 @@ export default function XrayCalibrationWorkspace({
       imageCtx.translate(view.x, view.y);
       imageCtx.scale(view.scale, view.scale);
       imageCtx.transform(a, b, c, d, e, f);
+      const processedXrayCanvas =
+        activeImageProcessingMode !== "normal"
+          ? processedXrayCanvasRef.current
+          : null;
       imageCtx.filter = filterValue;
       imageCtx.imageSmoothingEnabled = true;
-      imageCtx.drawImage(
-        image,
-        sourceX,
-        sourceY,
-        sourceW,
-        sourceH,
-        0,
-        0,
-        modelWidth,
-        modelHeight,
-      );
+      if (processedXrayCanvas) {
+        imageCtx.drawImage(processedXrayCanvas, 0, 0, modelWidth, modelHeight);
+      } else {
+        imageCtx.drawImage(
+          image,
+          sourceX,
+          sourceY,
+          sourceW,
+          sourceH,
+          0,
+          0,
+          modelWidth,
+          modelHeight,
+        );
+      }
 
       for (const layer of cutLayers) {
         if (layer.hidden) continue;
@@ -10519,6 +11291,30 @@ export default function XrayCalibrationWorkspace({
 
     if (draftLine) {
       drawLine(draftLine, { color: "#fb7185", dashed: true, width: 2 });
+      const dx = (draftLine.x2 || 0) - (draftLine.x1 || 0);
+      const dy = (draftLine.y2 || 0) - (draftLine.y1 || 0);
+      const pxLen = Math.hypot(dx, dy);
+      if (pxLen > 3 && (draftLine.x2 !== undefined)) {
+        const liveLabel =
+          mmPerPixel !== null
+            ? `${(pxLen * mmPerPixel).toFixed(1)} mm`
+            : `${pxLen.toFixed(0)} px`;
+        const midX = ((draftLine.x1 || 0) + (draftLine.x2 || 0)) / 2;
+        const midY = ((draftLine.y1 || 0) + (draftLine.y2 || 0)) / 2;
+        const sm = imageToScreenPoint(midX, midY);
+        overlayCtx.save();
+        overlayCtx.font = "bold 12px Inter, system-ui, sans-serif";
+        const tw = overlayCtx.measureText(liveLabel).width;
+        overlayCtx.fillStyle = "rgba(15,23,42,0.78)";
+        overlayCtx.beginPath();
+        overlayCtx.roundRect(sm.x - tw / 2 - 7, sm.y - 22, tw + 14, 20, 5);
+        overlayCtx.fill();
+        overlayCtx.fillStyle = "#fb7185";
+        overlayCtx.textAlign = "center";
+        overlayCtx.textBaseline = "middle";
+        overlayCtx.fillText(liveLabel, sm.x, sm.y - 12);
+        overlayCtx.restore();
+      }
     }
 
     if (draftFreeLine?.points?.length) {
@@ -10976,6 +11772,7 @@ export default function XrayCalibrationWorkspace({
     hkaSets,
     image,
     imageHeight,
+    imageProcessingMode,
     imageToScreenPoint,
     imageWidth,
     isCoarsePointer,
@@ -11005,6 +11802,7 @@ export default function XrayCalibrationWorkspace({
     modelWidth,
     orientedSize.height,
     orientedSize.width,
+    processedXrayVersion,
     rotation,
     selectionPulse,
     selectedAngleId,
@@ -11192,6 +11990,9 @@ export default function XrayCalibrationWorkspace({
       setMmPerPixelAt100Input("0.63");
       setContrast(100);
       setLevel(100);
+      setImageProcessingMode("normal");
+      setImageProcessingModalOpen(false);
+      setImageProcessingBusy(false);
       setRotation(0);
       setFlipX(false);
       setFlipY(false);
@@ -11611,7 +12412,9 @@ export default function XrayCalibrationWorkspace({
           noticeText: `Background "${imageItem.name || "Google Sheet Image"}" dimuat dari Google Sheet/Drive.`,
         });
         if (applied) {
+          mainImageFileRef.current = null;
           setMainImageSrc(loaded.src);
+          setHasTemporaryMainImage(false);
         }
       } catch {
         setNotice("Gagal memuat gambar dari Google Drive.");
@@ -11638,16 +12441,6 @@ export default function XrayCalibrationWorkspace({
       const file = input.files?.[0];
       if (!file) return;
 
-      setMainImageSrc(null);
-
-      void readFileAsDataUrl(file)
-        .then((dataUrl) => {
-          setMainImageSrc(dataUrl);
-        })
-        .catch(() => {
-          setNotice("Gagal membaca file gambar. Coba file lain.");
-        });
-
       const nextObjectUrl = URL.createObjectURL(file);
       const nextImage = new Image();
 
@@ -11659,10 +12452,16 @@ export default function XrayCalibrationWorkspace({
         const applied = applyMainImageToWorkspace({
           nextImage,
           nextImageName: file.name,
-          noticeText: `Background "${file.name}" aktif untuk pengukuran.`,
+          noticeText: `Background "${file.name}" aktif sementara di memory. Tekan Simpan Kasus untuk upload ke Drive.`,
         });
         if (applied) {
           objectUrlRef.current = nextObjectUrl;
+          mainImageFileRef.current = file;
+          setMainImageSrc(nextObjectUrl);
+          setHasTemporaryMainImage(true);
+          readFileAsDataUrl(file).then((dataUrl) =>
+            saveImageToIDB(dataUrl, file.name),
+          ).catch(() => {});
         } else {
           URL.revokeObjectURL(nextObjectUrl);
         }
@@ -11731,16 +12530,16 @@ export default function XrayCalibrationWorkspace({
           return;
         }
 
-	        const gestureSnapshot = getMobileGestureSnapshot();
-	        if (gestureSnapshot) {
-	          if (mobileCanvasLocked) {
-	            setNotice(
-	              "Canvas terkunci. Gunakan tombol Lock Canvas untuk mengaktifkan pan/pinch lagi.",
-	            );
-	            return;
-	          }
+          const gestureSnapshot = getMobileGestureSnapshot();
+          if (gestureSnapshot) {
+            if (mobileCanvasLocked) {
+              setNotice(
+                "Canvas terkunci. Gunakan tombol Lock Canvas untuk mengaktifkan pan/pinch lagi.",
+              );
+              return;
+            }
           const anchor = screenToImagePoint(
-	            gestureSnapshot.centerX,
+              gestureSnapshot.centerX,
             gestureSnapshot.centerY,
           );
           startMobilePinchGesture({
@@ -11958,19 +12757,19 @@ export default function XrayCalibrationWorkspace({
 
       if (
         isSimpleUiMode &&
-	        isMobileViewport &&
-	        isTouchLikePointer &&
-	        mobileCanvasMode === "pan" &&
-	        tool === "pan"
-	      ) {
-	        if (mobileCanvasLocked) {
-	          setNotice(
-	            "Canvas terkunci. Object tetap bisa diedit, pan canvas dinonaktifkan.",
-	          );
-	          return;
-	        }
-	        interactionRef.current = {
-	          mode: "pan",
+          isMobileViewport &&
+          isTouchLikePointer &&
+          mobileCanvasMode === "pan" &&
+          tool === "pan"
+        ) {
+          if (mobileCanvasLocked) {
+            setNotice(
+              "Canvas terkunci. Object tetap bisa diedit, pan canvas dinonaktifkan.",
+            );
+            return;
+          }
+          interactionRef.current = {
+            mode: "pan",
           startX: point.x,
           startY: point.y,
           startPanX: view.panX,
@@ -13307,22 +14106,22 @@ export default function XrayCalibrationWorkspace({
         clearActiveCanvasSelection();
       }
 
-	      if (tool === "pan") {
-	        if (
-	          isSimpleUiMode &&
-	          isMobileViewport &&
-	          isTouchLikePointer &&
-	          (mobileCanvasLocked || mobileCanvasMode === "edit")
-	        ) {
-	          setNotice(
-	            mobileCanvasLocked
-	              ? "Canvas terkunci. Tap object/template untuk edit tanpa menggeser canvas."
-	              : "Edit Object aktif. Tap object atau titik; aktifkan Pan Canvas untuk menggeser canvas.",
-	          );
-	          return;
-	        }
-	        interactionRef.current = {
-	          mode: "pan",
+        if (tool === "pan") {
+          if (
+            isSimpleUiMode &&
+            isMobileViewport &&
+            isTouchLikePointer &&
+            (mobileCanvasLocked || mobileCanvasMode === "edit")
+          ) {
+            setNotice(
+              mobileCanvasLocked
+                ? "Canvas terkunci. Tap object/template untuk edit tanpa menggeser canvas."
+                : "Edit Object aktif. Tap object atau titik; aktifkan Pan Canvas untuk menggeser canvas.",
+            );
+            return;
+          }
+          interactionRef.current = {
+            mode: "pan",
           startX: point.x,
           startY: point.y,
           startPanX: view.panX,
@@ -16110,7 +16909,25 @@ export default function XrayCalibrationWorkspace({
     }
     const deletedLayerIds = [...selectedCutLayerIds];
     const deletedIdSet = new Set(deletedLayerIds);
-    setCutLayers((prev) => prev.filter((layer) => !deletedIdSet.has(layer.id)));
+    setCutLayers((prev) => {
+      prev.forEach((layer) => {
+        const stillUsedByRemainingLayer = prev.some(
+          (candidate) =>
+            !deletedIdSet.has(candidate.id) &&
+            candidate.imageSrc &&
+            candidate.imageSrc === layer.imageSrc,
+        );
+        if (
+          deletedIdSet.has(layer.id) &&
+          layerObjectUrlsRef.current.has(layer.imageSrc) &&
+          !stillUsedByRemainingLayer
+        ) {
+          URL.revokeObjectURL(layer.imageSrc);
+          layerObjectUrlsRef.current.delete(layer.imageSrc);
+        }
+      });
+      return prev.filter((layer) => !deletedIdSet.has(layer.id));
+    });
     setSelectedCutLayerId(null);
     setSelectedCutLayerExtraIds([]);
     setNotice(
@@ -16124,6 +16941,8 @@ export default function XrayCalibrationWorkspace({
     setDraftCut(null);
     setDraftFreeLine(null);
     setDraftFreeLineTargetLayerId(null);
+    layerObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    layerObjectUrlsRef.current.clear();
     setCutLayers([]);
     setSelectedCutLayerId(null);
     setSelectedCutLayerExtraIds([]);
@@ -16138,7 +16957,15 @@ export default function XrayCalibrationWorkspace({
       if (clearImage && objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
+        mainImageFileRef.current = null;
       }
+      if (compareObjectUrlRef.current) {
+        URL.revokeObjectURL(compareObjectUrlRef.current);
+        compareObjectUrlRef.current = null;
+        compareImageFileRef.current = null;
+      }
+      layerObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      layerObjectUrlsRef.current.clear();
 
       setLines([]);
       setAngles([]);
@@ -16196,6 +17023,9 @@ export default function XrayCalibrationWorkspace({
       setHkaSide("right");
       setContrast(100);
       setLevel(100);
+      setImageProcessingMode("normal");
+      setImageProcessingModalOpen(false);
+      setImageProcessingBusy(false);
       setRotation(0);
       setFlipX(false);
       setFlipY(false);
@@ -16235,8 +17065,10 @@ export default function XrayCalibrationWorkspace({
       if (clearImage) {
         setImage(null);
         setMainImageSrc(null);
+        setHasTemporaryMainImage(false);
         setImageName("");
         setCropRect(null);
+        void clearImageFromIDB();
       } else if (imageWidth && imageHeight) {
         setCropRect({ x: 0, y: 0, width: imageWidth, height: imageHeight });
       }
@@ -16277,44 +17109,36 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = async () => {
-        if (typeof reader.result !== "string") {
+      const nextObjectUrl = URL.createObjectURL(file);
+      const layerImage = new Image();
+      layerImage.onload = () => {
+        const srcW = layerImage.naturalWidth || layerImage.width || 0;
+        const srcH = layerImage.naturalHeight || layerImage.height || 0;
+        if (!srcW || !srcH) {
+          URL.revokeObjectURL(nextObjectUrl);
           setNotice("Template layer gagal diproses.");
           event.target.value = "";
           return;
         }
 
-        try {
-          const layerImage = await loadImageFromSrc(reader.result);
-          const srcW = layerImage.naturalWidth || layerImage.width || 0;
-          const srcH = layerImage.naturalHeight || layerImage.height || 0;
-          if (!srcW || !srcH) {
-            setNotice("Template layer gagal diproses.");
-            event.target.value = "";
-            return;
-          }
-
-          addImageAsWorkspaceLayer({
-            layerImage,
-            imageSrc: reader.result,
-            name: file.name,
-            sizeMode: "inherit-template",
-            noticeText: `Template layer "${file.name}" ditambahkan.`,
-          });
-          event.target.value = "";
-        } catch {
-          setNotice("Gagal membaca file template layer.");
-          event.target.value = "";
-        }
+        layerObjectUrlsRef.current.add(nextObjectUrl);
+        addImageAsWorkspaceLayer({
+          layerImage,
+          imageSrc: nextObjectUrl,
+          name: file.name,
+          sizeMode: "inherit-template",
+          noticeText: `Template layer "${file.name}" ditambahkan sementara di memory.`,
+        });
+        event.target.value = "";
       };
 
-      reader.onerror = () => {
+      layerImage.onerror = () => {
+        URL.revokeObjectURL(nextObjectUrl);
         setNotice("Gagal membaca file template layer.");
         event.target.value = "";
       };
 
-      reader.readAsDataURL(file);
+      layerImage.src = nextObjectUrl;
     },
     [addImageAsWorkspaceLayer, image, modelHeight, modelWidth],
   );
@@ -16333,6 +17157,98 @@ export default function XrayCalibrationWorkspace({
     }
   }, [buildStoryPayload]);
 
+  const saveTemporaryXrayCaseToGoogleDrive = useCallback(async () => {
+    const endpoint = String(sheetMainImageEndpoint || "").trim();
+    if (!endpoint) {
+      setNotice("Masukkan URL Apps Script Google Drive terlebih dahulu.");
+      return;
+    }
+    if (!image) {
+      setNotice("Tidak ada gambar untuk disimpan.");
+      return;
+    }
+
+    // Simpan combined canvas: gambar + semua template & garis
+    const outCanvas = createReportCanvasSnapshotRef.current?.("simpan kasus", { exportScale: 1 });
+    if (!outCanvas) return;
+
+    let imageDataUrl;
+    try {
+      imageDataUrl = outCanvas.toDataURL("image/png");
+    } catch {
+      setNotice("Export gagal (CORS). Pastikan file gambar bisa diakses.");
+      return;
+    }
+
+    const baseName = (imageName || "xray-case").replace(/\.[^.]+$/, "");
+    const fileName = `${baseName}-with-template.png`;
+
+    setGoogleDriveUploadBusy(true);
+    try {
+      const response = await fetch("/api/google-sheet-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: endpoint,
+          action: "upload_image",
+          fileName,
+          mimeType: "image/png",
+          imageDataUrl,
+          item: {
+            name: imageName || baseName,
+            tags: "xray-case,templating",
+            fileName,
+            mimeType: "image/png",
+            imageDataUrl,
+            source: "xray-workspace-with-template",
+            calibration: mmPerPixel !== null ? `${mmPerPixel} mm/px` : "",
+            createdAt: new Date().toISOString(),
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok === false) {
+        const remoteError =
+          payload?.remote?.error || payload?.error || "Apps Script menolak upload.";
+        throw new Error(remoteError);
+      }
+
+      const remoteItem = payload?.remote?.item || payload?.item || {};
+      const driveId = remoteItem.driveId || payload?.remote?.driveId || "";
+      const nextSrc =
+        remoteItem.imageSrc ||
+        remoteItem.imageUrl ||
+        (driveId ? buildGoogleDriveDirectImageUrl(driveId) : "");
+
+      if (nextSrc) {
+        setMainImageSrc(nextSrc);
+      }
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+      mainImageFileRef.current = null;
+      setHasTemporaryMainImage(false);
+      setNotice("Kasus tersimpan ke Google Drive beserta template & garis yang sudah dibuat.");
+      void syncMainImageLibraryFromGoogleSheet({ silent: true });
+    } catch (error) {
+      setNotice(
+        `Simpan kasus gagal: ${
+          error instanceof Error ? error.message : "Terjadi kesalahan."
+        }`,
+      );
+    } finally {
+      setGoogleDriveUploadBusy(false);
+    }
+  }, [
+    image,
+    imageName,
+    mmPerPixel,
+    saveStoryNow,
+    sheetMainImageEndpoint,
+    syncMainImageLibraryFromGoogleSheet,
+  ]);
+
   const clearSavedStory = useCallback(() => {
     if (typeof window === "undefined") return;
     if (saveDebounceRef.current) {
@@ -16343,23 +17259,73 @@ export default function XrayCalibrationWorkspace({
     setNotice("Story lokal di perangkat dihapus.");
   }, []);
 
+  const clearLocalCache = useCallback(() => {
+    if (typeof window !== "undefined") {
+      if (saveDebounceRef.current) {
+        clearTimeout(saveDebounceRef.current);
+      }
+      skipNextAutosaveRef.current = true;
+      window.localStorage.removeItem(STORY_STORAGE_KEY);
+      window.sessionStorage?.removeItem(STORY_STORAGE_KEY);
+    }
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    if (compareObjectUrlRef.current) {
+      URL.revokeObjectURL(compareObjectUrlRef.current);
+      compareObjectUrlRef.current = null;
+    }
+    layerObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    layerObjectUrlsRef.current.clear();
+    mainImageFileRef.current = null;
+    compareImageFileRef.current = null;
+    if (isTransientImageSrc(mainImageSrc)) {
+      setImage(null);
+      setMainImageSrc(null);
+      setImageName("");
+      setCropRect(null);
+    }
+    if (isTransientImageSrc(compareImageSrc)) {
+      setCompareImage(null);
+      setCompareImageSrc(null);
+      setCompareImageName("");
+      setCompareMode(false);
+    }
+    setCutLayers((prev) =>
+      prev.filter((layer) => !isTransientImageSrc(layer.imageSrc)),
+    );
+    setHasTemporaryMainImage(false);
+    void clearImageFromIDB();
+    setNotice("Local cache dan temporary image dibersihkan.");
+  }, [compareImageSrc, mainImageSrc]);
+
   const handleCompareUpload = useCallback((event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setCompareImageSrc(reader.result);
-        setCompareImageName(file.name);
-        setCompareMode(true);
-        setNotice(`Gambar compare "${file.name}" dimuat.`);
+    const nextObjectUrl = URL.createObjectURL(file);
+    const nextImage = new Image();
+    nextImage.onload = () => {
+      if (compareObjectUrlRef.current) {
+        URL.revokeObjectURL(compareObjectUrlRef.current);
       }
+      compareObjectUrlRef.current = nextObjectUrl;
+      compareImageFileRef.current = file;
+      setCompareImage(nextImage);
+      setCompareImageSrc(nextObjectUrl);
+      setCompareImageName(file.name);
+      setCompareMode(true);
+      setNotice(
+        `Gambar compare "${file.name}" dimuat sementara di memory.`,
+      );
     };
-    reader.onerror = () => {
+    nextImage.onerror = () => {
+      URL.revokeObjectURL(nextObjectUrl);
       setNotice("Gagal membaca gambar compare.");
     };
-    reader.readAsDataURL(file);
+    nextImage.src = nextObjectUrl;
     event.target.value = "";
   }, []);
 
@@ -16738,7 +17704,7 @@ export default function XrayCalibrationWorkspace({
     for (const line of lines) {
       const lengthPx = getLineLength(line);
       rows.push({
-        type: lineTypeLabel(line.type),
+        type: String(line.name || "").trim() || lineTypeLabel(line.type),
         value:
           mmPerPixel !== null
             ? formatMeasurementFromPx(lengthPx)
@@ -17200,16 +18166,24 @@ export default function XrayCalibrationWorkspace({
     );
   }, []);
 
-  const createReportCanvasSnapshot = useCallback((errorContext = "Export") => {
-    const imageCanvas = imageCanvasRef.current;
-    const overlayCanvas = overlayCanvasRef.current;
-    const outCanvas = createCombinedReportCanvas(imageCanvas, overlayCanvas);
-    if (!outCanvas) {
-      setNotice(`Canvas belum siap untuk ${errorContext}.`);
-      return null;
-    }
-    return outCanvas;
-  }, []);
+  const createReportCanvasSnapshot = useCallback(
+    (errorContext = "Export", options = {}) => {
+      const imageCanvas = imageCanvasRef.current;
+      const overlayCanvas = overlayCanvasRef.current;
+      const outCanvas = createCombinedReportCanvas(
+        imageCanvas,
+        overlayCanvas,
+        options,
+      );
+      if (!outCanvas) {
+        setNotice(`Canvas belum siap untuk ${errorContext}.`);
+        return null;
+      }
+      return outCanvas;
+    },
+    [],
+  );
+  createReportCanvasSnapshotRef.current = createReportCanvasSnapshot;
 
   const exportReportPng = useCallback(() => {
     if (!hasCalibration && !isSimpleUiMode) {
@@ -17217,7 +18191,10 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
-    const outCanvas = createReportCanvasSnapshot("export PNG");
+    const outCanvas = createReportCanvasSnapshot("export PNG", {
+      exportScale: 2,
+      sharpen: true,
+    });
     if (!outCanvas) return;
 
     try {
@@ -17230,14 +18207,59 @@ export default function XrayCalibrationWorkspace({
         const link = document.createElement("a");
         const baseName = (imageName || "xray-report").replace(/\.[^.]+$/, "");
         link.href = url;
-        link.download = `${baseName}-report.png`;
+        link.download = `${baseName}-report-sharp.png`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1200);
-        setNotice("Report PNG berhasil diunduh.");
+        setNotice("Report PNG 2x sharp berhasil diunduh.");
       }, "image/png");
     } catch {
       setNotice(
         "Export PNG gagal karena gambar tidak origin-clean (CORS). Pastikan file storage bisa diakses dengan CORS/public read.",
+      );
+    }
+  }, [
+    createReportCanvasSnapshot,
+    focusCalibrationStep,
+    hasCalibration,
+    imageName,
+    isSimpleUiMode,
+  ]);
+
+  const exportReportJpeg = useCallback(() => {
+    if (!hasCalibration && !isSimpleUiMode) {
+      focusCalibrationStep("Export report dikunci sampai kalibrasi aktif.");
+      return;
+    }
+
+    const outCanvas = createReportCanvasSnapshot("export JPEG", {
+      exportScale: 2,
+      sharpen: true,
+      background: "#020617",
+    });
+    if (!outCanvas) return;
+
+    try {
+      outCanvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            setNotice("Gagal membuat file JPEG.");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          const baseName = (imageName || "xray-report").replace(/\.[^.]+$/, "");
+          link.href = url;
+          link.download = `${baseName}-report-highest.jpg`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1200);
+          setNotice("Report JPEG highest 2x sharp berhasil diunduh.");
+        },
+        "image/jpeg",
+        1,
+      );
+    } catch {
+      setNotice(
+        "Export JPEG gagal karena gambar tidak origin-clean (CORS). Pastikan file storage bisa diakses dengan CORS/public read.",
       );
     }
   }, [
@@ -17364,7 +18386,10 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
-    const outCanvas = createReportCanvasSnapshot("upload Drive");
+    const outCanvas = createReportCanvasSnapshot("upload Drive", {
+      exportScale: 2,
+      sharpen: true,
+    });
     if (!outCanvas) return;
 
     let imageDataUrl = "";
@@ -17388,7 +18413,7 @@ export default function XrayCalibrationWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: endpoint,
-          action: "create",
+          action: "upload_report",
           fileName,
           mimeType: "image/png",
           imageBase64,
@@ -17435,6 +18460,94 @@ export default function XrayCalibrationWorkspace({
     mmPerPixel,
     sheetMainImageEndpoint,
     templateInventoryRows.length,
+  ]);
+
+  const openSaveTemplateModal = useCallback(() => {
+    const outCanvas = createReportCanvasSnapshot("preview template");
+    if (outCanvas) {
+      try {
+        setSaveTemplatePreviewUrl(outCanvas.toDataURL("image/jpeg", 0.55));
+      } catch {
+        setSaveTemplatePreviewUrl("");
+      }
+    }
+    setSaveTemplateName(imageName || "");
+    setSaveTemplateTags("xray-case,templating");
+    setSaveTemplateModalOpen(true);
+  }, [createReportCanvasSnapshot, imageName]);
+
+  const saveTemplateToGoogleDrive = useCallback(async () => {
+    const endpoint = String(sheetMainImageEndpoint || "").trim();
+    if (!endpoint) {
+      setNotice("URL Apps Script belum dikonfigurasi.");
+      return;
+    }
+    if (!image) {
+      setNotice("Tidak ada gambar untuk disimpan.");
+      return;
+    }
+    const outCanvas = createReportCanvasSnapshot("simpan template", {
+      exportScale: 1.5,
+      sharpen: true,
+    });
+    if (!outCanvas) return;
+    let imageDataUrl;
+    try {
+      imageDataUrl = outCanvas.toDataURL("image/png");
+    } catch {
+      setNotice("Export gagal (CORS). Pastikan gambar bisa diakses secara publik.");
+      return;
+    }
+    const baseName = (saveTemplateName || imageName || "xray").replace(/\.[^.]+$/, "");
+    const fileName = `${baseName}-template.png`;
+    setSaveTemplateBusy(true);
+    try {
+      const response = await fetch("/api/google-sheet-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: endpoint,
+          action: "upload_image",
+          fileName,
+          mimeType: "image/png",
+          imageDataUrl,
+          item: {
+            name: saveTemplateName || baseName,
+            tags: String(saveTemplateTags || "xray-case,templating").trim(),
+            fileName,
+            mimeType: "image/png",
+            imageDataUrl,
+            source: "xray-workspace-template",
+            calibration: mmPerPixel !== null ? `${mmPerPixel} mm/px` : "",
+            measurementCount: measurementRows.length,
+            createdAt: new Date().toISOString(),
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.remote?.error || payload?.error || "Upload gagal.");
+      }
+      setSaveTemplateModalOpen(false);
+      setNotice("Template & garis berhasil disimpan ke Google Drive.");
+      void syncMainImageLibraryFromGoogleSheet({ silent: true });
+    } catch (error) {
+      setNotice(
+        `Gagal simpan template: ${error instanceof Error ? error.message : "Terjadi kesalahan."}`,
+      );
+    } finally {
+      setSaveTemplateBusy(false);
+    }
+  }, [
+    createReportCanvasSnapshot,
+    image,
+    imageName,
+    measurementRows.length,
+    mmPerPixel,
+    saveTemplateName,
+    saveTemplateTags,
+    sheetMainImageEndpoint,
+    syncMainImageLibraryFromGoogleSheet,
   ]);
 
   useEffect(() => {
@@ -17540,7 +18653,7 @@ export default function XrayCalibrationWorkspace({
 
       if (key === "l" || key === "d") handleToolChange("draw");
       if (key === "g") handleToolChange("freeLine");
-      if (key === "h" || key === "m" || key === "p") handleToolChange("pan");
+      if (key === "h" || key === "m" || key === "p" || key === "v") handleToolChange("pan");
       if (key === "c") handleToolChange("cut");
       if (key === "a") handleToolChange("angle");
       if (key === "n") handleToolChange("annotation");
@@ -17550,6 +18663,8 @@ export default function XrayCalibrationWorkspace({
       if (key === "b") handleToolChange("axisBuilder");
       if (key === "q") handleToolChange("guideBuilder");
       if (key === "f") fitImageToViewport();
+      if (key === "e") selectImageProcessingModeRef.current?.("enhance");
+      if (key === "i") openImageProcessingModalRef.current?.();
       if ((key === "delete" || key === "backspace") && !isMeta) {
         event.preventDefault();
         removeSelectedLine();
@@ -17829,7 +18944,7 @@ export default function XrayCalibrationWorkspace({
     selectedLine || selectedCircle || selectedHka || selectedAnnotation,
   );
   const simpleColorPanelTitle = selectedLine
-    ? `Line #${selectedLine.id}`
+    ? selectedLine.name || `Line #${selectedLine.id}`
     : selectedCircle
       ? `Circle #${selectedCircle.id}`
       : selectedHka
@@ -17861,6 +18976,34 @@ export default function XrayCalibrationWorkspace({
       setMobileObjectSettingsOpen(false);
     }
   }, [simpleMobilePanel]);
+  const openImageProcessingModal = useCallback(() => {
+    if (!image) {
+      setNotice("Upload X-ray dulu sebelum membuka ZakVisor.");
+      return;
+    }
+    setSimpleMobilePanel(null);
+    setMobileObjectSettingsOpen(false);
+    setSimpleToolPanelMinimized(true);
+    setImageProcessingModalOpen(true);
+  }, [image]);
+  const selectImageProcessingMode = useCallback((mode) => {
+    const nextMode = normalizeImageProcessingMode(mode);
+    setImageProcessingMode(nextMode);
+    setImageProcessingModalOpen(false);
+    if (nextMode === "normal") {
+      setNotice("Mode gambar: Normal.");
+    } else {
+      setNotice(
+        `Memproses gambar (${IMAGE_PROCESSING_MODE_LABELS[nextMode] || nextMode})... harap tunggu.`,
+      );
+    }
+  }, []);
+
+  const openImageProcessingModalRef = useRef(openImageProcessingModal);
+  openImageProcessingModalRef.current = openImageProcessingModal;
+  const selectImageProcessingModeRef = useRef(selectImageProcessingMode);
+  selectImageProcessingModeRef.current = selectImageProcessingMode;
+
   const activeMeasurementWorkflowKey =
     tool === "draw"
       ? "line"
@@ -17940,7 +19083,7 @@ export default function XrayCalibrationWorkspace({
   const mobileObjectSheetTitle = selectedCutLayer
     ? selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)
     : selectedLine
-      ? `Line #${selectedLine.id}`
+      ? selectedLine.name || `Line #${selectedLine.id}`
       : selectedAngle
         ? `Angle #${selectedAngle.id}`
         : selectedCircle
@@ -18138,6 +19281,16 @@ export default function XrayCalibrationWorkspace({
     { icon: "angle", label: "Angle", desc: "tap 3 titik", key: "angle" },
     { icon: "circle", label: "Circle", desc: "pusat + tepi", key: "circle" },
     { icon: "annotation", label: "Text", desc: "tap + input", key: "annotation" },
+    {
+      icon: "imageProcess",
+      label: "ZakVisor",
+      desc:
+        imageProcessingMode === "normal"
+          ? "filter x-ray"
+          : IMAGE_PROCESSING_MODE_LABELS[imageProcessingMode],
+      key: "imageProcess",
+      action: "imageProcessing",
+    },
     { icon: "hka", label: "HKA", desc: "axis knee", key: "hkaAuto" },
     { icon: "guideBuilder", label: "Guide", desc: "parallel", key: "guideBuilder" },
   ];
@@ -18275,6 +19428,21 @@ export default function XrayCalibrationWorkspace({
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
+        {imageProcessingBusy && !imageProcessingModalOpen ? (
+          <motion.div
+            key="opencv-processing-badge"
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
+            transition={PANEL_SPRING}
+            className="fixed bottom-6 left-1/2 z-[95] flex -translate-x-1/2 items-center gap-2 rounded-full border border-cyan-200/70 bg-white/90 px-4 py-2 text-xs font-bold text-cyan-800 shadow-[0_4px_16px_rgba(34,211,238,0.18)] backdrop-blur-md"
+          >
+            <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-500" />
+            ZakVisor memproses...
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
         {whatsNewModalOpen ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -18292,6 +19460,9 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 14, scale: 0.96 }}
               transition={MOBILE_PANEL_TRANSITION}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="whats-new-modal-title"
               className="w-full max-w-sm rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.28),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
             >
               <div className="flex items-start justify-between gap-3">
@@ -18299,7 +19470,7 @@ export default function XrayCalibrationWorkspace({
                   <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
                     What&apos;s New
                   </div>
-                  <h2 className="mt-1 text-base font-black text-slate-950">
+                  <h2 id="whats-new-modal-title" className="mt-1 text-base font-black text-slate-950">
                     Update Simple UI
                   </h2>
                 </div>
@@ -18352,6 +19523,9 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={MOBILE_PANEL_TRANSITION}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="drive-modal-title"
               className="w-full max-w-md rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.26),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
             >
               <div className="flex items-start justify-between gap-3">
@@ -18359,11 +19533,11 @@ export default function XrayCalibrationWorkspace({
                   <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
                     Google Drive
                   </div>
-                  <h2 className="mt-1 text-base font-black text-slate-950">
-                    Upload report PNG
+                  <h2 id="drive-modal-title" className="mt-1 text-base font-black text-slate-950">
+                    Simpan / Upload Drive
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    Mengirim snapshot workspace aktif ke Apps Script / Drive.
+                    X-ray lokal disimpan sementara di memory. Upload hanya saat Simpan Kasus atau Upload Report.
                   </p>
                 </div>
                 <button
@@ -18376,49 +19550,457 @@ export default function XrayCalibrationWorkspace({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <label className="mt-4 block text-[10px] font-black tracking-widest text-slate-500 uppercase">
-                Apps Script URL
-                <input
-                  value={sheetMainImageEndpoint}
-                  onChange={(event) =>
-                    setSheetMainImageEndpoint(event.target.value)
-                  }
-                  disabled={googleDriveUploadBusy}
-                  className="mt-2 w-full rounded-2xl border border-white/70 bg-white/45 px-3 py-3 text-xs font-semibold text-slate-700 outline-none shadow-[inset_2px_2px_5px_rgba(148,163,184,0.24),inset_-2px_-2px_5px_rgba(255,255,255,0.86)] disabled:opacity-60"
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                />
-              </label>
-              <div className="mt-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[11px] font-semibold text-slate-500">
-                Host: {sheetMainImageEndpointHost || "-"}
+              <div className="mt-3 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[11px] font-semibold text-slate-500">
+                Status:{" "}
+                {image
+                  ? hasTemporaryMainImage
+                    ? "X-ray sementara — belum tersimpan ke Drive"
+                    : "X-ray dari Drive / URL publik"
+                  : "Belum ada gambar"}
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-4 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoogleDriveUploadModalOpen(false);
+                    openSaveTemplateModal();
+                  }}
+                  disabled={googleDriveUploadBusy || !image}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(8,145,178,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Simpan dengan Template &amp; Garis
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={saveTemporaryXrayCaseToGoogleDrive}
+                    disabled={
+                      googleDriveUploadBusy ||
+                      !image ||
+                      !String(sheetMainImageEndpoint || "").trim()
+                    }
+                    className="min-h-10 rounded-2xl bg-emerald-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {googleDriveUploadBusy ? "Menyimpan..." : "Simpan Kasus"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={uploadReportToGoogleDrive}
+                    disabled={
+                      googleDriveUploadBusy ||
+                      !image ||
+                      (!isSimpleUiMode && !hasCalibration) ||
+                      !String(sheetMainImageEndpoint || "").trim()
+                    }
+                    className="min-h-10 rounded-2xl bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.24)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {googleDriveUploadBusy ? "Uploading..." : "Upload Report"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleDriveUploadModalOpen(false);
+                      setLibraryModalOpen(true);
+                    }}
+                    disabled={googleDriveUploadBusy}
+                    className="flex min-h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    Lihat Library
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearLocalCache}
+                    disabled={googleDriveUploadBusy}
+                    className="min-h-10 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                  >
+                    Clear Cache
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setGoogleDriveUploadModalOpen(false)}
                   disabled={googleDriveUploadBusy}
+                  className="min-h-10 w-full rounded-2xl border border-white/70 bg-[#eef2f7] px-4 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                >
+                  Tutup
+                </button>
+              </div>
+              {!hasCalibration && !isSimpleUiMode ? (
+                <p className="mt-3 text-[11px] font-semibold text-rose-500">
+                  Kalibrasi harus aktif sebelum Upload Report.
+                </p>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Modal: Simpan Template */}
+      <AnimatePresence>
+        {saveTemplateModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[98] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !saveTemplateBusy)
+                setSaveTemplateModalOpen(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={MOBILE_PANEL_TRANSITION}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="save-template-modal-title"
+              className="w-full max-w-sm rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.26),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
+                    Simpan Template
+                  </div>
+                  <h2
+                    id="save-template-modal-title"
+                    className="mt-1 text-base font-black text-slate-950"
+                  >
+                    Simpan dengan Template &amp; Garis
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSaveTemplateModalOpen(false)}
+                  disabled={saveTemplateBusy}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                  aria-label="Tutup simpan template"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {saveTemplatePreviewUrl ? (
+                <div className="mt-4 overflow-hidden rounded-2xl border border-white/70 bg-slate-100">
+                  <img
+                    src={saveTemplatePreviewUrl}
+                    alt="Preview template"
+                    className="h-36 w-full object-contain"
+                  />
+                </div>
+              ) : null}
+              <label className="mt-4 block text-[10px] font-black tracking-widest text-slate-500 uppercase">
+                Nama
+                <input
+                  value={saveTemplateName}
+                  onChange={(e) => setSaveTemplateName(e.target.value)}
+                  disabled={saveTemplateBusy}
+                  className="mt-1.5 w-full rounded-2xl border border-white/70 bg-white/45 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none shadow-[inset_2px_2px_5px_rgba(148,163,184,0.24),inset_-2px_-2px_5px_rgba(255,255,255,0.86)] disabled:opacity-60"
+                  placeholder="Nama pasien / kasus"
+                />
+              </label>
+              <label className="mt-2 block text-[10px] font-black tracking-widest text-slate-500 uppercase">
+                Tags
+                <input
+                  value={saveTemplateTags}
+                  onChange={(e) => setSaveTemplateTags(e.target.value)}
+                  disabled={saveTemplateBusy}
+                  className="mt-1.5 w-full rounded-2xl border border-white/70 bg-white/45 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none shadow-[inset_2px_2px_5px_rgba(148,163,184,0.24),inset_-2px_-2px_5px_rgba(255,255,255,0.86)] disabled:opacity-60"
+                  placeholder="pasien, templating, ..."
+                />
+              </label>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSaveTemplateModalOpen(false)}
+                  disabled={saveTemplateBusy}
                   className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] px-4 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
                 >
                   Batal
                 </button>
                 <button
                   type="button"
-                  onClick={uploadReportToGoogleDrive}
-                  disabled={
-                    googleDriveUploadBusy ||
-                    !image ||
-                    (!isSimpleUiMode && !hasCalibration) ||
-                    !String(sheetMainImageEndpoint || "").trim()
-                  }
-                  className="min-h-11 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.24)] disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={saveTemplateToGoogleDrive}
+                  disabled={saveTemplateBusy || !image}
+                  className="min-h-11 rounded-2xl bg-emerald-600 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {googleDriveUploadBusy ? "Uploading..." : "Upload"}
+                  {saveTemplateBusy ? "Menyimpan..." : "Simpan ke Drive"}
                 </button>
               </div>
-              {!hasCalibration && !isSimpleUiMode ? (
-                <p className="mt-3 text-[11px] font-semibold text-rose-500">
-                  Kalibrasi harus aktif sebelum upload report.
-                </p>
+              <p className="mt-3 text-[11px] font-semibold text-slate-400">
+                Foto disimpan beserta semua template &amp; garis yang sudah dibuat.
+              </p>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Modal: Library Google Sheet */}
+      <AnimatePresence>
+        {libraryModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[98] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setLibraryModalOpen(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={MOBILE_PANEL_TRANSITION}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="library-modal-title"
+              className="w-full max-w-lg rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.26),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
+                    Library Drive
+                  </div>
+                  <h2
+                    id="library-modal-title"
+                    className="mt-1 text-base font-black text-slate-950"
+                  >
+                    Kasus Tersimpan ({sheetMainImages.length})
+                  </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => syncMainImageLibraryFromGoogleSheet({ silent: false })}
+                    disabled={isSheetMainImageSyncing}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                    aria-label="Refresh library"
+                  >
+                    <RefreshCcw
+                      className={`h-4 w-4 ${isSheetMainImageSyncing ? "animate-spin" : ""}`}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLibraryModalOpen(false)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                    aria-label="Tutup library"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              {sheetMainImages.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-white/70 bg-white/35 px-4 py-8 text-center text-xs font-semibold text-slate-500">
+                  {isSheetMainImageSyncing
+                    ? "Memuat data dari Drive..."
+                    : "Belum ada data di library. Simpan kasus terlebih dahulu."}
+                </div>
+              ) : (
+                <div className="mt-4 grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
+                  {sheetMainImages.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        useSheetImageAsMain(item);
+                        setLibraryModalOpen(false);
+                      }}
+                      className="group flex flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/35 text-left shadow-[2px_2px_6px_rgba(148,163,184,0.20),-2px_-2px_6px_rgba(255,255,255,0.78)] transition-all hover:border-cyan-300 hover:shadow-[0_0_10px_rgba(34,211,238,0.15)]"
+                      aria-label={`Muat gambar: ${item.name || "Untitled"}`}
+                    >
+                      <div className="h-24 w-full overflow-hidden bg-slate-100">
+                        <DriveImageWithFallback
+                          src={item.imageSrc}
+                          driveId={item.driveId}
+                          alt={item.name || "Gambar"}
+                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        />
+                      </div>
+                      <div className="p-2">
+                        <p className="truncate text-[10px] font-bold text-slate-800">
+                          {item.name || "Untitled"}
+                        </p>
+                        {item.tags ? (
+                          <p className="mt-0.5 truncate text-[9px] text-slate-400">
+                            {item.tags}
+                          </p>
+                        ) : null}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {imageProcessingModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/18 p-4 backdrop-blur-[2px]"
+            onClick={(event) => {
+              if (event.target === event.currentTarget && !imageProcessingBusy) {
+                setImageProcessingModalOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={MOBILE_PANEL_TRANSITION}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="zakvisor-modal-title"
+              className="w-full max-w-md rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.25),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+            >
+              <div className="mb-3 flex items-start justify-between gap-3 border-b border-slate-300/20 pb-3">
+                <div>
+                  <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
+                    ZakZav · ZakVisor
+                  </div>
+                  <h2 id="zakvisor-modal-title" className="mt-1 text-base font-black text-slate-950">
+                    X-Ray Visual Filter
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Filter visual untuk memperjelas marker dan kontur X-ray templating.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setImageProcessingModalOpen(false)}
+                  disabled={imageProcessingBusy}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                  aria-label="Tutup ZakVisor"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {IMAGE_PROCESSING_MODES.map((mode) => {
+                  const isDetect = mode.key === "detectMarker";
+                  const isActive = imageProcessingMode === mode.key;
+                  return (
+                    <button
+                      key={`image-processing-${mode.key}`}
+                      type="button"
+                      onClick={() =>
+                        isDetect
+                          ? detectCalibrationMarker()
+                          : selectImageProcessingMode(mode.key)
+                      }
+                      disabled={!image || imageProcessingBusy}
+                      className={`min-h-14 rounded-2xl border px-3 py-2 text-left text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                        isActive
+                          ? "border-cyan-300 bg-white/76 text-cyan-800 shadow-[inset_2px_2px_5px_rgba(34,211,238,0.12),2px_2px_6px_rgba(148,163,184,0.18)]"
+                          : isDetect
+                            ? "border-emerald-200 bg-emerald-50/70 text-emerald-800 shadow-[2px_2px_6px_rgba(148,163,184,0.18),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                            : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                      }`}
+                    >
+                      <span className="block">{mode.label}</span>
+                      <span className="mt-0.5 block text-[9px] font-semibold text-slate-500">
+                        {imageProcessingBusy && !isDetect && isActive
+                          ? "Memproses..."
+                          : isDetect && imageProcessingBusy
+                            ? "Mendeteksi..."
+                            : mode.desc}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {imageProcessingMode !== "normal" &&
+                imageProcessingMode !== "detectMarker" ? (
+                <div className="mt-3 space-y-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-3">
+                  <div className="text-[9px] font-black tracking-widest text-cyan-700 uppercase">
+                    Parameter — {IMAGE_PROCESSING_MODE_LABELS[imageProcessingMode]}
+                  </div>
+                  <label className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
+                    <span>Intensitas</span>
+                    <span className="w-8 text-right font-black text-slate-800">{zakVisorParams.intensity}%</span>
+                  </label>
+                  <input
+                    type="range" min="0" max="200" step="5"
+                    value={zakVisorParams.intensity}
+                    onChange={(e) => setZakVisorParams((p) => ({ ...p, intensity: Number(e.target.value) }))}
+                    className="w-full accent-cyan-500"
+                  />
+                  {imageProcessingMode === "gamma" ? (
+                    <>
+                      <label className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
+                        <span>Gamma</span>
+                        <span className="w-8 text-right font-black text-slate-800">{zakVisorParams.gamma.toFixed(1)}</span>
+                      </label>
+                      <input
+                        type="range" min="0.2" max="4" step="0.1"
+                        value={zakVisorParams.gamma}
+                        onChange={(e) => setZakVisorParams((p) => ({ ...p, gamma: Number(e.target.value) }))}
+                        className="w-full accent-cyan-500"
+                      />
+                    </>
+                  ) : null}
+                  {imageProcessingMode === "edge" ? (
+                    <>
+                      <label className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
+                        <span>Threshold Edge</span>
+                        <span className="w-8 text-right font-black text-slate-800">{zakVisorParams.edgeThreshold}</span>
+                      </label>
+                      <input
+                        type="range" min="5" max="180" step="5"
+                        value={zakVisorParams.edgeThreshold}
+                        onChange={(e) => setZakVisorParams((p) => ({ ...p, edgeThreshold: Number(e.target.value) }))}
+                        className="w-full accent-cyan-500"
+                      />
+                    </>
+                  ) : null}
+                  {imageProcessingMode === "clahe" ? (
+                    <>
+                      <label className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
+                        <span>Clip Limit</span>
+                        <span className="w-8 text-right font-black text-slate-800">{zakVisorParams.claheClip.toFixed(1)}</span>
+                      </label>
+                      <input
+                        type="range" min="0.5" max="8" step="0.5"
+                        value={zakVisorParams.claheClip}
+                        onChange={(e) => setZakVisorParams((p) => ({ ...p, claheClip: Number(e.target.value) }))}
+                        className="w-full accent-cyan-500"
+                      />
+                      <label className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
+                        <span>Tile Grid</span>
+                        <span className="w-8 text-right font-black text-slate-800">{zakVisorParams.claheTiles}×{zakVisorParams.claheTiles}</span>
+                      </label>
+                      <input
+                        type="range" min="2" max="16" step="1"
+                        value={zakVisorParams.claheTiles}
+                        onChange={(e) => setZakVisorParams((p) => ({ ...p, claheTiles: Number(e.target.value) }))}
+                        className="w-full accent-cyan-500"
+                      />
+                    </>
+                  ) : null}
+                </div>
               ) : null}
+
+              <div className="mt-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[11px] font-semibold text-slate-500">
+                Aktif:{" "}
+                <span className="font-black text-slate-700">
+                  {IMAGE_PROCESSING_MODE_LABELS[imageProcessingMode] || "Normal"}
+                </span>
+                . Shortcut: <kbd className="rounded bg-slate-100 px-1 text-[9px] font-black">E</kbd> Enhance ·{" "}
+                <kbd className="rounded bg-slate-100 px-1 text-[9px] font-black">I</kbd> buka panel.
+              </div>
             </motion.div>
           </motion.div>
         ) : null}
@@ -18441,6 +20023,9 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={MOBILE_PANEL_TRANSITION}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="color-panel-title"
               className="w-full max-w-sm rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.26),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl"
             >
               <div className="mb-3 flex items-start justify-between gap-3 border-b border-slate-300/20 pb-3">
@@ -18448,7 +20033,7 @@ export default function XrayCalibrationWorkspace({
                   <div className="text-[10px] font-black tracking-widest text-fuchsia-700 uppercase">
                     Color Panel
                   </div>
-                  <h2 className="mt-1 text-base font-black text-slate-950">
+                  <h2 id="color-panel-title" className="mt-1 text-base font-black text-slate-950">
                     {simpleColorPanelTitle}
                   </h2>
                 </div>
@@ -18465,6 +20050,23 @@ export default function XrayCalibrationWorkspace({
 
               {selectedLine ? (
                 <div className="space-y-2">
+                  <label className="block text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    Line Name
+                    <input
+                      value={selectedLine.name || ""}
+                      onChange={(event) =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, name: event.target.value }
+                              : line,
+                          ),
+                        )
+                      }
+                      className="mt-2 w-full rounded-2xl border border-white/70 bg-white/45 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none shadow-[inset_2px_2px_5px_rgba(148,163,184,0.22),inset_-2px_-2px_5px_rgba(255,255,255,0.86)]"
+                      placeholder={`Line #${selectedLine.id}`}
+                    />
+                  </label>
                   <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
                     Line Color
                   </div>
@@ -20671,12 +22273,15 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="guide-modal-title"
               className="max-h-[92vh] w-full max-w-[560px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
-                    <Icon name="guideBuilder" className="h-5 w-5 text-cyan-700" />
+                  <div id="guide-modal-title" className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
+                    <Icon name="guideBuilder" className="h-5 w-5 text-cyan-700" aria-hidden="true" />
                     <span>Panduan Simple UI</span>
                   </div>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
@@ -20794,12 +22399,15 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="hka-modal-title"
               className="w-full max-w-[440px] rounded-[30px] border border-white/85 bg-[#e9eef5] p-5 text-slate-900 shadow-[14px_14px_34px_rgba(15,23,42,0.24),-8px_-8px_24px_rgba(255,255,255,0.72)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
-                    <Icon name="hka" className="h-5 w-5 text-cyan-700" />
+                  <div id="hka-modal-title" className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+                    <Icon name="hka" className="h-5 w-5 text-cyan-700" aria-hidden="true" />
                     <span>HKA Knee</span>
                   </div>
                   <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
@@ -20906,12 +22514,15 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="planning-modal-title"
               className="max-h-[92vh] w-full max-w-[620px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
-                    <Icon name="package" className="h-5 w-5 text-slate-700" />
+                  <div id="planning-modal-title" className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
+                    <Icon name="package" className="h-5 w-5 text-slate-700" aria-hidden="true" />
                     <span>
                       {simplePlanningModal === "hip"
                         ? "Planning HIP"
@@ -22712,6 +24323,11 @@ export default function XrayCalibrationWorkspace({
                   icon="trash"
                   label="Hapus Compare"
                   onClick={() => {
+                    if (compareObjectUrlRef.current) {
+                      URL.revokeObjectURL(compareObjectUrlRef.current);
+                      compareObjectUrlRef.current = null;
+                    }
+                    compareImageFileRef.current = null;
                     setCompareImageSrc(null);
                     setCompareImage(null);
                     setCompareImageName("");
@@ -22754,8 +24370,15 @@ export default function XrayCalibrationWorkspace({
               <div className="flex items-center justify-between gap-1.5">
                 <IconButton
                   icon="export"
-                  label="Export PNG"
+                  label="Export PNG 2x Sharp"
                   onClick={exportReportPng}
+                  disabled={!hasCalibration}
+                  className="h-8 w-8 shrink-0"
+                />
+                <IconButton
+                  icon="export"
+                  label="Export JPEG Highest"
+                  onClick={exportReportJpeg}
                   disabled={!hasCalibration}
                   className="h-8 w-8 shrink-0"
                 />
@@ -25103,7 +26726,7 @@ export default function XrayCalibrationWorkspace({
                   <span>
                     Selected:{" "}
                     {selectedLine
-                      ? `Line #${selectedLine.id}`
+                      ? selectedLine.name || `Line #${selectedLine.id}`
                       : selectedAngle
                         ? `Angle #${selectedAngle.id}`
                         : selectedCircle
@@ -25418,6 +27041,68 @@ export default function XrayCalibrationWorkspace({
                     {isCoarsePointer
                       ? "Mobile: sentuh ujung untuk munculkan bundaran assist. Drag dari area bundaran untuk adjust tanpa menutupi titik handle, atau tap lagi pada badan garis untuk pindah."
                       : "Drag titik ujung, geser garis, atau drag label langsung di canvas."}
+                  </div>
+                  <label className="mt-2 block text-[10px] font-black tracking-widest text-emerald-800 uppercase">
+                    Nama Line
+                    <input
+                      value={selectedLine.name || ""}
+                      onChange={(event) =>
+                        setLines((prev) =>
+                          prev.map((line) =>
+                            line.id === selectedLine.id
+                              ? { ...line, name: event.target.value }
+                              : line,
+                          ),
+                        )
+                      }
+                      className="mt-1.5 w-full rounded-2xl border border-emerald-200/70 bg-white/55 px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_2px_2px_5px_rgba(148,163,184,0.16),inset_-2px_-2px_5px_rgba(255,255,255,0.78)]"
+                      placeholder={`Line #${selectedLine.id}`}
+                    />
+                  </label>
+                  <div className="mt-2 rounded-2xl border border-emerald-200/60 bg-white/35 px-2 py-2">
+                    <div className="mb-1.5 text-[10px] font-black tracking-widest text-emerald-800 uppercase">
+                      Warna Line
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {LINE_COLOR_OPTIONS.map((color) => (
+                        <ColorSwatchButton
+                          key={`measure-line-color-${color}`}
+                          color={color}
+                          active={
+                            (selectedLine.color ||
+                              lineTypeColor(selectedLine.type || "normal")) === color
+                          }
+                          label={`Warna line ${color}`}
+                          onClick={() =>
+                            setLines((prev) =>
+                              prev.map((line) =>
+                                line.id === selectedLine.id
+                                  ? { ...line, color }
+                                  : line,
+                              ),
+                            )
+                          }
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        value={
+                          selectedLine.color ||
+                          lineTypeColor(selectedLine.type || "normal")
+                        }
+                        onChange={(event) =>
+                          setLines((prev) =>
+                            prev.map((line) =>
+                              line.id === selectedLine.id
+                                ? { ...line, color: event.target.value }
+                                : line,
+                            ),
+                          )
+                        }
+                        className="h-8 w-10 cursor-pointer rounded-xl border border-white/70 bg-transparent"
+                        aria-label="Custom line color"
+                      />
+                    </div>
                   </div>
                   <div className="mt-1.5 grid gap-1.5">
                     <CompactSliderField
@@ -27872,7 +29557,7 @@ export default function XrayCalibrationWorkspace({
                       }
                       canCreateLayer={Boolean(image && modelWidth && modelHeight)}
                       onGuide={() => setSimpleGuideModalOpen(true)}
-	                      onMove={() => handleToolChange("pan")}
+                        onMove={() => handleToolChange("pan")}
                       onOpenTka={() => openSimplePlanningModal("tka")}
                       onOpenHip={() => openSimplePlanningModal("hip")}
                       onHistory={undoHistory}
@@ -27891,6 +29576,7 @@ export default function XrayCalibrationWorkspace({
                           : "Before kosong"
                       }
                       onExportPng={exportReportPng}
+                      onExportJpeg={exportReportJpeg}
                       onExportPdf={exportReportPdf}
                       canExport={Boolean(image)}
                       onUploadDrive={() => setGoogleDriveUploadModalOpen(true)}
@@ -27930,9 +29616,11 @@ export default function XrayCalibrationWorkspace({
                       activeFreeLineMode={freeLineMode}
                       onMinimize={() => setSimpleToolPanelMinimized(true)}
                       onSelectTool={(item) =>
-                        item.freeLineMode
-                          ? activateFreeLineMode(item.freeLineMode)
-                          : handleToolChange(item.key)
+                        item.action === "imageProcessing"
+                          ? openImageProcessingModal()
+                          : item.freeLineMode
+                            ? activateFreeLineMode(item.freeLineMode)
+                            : handleToolChange(item.key)
                       }
                       onUndo={undoHistory}
                       onRedo={redoHistory}
@@ -27950,67 +29638,71 @@ export default function XrayCalibrationWorkspace({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 16, scale: 0.98 }}
                     transition={MOBILE_PANEL_TRANSITION}
-	                    className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+172px)] z-40 lg:hidden"
+                      className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+172px)] z-40 lg:hidden"
                   >
-	                    {simpleMobilePanel === "upload" ? (
-	                      <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-	                        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
-	                          <div>
-	                            <h2 className="text-xs font-black tracking-wider uppercase">
-	                              Upload
-	                            </h2>
-	                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
-	                              X-ray workspace
-	                            </p>
-	                          </div>
-	                          <button
-	                            type="button"
-	                            onClick={() => setSimpleMobilePanel(null)}
-	                            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-	                            aria-label="Tutup upload mobile"
-	                            title="Tutup"
-	                          >
-	                            <X className="h-3.5 w-3.5" />
-	                          </button>
-	                        </div>
-	                        <div className="grid grid-cols-2 gap-2">
-	                          <button
-	                            type="button"
-	                            onClick={() => {
-	                              setSimpleMobilePanel(null);
-	                              mainUploadInputRef.current?.click();
-	                            }}
-	                            className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
-	                          >
-	                            Upload X-ray
-	                          </button>
-	                          <button
-	                            type="button"
-	                            onClick={() => {
-	                              setSimpleMobilePanel("layer");
-	                            }}
-	                            className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
-	                          >
-	                            Adjust Image
-	                          </button>
-	                        </div>
-	                        <div className="mt-3 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[10px] font-semibold text-slate-500">
-	                          Setelah upload: buka Calibration, pilih marker/ruler, tap 2 titik, lalu simpan kalibrasi.
-	                        </div>
-	                      </div>
-	                    ) : simpleMobilePanel === "tools" ? (
+                      {simpleMobilePanel === "upload" ? (
+                        <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                          <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
+                            <div>
+                              <h2 className="text-xs font-black tracking-wider uppercase">
+                                Upload
+                              </h2>
+                              <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
+                                X-ray workspace
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSimpleMobilePanel(null)}
+                              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                              aria-label="Tutup upload mobile"
+                              title="Tutup"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
+                                mainUploadInputRef.current?.click();
+                              }}
+                              className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
+                            >
+                              Upload X-ray
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel("layer");
+                              }}
+                              className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                            >
+                              Adjust Image
+                            </button>
+                          </div>
+                          <div className="mt-3 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[10px] font-semibold text-slate-500">
+                            Setelah upload: buka Calibration, pilih marker/ruler, tap 2 titik, lalu simpan kalibrasi.
+                          </div>
+                        </div>
+                      ) : simpleMobilePanel === "tools" ? (
                       <PanelActions
-	                        className="mx-auto max-h-[min(52vh,460px)] overflow-y-auto backdrop-blur-xl"
+                          className="mx-auto max-h-[min(52vh,460px)] overflow-y-auto backdrop-blur-xl"
                         tools={simpleToolMenuItems}
                         activeTool={tool}
                         activeFreeLineMode={freeLineMode}
                         onMinimize={() => setSimpleMobilePanel(null)}
-	                        onSelectTool={(item) => {
-	                          setSimpleMobilePanel(null);
-	                          setMobileCanvasMode("edit");
-	                          if (item.freeLineMode) {
-	                            activateFreeLineMode(item.freeLineMode);
-	                            return;
+                          onSelectTool={(item) => {
+                            setSimpleMobilePanel(null);
+                            setMobileCanvasMode("edit");
+                          if (item.action === "imageProcessing") {
+                            openImageProcessingModal();
+                            return;
+                          }
+                            if (item.freeLineMode) {
+                              activateFreeLineMode(item.freeLineMode);
+                              return;
                           }
                           handleToolChange(item.key);
                         }}
@@ -28155,134 +29847,150 @@ export default function XrayCalibrationWorkspace({
                         disabled={!image || !modelWidth || !modelHeight}
                         scaleInstruction={implantLibraryScaleInstruction}
                         showClose
-	                        title="Implant Lokal"
-	                        subtitle="Template overlay"
-	                      />
-	                    ) : simpleMobilePanel === "export" ? (
-	                      <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-	                        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
-	                          <div>
-	                            <h2 className="text-xs font-black tracking-wider uppercase">
-	                              Export
-	                            </h2>
-	                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
-	                              Snapshot & report
-	                            </p>
-	                          </div>
-	                          <button
-	                            type="button"
-	                            onClick={() => setSimpleMobilePanel(null)}
-	                            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-	                            aria-label="Tutup export mobile"
-	                            title="Tutup"
-	                          >
-	                            <X className="h-3.5 w-3.5" />
-	                          </button>
-	                        </div>
-	                        <div className="grid grid-cols-2 gap-2">
-	                          <button
-	                            type="button"
-	                            onClick={() => {
-	                              setSimpleMobilePanel(null);
-	                              exportReportPng();
-	                            }}
-	                            disabled={!image}
-	                            className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
-	                          >
-	                            Export PNG
-	                          </button>
-	                          <button
-	                            type="button"
-	                            onClick={() => {
-	                              setSimpleMobilePanel(null);
-	                              exportReportPdf();
-	                            }}
-	                            disabled={!image}
-	                            className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
-	                          >
-	                            Export PDF
-	                          </button>
-	                          <button
-	                            type="button"
-	                            onClick={() => {
-	                              setSimpleMobilePanel(null);
-	                              setGoogleDriveUploadModalOpen(true);
-	                            }}
-	                            disabled={!image}
-	                            className="col-span-2 min-h-12 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
-	                          >
-	                            Upload Google Drive
-	                          </button>
-	                        </div>
-	                        <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-black text-slate-600">
-	                          <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
-	                            Measure {measurementRows.length}
-	                          </div>
-	                          <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
-	                            Layer {cutLayers.length}
-	                          </div>
-	                          <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
-	                            Calib {hasCalibration ? "ON" : "OFF"}
-	                          </div>
-	                        </div>
-	                        <div className="mt-3 rounded-[22px] border border-white/60 bg-white/30 p-2">
-	                          <div className="mb-2 flex items-center justify-between gap-2">
-	                            <div>
-	                              <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
-	                                Compare
-	                              </div>
-	                              <div className="text-[10px] font-black text-slate-700">
-	                                Before / After Templating
-	                              </div>
-	                            </div>
-	                            <span className="rounded-full bg-white/45 px-2 py-1 text-[8px] font-black text-slate-500">
-	                              {compareMode ? "ON" : "OFF"}
-	                            </span>
-	                          </div>
-	                          <div className="grid grid-cols-2 gap-1.5">
-	                            <button
-	                              type="button"
-	                              onClick={() => compareUploadInputRef.current?.click()}
-	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
-	                            >
-	                              Upload Before
-	                            </button>
-	                            <button
-	                              type="button"
-	                              onClick={useActiveWorkspaceAsCompareAfter}
-	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
-	                            >
-	                              After Aktif
-	                            </button>
-	                            <button
-	                              type="button"
-	                              onClick={toggleCompareModePreservingWorkspace}
-	                              className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-cyan-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
-	                            >
-	                              {compareMode ? "Exit Compare" : "Show Compare"}
-	                            </button>
-	                            <button
-	                              type="button"
-	                              onClick={() => {
-	                                setCompareImageSrc(null);
-	                                setCompareImage(null);
-	                                setCompareImageName("");
-	                                setCompareMode(false);
-	                              }}
-	                              disabled={!compareImageSrc}
-	                              className="min-h-10 rounded-2xl border border-rose-200 bg-rose-50/80 px-2 text-[9px] font-black text-rose-600 disabled:opacity-45"
-	                            >
-	                              Clear Before
-	                            </button>
-	                          </div>
-	                          <div className="mt-2 truncate text-[9px] font-semibold text-slate-500">
-	                            {compareImageName
-	                              ? `Before: ${compareImageName}`
-	                              : "Before belum dipilih."}
-	                          </div>
-	                        </div>
-	                      </div>
-	                    ) : (
+                          title="Implant Lokal"
+                          subtitle="Template overlay"
+                        />
+                      ) : simpleMobilePanel === "export" ? (
+                        <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                          <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
+                            <div>
+                              <h2 className="text-xs font-black tracking-wider uppercase">
+                                Export
+                              </h2>
+                              <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
+                                Snapshot & report
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSimpleMobilePanel(null)}
+                              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                              aria-label="Tutup export mobile"
+                              title="Tutup"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
+                                exportReportPng();
+                              }}
+                              disabled={!image}
+                              className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              PNG 2x Sharp
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
+                                exportReportJpeg();
+                              }}
+                              disabled={!image}
+                              className="min-h-14 rounded-2xl border border-white/70 bg-[#fff7ed] px-3 text-xs font-black text-amber-700 shadow-[2px_2px_6px_rgba(148,163,184,0.20),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              JPEG Highest
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
+                                exportReportPdf();
+                              }}
+                              disabled={!image}
+                              className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              Export PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
+                                setGoogleDriveUploadModalOpen(true);
+                              }}
+                              disabled={!image}
+                              className="col-span-2 min-h-12 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              Upload Google Drive
+                            </button>
+                          </div>
+                          <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-black text-slate-600">
+                            <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
+                              Measure {measurementRows.length}
+                            </div>
+                            <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
+                              Layer {cutLayers.length}
+                            </div>
+                            <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
+                              Calib {hasCalibration ? "ON" : "OFF"}
+                            </div>
+                          </div>
+                          <div className="mt-3 rounded-[22px] border border-white/60 bg-white/30 p-2">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <div>
+                                <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                                  Compare
+                                </div>
+                                <div className="text-[10px] font-black text-slate-700">
+                                  Before / After Templating
+                                </div>
+                              </div>
+                              <span className="rounded-full bg-white/45 px-2 py-1 text-[8px] font-black text-slate-500">
+                                {compareMode ? "ON" : "OFF"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => compareUploadInputRef.current?.click()}
+                                className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+                              >
+                                Upload Before
+                              </button>
+                              <button
+                                type="button"
+                                onClick={useActiveWorkspaceAsCompareAfter}
+                                className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+                              >
+                                After Aktif
+                              </button>
+                              <button
+                                type="button"
+                                onClick={toggleCompareModePreservingWorkspace}
+                                className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-cyan-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+                              >
+                                {compareMode ? "Exit Compare" : "Show Compare"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (compareObjectUrlRef.current) {
+                                    URL.revokeObjectURL(compareObjectUrlRef.current);
+                                    compareObjectUrlRef.current = null;
+                                  }
+                                  compareImageFileRef.current = null;
+                                  setCompareImageSrc(null);
+                                  setCompareImage(null);
+                                  setCompareImageName("");
+                                  setCompareMode(false);
+                                }}
+                                disabled={!compareImageSrc}
+                                className="min-h-10 rounded-2xl border border-rose-200 bg-rose-50/80 px-2 text-[9px] font-black text-rose-600 disabled:opacity-45"
+                              >
+                                Clear Before
+                              </button>
+                            </div>
+                            <div className="mt-2 truncate text-[9px] font-semibold text-slate-500">
+                              {compareImageName
+                                ? `Before: ${compareImageName}`
+                                : "Before belum dipilih."}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="mx-auto w-[min(92vw,360px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.34),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                         <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
                           <div>
@@ -28337,10 +30045,10 @@ export default function XrayCalibrationWorkspace({
                           <button
                             type="button"
                             onClick={() => {
-	                              setSimpleMobilePanel(null);
-	                              setMobileCanvasMode("edit");
-	                              handleToolChange("hkaAuto");
-	                            }}
+                                setSimpleMobilePanel(null);
+                                setMobileCanvasMode("edit");
+                                handleToolChange("hkaAuto");
+                              }}
                             className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
                           >
                             HKA
@@ -28348,9 +30056,9 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       </div>
                     )}
-	                  </motion.div>
-	                ) : null}
-	              </AnimatePresence>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               {isSimpleUiMode && isMobileViewport && !image ? (
                 <div className="pointer-events-auto absolute top-3 left-3 z-30 max-w-[calc(100vw-1.5rem)] rounded-[24px] border border-white/75 bg-[#eef2f7]/95 px-3 py-3 text-slate-700 shadow-[3px_3px_10px_rgba(148,163,184,0.26),-3px_-3px_10px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                   <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
@@ -28625,65 +30333,65 @@ export default function XrayCalibrationWorkspace({
                     </button>
                   </div>
 
-	                  {selectedCutLayer && selectedLayerMetrics ? (
-	                    <div className="space-y-1.5">
-	                      <div className="grid grid-cols-6 gap-1">
-	                        {[
-	                          {
-	                            key: "rotate-left",
-	                            label: "-1°",
-	                            onClick: () => rotateSelectedLayerBy(-1),
-	                          },
-	                          {
-	                            key: "rotate-right",
-	                            label: "+1°",
-	                            onClick: () => rotateSelectedLayerBy(1),
-	                          },
-	                          {
-	                            key: "scale-down",
-	                            label: "S-",
-	                            disabled: selectedCutLayer.lockScale,
-	                            onClick: () => scaleSelectedLayerBy(0.97),
-	                          },
-	                          {
-	                            key: "scale-up",
-	                            label: "S+",
-	                            disabled: selectedCutLayer.lockScale,
-	                            onClick: () => scaleSelectedLayerBy(1.03),
-	                          },
-	                          {
-	                            key: "flip",
-	                            label: "Flip",
-	                            onClick: () =>
-	                              updateLayerById(selectedCutLayer.id, (item) => ({
-	                                ...item,
-	                                flipX: !item.flipX,
-	                              })),
-	                          },
-	                          {
-	                            key: "lock",
-	                            label: selectedCutLayer.lockScale
-	                              ? "Unlock S"
-	                              : "Lock S",
-	                            onClick: () =>
-	                              updateLayerById(selectedCutLayer.id, (item) => ({
-	                                ...item,
-	                                lockScale: !item.lockScale,
-	                              })),
-	                          },
-	                        ].map((action) => (
-	                          <button
-	                            key={`mobile-template-action-${action.key}`}
-	                            type="button"
-	                            onClick={action.onClick}
-	                            disabled={action.disabled}
-	                            className="min-h-8 rounded-xl border border-white/50 bg-[#eef2f7]/62 px-1 text-[8px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] disabled:opacity-40"
-	                          >
-	                            {action.label}
-	                          </button>
-	                        ))}
-	                      </div>
-	                      <div className="grid grid-cols-2 gap-1.5">
+                    {selectedCutLayer && selectedLayerMetrics ? (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-6 gap-1">
+                          {[
+                            {
+                              key: "rotate-left",
+                              label: "-1°",
+                              onClick: () => rotateSelectedLayerBy(-1),
+                            },
+                            {
+                              key: "rotate-right",
+                              label: "+1°",
+                              onClick: () => rotateSelectedLayerBy(1),
+                            },
+                            {
+                              key: "scale-down",
+                              label: "S-",
+                              disabled: selectedCutLayer.lockScale,
+                              onClick: () => scaleSelectedLayerBy(0.97),
+                            },
+                            {
+                              key: "scale-up",
+                              label: "S+",
+                              disabled: selectedCutLayer.lockScale,
+                              onClick: () => scaleSelectedLayerBy(1.03),
+                            },
+                            {
+                              key: "flip",
+                              label: "Flip",
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  flipX: !item.flipX,
+                                })),
+                            },
+                            {
+                              key: "lock",
+                              label: selectedCutLayer.lockScale
+                                ? "Unlock S"
+                                : "Lock S",
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  lockScale: !item.lockScale,
+                                })),
+                            },
+                          ].map((action) => (
+                            <button
+                              key={`mobile-template-action-${action.key}`}
+                              type="button"
+                              onClick={action.onClick}
+                              disabled={action.disabled}
+                              className="min-h-8 rounded-xl border border-white/50 bg-[#eef2f7]/62 px-1 text-[8px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] disabled:opacity-40"
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
                         {[
                           {
                             key: "width",
@@ -28950,6 +30658,25 @@ export default function XrayCalibrationWorkspace({
 
                   {!selectedCutLayer && selectedLine ? (
                     <div className="space-y-2">
+                      <label className="block rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                        <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                          Line Name
+                        </span>
+                        <input
+                          value={selectedLine.name || ""}
+                          onChange={(event) =>
+                            setLines((prev) =>
+                              prev.map((line) =>
+                                line.id === selectedLine.id
+                                  ? { ...line, name: event.target.value }
+                                  : line,
+                              ),
+                            )
+                          }
+                          className="mt-1 w-full rounded-xl border border-white/55 bg-white/48 px-2 py-2 text-[11px] font-bold text-slate-700 outline-none"
+                          placeholder={`Line #${selectedLine.id}`}
+                        />
+                      </label>
                       <CompactSliderField
                         label="Line width"
                         valueText={`${Number(selectedLine.strokeWidth || DEFAULT_LINE_STROKE_WIDTH).toFixed(1)}x`}
@@ -29435,67 +31162,67 @@ export default function XrayCalibrationWorkspace({
                 </motion.div>
               ) : null}
 
-	              <MobileNavigation
-	                className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 px-2 lg:hidden"
-	                tabs={mobileNavigationTabs}
-	                canvasMode={mobileCanvasMode}
-	                toolMode={mobileToolMode}
-	                canvasLocked={mobileCanvasLocked}
-	                onPan={() => {
-	                  setSimpleMobilePanel(null);
-	                  setMobileCanvasLocked(false);
-	                  setMobileCanvasMode("pan");
-	                  setMobileToolMode("move");
-	                  handleToolChange("pan");
-	                }}
+                <MobileNavigation
+                  className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 px-2 lg:hidden"
+                  tabs={mobileNavigationTabs}
+                  canvasMode={mobileCanvasMode}
+                  toolMode={mobileToolMode}
+                  canvasLocked={mobileCanvasLocked}
+                  onPan={() => {
+                    setSimpleMobilePanel(null);
+                    setMobileCanvasLocked(false);
+                    setMobileCanvasMode("pan");
+                    setMobileToolMode("move");
+                    handleToolChange("pan");
+                  }}
                 onEdit={() => {
                   setSimpleMobilePanel(null);
                   setMobileCanvasMode("edit");
-	                  setMobileToolMode("move");
-	                  handleToolChange("pan");
-	                  setNotice("Edit Mode aktif. Tap objek atau titik untuk memilih, lalu geser atau pakai Fine Adjustment.");
-	                }}
-	                onToolModeChange={(nextMode) => {
-	                  setSimpleMobilePanel(null);
-	                  setMobileCanvasMode("edit");
-	                  setMobileToolMode(nextMode);
-	                  handleToolChange("pan");
-	                  setNotice(
-	                    nextMode === "move"
-	                      ? "Tool Mode: Geser. Drag badan layer/object untuk memindahkan."
-	                      : nextMode === "scale"
-	                        ? "Tool Mode: Size. Drag badan layer atau handle untuk resize."
-	                        : "Tool Mode: Putar. Drag badan layer atau handle rotate untuk memutar.",
-	                  );
-	                }}
-	                onToggleCanvasLock={() => {
-	                  setMobileCanvasLocked((prev) => {
-	                    const next = !prev;
-	                    if (next) {
-	                      setMobileCanvasMode("edit");
-	                      setNotice("Lock Canvas aktif. Canvas tidak ikut bergerak saat edit line/template.");
-	                    } else {
-	                      setNotice("Lock Canvas mati. Pan dan pinch canvas aktif kembali.");
-	                    }
-	                    return next;
-	                  });
-	                }}
-	                onZoomIn={() => zoomBy(1.15)}
-	                onZoomOut={() => zoomBy(1 / 1.15)}
-	                onResetZoom={resetZoomTo100}
-	                onFit={fitImageToViewport}
-	                onUndo={undoHistory}
-	                onRedo={redoHistory}
-	                onUnlock={() => {
-	                  setMobileCanvasLocked(false);
-	                  resetCanvasInteractionState();
-	                }}
+                    setMobileToolMode("move");
+                    handleToolChange("pan");
+                    setNotice("Edit Mode aktif. Tap objek atau titik untuk memilih, lalu geser atau pakai Fine Adjustment.");
+                  }}
+                  onToolModeChange={(nextMode) => {
+                    setSimpleMobilePanel(null);
+                    setMobileCanvasMode("edit");
+                    setMobileToolMode(nextMode);
+                    handleToolChange("pan");
+                    setNotice(
+                      nextMode === "move"
+                        ? "Tool Mode: Geser. Drag badan layer/object untuk memindahkan."
+                        : nextMode === "scale"
+                          ? "Tool Mode: Size. Drag badan layer atau handle untuk resize."
+                          : "Tool Mode: Putar. Drag badan layer atau handle rotate untuk memutar.",
+                    );
+                  }}
+                  onToggleCanvasLock={() => {
+                    setMobileCanvasLocked((prev) => {
+                      const next = !prev;
+                      if (next) {
+                        setMobileCanvasMode("edit");
+                        setNotice("Lock Canvas aktif. Canvas tidak ikut bergerak saat edit line/template.");
+                      } else {
+                        setNotice("Lock Canvas mati. Pan dan pinch canvas aktif kembali.");
+                      }
+                      return next;
+                    });
+                  }}
+                  onZoomIn={() => zoomBy(1.15)}
+                  onZoomOut={() => zoomBy(1 / 1.15)}
+                  onResetZoom={resetZoomTo100}
+                  onFit={fitImageToViewport}
+                  onUndo={undoHistory}
+                  onRedo={redoHistory}
+                  onUnlock={() => {
+                    setMobileCanvasLocked(false);
+                    resetCanvasInteractionState();
+                  }}
                 canUndo={historyState.undo > 0}
                 canRedo={historyState.redo > 0}
               />
-	              <div
-	                className={`absolute top-2 right-2 z-20 hidden gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 lg:flex ${SOFT_FLOAT_SURFACE_CLASS}`}
-	              >
+                <div
+                  className={`absolute top-2 right-2 z-20 hidden gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 lg:flex ${SOFT_FLOAT_SURFACE_CLASS}`}
+                >
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1.15)}
@@ -29522,22 +31249,22 @@ export default function XrayCalibrationWorkspace({
                 >
                   <ZoomOut className="h-4 w-4" strokeWidth={2} />
                 </motion.button>
-	                <motion.button
-	                  type="button"
-	                  onClick={resetZoomTo100}
-	                  onPointerDown={() => triggerMobileHaptic()}
-	                  whileHover={BUTTON_HOVER}
-	                  whileTap={BUTTON_TAP}
-	                  transition={{ duration: 0.16, ease: "easeOut" }}
-	                  className={`inline-flex h-7 min-w-9 items-center justify-center px-2 text-[10px] font-black transition ${SOFT_RAISED_CLASS} text-rose-500`}
-	                  aria-label="Reset zoom 100%"
-	                  title="Reset 100%"
-	                >
-	                  100
-	                </motion.button>
-	                <motion.button
-	                  type="button"
-	                  onClick={fitImageToViewport}
+                  <motion.button
+                    type="button"
+                    onClick={resetZoomTo100}
+                    onPointerDown={() => triggerMobileHaptic()}
+                    whileHover={BUTTON_HOVER}
+                    whileTap={BUTTON_TAP}
+                    transition={{ duration: 0.16, ease: "easeOut" }}
+                    className={`inline-flex h-7 min-w-9 items-center justify-center px-2 text-[10px] font-black transition ${SOFT_RAISED_CLASS} text-rose-500`}
+                    aria-label="Reset zoom 100%"
+                    title="Reset 100%"
+                  >
+                    100
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    onClick={fitImageToViewport}
                   onPointerDown={() => triggerMobileHaptic()}
                   whileHover={BUTTON_HOVER}
                   whileTap={BUTTON_TAP}
@@ -29551,6 +31278,7 @@ export default function XrayCalibrationWorkspace({
               </div>
               <canvas
                 ref={imageCanvasRef}
+                aria-hidden="true"
                 className="absolute inset-0 touch-none overscroll-none"
                 style={{
                   touchAction: "none",
@@ -29562,9 +31290,11 @@ export default function XrayCalibrationWorkspace({
                   transformOrigin: "0 0",
                 }}
               />
-	              <canvas
-	                ref={overlayCanvasRef}
-	                className={`absolute inset-0 touch-none select-none overscroll-none ${canvasCursorClass}`}
+                <canvas
+                  ref={overlayCanvasRef}
+                  role="img"
+                  aria-label={image ? `X-ray workspace: ${imageName || "gambar X-ray"}` : "Area workspace X-ray, belum ada gambar"}
+                  className={`absolute inset-0 touch-none select-none overscroll-none ${canvasCursorClass}`}
                 style={{
                   touchAction: "none",
                   overscrollBehavior: "none",
@@ -29582,6 +31312,13 @@ export default function XrayCalibrationWorkspace({
                 onTouchEnd={handleTouchFallbackEnd}
                 onTouchCancel={handleTouchFallbackEnd}
                 onContextMenu={(event) => event.preventDefault()}
+                onDoubleClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  zoomAtPoint(2.2, {
+                    x: event.clientX - rect.left,
+                    y: event.clientY - rect.top,
+                  });
+                }}
               />
             </div>
 

@@ -85,10 +85,10 @@ export default function CalibrationWizard({
 
   useEffect(() => {
     if (open) {
-      setStep(1);
+      setStep(calibrationReferenceLine ? TOTAL_STEPS : 1);
       setShowQCDetail(false);
     }
-  }, [open]);
+  }, [open]); // intentionally only re-run on open toggle; calibrationReferenceLine is read at that moment
 
   if (!open) return null;
 

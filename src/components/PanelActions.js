@@ -6,7 +6,6 @@ import {
   Compass,
   GitBranch,
   Grid,
-  MapPin,
   MessageSquare,
   Minus,
   Waypoints,
@@ -55,6 +54,7 @@ const TOOL_ICON_MAP = {
   hkaAuto: GitBranch,
   guideBuilder: Grid,
   annotation: MessageSquare,
+  imageProcess: Activity,
 };
 
 const TOOL_COLOR_MAP = {
@@ -68,11 +68,15 @@ const TOOL_COLOR_MAP = {
   hkaAuto: "text-purple-500",
   guideBuilder: "text-teal-500",
   annotation: "text-orange-500",
+  imageProcess: "text-cyan-600",
 };
 
 function getToolGroup(item) {
   if (item.key === "pan" ) {
     return "Navigation & Interaction";
+  }
+  if (item.key === "imageProcess") {
+    return "ZakVisor";
   }
   if (
     item.key === "draw" ||
@@ -96,6 +100,7 @@ function groupTools(tools) {
   const order = [
     "Navigation & Interaction",
     "Measurement & Drawing",
+    "ZakVisor",
     "Surgical Planning & Axis",
   ];
   return order
@@ -185,6 +190,8 @@ export default function PanelActions({
                         ? "panel-actions-active"
                         : "panel-actions-neu-button text-slate-700"
                     }`}
+                    aria-label={`${item.label}: ${item.desc}`}
+                    aria-pressed={isActive}
                     title={`${item.label}: ${item.desc}`}
                   >
                     <span className="flex min-w-0 items-center gap-2.5">

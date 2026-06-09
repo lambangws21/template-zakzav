@@ -147,6 +147,7 @@ export default function QuickPanel({
   compareDisabled = true,
   compareLabel = "Before kosong",
   onExportPng,
+  onExportJpeg,
   onExportPdf,
   canExport = false,
   onUploadDrive,
@@ -385,14 +386,23 @@ export default function QuickPanel({
             disabled={!canExport}
             className="py-2 text-[10px]"
           >
-            PNG
+            PNG 2x
+          </QuickButton>
+          <QuickButton
+            icon={Download}
+            iconClassName="text-amber-600"
+            onClick={onExportJpeg}
+            disabled={!canExport}
+            className="py-2 text-[10px]"
+          >
+            JPEG HQ
           </QuickButton>
           <QuickButton
             icon={FileText}
             iconClassName="text-slate-700"
             onClick={onExportPdf}
             disabled={!canExport}
-            className="py-2 text-[10px]"
+            className="col-span-2 py-2 text-[10px]"
           >
             PDF
           </QuickButton>
@@ -414,13 +424,15 @@ export default function QuickPanel({
             Implant
           </span>
           {implantInstruction ? (
-            <div
+            <button
+              type="button"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-600 shadow-sm"
               title={implantInstruction}
               aria-label={implantInstruction}
+              tabIndex={0}
             >
-              <Info className="h-3 w-3" />
-            </div>
+              <Info className="h-3 w-3" aria-hidden="true" />
+            </button>
           ) : null}
         </div>
 
@@ -437,16 +449,22 @@ export default function QuickPanel({
                     ? "bg-white text-slate-800 shadow-md"
                     : "text-slate-400 hover:text-slate-600"
                 }`}
+                aria-label={label}
+                aria-pressed={isSelected}
                 title={label}
               >
-                {label.slice(0, 4)}
+                <span aria-hidden="true">{label.slice(0, 4)}</span>
               </button>
             );
           })}
         </div>
 
         <div className="relative">
+          <label htmlFor="implant-select" className="sr-only">
+            Pilih Implant
+          </label>
           <select
+            id="implant-select"
             value={selectedImplant?.id || ""}
             onChange={(event) => onSelectImplantItemId?.(event.target.value)}
             className="w-full cursor-pointer appearance-none rounded-xl border border-white bg-[#edf1f6] py-2.5 pr-8 pl-3 text-xs font-bold text-slate-800 shadow-[inset_2px_2px_5px_#c4cfdc,inset_-2px_-2px_5px_#ffffff] outline-none"

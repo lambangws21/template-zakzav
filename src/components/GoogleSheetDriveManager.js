@@ -266,18 +266,20 @@ export default function GoogleSheetDriveManager() {
         cache: "no-store",
       });
       const payload = await parseApiResponse(response);
-      if (typeof payload.payload !== "string") {
+      const remoteData = payload.remote;
+      if (!remoteData) {
         throw new Error("Payload list tidak valid.");
       }
 
-      const nextItems = parseSheetRawText(payload.payload);
+      const nextItems = parseSheetRawText(remoteData);
       setItems(nextItems);
       setSelectedId((prev) => {
         const stillExists = nextItems.some((item) => String(item.id) === String(prev));
         if (stillExists) return prev;
         return nextItems[0]?.id || null;
       });
-      setRawResponse(payload.payload.slice(0, 4000));
+      const rawStr = typeof remoteData === "string" ? remoteData : JSON.stringify(remoteData);
+      setRawResponse(rawStr.slice(0, 4000));
       setNotice(
         nextItems.length > 0
           ? `Berhasil memuat ${nextItems.length} item dari Google Sheet.`
