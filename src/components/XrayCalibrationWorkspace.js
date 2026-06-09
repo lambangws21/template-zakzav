@@ -77,6 +77,7 @@ import {
 import { calculateFTA, predictHKAAFromFTA } from "../lib/hka/ftaCalculator";
 import useMobileCanvasGestures from "../hooks/useMobileCanvasGestures";
 import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
+import DriveImageWithFallback from "./DriveImageWithFallback";
 import {
   getImplantLibraryItemById,
   LOCAL_IMPLANT_LIBRARY,
@@ -3190,6 +3191,44 @@ function escapeHtml(value) {
   });
 }
 
+function removeImageBackground(imageSrc, { threshold = 30, targetColor = "white" } = {}) {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(null); return; }
+      ctx.drawImage(img, 0, 0);
+      try {
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = data.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          let match = false;
+          if (targetColor === "white") {
+            match = r > 255 - threshold && g > 255 - threshold && b > 255 - threshold;
+          } else if (targetColor === "black") {
+            match = r < threshold && g < threshold && b < threshold;
+          } else {
+            const brightness = (r + g + b) / 3;
+            match = brightness > 255 - threshold;
+          }
+          if (match) d[i + 3] = 0;
+        }
+        ctx.putImageData(data, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imageSrc;
+  });
+}
+
 function createCombinedReportCanvas(
   imageCanvas,
   overlayCanvas,
@@ -4208,8 +4247,14 @@ export default function XrayCalibrationWorkspace({
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateTags, setSaveTemplateTags] = useState("");
   const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
+  const [bgRemoveBusy, setBgRemoveBusy] = useState(false);
+  const [bgRemoveThreshold, setBgRemoveThreshold] = useState(30);
   const [saveTemplatePreviewUrl, setSaveTemplatePreviewUrl] = useState("");
   const [libraryModalOpen, setLibraryModalOpen] = useState(false);
+  const [libraryModalMinimized, setLibraryModalMinimized] = useState(false);
+  const [activeLibraryTag, setActiveLibraryTag] = useState(null);
+  const [saveTemplateModalMinimized, setSaveTemplateModalMinimized] = useState(false);
+  const [saveBeforeLeaveModalOpen, setSaveBeforeLeaveModalOpen] = useState(false);
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -7918,6 +7963,34 @@ export default function XrayCalibrationWorkspace({
       window.removeEventListener("beforeunload", clearTemporaryStory);
     };
   }, [hasTemporaryMainImage]);
+
+  // Tampilkan dialog browser native saat user mau menutup/navigasi keluar
+  useEffect(() => {
+    if (typeof window === "undefined" || !image) return undefined;
+    const handler = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [image]);
+
+  // Intercept Ctrl+R / Cmd+R / F5 untuk tampilkan modal simpan kustom
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handler = (e) => {
+      if (!image) return;
+      const isRefresh =
+        ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R")) ||
+        e.key === "F5";
+      if (!isRefresh) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSaveBeforeLeaveModalOpen(true);
+    };
+    window.addEventListener("keydown", handler, { capture: true });
+    return () => window.removeEventListener("keydown", handler, { capture: true });
+  }, [image]);
 
   useEffect(() => {
     setActivityLog((prev) => {
@@ -18550,6 +18623,34 @@ export default function XrayCalibrationWorkspace({
     syncMainImageLibraryFromGoogleSheet,
   ]);
 
+  const applyLayerTransparentBackground = useCallback(
+    async (layerId, targetColor = "white") => {
+      const layer = cutLayers.find((l) => String(l.id) === String(layerId));
+      if (!layer?.imageSrc) {
+        setNotice("Layer tidak memiliki gambar untuk diproses.");
+        return;
+      }
+      setBgRemoveBusy(true);
+      try {
+        const result = await removeImageBackground(layer.imageSrc, {
+          threshold: bgRemoveThreshold,
+          targetColor,
+        });
+        if (!result) {
+          setNotice("Gagal memproses gambar (CORS atau format tidak didukung).");
+          return;
+        }
+        updateLayerById(layerId, { imageSrc: result, image: null });
+        setNotice("Background layer berhasil dihapus.");
+      } catch (err) {
+        setNotice(`Gagal hapus background: ${err instanceof Error ? err.message : "Error."}`);
+      } finally {
+        setBgRemoveBusy(false);
+      }
+    },
+    [bgRemoveThreshold, cutLayers, updateLayerById],
+  );
+
   useEffect(() => {
     const handler = (event) => {
       const target = event.target;
@@ -19598,28 +19699,6 @@ export default function XrayCalibrationWorkspace({
                     {googleDriveUploadBusy ? "Uploading..." : "Upload Report"}
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGoogleDriveUploadModalOpen(false);
-                      setLibraryModalOpen(true);
-                    }}
-                    disabled={googleDriveUploadBusy}
-                    className="flex min-h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    Lihat Library
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearLocalCache}
-                    disabled={googleDriveUploadBusy}
-                    className="min-h-10 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
-                  >
-                    Clear Cache
-                  </button>
-                </div>
                 <button
                   type="button"
                   onClick={() => setGoogleDriveUploadModalOpen(false)}
@@ -19641,15 +19720,17 @@ export default function XrayCalibrationWorkspace({
 
       {/* Modal: Simpan Template */}
       <AnimatePresence>
-        {saveTemplateModalOpen ? (
+        {/* Full modal simpan template */}
+        {saveTemplateModalOpen && !saveTemplateModalMinimized ? (
           <motion.div
+            key="save-template-full"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[98] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
             onClick={(e) => {
               if (e.target === e.currentTarget && !saveTemplateBusy)
-                setSaveTemplateModalOpen(false);
+                setSaveTemplateModalMinimized(true);
             }}
           >
             <motion.div
@@ -19674,15 +19755,29 @@ export default function XrayCalibrationWorkspace({
                     Simpan dengan Template &amp; Garis
                   </h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSaveTemplateModalOpen(false)}
-                  disabled={saveTemplateBusy}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
-                  aria-label="Tutup simpan template"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {/* Tombol minimize */}
+                  <button
+                    type="button"
+                    onClick={() => setSaveTemplateModalMinimized(true)}
+                    disabled={saveTemplateBusy}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                    aria-label="Minimize"
+                    title="Minimize — form tersimpan, klik pill untuk buka lagi"
+                  >
+                    <span className="text-base font-bold leading-none">–</span>
+                  </button>
+                  {/* Tombol tutup penuh */}
+                  <button
+                    type="button"
+                    onClick={() => { setSaveTemplateModalOpen(false); setSaveTemplateModalMinimized(false); }}
+                    disabled={saveTemplateBusy}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                    aria-label="Tutup simpan template"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               {saveTemplatePreviewUrl ? (
                 <div className="mt-4 overflow-hidden rounded-2xl border border-white/70 bg-slate-100">
@@ -19716,7 +19811,7 @@ export default function XrayCalibrationWorkspace({
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setSaveTemplateModalOpen(false)}
+                  onClick={() => { setSaveTemplateModalOpen(false); setSaveTemplateModalMinimized(false); }}
                   disabled={saveTemplateBusy}
                   className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] px-4 text-xs font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.22),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
                 >
@@ -19737,18 +19832,40 @@ export default function XrayCalibrationWorkspace({
             </motion.div>
           </motion.div>
         ) : null}
+
+        {/* Pill minimize simpan template */}
+        {saveTemplateModalOpen && saveTemplateModalMinimized ? (
+          <motion.button
+            key="save-template-mini"
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.9 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            type="button"
+            onClick={() => setSaveTemplateModalMinimized(false)}
+            className="fixed bottom-24 right-4 z-[99] flex items-center gap-2 rounded-full border border-emerald-300/70 bg-emerald-600 px-4 py-2.5 text-xs font-black text-white shadow-[0_4px_16px_rgba(16,185,129,0.35)] transition hover:bg-emerald-700"
+            title="Klik untuk buka kembali form simpan template"
+          >
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            💾 Simpan Template
+          </motion.button>
+        ) : null}
       </AnimatePresence>
 
       {/* Modal: Library Google Sheet */}
       <AnimatePresence>
-        {libraryModalOpen ? (
+        {/* Full modal library */}
+        {libraryModalOpen && !libraryModalMinimized ? (
           <motion.div
+            key="library-full"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[98] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
             onClick={(e) => {
-              if (e.target === e.currentTarget) setLibraryModalOpen(false);
+              if (e.target === e.currentTarget) setLibraryModalMinimized(true);
             }}
           >
             <motion.div
@@ -19761,19 +19878,17 @@ export default function XrayCalibrationWorkspace({
               aria-labelledby="library-modal-title"
               className="w-full max-w-lg rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.26),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl"
             >
+              {/* Header */}
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
                     Library Drive
                   </div>
-                  <h2
-                    id="library-modal-title"
-                    className="mt-1 text-base font-black text-slate-950"
-                  >
+                  <h2 id="library-modal-title" className="mt-1 text-base font-black text-slate-950">
                     Kasus Tersimpan ({sheetMainImages.length})
                   </h2>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => syncMainImageLibraryFromGoogleSheet({ silent: false })}
@@ -19781,13 +19896,22 @@ export default function XrayCalibrationWorkspace({
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
                     aria-label="Refresh library"
                   >
-                    <RefreshCcw
-                      className={`h-4 w-4 ${isSheetMainImageSyncing ? "animate-spin" : ""}`}
-                    />
+                    <RefreshCcw className={`h-4 w-4 ${isSheetMainImageSyncing ? "animate-spin" : ""}`} />
                   </button>
+                  {/* Minimize */}
                   <button
                     type="button"
-                    onClick={() => setLibraryModalOpen(false)}
+                    onClick={() => setLibraryModalMinimized(true)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                    aria-label="Minimize library"
+                    title="Minimize"
+                  >
+                    <span className="text-base font-bold leading-none">–</span>
+                  </button>
+                  {/* Tutup penuh */}
+                  <button
+                    type="button"
+                    onClick={() => { setLibraryModalOpen(false); setLibraryModalMinimized(false); }}
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)]"
                     aria-label="Tutup library"
                   >
@@ -19795,47 +19919,201 @@ export default function XrayCalibrationWorkspace({
                   </button>
                 </div>
               </div>
+
+              {/* Konten dengan tabs per tag */}
               {sheetMainImages.length === 0 ? (
                 <div className="mt-6 rounded-2xl border border-white/70 bg-white/35 px-4 py-8 text-center text-xs font-semibold text-slate-500">
                   {isSheetMainImageSyncing
                     ? "Memuat data dari Drive..."
                     : "Belum ada data di library. Simpan kasus terlebih dahulu."}
                 </div>
-              ) : (
-                <div className="mt-4 grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
-                  {sheetMainImages.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        useSheetImageAsMain(item);
-                        setLibraryModalOpen(false);
-                      }}
-                      className="group flex flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/35 text-left shadow-[2px_2px_6px_rgba(148,163,184,0.20),-2px_-2px_6px_rgba(255,255,255,0.78)] transition-all hover:border-cyan-300 hover:shadow-[0_0_10px_rgba(34,211,238,0.15)]"
-                      aria-label={`Muat gambar: ${item.name || "Untitled"}`}
-                    >
-                      <div className="h-24 w-full overflow-hidden bg-slate-100">
-                        <DriveImageWithFallback
-                          src={item.imageSrc}
-                          driveId={item.driveId}
-                          alt={item.name || "Gambar"}
-                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                        />
-                      </div>
-                      <div className="p-2">
-                        <p className="truncate text-[10px] font-bold text-slate-800">
-                          {item.name || "Untitled"}
-                        </p>
-                        {item.tags ? (
-                          <p className="mt-0.5 truncate text-[9px] text-slate-400">
-                            {item.tags}
-                          </p>
-                        ) : null}
-                      </div>
-                    </button>
-                  ))}
+              ) : (() => {
+                // Kelompokkan berdasarkan tag pertama
+                const groups = {};
+                for (const item of sheetMainImages) {
+                  const firstTag = (item.tags || "").split(/[,;]/)[0]?.trim() || "Lainnya";
+                  if (!groups[firstTag]) groups[firstTag] = [];
+                  groups[firstTag].push(item);
+                }
+                const tagKeys = Object.keys(groups);
+                const currentTag = (activeLibraryTag && groups[activeLibraryTag])
+                  ? activeLibraryTag
+                  : tagKeys[0];
+                const visibleItems = groups[currentTag] || [];
+                return (
+                  <>
+                    {/* Tab bar — horizontal scroll */}
+                    <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      {tagKeys.map((tag) => {
+                        const isActive = tag === currentTag;
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setActiveLibraryTag(tag)}
+                            className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black transition ${
+                              isActive
+                                ? "bg-cyan-600 text-white shadow-[0_2px_8px_rgba(8,145,178,0.30)]"
+                                : "border border-white/70 bg-white/40 text-slate-600 hover:bg-white/70"
+                            }`}
+                          >
+                            {tag}
+                            <span className={`ml-1 text-[9px] ${isActive ? "text-cyan-100" : "text-slate-400"}`}>
+                              ({groups[tag].length})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Grid kartu untuk tab aktif */}
+                    <div className="mt-3 grid max-h-[52vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
+                      {visibleItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/35 shadow-[2px_2px_6px_rgba(148,163,184,0.20),-2px_-2px_6px_rgba(255,255,255,0.78)]"
+                        >
+                          <div className="h-24 w-full overflow-hidden bg-slate-100">
+                            <DriveImageWithFallback
+                              src={item.imageSrc}
+                              driveId={item.driveId}
+                              alt={item.name || "Gambar"}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                          <div className="px-2 pt-1.5 pb-1">
+                            <p className="truncate text-[10px] font-bold text-slate-800">
+                              {item.name || "Untitled"}
+                            </p>
+                            {item.tags ? (
+                              <p className="mt-0.5 truncate text-[9px] text-slate-400">{item.tags}</p>
+                            ) : null}
+                          </div>
+                          <div className="flex gap-1.5 px-2 pb-2">
+                            <button
+                              type="button"
+                              onClick={() => { useSheetImageAsMain(item); setLibraryModalOpen(false); setLibraryModalMinimized(false); }}
+                              className="flex-1 rounded-lg bg-slate-800 py-1 text-[9px] font-bold text-white transition hover:bg-slate-900"
+                              title="Jadikan foto X-ray background utama"
+                            >
+                              Background
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { useGoogleSheetImageAsLayer(item); setLibraryModalMinimized(true); }}
+                              className="flex-1 rounded-lg bg-cyan-500 py-1 text-[9px] font-bold text-white transition hover:bg-cyan-600"
+                              title="Tambah sebagai layer overlay baru"
+                            >
+                              + Layer
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </motion.div>
+          </motion.div>
+        ) : null}
+
+        {/* Pill minimize library */}
+        {libraryModalOpen && libraryModalMinimized ? (
+          <motion.button
+            key="library-mini"
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.9 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            type="button"
+            onClick={() => setLibraryModalMinimized(false)}
+            className="fixed bottom-24 right-4 z-[99] flex items-center gap-2 rounded-full border border-cyan-300/70 bg-cyan-600 px-4 py-2.5 text-xs font-black text-white shadow-[0_4px_16px_rgba(8,145,178,0.35)] transition hover:bg-cyan-700"
+            title="Klik untuk buka kembali Library Drive"
+            style={{ right: saveTemplateModalOpen && saveTemplateModalMinimized ? "12rem" : "1rem" }}
+          >
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            📂 Library ({sheetMainImages.length})
+          </motion.button>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Modal: Konfirmasi sebelum refresh/tutup halaman */}
+      <AnimatePresence>
+        {saveBeforeLeaveModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            onClick={() => setSaveBeforeLeaveModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ type: "spring", damping: 22, stiffness: 280 }}
+              className="relative w-full max-w-sm rounded-2xl border border-white/60 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
+              onClick={(e) => e.stopPropagation()}
+              role="alertdialog"
+              aria-labelledby="save-before-leave-title"
+              aria-modal="true"
+            >
+              {/* Icon peringatan */}
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+                  <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
                 </div>
-              )}
+                <div>
+                  <h2 id="save-before-leave-title" className="text-sm font-bold text-slate-800">
+                    Simpan sebelum keluar?
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Kasus yang sedang dikerjakan belum tersimpan ke Drive.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {/* Simpan ke Drive */}
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.98]"
+                  onClick={() => {
+                    setSaveBeforeLeaveModalOpen(false);
+                    openSaveTemplateModal();
+                  }}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Simpan ke Drive dulu
+                </button>
+
+                {/* Tidak perlu simpan — langsung reload */}
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 active:scale-[0.98]"
+                  onClick={() => {
+                    setSaveBeforeLeaveModalOpen(false);
+                    window.location.reload();
+                  }}
+                >
+                  Tidak perlu simpan, lanjutkan
+                </button>
+
+                {/* Batal — tetap di halaman */}
+                <button
+                  type="button"
+                  className="mt-1 w-full rounded-xl px-4 py-2 text-xs font-medium text-slate-400 transition hover:text-slate-600"
+                  onClick={() => setSaveBeforeLeaveModalOpen(false)}
+                >
+                  Batal, tetap di halaman
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         ) : null}
@@ -21746,6 +22024,55 @@ export default function XrayCalibrationWorkspace({
                               }))
                             }
                           />
+                          {selectedCutLayer.imageSrc ? (
+                            <div className={`${SOFT_SURFACE_CLASS} px-3 py-3`}>
+                              <div className="mb-2 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
+                                Edit Foto Layer
+                              </div>
+                              <div className="mb-2 flex items-center gap-2">
+                                <span className="text-[10px] font-semibold text-slate-500 shrink-0">
+                                  Threshold {bgRemoveThreshold}
+                                </span>
+                                <input
+                                  type="range"
+                                  min={5}
+                                  max={80}
+                                  step={5}
+                                  value={bgRemoveThreshold}
+                                  onChange={(e) => setBgRemoveThreshold(Number(e.target.value))}
+                                  className="h-2 w-full accent-cyan-700"
+                                  aria-label="Threshold hapus background"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    applyLayerTransparentBackground(selectedCutLayer.id, "white")
+                                  }
+                                  disabled={bgRemoveBusy}
+                                  className="min-h-8 rounded-xl border border-white/70 bg-slate-900 px-2 text-[10px] font-black text-white shadow-[1px_1px_4px_rgba(15,23,42,0.18)] disabled:opacity-45"
+                                  title="Hapus background putih/terang (transparansi)"
+                                >
+                                  {bgRemoveBusy ? "..." : "✂ Cut Putih"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    applyLayerTransparentBackground(selectedCutLayer.id, "black")
+                                  }
+                                  disabled={bgRemoveBusy}
+                                  className="min-h-8 rounded-xl border border-white/70 bg-[#eef2f7] px-2 text-[10px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] disabled:opacity-45"
+                                  title="Hapus background hitam/gelap (transparansi)"
+                                >
+                                  {bgRemoveBusy ? "..." : "✂ Cut Hitam"}
+                                </button>
+                              </div>
+                              <p className="mt-1.5 text-[9px] font-semibold text-slate-400">
+                                Hapus warna latar agar layer jadi transparan. Naikan threshold jika masih tersisa.
+                              </p>
+                            </div>
+                          ) : null}
                           <div className="grid grid-cols-4 gap-1.5">
                             <IconButton
                               icon="flipH"
@@ -24251,28 +24578,89 @@ export default function XrayCalibrationWorkspace({
           <div className="order-2 flex flex-col gap-2" style={{ order: 2 }}>
             <div className="flex items-center gap-1.5">
               <Icon name="upload" className="h-4 w-4 text-slate-600" />
-              <label
-                className="text-xs font-semibold tracking-wide text-slate-700 uppercase"
-                htmlFor="xray-upload"
-              >
-                Upload
-              </label>
-              <InfoTooltip text="Pakai foto/screenshot X-ray. Agar akurat, pastikan ada objek referensi ukuran nyata (mis. ruler 13 cm atau ukuran implant)." />
+              {!isLeftSidebarCompact ? (
+                <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
+                  Load / Upload
+                </span>
+              ) : null}
+              <InfoTooltip text="Pilih sumber: Google Drive (dari library tersimpan) atau File Lokal dari komputer/hp." />
             </div>
-            <input
-              id="xray-upload"
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className={`block w-full cursor-pointer ${SOFT_INPUT_CLASS}`}
-            />
-            {!isLeftSidebarCompact ? (
-              <p className="text-[9px] text-slate-500">
-                {imageName
-                  ? `Background aktif: ${imageName}.`
-                  : "Upload gambar background utama yang akan diukur."}
-              </p>
-            ) : null}
+
+            {/* ── Background ── */}
+            <div className={`rounded-2xl border border-white/70 bg-white/30 ${isLeftSidebarCompact ? "p-1.5" : "px-3 py-2.5"} shadow-sm`}>
+              {!isLeftSidebarCompact ? (
+                <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                  Background X-ray
+                </p>
+              ) : null}
+              <div className="flex gap-1.5">
+                {/* Drive */}
+                <button
+                  type="button"
+                  onClick={() => { setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-cyan-200 bg-cyan-50 py-2 text-[10px] font-bold text-cyan-700 transition hover:bg-cyan-100 active:scale-[0.97]"
+                  title="Pilih foto background dari Google Drive Library"
+                >
+                  <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />
+                    <path d="M6.3 14.9l-1.4-1.4 1.9-1.9-1.9-1.9 1.4-1.4L9.1 12l-2.8 2.9zm11.4 0L15.1 12l2.8-2.9 1.4 1.4-1.9 1.9 1.9 1.9-1.6 1.6z" />
+                  </svg>
+                  {isLeftSidebarCompact ? null : "Drive"}
+                </button>
+                {/* Lokal */}
+                <button
+                  type="button"
+                  onClick={() => mainUploadInputRef.current?.click()}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-50 py-2 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100 active:scale-[0.97]"
+                  title="Upload foto background dari file lokal"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {isLeftSidebarCompact ? null : "Lokal"}
+                </button>
+              </div>
+              {!isLeftSidebarCompact && imageName ? (
+                <p className="mt-1.5 truncate text-[9px] text-slate-500">Aktif: {imageName}</p>
+              ) : null}
+            </div>
+
+            {/* ── Layer Baru ── */}
+            <div className={`rounded-2xl border border-white/70 bg-white/30 ${isLeftSidebarCompact ? "p-1.5" : "px-3 py-2.5"} shadow-sm`}>
+              {!isLeftSidebarCompact ? (
+                <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                  + Layer Baru
+                </p>
+              ) : null}
+              <div className="flex gap-1.5">
+                {/* Drive */}
+                <button
+                  type="button"
+                  onClick={() => { setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-violet-200 bg-violet-50 py-2 text-[10px] font-bold text-violet-700 transition hover:bg-violet-100 active:scale-[0.97]"
+                  title="Ambil gambar dari Google Drive Library sebagai layer baru"
+                >
+                  <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />
+                    <path d="M6.3 14.9l-1.4-1.4 1.9-1.9-1.9-1.9 1.4-1.4L9.1 12l-2.8 2.9zm11.4 0L15.1 12l2.8-2.9 1.4 1.4-1.9 1.9 1.9 1.9-1.6 1.6z" />
+                  </svg>
+                  {isLeftSidebarCompact ? null : "Drive"}
+                </button>
+                {/* Lokal */}
+                <button
+                  type="button"
+                  onClick={() => layerUploadInputRef.current?.click()}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-violet-200 bg-violet-50 py-2 text-[10px] font-bold text-violet-700 transition hover:bg-violet-100 active:scale-[0.97]"
+                  title="Upload file dari komputer/hp sebagai layer baru"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  {isLeftSidebarCompact ? null : "Lokal"}
+                </button>
+              </div>
+            </div>
+
             <GoogleSheetDrivePicker
               onUseImage={useGoogleSheetImageAsLayer}
               onUseMainImage={useSheetImageAsMain}
@@ -24367,6 +24755,7 @@ export default function XrayCalibrationWorkspace({
                   <InfoTooltip text="PNG: snapshot cepat. PDF: buka report siap print/save PDF dengan tabel measurement." />
                 ) : null}
               </div>
+              {/* Baris 1: Export file lokal */}
               <div className="flex items-center justify-between gap-1.5">
                 <IconButton
                   icon="export"
@@ -24389,23 +24778,53 @@ export default function XrayCalibrationWorkspace({
                   disabled={!hasCalibration}
                   className="h-8 w-8 shrink-0"
                 />
+              </div>
+
+              {/* Baris 2: Simpan ke Drive */}
+              {!isLeftSidebarCompact ? (
+                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                  Simpan ke Drive
+                </p>
+              ) : null}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={openSaveTemplateModal}
+                  disabled={!image}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.98]"
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  {isLeftSidebarCompact ? null : "Simpan + Template"}
+                </button>
                 <IconButton
                   icon="upload"
-                  label="Upload ke Google Drive"
+                  label="Upload Kasus ke Drive (tanpa template)"
                   onClick={() => setGoogleDriveUploadModalOpen(true)}
                   disabled={!hasCalibration}
                   className="h-8 w-8 shrink-0"
                 />
               </div>
+
               {!isLeftSidebarCompact ? (
-                <div
-                  className={`${SOFT_INSET_CLASS} px-2 py-1.5 text-[11px] text-slate-600`}
-                >
-                  Total report: {measurementRows.length}
+                <div className="flex items-center justify-between gap-2">
+                  <div className={`flex-1 ${SOFT_INSET_CLASS} px-2 py-1.5 text-[11px] text-slate-600`}>
+                    Total report: {measurementRows.length}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearLocalCache}
+                    className="rounded-lg px-2 py-1.5 text-[10px] text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+                    title="Clear cache lokal"
+                  >
+                    Clear Cache
+                  </button>
                 </div>
               ) : null}
             </motion.div>
           </div>
+
 
           <div className="hidden" style={{ order: 4 }}>
             <div className="flex items-center gap-1.5">
@@ -29531,18 +29950,26 @@ export default function XrayCalibrationWorkspace({
               ) : null}
               {isSimpleUiMode ? (
                 <div className="pointer-events-none absolute inset-0 z-20 hidden lg:block">
+                  <AnimatePresence mode="wait">
                   {simpleQuickPanelMinimized ? (
-                    <button
+                    <motion.button
+                      key="quick-mini"
+                      initial={{ opacity: 0, x: -20, scale: 0.85 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -16, scale: 0.88 }}
+                      transition={{ type: "spring", damping: 22, stiffness: 300 }}
                       type="button"
                       onClick={() => setSimpleQuickPanelMinimized(false)}
                       className="pointer-events-auto absolute top-3 left-3 inline-flex items-center gap-2 rounded-[18px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
                       title="Buka Quick Panel"
+                      whileTap={{ scale: 0.93 }}
                     >
                       <Icon name="menu" className="h-3.5 w-3.5" />
                       <span>Quick</span>
-                    </button>
+                    </motion.button>
                   ) : (
                     <QuickPanel
+                      key="quick-full"
                       className="pointer-events-auto absolute top-3 left-3 max-h-[calc(100vh-180px)] overflow-y-auto backdrop-blur-xl"
                       statusLabel={hasCalibration ? "Ready" : "Calib"}
                       workflowStep={workflowStep}
@@ -29551,6 +29978,7 @@ export default function XrayCalibrationWorkspace({
                       activeTool={tool}
                       onMinimize={() => setSimpleQuickPanelMinimized(true)}
                       onUpload={() => mainUploadInputRef.current?.click()}
+                      onUploadLayer={() => layerUploadInputRef.current?.click()}
                       onCalibration={() => openSimpleCalibrationModal()}
                       onCreateLayer={() =>
                         createEmptyFreeLineLayer(freeLineMode)
@@ -29581,6 +30009,10 @@ export default function XrayCalibrationWorkspace({
                       canExport={Boolean(image)}
                       onUploadDrive={() => setGoogleDriveUploadModalOpen(true)}
                       canUploadDrive={Boolean(image)}
+                      onOpenLibrary={() => setLibraryModalOpen(true)}
+                      onSaveTemplate={openSaveTemplateModal}
+                      canSaveTemplate={Boolean(image)}
+                      libraryCount={sheetMainImages.length}
                       implantItems={LOCAL_IMPLANT_LIBRARY}
                       selectedImplantType={selectedImplantType}
                       selectedImplantItemId={selectedImplantLibraryId}
@@ -29598,18 +30030,27 @@ export default function XrayCalibrationWorkspace({
                       implantInstruction={implantLibraryScaleInstruction}
                     />
                   )}
+                  </AnimatePresence>
 
+                  <AnimatePresence mode="wait">
                   {simpleToolPanelMinimized ? (
-                    <button
+                    <motion.button
+                      key="tool-mini"
+                      initial={{ opacity: 0, x: 20, scale: 0.85 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: 16, scale: 0.88 }}
+                      transition={{ type: "spring", damping: 22, stiffness: 300 }}
                       type="button"
                       onClick={() => setSimpleToolPanelMinimized(false)}
                       className="pointer-events-auto absolute top-1/2 right-4 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-white/75 bg-[#eef2f7]/95 p-3 text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
                       title="Buka panel ikon"
+                      whileTap={{ scale: 0.93 }}
                     >
                       <Icon name="menu" className="h-4 w-4" />
-                    </button>
+                    </motion.button>
                   ) : (
                     <PanelActions
+                      key="tool-full"
                       className="pointer-events-auto absolute top-1/2 right-4 max-h-[calc(100vh-190px)] -translate-y-1/2 overflow-y-auto backdrop-blur-xl"
                       tools={simpleToolMenuItems}
                       activeTool={tool}
@@ -29628,6 +30069,7 @@ export default function XrayCalibrationWorkspace({
                       canRedo={historyState.redo > 0}
                     />
                   )}
+                  </AnimatePresence>
                 </div>
               ) : null}
               <AnimatePresence>
@@ -29642,48 +30084,74 @@ export default function XrayCalibrationWorkspace({
                   >
                       {simpleMobilePanel === "upload" ? (
                         <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                          {/* Header */}
                           <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
                             <div>
-                              <h2 className="text-xs font-black tracking-wider uppercase">
-                                Upload
-                              </h2>
-                              <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
-                                X-ray workspace
-                              </p>
+                              <h2 className="text-xs font-black tracking-wider uppercase">Upload / Load</h2>
+                              <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">Pilih sumber gambar</p>
                             </div>
                             <button
                               type="button"
                               onClick={() => setSimpleMobilePanel(null)}
                               className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-                              aria-label="Tutup upload mobile"
-                              title="Tutup"
+                              aria-label="Tutup"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
+
+                          {/* Background X-ray */}
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Background X-ray</p>
                           <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                mainUploadInputRef.current?.click();
-                              }}
-                              className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
+                              onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
+                              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/70 bg-cyan-50 px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_8px_rgba(8,145,178,0.12)]"
                             >
-                              Upload X-ray
+                              <span className="text-lg">📂</span>
+                              <span>Google Drive</span>
                             </button>
                             <button
                               type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel("layer");
-                              }}
-                              className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                              onClick={() => { setSimpleMobilePanel(null); mainUploadInputRef.current?.click(); }}
+                              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-slate-300/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
                             >
-                              Adjust Image
+                              <span className="text-lg">💻</span>
+                              <span>File Lokal</span>
                             </button>
                           </div>
-                          <div className="mt-3 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[10px] font-semibold text-slate-500">
-                            Setelah upload: buka Calibration, pilih marker/ruler, tap 2 titik, lalu simpan kalibrasi.
+
+                          {/* Layer Baru */}
+                          <p className="mt-3 mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">+ Layer Baru</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
+                              className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl border border-violet-300/70 bg-violet-50 px-3 text-xs font-black text-violet-800 shadow-[2px_2px_8px_rgba(124,58,237,0.10)]"
+                            >
+                              <span className="text-base">📂</span>
+                              <span>Google Drive</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); layerUploadInputRef.current?.click(); }}
+                              className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl border border-violet-300/70 bg-violet-500 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(124,58,237,0.22)]"
+                            >
+                              <span className="text-base">💻</span>
+                              <span>File Lokal</span>
+                            </button>
+                          </div>
+
+                          {/* Simpan template */}
+                          <div className="mt-3 grid grid-cols-1 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); openSaveTemplateModal(); }}
+                              disabled={!image}
+                              className="min-h-11 rounded-2xl border border-white/70 bg-emerald-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:opacity-45"
+                            >
+                              💾 Simpan Template ke Drive
+                            </button>
                           </div>
                         </div>
                       ) : simpleMobilePanel === "tools" ? (
@@ -29909,12 +30377,33 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={() => {
                                 setSimpleMobilePanel(null);
+                                openSaveTemplateModal();
+                              }}
+                              disabled={!image}
+                              className="min-h-12 rounded-2xl bg-emerald-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              💾 Simpan + Template
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
+                                setLibraryModalOpen(true);
+                              }}
+                              className="min-h-12 rounded-2xl border border-white/70 bg-cyan-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(8,145,178,0.22)]"
+                            >
+                              📂 Library
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSimpleMobilePanel(null);
                                 setGoogleDriveUploadModalOpen(true);
                               }}
                               disabled={!image}
                               className="col-span-2 min-h-12 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
-                              Upload Google Drive
+                              ☁️ Upload Google Drive
                             </button>
                           </div>
                           <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-black text-slate-600">

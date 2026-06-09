@@ -86,7 +86,7 @@ export default function GoogleSheetDriveManager() {
   const [endpoint, setEndpoint] = useState(DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT);
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [notice, setNotice] = useState("Masukkan endpoint Apps Script lalu klik Load List.");
+  const [notice, setNotice] = useState("Klik Load List untuk memuat data dari Google Drive.");
   const [rawResponse, setRawResponse] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
@@ -623,30 +623,22 @@ export default function GoogleSheetDriveManager() {
               <div className="mt-0.5 text-lg font-semibold text-emerald-700">{queueStats.done}</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
-              <div className="text-[11px] text-slate-500">Endpoint Host</div>
-              <div className="mt-0.5 truncate text-sm font-medium text-slate-900">{endpointHost}</div>
+              <div className="text-[11px] text-slate-500">Status Drive</div>
+              <div className="mt-0.5 truncate text-sm font-medium text-slate-900">{isLoading ? "Memuat..." : items.length > 0 ? "Terhubung" : "Siap"}</div>
             </div>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/60 bg-white/80 p-4 shadow-sm backdrop-blur-md">
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-            Endpoint Apps Script
-          </label>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
-            <input
-              value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
-              placeholder="https://script.google.com/macros/s/.../exec"
-              className={TEXT_INPUT_CLASS}
-            />
+        <section className="rounded-2xl border border-white/60 bg-white/80 p-3 shadow-sm backdrop-blur-md">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-slate-600">
+              Klik tombol Load untuk memuat data foto dari Google Drive.
+            </p>
             <button
               type="button"
-              onClick={() => {
-                void loadItems();
-              }}
+              onClick={() => { void loadItems(); }}
               disabled={isLoading}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <SpinIndicator spinning={isLoading} />
               {isLoading ? "Loading..." : "Load List"}
@@ -1082,11 +1074,7 @@ export default function GoogleSheetDriveManager() {
             Status
           </div>
           <div className={`rounded-xl border px-3 py-2 text-xs ${noticeTone}`}>{notice}</div>
-          {rawResponse ? (
-            <pre className="mt-2 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-slate-900 px-3 py-2 text-[10px] text-slate-100">
-              {rawResponse}
-            </pre>
-          ) : null}
+          {/* rawResponse disembunyikan dari UI */}
         </section>
       </div>
 

@@ -18,6 +18,7 @@ import {
   Undo2,
   BookMarked,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 const PANEL_ACTION_STYLES = `
   .panel-actions-neu-card {
@@ -29,11 +30,10 @@ const PANEL_ACTION_STYLES = `
     background: #eef2f7;
     box-shadow: 3px 3px 8px rgba(148, 163, 184, 0.28), -3px -3px 8px rgba(255, 255, 255, 0.78);
     border: 1px solid rgba(255, 255, 255, 0.58);
-    transition: all 0.2s ease-in-out;
+    transition: box-shadow 0.2s ease-in-out, background 0.15s;
   }
   .panel-actions-neu-button:hover {
     box-shadow: 2px 2px 5px rgba(148, 163, 184, 0.26), -2px -2px 5px rgba(255, 255, 255, 0.82);
-    transform: translateY(0.5px);
   }
   .panel-actions-active {
     background: #ffffff;
@@ -71,13 +71,33 @@ const TOOL_COLOR_MAP = {
   imageProcess: "text-cyan-600",
 };
 
+const PANEL_VARIANTS = {
+  hidden: { opacity: 0, x: 32, scale: 0.93 },
+  visible: {
+    opacity: 1, x: 0, scale: 1,
+    transition: { type: "spring", damping: 24, stiffness: 280, staggerChildren: 0.04, delayChildren: 0.06 },
+  },
+  exit: {
+    opacity: 0, x: 28, scale: 0.9,
+    transition: { duration: 0.18, ease: "easeIn" },
+  },
+};
+
+const GROUP_VARIANTS = {
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0, transition: { type: "spring", damping: 22, stiffness: 260, staggerChildren: 0.035 } },
+};
+
+const ITEM_VARIANTS = {
+  hidden: { opacity: 0, x: 12 },
+  visible: { opacity: 1, x: 0, transition: { type: "spring", damping: 20, stiffness: 300 } },
+};
+
+const TAP = { whileTap: { scale: 0.93 } };
+
 function getToolGroup(item) {
-  if (item.key === "pan" ) {
-    return "Navigation & Interaction";
-  }
-  if (item.key === "imageProcess") {
-    return "ZakVisor";
-  }
+  if (item.key === "pan") return "Navigation";
+  if (item.key === "imageProcess") return "ZakVisor";
   if (
     item.key === "draw" ||
     item.key === "angle" ||
@@ -88,7 +108,7 @@ function getToolGroup(item) {
   ) {
     return "Measurement & Drawing";
   }
-  return "Surgical Planning & Axis";
+  return "Surgical Planning";
 }
 
 function getToolIcon(item) {
@@ -97,17 +117,9 @@ function getToolIcon(item) {
 }
 
 function groupTools(tools) {
-  const order = [
-    "Navigation & Interaction",
-    "Measurement & Drawing",
-    "ZakVisor",
-    "Surgical Planning & Axis",
-  ];
+  const order = ["Navigation", "Measurement & Drawing", "ZakVisor", "Surgical Planning"];
   return order
-    .map((title) => ({
-      title,
-      items: tools.filter((item) => getToolGroup(item) === title),
-    }))
+    .map((title) => ({ title, items: tools.filter((item) => getToolGroup(item) === title) }))
     .filter((group) => group.items.length > 0);
 }
 
@@ -126,11 +138,16 @@ export default function PanelActions({
   const groups = groupTools(tools);
 
   return (
-    <div
+    <motion.div
       className={`w-[min(84vw,220px)] rounded-[28px] p-4 -mt-5 text-slate-800 panel-actions-neu-card ${className}`}
+      variants={PANEL_VARIANTS}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
     >
       <style>{PANEL_ACTION_STYLES}</style>
 
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-300/20 pb-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-[#eef2f7] text-cyan-600 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.76)]">
@@ -149,99 +166,114 @@ export default function PanelActions({
           <span className="hidden rounded border border-cyan-200 bg-cyan-100/80 px-2 py-0.5 text-[8px] font-extrabold text-cyan-700 sm:inline-flex">
             Active
           </span>
-          <button
+          <motion.button
             type="button"
             onClick={onMinimize}
-            className="flex bg-red-400 h-6 w-6 items-center justify-center rounded-full text-slate-500 panel-actions-neu-button hover:text-slate-800"
+            className="flex h-6 w-6 items-center justify-center rounded-full bg-red-400 text-white panel-actions-neu-button"
             title="Minimize panel actions"
             aria-label="Minimize panel actions"
+            {...TAP}
+            whileHover={{ scale: 1.1 }}
           >
             <Minus className="h-3 w-3" />
-          </button>
+          </motion.button>
         </div>
       </div>
 
+      {/* Tool groups */}
       <div className="mt-3 space-y-4">
         {groups.map((group) => (
-          <div key={group.title} className="space-y-2">
+          <motion.div key={group.title} className="space-y-2" variants={GROUP_VARIANTS}>
             <span className="block px-1 text-[7px] font-black tracking-widest text-slate-400 uppercase">
               {group.title}
             </span>
 
             <div className="grid grid-cols-1 gap-1">
-              {group.items.map((item) => {
-                const isActive = item.freeLineMode
-                  ? activeTool === "freeLine" &&
-                    activeFreeLineMode === item.freeLineMode
-                  : activeTool === item.key;
-                const ToolIcon = getToolIcon(item);
-                const colorClass =
-                  TOOL_COLOR_MAP[item.key] ||
-                  TOOL_COLOR_MAP[item.icon] ||
-                  "text-slate-500";
+              <AnimatePresence initial={false}>
+                {group.items.map((item) => {
+                  const isActive = item.freeLineMode
+                    ? activeTool === "freeLine" && activeFreeLineMode === item.freeLineMode
+                    : activeTool === item.key;
+                  const ToolIcon = getToolIcon(item);
+                  const colorClass = TOOL_COLOR_MAP[item.key] || TOOL_COLOR_MAP[item.icon] || "text-slate-500";
 
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => onSelectTool?.(item)}
-                    className={`flex w-full items-center justify-between rounded-2xl px-2.5 py-2 text-left transition-all ${
-                      isActive
-                        ? "panel-actions-active"
-                        : "panel-actions-neu-button text-slate-700"
-                    }`}
-                    aria-label={`${item.label}: ${item.desc}`}
-                    aria-pressed={isActive}
-                    title={`${item.label}: ${item.desc}`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-50 shadow-inner ${colorClass}`}
-                      >
-                        <ToolIcon className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-bold text-slate-800">
-                          {item.label}
+                  return (
+                    <motion.button
+                      key={item.key}
+                      type="button"
+                      onClick={() => onSelectTool?.(item)}
+                      className={`flex w-full items-center justify-between rounded-2xl px-2.5 py-2 text-left ${
+                        isActive ? "panel-actions-active" : "panel-actions-neu-button text-slate-700"
+                      }`}
+                      aria-label={`${item.label}: ${item.desc}`}
+                      aria-pressed={isActive}
+                      title={`${item.label}: ${item.desc}`}
+                      variants={ITEM_VARIANTS}
+                      {...TAP}
+                      layout
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-50 shadow-inner ${colorClass}`}>
+                          <ToolIcon className="h-4 w-4" />
                         </span>
-                        <span className="mt-0.5 block truncate text-[9px] font-medium text-slate-400 lowercase">
-                          {item.desc}
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-bold text-slate-800">
+                            {item.label}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[9px] font-medium text-slate-400 lowercase">
+                            {item.desc}
+                          </span>
                         </span>
                       </span>
-                    </span>
-                    {isActive ? (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-cyan-500 shadow-[0_0_7px_#22d3ee]" />
-                    ) : null}
-                  </button>
-                );
-              })}
+                      <AnimatePresence>
+                        {isActive && (
+                          <motion.span
+                            key="active-dot"
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            transition={{ type: "spring", damping: 18, stiffness: 350 }}
+                            className="h-2 w-2 shrink-0 rounded-full bg-cyan-500 shadow-[0_0_7px_#22d3ee]"
+                          />
+                        )}
+                      </AnimatePresence>
+                    </motion.button>
+                  );
+                })}
+              </AnimatePresence>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-4 border-t border-slate-300/20 pt-4">
-        <button
+      {/* Undo / Redo */}
+      <motion.div
+        className="mt-4 flex items-center justify-center gap-4 border-t border-slate-300/20 pt-4"
+        variants={GROUP_VARIANTS}
+      >
+        <motion.button
           type="button"
           onClick={onUndo}
           disabled={!canUndo}
           className="flex h-11 w-11 items-center justify-center rounded-full text-slate-600 panel-actions-neu-button hover:text-cyan-600 disabled:cursor-not-allowed disabled:opacity-45"
           title="Undo"
           aria-label="Undo"
+          {...TAP}
         >
           <Undo2 className="h-4 w-4" />
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           type="button"
           onClick={onRedo}
           disabled={!canRedo}
           className="flex h-11 w-11 items-center justify-center rounded-full text-slate-600 panel-actions-neu-button hover:text-cyan-600 disabled:cursor-not-allowed disabled:opacity-45"
           title="Redo"
           aria-label="Redo"
+          {...TAP}
         >
           <Redo2 className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
+        </motion.button>
+      </motion.div>
+    </motion.div>
   );
 }
