@@ -8174,15 +8174,14 @@ export default function XrayCalibrationWorkspace({
                   : null,
               };
 
-              if (
-                isImageBackedLayerKind(baseLayer.kind) &&
-                baseLayer.imageSrc
-              ) {
+              if (isImageBackedLayerKind(baseLayer.kind)) {
+                // Layer tanpa imageSrc = gambar upload lokal yang hilang setelah refresh
+                if (!baseLayer.imageSrc) return { ...baseLayer, _imageMissing: true };
                 try {
                   const layerImage = await loadImageFromSrc(baseLayer.imageSrc);
                   return { ...baseLayer, image: layerImage };
                 } catch {
-                  return null;
+                  return { ...baseLayer, _imageMissing: true };
                 }
               }
 
@@ -8194,6 +8193,9 @@ export default function XrayCalibrationWorkspace({
             }),
           )
         ).filter(Boolean);
+
+        const missingCount = restoredCutLayers.filter((l) => l._imageMissing).length;
+        const validCutLayers = restoredCutLayers.filter((l) => !l._imageMissing);
 
         setImage(restoredImage);
         setMainImageSrc(payload.mainImageSrc);
@@ -8263,7 +8265,12 @@ export default function XrayCalibrationWorkspace({
         setRotation(Number(payload.rotation) || 0);
         setFlipX(Boolean(payload.flipX));
         setFlipY(Boolean(payload.flipY));
-        setCutLayers(restoredCutLayers);
+        setCutLayers(validCutLayers);
+        if (missingCount > 0) {
+          setNotice(
+            `${missingCount} layer gambar lokal tidak dapat dipulihkan setelah refresh. Layer dari Google Drive atau library implant tetap tersimpan.`,
+          );
+        }
         setSelectedCutLayerId(payload.selectedCutLayerId ?? null);
         setSelectedCutLayerExtraIds(
           Array.isArray(payload.selectedCutLayerExtraIds)
@@ -30083,74 +30090,37 @@ export default function XrayCalibrationWorkspace({
                       className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+172px)] z-40 lg:hidden"
                   >
                       {simpleMobilePanel === "upload" ? (
-                        <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                          {/* Header */}
-                          <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
-                            <div>
-                              <h2 className="text-xs font-black tracking-wider uppercase">Upload / Load</h2>
-                              <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">Pilih sumber gambar</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setSimpleMobilePanel(null)}
-                              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-                              aria-label="Tutup"
-                            >
-                              <X className="h-3.5 w-3.5" />
+                        <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                          <div className="mb-2.5 flex items-center justify-between">
+                            <p className="text-xs font-black uppercase tracking-wider">Upload / Load</p>
+                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                              <X className="h-3 w-3" />
                             </button>
                           </div>
 
-                          {/* Background X-ray */}
-                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Background X-ray</p>
+                          {/* Background */}
+                          <p className="mb-1.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">Background X-ray</p>
                           <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
-                              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-cyan-300/70 bg-cyan-50 px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_8px_rgba(8,145,178,0.12)]"
-                            >
-                              <span className="text-lg">📂</span>
-                              <span>Google Drive</span>
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
+                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-cyan-300/70 bg-cyan-50 text-[11px] font-black text-cyan-800">
+                              <span>📂</span><span>Drive</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => { setSimpleMobilePanel(null); mainUploadInputRef.current?.click(); }}
-                              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-slate-300/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
-                            >
-                              <span className="text-lg">💻</span>
-                              <span>File Lokal</span>
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); mainUploadInputRef.current?.click(); }}
+                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-slate-300/60 bg-slate-800 text-[11px] font-black text-white">
+                              <span>💻</span><span>Lokal</span>
                             </button>
                           </div>
 
-                          {/* Layer Baru */}
-                          <p className="mt-3 mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">+ Layer Baru</p>
+                          {/* Layer */}
+                          <p className="mt-2.5 mb-1.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">+ Layer Baru</p>
                           <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
-                              className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl border border-violet-300/70 bg-violet-50 px-3 text-xs font-black text-violet-800 shadow-[2px_2px_8px_rgba(124,58,237,0.10)]"
-                            >
-                              <span className="text-base">📂</span>
-                              <span>Google Drive</span>
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
+                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-violet-300/70 bg-violet-50 text-[11px] font-black text-violet-800">
+                              <span>📂</span><span>Drive</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => { setSimpleMobilePanel(null); layerUploadInputRef.current?.click(); }}
-                              className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl border border-violet-300/70 bg-violet-500 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(124,58,237,0.22)]"
-                            >
-                              <span className="text-base">💻</span>
-                              <span>File Lokal</span>
-                            </button>
-                          </div>
-
-                          {/* Simpan template */}
-                          <div className="mt-3 grid grid-cols-1 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setSimpleMobilePanel(null); openSaveTemplateModal(); }}
-                              disabled={!image}
-                              className="min-h-11 rounded-2xl border border-white/70 bg-emerald-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:opacity-45"
-                            >
-                              💾 Simpan Template ke Drive
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); layerUploadInputRef.current?.click(); }}
+                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-violet-300/60 bg-violet-500 text-[11px] font-black text-white">
+                              <span>💻</span><span>Lokal</span>
                             </button>
                           </div>
                         </div>
@@ -30186,107 +30156,40 @@ export default function XrayCalibrationWorkspace({
                         canRedo={historyState.redo > 0}
                       />
                     ) : simpleMobilePanel === "layer" ? (
-                      <div className="mx-auto max-h-[min(56vh,500px)] w-[min(94vw,440px)] overflow-y-auto rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
-                          <div>
-                            <h2 className="text-xs font-black tracking-wider uppercase">
-                              Layer
-                            </h2>
-                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
-                              Manage & image clarity
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setSimpleMobilePanel(null)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-                            aria-label="Tutup layer mobile"
-                            title="Tutup"
-                          >
-                            <X className="h-3.5 w-3.5" />
+                      <div className="mx-auto max-h-[min(55vh,480px)] w-[min(92vw,360px)] overflow-y-auto rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                        <div className="mb-2.5 flex items-center justify-between">
+                          <p className="text-xs font-black uppercase tracking-wider">Layer</p>
+                          <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                            <X className="h-3 w-3" />
                           </button>
                         </div>
 
-                        <div className="mb-3 rounded-[24px] border border-white/70 bg-[#eef2f7] p-3 shadow-[inset_2px_2px_6px_rgba(148,163,184,0.18),inset_-2px_-2px_6px_rgba(255,255,255,0.82)]">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
-                                Gambar Utama
-                              </div>
-                              <div className="text-xs font-black text-slate-800">
-                                Contrast / Level
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setContrast(100);
-                                setLevel(100);
-                              }}
-                              className="min-h-10 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-[10px] font-black text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)]"
-                            >
+                        {/* Contrast/Level compact */}
+                        <div className="mb-2.5 rounded-[18px] border border-white/65 bg-[#eef2f7] p-2.5 shadow-[inset_1px_1px_4px_rgba(148,163,184,0.16)]">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Gambar Utama</p>
+                            <button type="button" onClick={() => { setContrast(100); setLevel(100); }}
+                              className="rounded-lg border border-white/65 bg-[#eef2f7] px-2 py-0.5 text-[8px] font-black text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]">
                               Reset
                             </button>
                           </div>
-                          <div className="space-y-2">
-                            {[
-                              {
-                                key: "mobile-main-contrast",
-                                label: "Contrast",
-                                value: contrast,
-                                min: 20,
-                                max: 220,
-                                onChange: setContrast,
-                              },
-                              {
-                                key: "mobile-main-level",
-                                label: "Level",
-                                value: level,
-                                min: 20,
-                                max: 220,
-                                onChange: setLevel,
-                              },
-                            ].map((control) => (
-                              <label
-                                key={control.key}
-                                className="block rounded-2xl border border-white/60 bg-white/35 px-3 py-2"
-                              >
-                                <span className="flex items-center justify-between text-[10px] font-black text-slate-600">
-                                  <span>{control.label}</span>
-                                  <span className="font-mono text-slate-900">
-                                    {control.value}%
-                                  </span>
-                                </span>
-                                <input
-                                  type="range"
-                                  min={control.min}
-                                  max={control.max}
-                                  step={1}
-                                  value={control.value}
-                                  onChange={(event) =>
-                                    control.onChange(Number(event.target.value))
-                                  }
-                                  className="mt-2 h-2 w-full accent-cyan-700"
-                                />
-                              </label>
-                            ))}
-                          </div>
+                          {[{ label: "Contrast", value: contrast, onChange: setContrast }, { label: "Level", value: level, onChange: setLevel }].map((c) => (
+                            <label key={c.label} className="flex items-center gap-2 py-1">
+                              <span className="w-14 text-[9px] font-bold text-slate-600">{c.label}</span>
+                              <input type="range" min={20} max={220} step={1} value={c.value} onChange={(e) => c.onChange(Number(e.target.value))} className="flex-1 h-1.5 accent-cyan-600" />
+                              <span className="w-9 text-right text-[9px] font-mono text-slate-700">{c.value}%</span>
+                            </label>
+                          ))}
                         </div>
 
                         <LayerManager
                           layers={cutLayers}
                           selectedLayerId={selectedCutLayerId}
-                          onSelectLayer={(layerId) =>
-                            selectLayerFromCanvas(layerId, { openPanel: false })
-                          }
+                          onSelectLayer={(layerId) => selectLayerFromCanvas(layerId, { openPanel: false })}
                           onToggleLayerVisibility={toggleCutLayerVisibility}
                           onMoveLayer={moveCutLayerInStack}
-                          onOpenSettings={(layerId) => {
-                            selectLayerFromCanvas(layerId, { openPanel: false });
-                            setSimpleMobilePanel(null);
-                            openLayerSettingsModal(layerId);
-                          }}
-                          maxHeightClass="max-h-[min(28vh,260px)]"
+                          onOpenSettings={(layerId) => { selectLayerFromCanvas(layerId, { openPanel: false }); setSimpleMobilePanel(null); openLayerSettingsModal(layerId); }}
+                          maxHeightClass="max-h-[min(26vh,220px)]"
                         />
                       </div>
                     ) : simpleMobilePanel === "implant" ? (
@@ -30319,229 +30222,98 @@ export default function XrayCalibrationWorkspace({
                           subtitle="Template overlay"
                         />
                       ) : simpleMobilePanel === "export" ? (
-                        <div className="mx-auto w-[min(94vw,420px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/97 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.30),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                          <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
-                            <div>
-                              <h2 className="text-xs font-black tracking-wider uppercase">
-                                Export
-                              </h2>
-                              <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
-                                Snapshot & report
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setSimpleMobilePanel(null)}
-                              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-                              aria-label="Tutup export mobile"
-                              title="Tutup"
-                            >
-                              <X className="h-3.5 w-3.5" />
+                        <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                          <div className="mb-2.5 flex items-center justify-between">
+                            <p className="text-xs font-black uppercase tracking-wider">Export</p>
+                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                              <X className="h-3 w-3" />
                             </button>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                exportReportPng();
-                              }}
-                              disabled={!image}
-                              className="min-h-14 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              PNG 2x Sharp
+
+                          {/* Export buttons */}
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); exportReportPng(); }} disabled={!image}
+                              className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black text-cyan-700 shadow-[2px_2px_5px_rgba(148,163,184,0.22),-1px_-1px_3px_rgba(255,255,255,0.9)] disabled:opacity-40">
+                              PNG
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                exportReportJpeg();
-                              }}
-                              disabled={!image}
-                              className="min-h-14 rounded-2xl border border-white/70 bg-[#fff7ed] px-3 text-xs font-black text-amber-700 shadow-[2px_2px_6px_rgba(148,163,184,0.20),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              JPEG Highest
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); exportReportJpeg(); }} disabled={!image}
+                              className="min-h-11 rounded-2xl border border-white/70 bg-[#fff7ed] text-[10px] font-black text-amber-700 shadow-[2px_2px_5px_rgba(148,163,184,0.18)] disabled:opacity-40">
+                              JPEG
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                exportReportPdf();
-                              }}
-                              disabled={!image}
-                              className="min-h-14 rounded-2xl border border-white/70 bg-slate-900 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              Export PDF
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                openSaveTemplateModal();
-                              }}
-                              disabled={!image}
-                              className="min-h-12 rounded-2xl bg-emerald-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              💾 Simpan + Template
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                setLibraryModalOpen(true);
-                              }}
-                              className="min-h-12 rounded-2xl border border-white/70 bg-cyan-600 px-3 text-xs font-black text-white shadow-[2px_2px_8px_rgba(8,145,178,0.22)]"
-                            >
-                              📂 Library
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSimpleMobilePanel(null);
-                                setGoogleDriveUploadModalOpen(true);
-                              }}
-                              disabled={!image}
-                              className="col-span-2 min-h-12 rounded-2xl border border-white/70 bg-[#eef2f7] px-3 text-xs font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              ☁️ Upload Google Drive
+                            <button type="button" onClick={() => { setSimpleMobilePanel(null); exportReportPdf(); }} disabled={!image}
+                              className="min-h-11 rounded-2xl bg-slate-800 text-[10px] font-black text-white shadow-[2px_2px_6px_rgba(15,23,42,0.2)] disabled:opacity-40">
+                              PDF
                             </button>
                           </div>
-                          <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-black text-slate-600">
-                            <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
-                              Measure {measurementRows.length}
-                            </div>
-                            <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
-                              Layer {cutLayers.length}
-                            </div>
-                            <div className="rounded-2xl border border-white/65 bg-white/35 px-2 py-2">
-                              Calib {hasCalibration ? "ON" : "OFF"}
-                            </div>
-                          </div>
-                          <div className="mt-3 rounded-[22px] border border-white/60 bg-white/30 p-2">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                              <div>
-                                <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
-                                  Compare
-                                </div>
-                                <div className="text-[10px] font-black text-slate-700">
-                                  Before / After Templating
-                                </div>
+                          <button type="button" onClick={() => { setSimpleMobilePanel(null); openSaveTemplateModal(); }} disabled={!image}
+                            className="mt-1.5 w-full min-h-10 rounded-2xl bg-emerald-600 text-[11px] font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:opacity-40">
+                            💾 Simpan Template ke Drive
+                          </button>
+
+                          {/* Stats */}
+                          <div className="mt-2.5 flex gap-1.5">
+                            {[
+                              { label: `${measurementRows.length} Ukur` },
+                              { label: `${cutLayers.length} Layer` },
+                              { label: `Calib ${hasCalibration ? "✓" : "–"}` },
+                            ].map((s) => (
+                              <div key={s.label} className="flex-1 rounded-xl border border-white/60 bg-white/35 py-1.5 text-center text-[9px] font-black text-slate-600">
+                                {s.label}
                               </div>
-                              <span className="rounded-full bg-white/45 px-2 py-1 text-[8px] font-black text-slate-500">
+                            ))}
+                          </div>
+
+                          {/* Compare — compact */}
+                          <div className="mt-2.5 rounded-[18px] border border-white/60 bg-white/30 p-2.5">
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Compare</p>
+                              <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${compareMode ? "bg-cyan-100 text-cyan-700" : "bg-slate-100 text-slate-500"}`}>
                                 {compareMode ? "ON" : "OFF"}
                               </span>
                             </div>
                             <div className="grid grid-cols-2 gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => compareUploadInputRef.current?.click()}
-                                className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
-                              >
+                              <button type="button" onClick={() => compareUploadInputRef.current?.click()}
+                                className="min-h-9 rounded-xl border border-white/65 bg-[#eef2f7]/70 text-[9px] font-black text-slate-700 shadow-[1px_1px_3px_rgba(148,163,184,0.16)]">
                                 Upload Before
                               </button>
-                              <button
-                                type="button"
-                                onClick={useActiveWorkspaceAsCompareAfter}
-                                className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
-                              >
-                                After Aktif
+                              <button type="button" onClick={useActiveWorkspaceAsCompareAfter}
+                                className="min-h-9 rounded-xl border border-white/65 bg-[#eef2f7]/70 text-[9px] font-black text-slate-700 shadow-[1px_1px_3px_rgba(148,163,184,0.16)]">
+                                Set After
                               </button>
-                              <button
-                                type="button"
-                                onClick={toggleCompareModePreservingWorkspace}
-                                className="min-h-10 rounded-2xl border border-white/65 bg-[#eef2f7]/70 px-2 text-[9px] font-black text-cyan-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
-                              >
-                                {compareMode ? "Exit Compare" : "Show Compare"}
+                              <button type="button" onClick={toggleCompareModePreservingWorkspace}
+                                className="min-h-9 rounded-xl border border-cyan-200/70 bg-cyan-50/70 text-[9px] font-black text-cyan-800">
+                                {compareMode ? "Tutup Compare" : "Tampilkan"}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (compareObjectUrlRef.current) {
-                                    URL.revokeObjectURL(compareObjectUrlRef.current);
-                                    compareObjectUrlRef.current = null;
-                                  }
-                                  compareImageFileRef.current = null;
-                                  setCompareImageSrc(null);
-                                  setCompareImage(null);
-                                  setCompareImageName("");
-                                  setCompareMode(false);
-                                }}
-                                disabled={!compareImageSrc}
-                                className="min-h-10 rounded-2xl border border-rose-200 bg-rose-50/80 px-2 text-[9px] font-black text-rose-600 disabled:opacity-45"
-                              >
-                                Clear Before
+                              <button type="button" onClick={() => { if (compareObjectUrlRef.current) { URL.revokeObjectURL(compareObjectUrlRef.current); compareObjectUrlRef.current = null; } compareImageFileRef.current = null; setCompareImageSrc(null); setCompareImage(null); setCompareImageName(""); setCompareMode(false); }} disabled={!compareImageSrc}
+                                className="min-h-9 rounded-xl border border-rose-200 bg-rose-50/80 text-[9px] font-black text-rose-600 disabled:opacity-40">
+                                Clear
                               </button>
                             </div>
-                            <div className="mt-2 truncate text-[9px] font-semibold text-slate-500">
-                              {compareImageName
-                                ? `Before: ${compareImageName}`
-                                : "Before belum dipilih."}
-                            </div>
+                            {compareImageName ? (
+                              <p className="mt-1.5 truncate text-[8px] text-slate-400">Before: {compareImageName}</p>
+                            ) : null}
                           </div>
                         </div>
                       ) : (
-                      <div className="mx-auto w-[min(92vw,360px)] rounded-[30px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.34),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                        <div className="flex items-center justify-between gap-3 border-b border-slate-300/20 pb-3">
-                          <div>
-                            <h2 className="text-xs font-black tracking-wider uppercase">
-                              Planning
-                            </h2>
-                            <p className="mt-0.5 text-[9px] font-extrabold text-slate-400 uppercase">
-                              TKA / HIP / Guide
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setSimpleMobilePanel(null)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_6px_rgba(148,163,184,0.28),-2px_-2px_6px_rgba(255,255,255,0.78)]"
-                            aria-label="Tutup planning mobile"
-                            title="Tutup"
-                          >
-                            <X className="h-3.5 w-3.5" />
+                      <div className="mx-auto w-[min(92vw,320px)] rounded-[24px] border border-white/75 bg-[#eef2f7]/96 p-3 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
+                        <div className="mb-2.5 flex items-center justify-between">
+                          <p className="text-xs font-black uppercase tracking-wider">Planning</p>
+                          <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                            <X className="h-3 w-3" />
                           </button>
                         </div>
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSimpleMobilePanel(null);
-                              openSimplePlanningModal("tka");
-                            }}
-                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
-                          >
-                            TKA
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSimpleMobilePanel(null);
-                              openSimplePlanningModal("hip");
-                            }}
-                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
-                          >
-                            HIP
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSimpleMobilePanel(null);
-                              setSimpleGuideModalOpen(true);
-                            }}
-                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
-                          >
-                            Guide
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                                setSimpleMobilePanel(null);
-                                setMobileCanvasMode("edit");
-                                handleToolChange("hkaAuto");
-                              }}
-                            className="rounded-[20px] border border-white/70 bg-[#eef2f7] px-3 py-4 text-xs font-black text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.78)]"
-                          >
-                            HKA
-                          </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { label: "TKA", onClick: () => { setSimpleMobilePanel(null); openSimplePlanningModal("tka"); } },
+                            { label: "HIP", onClick: () => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); } },
+                            { label: "Guide", onClick: () => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); } },
+                            { label: "HKA", onClick: () => { setSimpleMobilePanel(null); setMobileCanvasMode("edit"); handleToolChange("hkaAuto"); } },
+                          ].map((btn) => (
+                            <button key={btn.label} type="button" onClick={btn.onClick}
+                              className="min-h-11 rounded-[18px] border border-white/70 bg-[#eef2f7] text-xs font-black text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                              {btn.label}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -31710,7 +31482,7 @@ export default function XrayCalibrationWorkspace({
                 canRedo={historyState.redo > 0}
               />
                 <div
-                  className={`absolute top-2 right-2 z-20 hidden gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-3 lg:bottom-3 lg:flex ${SOFT_FLOAT_SURFACE_CLASS}`}
+                  className={`absolute top-2 right-2 z-20 hidden gap-1.5 p-1 sm:top-3 sm:right-3 lg:top-auto lg:right-auto lg:left-1/2 lg:-translate-x-1/2 lg:bottom-4 lg:flex ${SOFT_FLOAT_SURFACE_CLASS}`}
                 >
                 <motion.button
                   type="button"
