@@ -1720,8 +1720,11 @@ function inferHkaDirectionFromSignedDeviation(signedDeviation, side, fallback = 
     return fallback === "valgus" ? "valgus" : "varus";
   }
   const normalizedSide = normalizeHkaSide(side);
+  // Konvensi radiologis: kaki kanan tampil di KIRI gambar → medial ke KANAN layar
+  // Varus kanan = lutut lateral = ke kiri → deviation < 0
+  // Valgus kanan = lutut medial = ke kanan → deviation > 0
   const isVarus =
-    normalizedSide === "right" ? signedDeviation > 0 : signedDeviation < 0;
+    normalizedSide === "right" ? signedDeviation < 0 : signedDeviation > 0;
   return isVarus ? "varus" : "valgus";
 }
 
@@ -22836,7 +22839,7 @@ export default function XrayCalibrationWorkspace({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm"
+            className="fixed inset-0 z-[95] flex items-end justify-center bg-slate-950/35 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-4"
             onClick={(event) => {
               if (event.target === event.currentTarget) {
                 setSimplePlanningModal(null);
@@ -22851,36 +22854,35 @@ export default function XrayCalibrationWorkspace({
               role="dialog"
               aria-modal="true"
               aria-labelledby="planning-modal-title"
-              className="max-h-[92vh] w-full max-w-[620px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
+              className="max-h-[92dvh] w-full max-w-[min(100%,620px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
             >
-              <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
-                <div className="min-w-0">
-                  <div id="planning-modal-title" className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
-                    <Icon name="package" className="h-5 w-5 text-slate-700" aria-hidden="true" />
-                    <span>
-                      {simplePlanningModal === "hip"
-                        ? "Planning HIP"
-                        : "Planning TKA"}
+              {/* Header */}
+              <div className="flex items-center justify-between gap-2 border-b border-white/70 px-4 py-3 sm:px-5 sm:py-4">
+                <div className="min-w-0 flex-1">
+                  <div id="planning-modal-title" className="flex items-center gap-2 text-base font-extrabold text-slate-800 sm:text-xl">
+                    <Icon name="package" className="h-4 w-4 shrink-0 text-slate-700 sm:h-5 sm:w-5" aria-hidden="true" />
+                    <span className="truncate">
+                      {simplePlanningModal === "hip" ? "Planning HIP" : "Planning TKA"}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                  <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500 sm:mt-1 sm:text-xs">
                     {simplePlanningModal === "hip"
-                      ? "Offset, LLD, dan line hip memakai tool yang sama dengan workspace."
-                      : "Distal cut, tibial slope, dan tibial cut memakai guide canvas yang sama."}
+                      ? "Offset, LLD, dan line hip."
+                      : "Distal cut, tibial slope, dan tibial cut."}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSimplePlanningModal(null)}
-                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-6px_-6px_14px_rgba(255,255,255,0.76)]"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[4px_4px_10px_rgba(100,116,139,0.2),-4px_-4px_10px_rgba(255,255,255,0.72)] sm:h-11 sm:w-11"
                   aria-label="Tutup planning"
                   title="Tutup"
                 >
-                  <X className="h-4 w-4" strokeWidth={2.1} />
+                  <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.1} />
                 </button>
               </div>
 
-              <div className="max-h-[calc(92vh-82px)] space-y-3 overflow-y-auto px-5 py-5">
+              <div className="max-h-[calc(92dvh-68px)] space-y-3 overflow-y-auto px-4 py-4 sm:max-h-[calc(92vh-82px)] sm:px-5 sm:py-5">
                 {simplePlanningModal === "tka" ? (
                   <>
                     <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
@@ -22926,7 +22928,7 @@ export default function XrayCalibrationWorkspace({
                       })}
                     </div>
 
-                    <div className="grid gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-4 text-xs font-semibold text-slate-600 shadow-[8px_8px_18px_rgba(100,116,139,0.18),-6px_-6px_16px_rgba(255,255,255,0.72)] sm:grid-cols-2">
+                    <div className="grid grid-cols-2 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-3 text-xs font-semibold text-slate-600 shadow-[8px_8px_18px_rgba(100,116,139,0.18),-6px_-6px_16px_rgba(255,255,255,0.72)] sm:p-4">
                       {planningGuideMode === "valgusCut" ? (
                         <>
                           <label>
@@ -23124,28 +23126,20 @@ export default function XrayCalibrationWorkspace({
                       ) : null}
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={
-                          selectedPlanningGuide
-                            ? () => updateSelectedPlanningGuide()
-                            : addPlanningGuideFromSelectedLine
-                        }
+                        onClick={selectedPlanningGuide ? () => updateSelectedPlanningGuide() : addPlanningGuideFromSelectedLine}
                         disabled={!selectedPlanningGuide && !selectedLine}
-                        className="rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#ff7770_0%,#fb5f58_100%)] px-3 py-3 text-xs font-extrabold text-white shadow-[6px_6px_14px_rgba(248,113,113,0.25),-5px_-5px_12px_rgba(255,255,255,0.68)] transition disabled:cursor-not-allowed disabled:opacity-45"
+                        className="min-h-11 rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#ff7770_0%,#fb5f58_100%)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[4px_4px_10px_rgba(248,113,113,0.22)] transition disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {selectedPlanningGuide ? "Update Guide" : "Buat dari Line"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setPlanningGuides([]);
-                          setSelectedPlanningGuideId(null);
-                          setNotice("Semua planning guide dihapus.");
-                        }}
+                        onClick={() => { setPlanningGuides([]); setSelectedPlanningGuideId(null); setNotice("Semua planning guide dihapus."); }}
                         disabled={planningGuides.length === 0}
-                        className="rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-3 text-xs font-extrabold text-slate-500 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.72)] transition disabled:cursor-not-allowed disabled:opacity-45"
+                        className="min-h-11 rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-2.5 text-xs font-extrabold text-slate-500 shadow-[4px_4px_10px_rgba(100,116,139,0.18)] transition disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         Clear Guide
                       </button>
