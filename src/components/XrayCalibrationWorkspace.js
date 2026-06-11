@@ -75,6 +75,7 @@ import {
   classifyAlignment,
 } from "../lib/hka/hkaCalculator";
 import { calculateFTA, predictHKAAFromFTA } from "../lib/hka/ftaCalculator";
+import { computeJLA } from "../lib/hka/jlaCalculator";
 import useMobileCanvasGestures from "../hooks/useMobileCanvasGestures";
 import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
 import DriveImageWithFallback from "./DriveImageWithFallback";
@@ -87,11 +88,16 @@ import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import ImplantLayer from "./ImplantLayer";
 import CalibrationWizard from "./KalibrasiWizzard";
 import LayerManager from "./LayerManager";
+import LineManager from "./LineManager";
+import ManagerPanel from "./ManagerPanel";
 import ModalStarter from "./ModalStarter";
 import MobileNavigation from "./MobileNavigation";
 import PanelActions from "./PanelActions";
 import QuickPanel from "./QuickPanel";
 import TemplateStoragePicker from "./TemplateStoragePicker";
+import PreOpReportModal from "./PreOpReportModal";
+import ImplantSizePanel from "./ImplantSizePanel";
+import PatientCaseManager from "./PatientCaseManager";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
@@ -312,7 +318,195 @@ const HKA_MODE_DEFINITIONS = {
       },
     ],
   },
+  jla: {
+    key: "jla",
+    label: "JLA",
+    modeLabel: "Joint Line Analysis (LDFA · MPTA · JLCA)",
+    points: [
+      { key: "hip",               shortLabel: "CFH",  promptLabel: "center femoral head" },
+      { key: "knee",              shortLabel: "CK",   promptLabel: "center knee / notch" },
+      { key: "ankle",             shortLabel: "CA",   promptLabel: "center ankle" },
+      { key: "femCondyleMedial",  shortLabel: "MFC",  promptLabel: "kondilus femur medial (titik terendah)" },
+      { key: "femCondyleLateral", shortLabel: "LFC",  promptLabel: "kondilus femur lateral (titik terendah)" },
+      { key: "tibPlateauMedial",  shortLabel: "MTP",  promptLabel: "plateau tibia medial (titik tertinggi)" },
+      { key: "tibPlateauLateral", shortLabel: "LTP",  promptLabel: "plateau tibia lateral (titik tertinggi)" },
+    ],
+  },
 };
+
+const HKA_POINT_HINTS = {
+  hip:               { color: "#facc15", label: "CFH",       hint: "Klik pusat kepala femur (center of femoral head)" },
+  knee:              { color: "#f97316", label: "CK",        hint: "Klik pusat sendi lutut / femoral notch" },
+  ankle:             { color: "#22c55e", label: "CA",        hint: "Klik pusat talar dome / center ankle" },
+  femCondyleMedial:  { color: "#38bdf8", label: "MFC",       hint: "Klik titik TERENDAH kondilus femur medial" },
+  femCondyleLateral: { color: "#38bdf8", label: "LFC",       hint: "Klik titik TERENDAH kondilus femur lateral" },
+  tibPlateauMedial:  { color: "#14b8a6", label: "MTP",       hint: "Klik titik TERTINGGI plateau tibia medial" },
+  tibPlateauLateral: { color: "#14b8a6", label: "LTP",       hint: "Klik titik TERTINGGI plateau tibia lateral" },
+  femurMidshaft10cm: { color: "#facc15", label: "Fem2",      hint: "Klik mid-shaft femur ±10 cm dari lutut" },
+  femoralNotch:      { color: "#f97316", label: "Notch",     hint: "Klik femoral intercondylar notch" },
+  tibiaMidshaft4cm:  { color: "#22c55e", label: "Tib1 4cm",  hint: "Klik mid-shaft tibia ±4 cm dari plateau" },
+  tibiaMidshaft10cm: { color: "#14b8a6", label: "Tib1 10cm", hint: "Klik mid-shaft tibia ±10 cm dari plateau" },
+};
+
+const METRIC_TOOLTIPS = {
+  HKA:  { title: "HKA — Hip-Knee-Ankle",           normal: "0° ± 3°",    desc: "Sudut mekanis tungkai. Varus > +3°, Valgus < -3°. Target koreksi HTO/DFO: 0° s.d. +3°.",           color: "#0891b2" },
+  FTA:  { title: "FTA — Femorotibial Angle",        normal: "174°–176°",  desc: "Sudut anatomi femur-tibia. Tidak perlu long-leg. Estimasi HKA ≈ FTA − 6° (±2°).",                color: "#c2410c" },
+  LDFA: { title: "LDFA — Lat. Distal Femoral Angle",normal: "87° ± 3°",   desc: "Sudut kondilus femur vs axis mekanis. > 90° = varus femur, < 84° = valgus femur.",               color: "#1d4ed8" },
+  MPTA: { title: "MPTA — Med. Proximal Tibial Angle",normal: "87° ± 3°",  desc: "Sudut plateau tibia vs axis mekanis. < 84° = varus tibia, > 90° = valgus tibia.",                 color: "#065f46" },
+  JLCA: { title: "JLCA — Joint Line Convergence",   normal: "0° ± 2°",    desc: "Konvergensi garis sendi femur dan tibia. > 2°: kurangi koreksi sebesar (JLCA−2)/2° (Micicoi).",   color: "#6b21a8" },
+  JLO:  { title: "JLO — Joint Line Obliquity (Hsu)",normal: "≤ 3°",       desc: "Kemiringan garis sendi. Formula: 90° − (LDFA+MPTA)/2. ≥ 3° bersama JLCA ≥ 5° → indikasi DLO.",    color: "#92400e" },
+  CPAK: { title: "CPAK — Coronal Plane Alignment",  normal: "9 fenotipe",  desc: "Fenotipe biomekanik lutut (MacDessi 2021). 9 tipe dari HKA × JLO. CPAK I (~26%) paling umum.",    color: "#4338ca" },
+};
+
+const HKA_INFO_BUBBLES = {
+  full: {
+    key: "full",
+    title: "HKA",
+    subtitle: "Hip-Knee-Ankle Angle",
+    tagline: "Sudut Mekanis Tungkai",
+    color: "#0891b2",
+    colorLight: "#ecfeff",
+    colorMid: "#cffafe",
+    emoji: "🦴",
+    landmark: {
+      label: "3 Landmark · Long-leg AP X-ray",
+      points: [
+        { key: "CFH", color: "#facc15", desc: "Center of Femoral Head" },
+        { key: "CK",  color: "#f97316", desc: "Center of Knee" },
+        { key: "CA",  color: "#22c55e", desc: "Center of Ankle / Talar Dome" },
+      ],
+    },
+    normals: [
+      { label: "Netral",  value: "0°",    color: "#166534", bg: "#dcfce7" },
+      { label: "Varus",   value: "> +3°", color: "#991b1b", bg: "#fee2e2" },
+      { label: "Valgus",  value: "< −3°", color: "#1e40af", bg: "#dbeafe" },
+    ],
+    clinical: [
+      "HTO (High Tibial Osteotomy) → koreksi varus ≥ 5°",
+      "DFO (Distal Femoral Osteotomy) → koreksi valgus berat",
+      "Target koreksi: HKA +2° s.d. +3° (sedikit valgus)",
+      "Setiap 1mm medial shift plateau ≈ 1° koreksi HKA",
+    ],
+    ref: "Paley et al. · Dugdale 1992 · Felson 1988",
+  },
+  fta: {
+    key: "fta",
+    title: "FTA",
+    subtitle: "Femorotibial Angle",
+    tagline: "Sudut Anatomis Femur–Tibia",
+    color: "#c2410c",
+    colorLight: "#fff7ed",
+    colorMid: "#fed7aa",
+    emoji: "📐",
+    landmark: {
+      label: "4 Landmark · AP Knee Standar",
+      points: [
+        { key: "Fem2",       color: "#facc15", desc: "Mid-shaft femur ±10 cm proksimal" },
+        { key: "Notch",      color: "#f97316", desc: "Femoral intercondylar notch" },
+        { key: "Tib1 4cm",  color: "#22c55e", desc: "Mid-shaft tibia ±4 cm distal" },
+        { key: "Tib1 10cm", color: "#14b8a6", desc: "Mid-shaft tibia ±10 cm distal" },
+      ],
+    },
+    normals: [
+      { label: "Normal",     value: "174°–176°",  color: "#166534", bg: "#dcfce7" },
+      { label: "Valgus fis.", value: "5°–6°",      color: "#1e40af", bg: "#dbeafe" },
+      { label: "Prediksi HKA", value: "FTA − 6°", color: "#92400e", bg: "#fef3c7" },
+    ],
+    clinical: [
+      "Digunakan ketika long-leg X-ray tidak tersedia",
+      "Prediksi HKA ≈ FTA − 6° (variasi individual ±2°)",
+      "Screening awal deformitas tanpa sumber daya tambahan",
+      "Kurang akurat untuk kasus displasia atau deformitas kompleks",
+    ],
+    ref: "Moreland 1987 · Hsu et al. 1990 · Paley 2002",
+  },
+  jla: {
+    key: "jla",
+    title: "JLA",
+    subtitle: "Joint Line Analysis",
+    tagline: "LDFA · MPTA · JLCA · CPAK",
+    color: "#4338ca",
+    colorLight: "#eef2ff",
+    colorMid: "#c7d2fe",
+    emoji: "🔬",
+    landmark: {
+      label: "7 Landmark · Long-leg AP X-ray",
+      points: [
+        { key: "CFH", color: "#facc15", desc: "Center of Femoral Head" },
+        { key: "CK",  color: "#f97316", desc: "Center of Knee" },
+        { key: "CA",  color: "#22c55e", desc: "Center of Ankle" },
+        { key: "MFC", color: "#38bdf8", desc: "Kondilus femur medial (titik terendah)" },
+        { key: "LFC", color: "#38bdf8", desc: "Kondilus femur lateral (titik terendah)" },
+        { key: "MTP", color: "#14b8a6", desc: "Plateau tibia medial (titik tertinggi)" },
+        { key: "LTP", color: "#14b8a6", desc: "Plateau tibia lateral (titik tertinggi)" },
+      ],
+    },
+    normals: [
+      { label: "LDFA",  value: "87° ±3°", color: "#1e40af", bg: "#dbeafe" },
+      { label: "MPTA",  value: "87° ±3°", color: "#065f46", bg: "#d1fae5" },
+      { label: "JLCA",  value: "0° ±2°",  color: "#6b21a8", bg: "#f3e8ff" },
+      { label: "JLO",   value: "≤ 3°",    color: "#92400e", bg: "#fef3c7" },
+    ],
+    clinical: [
+      "LDFA > 90° → varus femur · < 84° → valgus femur",
+      "MPTA < 84° → varus tibia · > 90° → valgus tibia",
+      "JLCA > 2° → kurangi koreksi (JLCA−2)/2° (Micicoi)",
+      "JLCA ≥ 5° + JLO ≥ 3° → pertimbangkan DLO",
+      "CPAK: 9 fenotipe HKA×JLO (MacDessi 2021) panduan osteotomi",
+    ],
+    ref: "Pratobevera EFORT 2024 · MacDessi 2021 · Micicoi 2020 · Hsu 1990",
+  },
+};
+
+function jlaExtendLine(a, b, extendPx) {
+  if (!a || !b) return { a, b };
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return {
+    a: { x: a.x - (dx / len) * extendPx, y: a.y - (dy / len) * extendPx },
+    b: { x: b.x + (dx / len) * extendPx, y: b.y + (dy / len) * extendPx },
+  };
+}
+
+function jlaLineIntersect(p1, p2, p3, p4) {
+  if (!p1 || !p2 || !p3 || !p4) return null;
+  const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+  const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+  const cross = d1x * d2y - d1y * d2x;
+  if (Math.abs(cross) < 1e-8) return null;
+  const dx = p3.x - p1.x, dy = p3.y - p1.y;
+  const t = (dx * d2y - dy * d2x) / cross;
+  return { x: p1.x + t * d1x, y: p1.y + t * d1y };
+}
+
+function jlaDrawAngleArc(ctx, vertex, ptA, ptB, radius, label, color) {
+  if (!vertex || !ptA || !ptB) return;
+  const angleA = Math.atan2(ptA.y - vertex.y, ptA.x - vertex.x);
+  const angleB = Math.atan2(ptB.y - vertex.y, ptB.x - vertex.x);
+  let diff = angleB - angleA;
+  while (diff > Math.PI) diff -= 2 * Math.PI;
+  while (diff < -Math.PI) diff += 2 * Math.PI;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.72;
+  ctx.beginPath();
+  ctx.arc(vertex.x, vertex.y, radius, angleA, angleB, diff < 0);
+  ctx.stroke();
+  const midAngle = angleA + diff / 2;
+  const lx = vertex.x + (radius + 11) * Math.cos(midAngle);
+  const ly = vertex.y + (radius + 11) * Math.sin(midAngle);
+  ctx.globalAlpha = 1;
+  ctx.font = "bold 10px Arial";
+  ctx.strokeStyle = "rgba(0,0,0,0.75)";
+  ctx.lineWidth = 3;
+  ctx.strokeText(label, lx, ly);
+  ctx.fillStyle = color;
+  ctx.fillText(label, lx, ly);
+  ctx.restore();
+}
+
 const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
@@ -1645,10 +1839,11 @@ function getHkaMeasurementResult(hka) {
       signedDeviation: null,
       direction: hka?.direction || "varus",
       side: hka?.side || "right",
-      label: mode === "fta" ? "FTA belum lengkap" : "Belum lengkap",
+      label: mode === "fta" ? "FTA belum lengkap" : mode === "jla" ? "JLA belum lengkap" : "Belum lengkap",
       modeLabel: definition.modeLabel,
       fta: null,
       predictedHka: null,
+      jla: null,
     };
   }
 
@@ -1674,6 +1869,31 @@ function getHkaMeasurementResult(hka) {
       modeLabel: definition.modeLabel,
       fta,
       predictedHka,
+      jla: null,
+    };
+  }
+
+  if (mode === "jla") {
+    const jla = computeJLA({
+      femoralHead:       hka.hip,
+      kneeCenter:        hka.knee,
+      ankleCenter:       hka.ankle,
+      femCondyleMedial:  hka.femCondyleMedial,
+      femCondyleLateral: hka.femCondyleLateral,
+      tibPlateauMedial:  hka.tibPlateauMedial,
+      tibPlateauLateral: hka.tibPlateauLateral,
+    });
+    return {
+      mode,
+      absoluteDeviation: jla?.JLCA ?? null,
+      signedDeviation: null,
+      direction: hka?.direction || "varus",
+      side: hka?.side || "right",
+      label: jla ? `LDFA ${jla.LDFA}° · MPTA ${jla.MPTA}°` : "JLA belum lengkap",
+      modeLabel: definition.modeLabel,
+      fta: null,
+      predictedHka: null,
+      jla,
     };
   }
 
@@ -1700,6 +1920,7 @@ function getHkaMeasurementResult(hka) {
     modeLabel: definition.modeLabel,
     fta: null,
     predictedHka: null,
+    jla: null,
   };
 }
 
@@ -1749,6 +1970,15 @@ function getHkaCanvasLabelText(measurement, expanded = false) {
       return `FTA ${measurement.fta.toFixed(1)}° | HKAA ${measurement.predictedHka.toFixed(1)}°`;
     }
     return `FTA ${measurement.fta.toFixed(1)}°`;
+  }
+
+  if (measurement.mode === "jla") {
+    const jla = measurement.jla;
+    if (!jla) return "JLA";
+    if (expanded) {
+      return `LDFA ${jla.LDFA}° | MPTA ${jla.MPTA}° | JLCA ${jla.JLCA}°`;
+    }
+    return `${jla.cpakType} | LDFA ${jla.LDFA}°`;
   }
 
   if (measurement.absoluteDeviation === null) return "HKA";
@@ -3953,6 +4183,7 @@ export default function XrayCalibrationWorkspace({
   const nextAngleIdRef = useRef(1);
   const nextCircleIdRef = useRef(1);
   const nextHkaIdRef = useRef(1);
+  const hkaCompletionFiredRef = useRef(false);
   const nextCutLayerIdRef = useRef(1);
   const nextAnnotationIdRef = useRef(1);
   const historyPastRef = useRef([]);
@@ -4045,6 +4276,8 @@ export default function XrayCalibrationWorkspace({
   const [draftFreeLineTargetLayerId, setDraftFreeLineTargetLayerId] =
     useState(null);
   const [cutLayers, setCutLayers] = useState([]);
+  const [renameLayerId, setRenameLayerId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
   const [templateLibrary, setTemplateLibrary] = useState([]);
 
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
@@ -4111,7 +4344,10 @@ export default function XrayCalibrationWorkspace({
   const [rotation, setRotation] = useState(0);
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
+  const [invertImage, setInvertImage] = useState(false);
   const [cropRect, setCropRect] = useState(null);
+  const [cropToolActive, setCropToolActive] = useState(false);
+  const [cropDraftPoints, setCropDraftPoints] = useState(null);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(true);
   const [mobilePanelMode, setMobilePanelMode] = useState("workspace");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -4237,8 +4473,21 @@ export default function XrayCalibrationWorkspace({
     useState(null);
   const [simplePlanningModal, setSimplePlanningModal] = useState(null);
   const [simpleGuideModalOpen, setSimpleGuideModalOpen] = useState(false);
+  const [templatingWizardOpen, setTemplatingWizardOpen] = useState(false);
+  const [workflowOverlayDismissed, setWorkflowOverlayDismissed] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardProcedure, setWizardProcedure] = useState(null);
+  const [wizardStemId, setWizardStemId] = useState(null);
+  const [wizardCupId, setWizardCupId] = useState(null);
+  const [jlaGuideModalOpen, setJlaGuideModalOpen] = useState(false);
+  const [hkaInfoBubble, setHkaInfoBubble] = useState(null);
+  const [hoveredMetricKey, setHoveredMetricKey] = useState(null);
   const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
+  const [simpleManagerTab, setSimpleManagerTab] = useState("layer");
+  const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
+  const [simpleDesktopHkaOpen, setSimpleDesktopHkaOpen] = useState(false);
+  const [simpleDesktopEditFotoOpen, setSimpleDesktopEditFotoOpen] = useState(false);
   const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
     useState(false);
   const [simpleColorPanelOpen, setSimpleColorPanelOpen] = useState(false);
@@ -4258,6 +4507,9 @@ export default function XrayCalibrationWorkspace({
   const [activeLibraryTag, setActiveLibraryTag] = useState(null);
   const [saveTemplateModalMinimized, setSaveTemplateModalMinimized] = useState(false);
   const [saveBeforeLeaveModalOpen, setSaveBeforeLeaveModalOpen] = useState(false);
+  const [preOpReportModalOpen, setPreOpReportModalOpen] = useState(false);
+  const [patientCaseManagerOpen, setPatientCaseManagerOpen] = useState(false);
+  const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -4806,6 +5058,7 @@ export default function XrayCalibrationWorkspace({
       label: measurement.label,
       fta: measurement.fta,
       predictedHka: measurement.predictedHka,
+      jla: measurement.jla ?? null,
     };
   }, [selectedHka]);
   const selectedLayerCanApplyRealSize =
@@ -5337,9 +5590,21 @@ export default function XrayCalibrationWorkspace({
     setNotice("Visibility layer diperbarui.");
   }, []);
 
+  const renameLineById = useCallback((lineId, name) => {
+    setLines((prev) =>
+      prev.map((l) => (l.id === lineId ? { ...l, name } : l)),
+    );
+  }, []);
+
+  const changeLineColorById = useCallback((lineId, color) => {
+    setLines((prev) =>
+      prev.map((l) => (l.id === lineId ? { ...l, color } : l)),
+    );
+  }, []);
+
   const scheduleMobileStateUpdate = useCallback(
     (setter, rafRef, updaterRef, updater) => {
-      if (!isMobileViewport || typeof window === "undefined") {
+      if (typeof window === "undefined") {
         setter(updater);
         return;
       }
@@ -5356,7 +5621,7 @@ export default function XrayCalibrationWorkspace({
         }
       });
     },
-    [isMobileViewport],
+    [],
   );
 
   const scheduleLinesUpdate = useCallback(
@@ -5427,7 +5692,7 @@ export default function XrayCalibrationWorkspace({
 
   const scheduleCutLayersUpdate = useCallback(
     (updater) => {
-      if (!isMobileViewport || typeof window === "undefined") {
+      if (typeof window === "undefined") {
         setCutLayers(updater);
         return;
       }
@@ -5444,7 +5709,7 @@ export default function XrayCalibrationWorkspace({
         }
       });
     },
-    [isMobileViewport],
+    [],
   );
 
   useEffect(() => {
@@ -5726,7 +5991,7 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (selectedHka) {
-        const primaryKey = selectedHka.mode === "full" ? "knee" : "femoralNotch";
+        const primaryKey = selectedHka.mode === "fta" ? "femoralNotch" : "knee";
         updateHkaById(selectedHka.id, (item) => {
           if (!item[primaryKey]) return item;
           const nextItem = {
@@ -6123,13 +6388,14 @@ export default function XrayCalibrationWorkspace({
     return { anchorDash: [6, 4], baseDash: [2, 3] };
   }, []);
 
-  const getPlanningGuideLabelText = useCallback((guide, index) => {
+  const getPlanningGuideLabelText = useCallback((guide, index, cutLenMm) => {
+    const mmPart = cutLenMm != null ? ` · ${cutLenMm}mm` : "";
     if (guide.kind === "valgusCut")
-      return `DC${index + 1} ${guide.side} ${guide.angleDeg}°`;
+      return `DC${index + 1} ${guide.side} ${guide.angleDeg}°${mmPart}`;
     if (guide.kind === "tibialSlope") {
-      return `TS${index + 1} ${guide.posteriorSide} ${guide.angleDeg}°`;
+      return `TS${index + 1} ${guide.posteriorSide} ${guide.angleDeg}°${mmPart}`;
     }
-    return `TC${index + 1} ${guide.direction} ${guide.angleDeg}°`;
+    return `TC${index + 1} ${guide.direction} ${guide.angleDeg}°${mmPart}`;
   }, []);
 
   const isLineLocked = useCallback(
@@ -9983,7 +10249,7 @@ export default function XrayCalibrationWorkspace({
     }
     const activeImageProcessingMode =
       normalizeImageProcessingMode(imageProcessingMode);
-    const filterValue = `contrast(${contrast}%) brightness(${level}%)`;
+    const filterValue = `contrast(${contrast}%) brightness(${level}%)${invertImage ? " invert(1)" : ""}`;
     imageCanvas.style.filter = "none";
     overlayCanvas.style.filter = "none";
 
@@ -10773,6 +11039,135 @@ export default function XrayCalibrationWorkspace({
         continue;
       }
 
+      // ── JLA mode rendering ─────────────────────────────────────────────────
+      if (item.mode === "jla") {
+        if (!item.hip || !item.knee || !item.ankle) continue;
+        const jlaHip   = imageToScreenPoint(item.hip.x,   item.hip.y);
+        const jlaKnee  = imageToScreenPoint(item.knee.x,  item.knee.y);
+        const jlaAnkle = imageToScreenPoint(item.ankle.x, item.ankle.y);
+        const jlaMFC = item.femCondyleMedial  ? imageToScreenPoint(item.femCondyleMedial.x,  item.femCondyleMedial.y)  : null;
+        const jlaLFC = item.femCondyleLateral ? imageToScreenPoint(item.femCondyleLateral.x, item.femCondyleLateral.y) : null;
+        const jlaMTP = item.tibPlateauMedial  ? imageToScreenPoint(item.tibPlateauMedial.x,  item.tibPlateauMedial.y)  : null;
+        const jlaLTP = item.tibPlateauLateral ? imageToScreenPoint(item.tibPlateauLateral.x, item.tibPlateauLateral.y) : null;
+        const baseStrokeWidth = Math.max(1.2, Number.isFinite(item.strokeWidth) ? item.strokeWidth : DEFAULT_HKA_STROKE_WIDTH);
+        const strokeWidth = baseStrokeWidth + (isEmphasized ? 0.55 : 0);
+        const labelOffsetX = Number.isFinite(item.labelOffsetX) ? item.labelOffsetX : DEFAULT_HKA_LABEL_OFFSET_X;
+        const labelOffsetY = Number.isFinite(item.labelOffsetY) ? item.labelOffsetY : DEFAULT_HKA_LABEL_OFFSET_Y;
+
+        overlayCtx.save();
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
+
+        // Femoral mechanical axis
+        overlayCtx.strokeStyle = "#facc15";
+        overlayCtx.lineWidth = strokeWidth;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(jlaHip.x, jlaHip.y);
+        overlayCtx.lineTo(jlaKnee.x, jlaKnee.y);
+        overlayCtx.stroke();
+
+        // Tibial mechanical axis
+        overlayCtx.strokeStyle = "#22c55e";
+        overlayCtx.lineWidth = strokeWidth;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(jlaKnee.x, jlaKnee.y);
+        overlayCtx.lineTo(jlaAnkle.x, jlaAnkle.y);
+        overlayCtx.stroke();
+
+        // Condyle line dashed (MFC–LFC extended)
+        if (jlaMFC && jlaLFC) {
+          const condExt = jlaExtendLine(jlaMFC, jlaLFC, 100);
+          overlayCtx.strokeStyle = "#38bdf8";
+          overlayCtx.lineWidth = Math.max(1, strokeWidth - 0.5);
+          overlayCtx.setLineDash([5, 4]);
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(condExt.a.x, condExt.a.y);
+          overlayCtx.lineTo(condExt.b.x, condExt.b.y);
+          overlayCtx.stroke();
+          overlayCtx.setLineDash([]);
+        }
+
+        // Plateau line dashed (MTP–LTP extended)
+        if (jlaMTP && jlaLTP) {
+          const platExt = jlaExtendLine(jlaMTP, jlaLTP, 100);
+          overlayCtx.strokeStyle = "#14b8a6";
+          overlayCtx.lineWidth = Math.max(1, strokeWidth - 0.5);
+          overlayCtx.setLineDash([5, 4]);
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(platExt.a.x, platExt.a.y);
+          overlayCtx.lineTo(platExt.b.x, platExt.b.y);
+          overlayCtx.stroke();
+          overlayCtx.setLineDash([]);
+        }
+
+        // LDFA arc at femoral axis × condyle line intersection
+        if (jlaMFC && jlaLFC) {
+          const condFar = jlaExtendLine(jlaMFC, jlaLFC, 500);
+          const ldfaV = jlaLineIntersect(jlaHip, jlaKnee, condFar.a, condFar.b);
+          if (ldfaV) {
+            const cDir = { x: jlaLFC.x - jlaMFC.x, y: jlaLFC.y - jlaMFC.y };
+            const fDir = { x: jlaHip.x - jlaKnee.x, y: jlaHip.y - jlaKnee.y };
+            const r = Math.max(16, Math.min(36, Math.hypot(cDir.x, cDir.y) * 0.22));
+            jlaDrawAngleArc(overlayCtx, ldfaV,
+              { x: ldfaV.x + cDir.x * 0.5, y: ldfaV.y + cDir.y * 0.5 },
+              { x: ldfaV.x + fDir.x * 0.5, y: ldfaV.y + fDir.y * 0.5 },
+              r, "LDFA", "#38bdf8");
+          }
+        }
+
+        // MPTA arc at tibial axis × plateau line intersection
+        if (jlaMTP && jlaLTP) {
+          const platFar = jlaExtendLine(jlaMTP, jlaLTP, 500);
+          const mptaV = jlaLineIntersect(jlaKnee, jlaAnkle, platFar.a, platFar.b);
+          if (mptaV) {
+            const pDir = { x: jlaMTP.x - jlaLTP.x, y: jlaMTP.y - jlaLTP.y };
+            const tDir = { x: jlaAnkle.x - jlaKnee.x, y: jlaAnkle.y - jlaKnee.y };
+            const r = Math.max(16, Math.min(36, Math.hypot(pDir.x, pDir.y) * 0.22));
+            jlaDrawAngleArc(overlayCtx, mptaV,
+              { x: mptaV.x + pDir.x * 0.5, y: mptaV.y + pDir.y * 0.5 },
+              { x: mptaV.x + tDir.x * 0.5, y: mptaV.y + tDir.y * 0.5 },
+              r, "MPTA", "#14b8a6");
+          }
+        }
+
+        // JLCA arc at condyle × plateau intersection
+        if (jlaMFC && jlaLFC && jlaMTP && jlaLTP) {
+          const jlcaV = jlaLineIntersect(jlaMFC, jlaLFC, jlaMTP, jlaLTP);
+          if (jlcaV) {
+            const cDir = { x: jlaLFC.x - jlaMFC.x, y: jlaLFC.y - jlaMFC.y };
+            const pDir = { x: jlaLTP.x - jlaMTP.x, y: jlaLTP.y - jlaMTP.y };
+            jlaDrawAngleArc(overlayCtx, jlcaV,
+              { x: jlcaV.x + cDir.x * 0.3, y: jlcaV.y + cDir.y * 0.3 },
+              { x: jlcaV.x + pDir.x * 0.3, y: jlcaV.y + pDir.y * 0.3 },
+              20, "JLCA", "#e879f9");
+          }
+        }
+
+        // Circle markers
+        overlayCtx.fillStyle = "#facc15";
+        fillCircleMarkers(overlayCtx, [{ x: jlaHip.x,   y: jlaHip.y,   radius: isEmphasized ? 4.2 : 3.6 }]);
+        overlayCtx.fillStyle = "#f97316";
+        fillCircleMarkers(overlayCtx, [{ x: jlaKnee.x,  y: jlaKnee.y,  radius: isEmphasized ? 5   : 4.4 }]);
+        overlayCtx.fillStyle = "#22c55e";
+        fillCircleMarkers(overlayCtx, [{ x: jlaAnkle.x, y: jlaAnkle.y, radius: isEmphasized ? 4.2 : 3.6 }]);
+        if (jlaMFC) { overlayCtx.fillStyle = "#38bdf8"; fillCircleMarkers(overlayCtx, [{ x: jlaMFC.x, y: jlaMFC.y, radius: 3.0 }]); }
+        if (jlaLFC) { overlayCtx.fillStyle = "#38bdf8"; fillCircleMarkers(overlayCtx, [{ x: jlaLFC.x, y: jlaLFC.y, radius: 3.0 }]); }
+        if (jlaMTP) { overlayCtx.fillStyle = "#14b8a6"; fillCircleMarkers(overlayCtx, [{ x: jlaMTP.x, y: jlaMTP.y, radius: 3.0 }]); }
+        if (jlaLTP) { overlayCtx.fillStyle = "#14b8a6"; fillCircleMarkers(overlayCtx, [{ x: jlaLTP.x, y: jlaLTP.y, radius: 3.0 }]); }
+
+        overlayCtx.restore();
+
+        drawTag(
+          overlayCtx,
+          jlaKnee.x + labelOffsetX,
+          jlaKnee.y + labelOffsetY,
+          getHkaCanvasLabelText(measurement, showExpandedInfo),
+          color,
+          { bgOpacity: showExpandedInfo ? 0.72 : 0.34, borderOpacity: showExpandedInfo ? 0.96 : 0.82, fontSize: 9, paddingX: 4, paddingY: 2, radius: 4 },
+        );
+        continue;
+      }
+
       if (!item.hip || !item.knee || !item.ankle) continue;
       const hip = imageToScreenPoint(item.hip.x, item.hip.y);
       const knee = imageToScreenPoint(item.knee.x, item.knee.y);
@@ -10947,7 +11342,15 @@ export default function XrayCalibrationWorkspace({
         geometry.cutCenter.x,
         geometry.cutCenter.y,
       );
-      const label = getPlanningGuideLabelText(guide, index);
+      const cutImgLenPx = Math.hypot(
+        geometry.cutA.x - geometry.cutB.x,
+        geometry.cutA.y - geometry.cutB.y,
+      );
+      const cutLenMm =
+        mmPerPixel && cutImgLenPx > 0
+          ? Math.round(cutImgLenPx * mmPerPixel)
+          : null;
+      const label = getPlanningGuideLabelText(guide, index, cutLenMm);
       const isSelectedGuide = guide.id === selectedPlanningGuideId;
       const isPulsingGuide =
         selectionPulse?.type === "planning" &&
@@ -10987,6 +11390,26 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.lineTo(baseB.x, baseB.y);
       overlayCtx.lineWidth = Math.max(1.1, strokeWidth - 0.2);
       overlayCtx.stroke();
+
+      // Arc indicator showing the cut angle between baseline and cut line
+      {
+        const baseAngle = Math.atan2(baseB.y - baseA.y, baseB.x - baseA.x);
+        const cutAngle = Math.atan2(cutB.y - cutA.y, cutB.x - cutA.x);
+        const cutScreenLen = Math.hypot(cutB.x - cutA.x, cutB.y - cutA.y);
+        const arcR = Math.max(11, Math.min(24, cutScreenLen * 0.17));
+        let diff = cutAngle - baseAngle;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        overlayCtx.save();
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = Math.max(0.9, strokeWidth - 0.6);
+        overlayCtx.setLineDash([]);
+        overlayCtx.globalAlpha = isEmphasizedGuide ? 0.78 : 0.48;
+        overlayCtx.beginPath();
+        overlayCtx.arc(cutCenter.x, cutCenter.y, arcR, baseAngle, cutAngle, diff < 0);
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
 
       overlayCtx.setLineDash([]);
       overlayCtx.lineWidth = strokeWidth + 0.35;
@@ -11672,27 +12095,48 @@ export default function XrayCalibrationWorkspace({
     }
 
     if (draftHkaPoints.length > 0) {
+      const draftDef = getHkaModeDefinition(hkaInputMode);
       overlayCtx.save();
-      overlayCtx.strokeStyle = "#0d9488";
-      overlayCtx.fillStyle = "#0d9488";
-      overlayCtx.lineWidth = 2;
+      overlayCtx.lineWidth = 1.8;
       for (let i = 0; i < draftHkaPoints.length; i += 1) {
-        const pointItem = imageToScreenPoint(
-          draftHkaPoints[i].x,
-          draftHkaPoints[i].y,
-        );
+        const ptDef = draftDef.points[i];
+        const ptHint = ptDef ? (HKA_POINT_HINTS[ptDef.key] || {}) : {};
+        const ptColor = ptHint.color || "#0d9488";
+        const pointItem = imageToScreenPoint(draftHkaPoints[i].x, draftHkaPoints[i].y);
+        // Dot with label
+        overlayCtx.fillStyle = ptColor;
+        overlayCtx.strokeStyle = "rgba(0,0,0,0.45)";
+        overlayCtx.lineWidth = 1;
         overlayCtx.beginPath();
-        overlayCtx.arc(pointItem.x, pointItem.y, 4, 0, Math.PI * 2);
+        overlayCtx.arc(pointItem.x, pointItem.y, 4.5, 0, Math.PI * 2);
         overlayCtx.fill();
+        overlayCtx.stroke();
+        // Short label above dot
+        if (ptHint.label) {
+          overlayCtx.font = "bold 9px Arial";
+          overlayCtx.strokeStyle = "rgba(0,0,0,0.65)";
+          overlayCtx.lineWidth = 2.5;
+          overlayCtx.strokeText(ptHint.label, pointItem.x + 6, pointItem.y - 5);
+          overlayCtx.fillStyle = ptColor;
+          overlayCtx.fillText(ptHint.label, pointItem.x + 6, pointItem.y - 5);
+        }
+        // Connector line to previous dot
         if (i > 0) {
-          const prev = imageToScreenPoint(
-            draftHkaPoints[i - 1].x,
-            draftHkaPoints[i - 1].y,
-          );
+          const prevPtDef = draftDef.points[i - 1];
+          const prevHint = prevPtDef ? (HKA_POINT_HINTS[prevPtDef.key] || {}) : {};
+          const prevColor = prevHint.color || "#0d9488";
+          const prev = imageToScreenPoint(draftHkaPoints[i - 1].x, draftHkaPoints[i - 1].y);
+          const grad = overlayCtx.createLinearGradient(prev.x, prev.y, pointItem.x, pointItem.y);
+          grad.addColorStop(0, prevColor);
+          grad.addColorStop(1, ptColor);
+          overlayCtx.strokeStyle = grad;
+          overlayCtx.lineWidth = 1.6;
+          overlayCtx.setLineDash([4, 3]);
           overlayCtx.beginPath();
           overlayCtx.moveTo(prev.x, prev.y);
           overlayCtx.lineTo(pointItem.x, pointItem.y);
           overlayCtx.stroke();
+          overlayCtx.setLineDash([]);
         }
       }
       overlayCtx.restore();
@@ -11828,6 +12272,26 @@ export default function XrayCalibrationWorkspace({
         "#22d3ee",
       );
     }
+
+    // ── Crop selection draft overlay ────────────────────────────────────────
+    if (cropDraftPoints) {
+      const s1 = imageToScreenPoint(cropDraftPoints.startX, cropDraftPoints.startY);
+      const s2 = imageToScreenPoint(cropDraftPoints.endX, cropDraftPoints.endY);
+      const rx = Math.min(s1.x, s2.x);
+      const ry = Math.min(s1.y, s2.y);
+      const rw = Math.abs(s2.x - s1.x);
+      const rh = Math.abs(s2.y - s1.y);
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "#22d3ee";
+      overlayCtx.lineWidth = 1.5;
+      overlayCtx.setLineDash([7, 4]);
+      overlayCtx.strokeRect(rx, ry, rw, rh);
+      overlayCtx.fillStyle = "rgba(34,211,238,0.08)";
+      overlayCtx.fillRect(rx, ry, rw, rh);
+      overlayCtx.setLineDash([]);
+      overlayCtx.restore();
+      drawTag(overlayCtx, rx + rw / 2, ry - 8, "Potong area ini", "#22d3ee");
+    }
   }, [
     activeSnapTarget,
     annotations,
@@ -11837,7 +12301,9 @@ export default function XrayCalibrationWorkspace({
     calibrationReferenceLine,
     circles,
     contrast,
+    cropDraftPoints,
     cropRect,
+    invertImage,
     draftAnglePoints,
     draftAxisBuilderPoints,
     draftCenterFinderPoints,
@@ -12594,6 +13060,19 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      // ── Crop selection tool ─────────────────────────────────────────────────
+      if (cropToolActive) {
+        interactionRef.current = {
+          mode: "cropSelect",
+          startX: imagePoint.x,
+          startY: imagePoint.y,
+          endX: imagePoint.x,
+          endY: imagePoint.y,
+        };
+        setCropDraftPoints({ startX: imagePoint.x, startY: imagePoint.y, endX: imagePoint.x, endY: imagePoint.y });
+        return;
+      }
 
       if (
         isSimpleUiMode &&
@@ -14548,6 +15027,7 @@ export default function XrayCalibrationWorkspace({
         setSelectedAngleId(null);
         setSelectedCircleId(null);
         setSelectedCutLayerId(null);
+        hkaCompletionFiredRef.current = false;
         setDraftHkaPoints((prev) => {
           const next = [
             ...prev,
@@ -14558,6 +15038,9 @@ export default function XrayCalibrationWorkspace({
             setNotice(getHkaDraftNotice(hkaInputMode, next.length));
             return next;
           }
+          // Guard: prevent double-fire from React StrictMode functional updater invocations
+          if (hkaCompletionFiredRef.current) return [];
+          hkaCompletionFiredRef.current = true;
           const nextHka = definition.points.reduce(
             (accumulator, pointDef, index) => {
               accumulator[pointDef.key] = next[index];
@@ -14585,7 +15068,10 @@ export default function XrayCalibrationWorkspace({
             );
           }
           nextHkaIdRef.current += 1;
-          setHkaSets((items) => [...items, nextHka]);
+          setHkaSets((items) => {
+            if (items.some((item) => item.id === nextHka.id)) return items;
+            return [...items, nextHka];
+          });
           setSelectedHkaId(nextHka.id);
           setNotice(
             `${definition.label} dibuat dari landmarks${
@@ -14774,6 +15260,7 @@ export default function XrayCalibrationWorkspace({
       syncMobileCanvasSelection,
       trackMobileGesturePointer,
       shouldUseMobileOneShotTool,
+      cropToolActive,
       tool,
       toLayerLocal,
       triggerSelectionPulse,
@@ -14786,6 +15273,21 @@ export default function XrayCalibrationWorkspace({
   const handlePointerMove = useCallback(
     (event) => {
       if (!image) return;
+
+      // ── Crop drag update ────────────────────────────────────────────────────
+      if (interactionRef.current?.mode === "cropSelect") {
+        const point = getLocalPoint(event);
+        const imagePoint = screenToImagePoint(point.x, point.y);
+        interactionRef.current.endX = imagePoint.x;
+        interactionRef.current.endY = imagePoint.y;
+        setCropDraftPoints({
+          startX: interactionRef.current.startX,
+          startY: interactionRef.current.startY,
+          endX: imagePoint.x,
+          endY: imagePoint.y,
+        });
+        return;
+      }
 
       const point = getLocalPoint(event);
       if (
@@ -15827,6 +16329,7 @@ export default function XrayCalibrationWorkspace({
       schedulePlanningGuidesUpdate,
       scheduleViewportUpdate,
       screenToImagePoint,
+      cropToolActive,
       tool,
       trackMobileGesturePointer,
       updateMobilePrecisionOverlay,
@@ -15837,6 +16340,34 @@ export default function XrayCalibrationWorkspace({
     removeMobileGesturePointer(event?.pointerId);
     clearMobileLongPress();
     const completedInteractionMode = interactionRef.current.mode;
+
+    // ── Apply crop selection ─────────────────────────────────────────────────
+    if (completedInteractionMode === "cropSelect") {
+      const { startX, startY, endX, endY } = interactionRef.current;
+      interactionRef.current = { mode: null };
+      setCropDraftPoints(null);
+      setCropToolActive(false);
+
+      const mx1 = Math.min(startX, endX);
+      const my1 = Math.min(startY, endY);
+      const mx2 = Math.max(startX, endX);
+      const my2 = Math.max(startY, endY);
+      const w = mx2 - mx1;
+      const h = my2 - my1;
+
+      if (w > 5 && h > 5) {
+        const baseX = cropRect?.x || 0;
+        const baseY = cropRect?.y || 0;
+        const newX = Math.max(0, Math.round(baseX + mx1));
+        const newY = Math.max(0, Math.round(baseY + my1));
+        const newW = Math.min(Math.round(w), imageWidth - newX);
+        const newH = Math.min(Math.round(h), imageHeight - newY);
+        setCropRect({ x: newX, y: newY, width: newW, height: newH });
+        setTimeout(() => fitImageToViewport(), 0);
+        setNotice("Crop diterapkan. Klik 'Reset Crop' untuk kembali ke gambar penuh.");
+      }
+      return;
+    }
 
     if (interactionRef.current.mode === "draw" && draftLine) {
       const length = getLineLength(draftLine);
@@ -15960,12 +16491,17 @@ export default function XrayCalibrationWorkspace({
     clearSnapPreview,
     completeDraftFreeLine,
     calibrationDraftStrokeWidth,
+    cropRect,
+    cropToolActive,
     draftCirclePoints,
     draftFreeLine,
     draftLine,
+    fitImageToViewport,
     focusCalibrationStep,
     getIdleTool,
     hasCalibration,
+    imageHeight,
+    imageWidth,
     isMobileViewport,
     isSimpleUiMode,
     isCoarsePointer,
@@ -17819,9 +18355,11 @@ export default function XrayCalibrationWorkspace({
             ? result.fta !== null && result.predictedHka !== null
               ? `FTA ${result.fta.toFixed(2)}° | HKAA ${result.predictedHka.toFixed(2)}°`
               : "FTA belum lengkap"
-            : result.absoluteDeviation !== null
-              ? `${result.label} (${result.absoluteDeviation.toFixed(2)}°)`
-              : "Belum lengkap",
+            : result.mode === "jla" && result.jla
+              ? `LDFA ${result.jla.LDFA}° | MPTA ${result.jla.MPTA}° | JLCA ${result.jla.JLCA}° | ${result.jla.cpakType}`
+              : result.absoluteDeviation !== null
+                ? `${result.label} (${result.absoluteDeviation.toFixed(2)}°)`
+                : "Belum lengkap",
       });
     }
     return rows;
@@ -19166,6 +19704,7 @@ export default function XrayCalibrationWorkspace({
       selectedPlanningGuideId !== null ||
       selectedAnnotationId !== null;
 
+    if (cropToolActive) return "cursor-crosshair";
     if (tool === "annotation") return "cursor-text";
     if (tool === "freeLine" && freeLineMode === "point") return "cursor-default";
     if (activeMode === "pan") return "cursor-grabbing";
@@ -19362,6 +19901,18 @@ export default function XrayCalibrationWorkspace({
         focusExportStep();
       },
     },
+    {
+      id: 5,
+      label: "Templating",
+      done: cutLayers.some((l) => l.autoScaleFromCalibration),
+      onClick: () => {
+        setTemplatingWizardOpen(true);
+        setWizardStep(1);
+        setWizardProcedure(null);
+        setWizardStemId(null);
+        setWizardCupId(null);
+      },
+    },
   ];
   const selectedLayerDropdownLabel = selectedCutLayer
     ? selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)
@@ -19457,20 +20008,20 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "tool",
     },
     {
-      id: "template",
-      label: "Template",
+      id: "manager",
+      label: "Manager",
       onClick: () => {
         if (isSimpleUiMode) {
-          setSimpleMobilePanel((prev) =>
-            prev === "implant" ? null : "implant",
-          );
+          setSimpleMobilePanel((prev) => (prev === "manager" ? null : "manager"));
           return;
         }
         setMobilePanelMode("workspace");
         setActiveRightPanel("tool");
         setMobileControlsOpen(true);
       },
-      active: isSimpleUiMode ? simpleMobilePanel === "implant" : false,
+      active: isSimpleUiMode
+        ? simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant"
+        : false,
     },
     {
       id: "export",
@@ -19501,6 +20052,13 @@ export default function XrayCalibrationWorkspace({
         open={showStartupCalibrationAlert}
         onExit={goToCalibrationPanel}
         onConfirm={goToCalibrationPanel}
+        onStartTemplating={() => {
+          setTemplatingWizardOpen(true);
+          setWizardStep(1);
+          setWizardProcedure(null);
+          setWizardStemId(null);
+          setWizardCupId(null);
+        }}
       />
       <input
         ref={mainUploadInputRef}
@@ -19613,6 +20171,346 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {/* ── HKA/FTA/JLA Floating Info Bubbles ──────────────────────────── */}
+      <AnimatePresence mode="wait">
+        {hkaInfoBubble ? (() => {
+          const info = HKA_INFO_BUBBLES[hkaInfoBubble];
+          if (!info) return null;
+          return (
+            <motion.div
+              key={hkaInfoBubble}
+              initial={{ opacity: 0, x: 28, scale: 0.92 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.94 }}
+              transition={PANEL_SPRING}
+              className="fixed right-4 top-16 z-[88] w-[308px] max-h-[calc(100vh-80px)] overflow-y-auto"
+              style={{
+                borderRadius: "22px",
+                boxShadow: `0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10), 0 0 0 1.5px ${info.color}30`,
+              }}
+            >
+              {/* Arrow tail pointing left */}
+              <div
+                className="absolute -left-[9px] top-8 h-4 w-4 rotate-45"
+                style={{ background: info.color, borderRadius: "3px 0 0 0" }}
+              />
+
+              {/* Header */}
+              <div
+                className="relative rounded-t-[22px] px-4 py-3"
+                style={{ background: `linear-gradient(135deg, ${info.color} 0%, ${info.color}cc 100%)` }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setHkaInfoBubble(null)}
+                  className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-white text-xs hover:bg-white/30"
+                  aria-label="Tutup"
+                >✕</button>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{info.emoji}</span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-lg font-black text-white leading-none">{info.title}</span>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[9px] font-black"
+                        style={{ background: "rgba(255,255,255,0.22)", color: "#fff" }}
+                      >{info.tagline}</span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-white/80 font-medium">{info.subtitle}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div
+                className="rounded-b-[22px] space-y-3 p-4"
+                style={{ background: `linear-gradient(180deg, ${info.colorLight} 0%, #fff 100%)` }}
+              >
+                {/* Landmark section */}
+                <div>
+                  <p className="mb-1.5 text-[9px] font-black uppercase tracking-widest" style={{ color: info.color }}>
+                    📍 Landmark — {info.landmark.label}
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {info.landmark.points.map((pt) => (
+                      <span
+                        key={pt.key}
+                        className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black"
+                        style={{ borderColor: `${pt.color}60`, background: `${pt.color}18`, color: pt.color }}
+                        title={pt.desc}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: pt.color }} />
+                        {pt.key}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Normal values */}
+                <div>
+                  <p className="mb-1.5 text-[9px] font-black uppercase tracking-widest" style={{ color: info.color }}>
+                    📐 Nilai Normal
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {info.normals.map((n) => (
+                      <div
+                        key={n.label}
+                        className="rounded-[12px] border px-2.5 py-1.5 text-center"
+                        style={{ background: n.bg, borderColor: `${n.color}30` }}
+                      >
+                        <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: n.color }}>{n.label}</p>
+                        <p className="text-base font-black leading-tight" style={{ color: n.color }}>{n.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Clinical use */}
+                <div>
+                  <p className="mb-1.5 text-[9px] font-black uppercase tracking-widest" style={{ color: info.color }}>
+                    🩺 Kegunaan Klinis
+                  </p>
+                  <ul className="space-y-1">
+                    {info.clinical.map((item, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-[10px] leading-snug text-slate-700">
+                        <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: info.color }} />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Ref */}
+                <p className="text-[8px] leading-relaxed text-slate-400 border-t border-slate-100 pt-2">
+                  Ref: {info.ref}
+                </p>
+
+                {/* JLA deep-dive button */}
+                {hkaInfoBubble === "jla" && (
+                  <button
+                    type="button"
+                    onClick={() => { setHkaInfoBubble(null); setJlaGuideModalOpen(true); }}
+                    className="w-full rounded-[14px] py-2 text-[10px] font-black text-white"
+                    style={{ background: info.color }}
+                  >
+                    Panduan Lengkap JLA →
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          );
+        })() : null}
+      </AnimatePresence>
+
+      {/* ── JLA Guide Modal ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {jlaGuideModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[98] flex items-center justify-center bg-slate-950/30 p-3 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setJlaGuideModalOpen(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.97 }}
+              transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="jla-guide-modal-title"
+              className="max-h-[92vh] w-full max-w-[600px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black tracking-widest text-indigo-600 uppercase">Joint Line Analysis</div>
+                  <h2 id="jla-guide-modal-title" className="mt-0.5 text-xl font-extrabold text-slate-800">
+                    Panduan Penggunaan JLA
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    7 landmark · LDFA · MPTA · JLCA · JLO · CPAK · Micicoi · DLO
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setJlaGuideModalOpen(false)}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-6px_-6px_14px_rgba(255,255,255,0.76)]"
+                  aria-label="Tutup panduan JLA"
+                >
+                  <X className="h-4 w-4" strokeWidth={2.1} />
+                </button>
+              </div>
+
+              {/* Scrollable body */}
+              <div className="max-h-[calc(92vh-92px)] space-y-3 overflow-y-auto px-5 py-4">
+
+                {/* Step 1 — Mode & Landmark */}
+                <div className="rounded-[22px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_5px_5px_12px_rgba(100,116,139,0.13),inset_-5px_-5px_12px_rgba(255,255,255,0.75)]">
+                  <div className="text-sm font-extrabold text-slate-800">1. Pilih Mode JLA &amp; Pasang 7 Landmark</div>
+                  <p className="mt-1 text-xs text-slate-600 leading-5">
+                    Pilih mode <span className="font-bold text-indigo-700">JLA</span> lalu klik di canvas sesuai urutan berikut. Zoom dulu pada area sendi untuk presisi lebih tinggi.
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {[
+                      { code: "CFH", color: "#facc15", bg: "bg-yellow-50 border-yellow-200", text: "text-yellow-800", desc: "Center of Femoral Head — pusat kepala femur" },
+                      { code: "CK",  color: "#f97316", bg: "bg-orange-50 border-orange-200", text: "text-orange-800", desc: "Center of Knee — pusat sendi lutut / notch" },
+                      { code: "CA",  color: "#22c55e", bg: "bg-green-50 border-green-200",   text: "text-green-800",  desc: "Center of Ankle — pusat talar dome / ankle" },
+                      { code: "MFC", color: "#38bdf8", bg: "bg-sky-50 border-sky-200",       text: "text-sky-800",   desc: "Medial Femoral Condyle — titik TERENDAH kondilus femur medial" },
+                      { code: "LFC", color: "#38bdf8", bg: "bg-sky-50 border-sky-200",       text: "text-sky-800",   desc: "Lateral Femoral Condyle — titik TERENDAH kondilus femur lateral" },
+                      { code: "MTP", color: "#14b8a6", bg: "bg-teal-50 border-teal-200",     text: "text-teal-800",  desc: "Medial Tibial Plateau — titik TERTINGGI plateau tibia medial" },
+                      { code: "LTP", color: "#14b8a6", bg: "bg-teal-50 border-teal-200",     text: "text-teal-800",  desc: "Lateral Tibial Plateau — titik TERTINGGI plateau tibia lateral" },
+                    ].map(({ code, bg, text, desc }, i) => (
+                      <div key={code} className={`flex items-start gap-2 rounded-xl border px-3 py-1.5 ${bg}`}>
+                        <span className={`mt-0.5 shrink-0 text-[10px] font-black ${text}`}>{i + 1}. {code}</span>
+                        <span className={`text-[10px] leading-relaxed ${text}`}>{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Step 2 — Canvas overlay */}
+                <div className="rounded-[22px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_5px_5px_12px_rgba(100,116,139,0.13),inset_-5px_-5px_12px_rgba(255,255,255,0.75)]">
+                  <div className="text-sm font-extrabold text-slate-800">2. Baca Overlay di Canvas</div>
+                  <div className="mt-2 space-y-1">
+                    {[
+                      { dot: "bg-yellow-400", label: "Garis kuning",          desc: "Axis mekanis femur (CFH → CK)" },
+                      { dot: "bg-green-500",  label: "Garis hijau",            desc: "Axis mekanis tibia (CK → CA)" },
+                      { dot: "bg-sky-400",    label: "Garis biru putus-putus", desc: "Garis kondilus femur (MFC – LFC), diperpanjang" },
+                      { dot: "bg-teal-500",   label: "Garis teal putus-putus", desc: "Garis plateau tibia (MTP – LTP), diperpanjang" },
+                      { dot: "bg-sky-400",    label: "Arc LDFA",               desc: "Sudut axis femur vs kondilus (normal 87° ± 3°)" },
+                      { dot: "bg-teal-500",   label: "Arc MPTA",               desc: "Sudut axis tibia vs plateau (normal 87° ± 3°)" },
+                      { dot: "bg-fuchsia-400",label: "Arc JLCA",               desc: "Konvergensi kondilus–plateau (normal 0° ± 2°)" },
+                    ].map(({ dot, label, desc }) => (
+                      <div key={label} className="flex items-start gap-2 text-[10px] text-slate-700">
+                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+                        <span><span className="font-bold">{label}</span> — {desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Step 3 — Normal ranges */}
+                <div className="rounded-[22px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_5px_5px_12px_rgba(100,116,139,0.13),inset_-5px_-5px_12px_rgba(255,255,255,0.75)]">
+                  <div className="text-sm font-extrabold text-slate-800">3. Interpretasi Sudut</div>
+                  <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+                    <table className="w-full text-[10px]">
+                      <thead>
+                        <tr className="bg-slate-100 text-[9px] font-black uppercase text-slate-500">
+                          <th className="px-3 py-2 text-left">Parameter</th>
+                          <th className="px-3 py-2 text-center">Normal</th>
+                          <th className="px-3 py-2 text-left">Interpretasi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[
+                          { p: "LDFA", n: "87° ± 3°",  i: "< 84° = valgus femur · > 90° = varus femur" },
+                          { p: "MPTA", n: "87° ± 3°",  i: "< 84° = valgus tibia · > 90° = varus tibia" },
+                          { p: "JLCA", n: "0° ± 2°",   i: "3–4° = borderline · ≥ 5° = tinggi (Micicoi)" },
+                          { p: "JLO",  n: "≤ 3°",      i: "≥ 3° + JLCA ≥ 5° → pertimbangkan DLO" },
+                        ].map(({ p, n, i }) => (
+                          <tr key={p} className="bg-white">
+                            <td className="px-3 py-2 font-black text-slate-800">{p}</td>
+                            <td className="px-3 py-2 text-center font-semibold text-emerald-700">{n}</td>
+                            <td className="px-3 py-2 text-slate-600">{i}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Step 4 — CPAK */}
+                <div className="rounded-[22px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_5px_5px_12px_rgba(100,116,139,0.13),inset_-5px_-5px_12px_rgba(255,255,255,0.75)]">
+                  <div className="text-sm font-extrabold text-slate-800">4. Fenotipe CPAK (MacDessi et al. 2021)</div>
+                  <p className="mt-1 text-[10px] text-slate-600 leading-relaxed">
+                    Sistem mengklasifikasikan 9 fenotipe dari kombinasi <span className="font-bold">JLO = MPTA + LDFA</span> (Apex Distal / Neutral / Proximal) dan <span className="font-bold">HKA = MPTA − LDFA</span> (Varus / Neutral / Valgus).
+                  </p>
+                  <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+                    <table className="w-full text-[9px]">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="px-2 py-1.5 text-left font-black text-slate-500 uppercase">JLO \ HKA</th>
+                          <th className="px-2 py-1.5 text-center font-black text-red-600">Varus</th>
+                          <th className="px-2 py-1.5 text-center font-black text-slate-600">Neutral</th>
+                          <th className="px-2 py-1.5 text-center font-black text-blue-600">Valgus</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[
+                          { jlo: "Apex Distal (< 177°)", cells: ["I ★", "II", "III"] },
+                          { jlo: "Neutral (177–183°)",   cells: ["IV", "V",  "VI"] },
+                          { jlo: "Apex Proximal (> 183°)", cells: ["VII","VIII","IX"] },
+                        ].map(({ jlo, cells }) => (
+                          <tr key={jlo} className="bg-white">
+                            <td className="px-2 py-1.5 font-semibold text-slate-600">{jlo}</td>
+                            {cells.map((c) => (
+                              <td key={c} className="px-2 py-1.5 text-center font-black text-indigo-700">{c}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-1.5 text-[9px] text-slate-500">★ CPAK I = paling umum (~25–30% populasi), berkaitan dengan kebutuhan koreksi varus pada MOWPTO.</p>
+                </div>
+
+                {/* Step 5 — Micicoi */}
+                <div className="rounded-[22px] border border-amber-200 bg-amber-50/70 px-4 py-3">
+                  <div className="text-sm font-extrabold text-amber-900">5. Koreksi Overcorrection Micicoi</div>
+                  <p className="mt-1 text-[10px] text-amber-800 leading-relaxed">
+                    Jika JLCA &gt; 2°, kurangi sudut koreksi yang direncanakan agar tidak overcorrect setelah MOWPTO:
+                  </p>
+                  <div className="mt-2 rounded-xl bg-amber-100 px-3 py-2 text-center text-xs font-black text-amber-900">
+                    Pengurangan = (JLCA − 2) ÷ 2
+                  </div>
+                  <p className="mt-1.5 text-[9px] text-amber-700">
+                    Contoh: JLCA 6° → kurangi (6−2)/2 = 2° dari target koreksi varus.
+                  </p>
+                </div>
+
+                {/* Step 6 — DLO */}
+                <div className="rounded-[22px] border border-red-200 bg-red-50/70 px-4 py-3">
+                  <div className="text-sm font-extrabold text-red-900">6. Indikasi Double-Level Osteotomy (DLO)</div>
+                  <div className="mt-2 space-y-1.5 text-[10px] text-red-800">
+                    <div className="flex items-start gap-2">
+                      <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                      <span><span className="font-bold">JLCA ≥ 5° + JLO ≥ 3°</span> → ~80% risiko MPTA &gt; 95° post-MOWPTO (Sohn et al.) → DLO sangat direkomendasikan.</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                      <span><span className="font-bold">JLO ≥ 5°</span> saja → evaluasi target MPTA post-op, pertimbangkan DLO.</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                      <span><span className="font-bold">JLCA ≥ 5°</span> saja → terapkan koreksi Micicoi sebelum merencanakan single-level osteotomy.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Reference */}
+                <div className="rounded-[18px] border border-white/60 bg-slate-100/60 px-4 py-2.5 text-[9px] leading-relaxed text-slate-500">
+                  <span className="font-bold">Referensi:</span> Pratobevera et al., EFORT Open Reviews 2024 (DOI 10.1530/EOR-24-0037) · Hsu et al. 1990 · MacDessi et al. BJJ 2021 · Micicoi et al. J Exp Orthopaedics 2020 · Sohn et al. (via Pratobevera review). Hasil bersifat edukatif; keputusan klinis memerlukan evaluasi penuh oleh dokter ortopedi.
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-white/60 px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => setJlaGuideModalOpen(false)}
+                  className="w-full rounded-[18px] bg-slate-900 py-2.5 text-xs font-black text-white shadow-[4px_4px_10px_rgba(15,23,42,0.24)]"
+                >
+                  Mengerti
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       <AnimatePresence>
         {googleDriveUploadModalOpen ? (
           <motion.div
@@ -22479,14 +23377,43 @@ export default function XrayCalibrationWorkspace({
                                 <span className="flex items-center gap-1.5">
                                   <span
                                     className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                    style={{
-                                      backgroundColor: layerPalette.border,
-                                    }}
+                                    style={{ backgroundColor: layerPalette.border }}
                                   />
-                                  <span className="truncate font-medium">
-                                    #{layer.id}{" "}
-                                    {layer.name || getLayerDefaultName(layer)}
-                                  </span>
+                                  {renameLayerId === layer.id ? (
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={renameValue}
+                                      onChange={(e) => setRenameValue(e.target.value)}
+                                      onBlur={() => {
+                                        const trimmed = renameValue.trim();
+                                        if (trimmed) {
+                                          setCutLayers((prev) =>
+                                            prev.map((l) =>
+                                              l.id === layer.id ? { ...l, name: trimmed } : l,
+                                            ),
+                                          );
+                                        }
+                                        setRenameLayerId(null);
+                                        setRenameValue("");
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") e.currentTarget.blur();
+                                        if (e.key === "Escape") {
+                                          setRenameLayerId(null);
+                                          setRenameValue("");
+                                        }
+                                        e.stopPropagation();
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-full rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] text-slate-800 outline-none focus:ring-1 focus:ring-blue-200"
+                                    />
+                                  ) : (
+                                    <span className="truncate font-medium">
+                                      #{layer.id}{" "}
+                                      {layer.name || getLayerDefaultName(layer)}
+                                    </span>
+                                  )}
                                 </span>
                                 <span className="mt-0.5 block truncate text-[9px] text-slate-500">
                                   {getLayerDefaultName(layer)} | urutan{" "}
@@ -22494,6 +23421,18 @@ export default function XrayCalibrationWorkspace({
                                     (item) => item.id === layer.id,
                                   ) + 1}
                                 </span>
+                              </button>
+                              <button
+                                type="button"
+                                title="Ubah nama layer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRenameLayerId(layer.id);
+                                  setRenameValue(layer.name || getLayerDefaultName(layer));
+                                }}
+                                className={`shrink-0 rounded-full p-1 text-[9px] ${SOFT_RAISED_CLASS} text-slate-400 hover:text-blue-500`}
+                              >
+                                ✏
                               </button>
                               <span
                                 className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] ${
@@ -22591,6 +23530,14 @@ export default function XrayCalibrationWorkspace({
         canSave={calibrationMode === "line" ? Boolean(calibrationReferenceLine) : true}
         hasCalibration={hasCalibration}
         measurementUnit={measurementUnit}
+        onStartTemplating={() => {
+          setSimpleCalibrationModalOpen(false);
+          setTemplatingWizardOpen(true);
+          setWizardStep(1);
+          setWizardProcedure(null);
+          setWizardStemId(null);
+          setWizardCupId(null);
+        }}
       />
       <AnimatePresence>
         {isSimpleUiMode && simpleGuideModalOpen ? (
@@ -22833,6 +23780,482 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
+      {/* ════════ TEMPLATING WIZARD MODAL — 6 step educational ════════ */}
+      <AnimatePresence>
+        {templatingWizardOpen ? (() => {
+          /* ─ derived data ─ */
+          const usedImgSrcs = new Set(cutLayers.map((l) => l.imageSrc).filter(Boolean));
+          const stemImplants    = LOCAL_IMPLANT_LIBRARY.filter((i) => i.type === "stem" && !usedImgSrcs.has(i.imageSrc));
+          const cupImplants     = LOCAL_IMPLANT_LIBRARY.filter((i) => i.type === "cup" && !i.id.startsWith("bipolar") && !usedImgSrcs.has(i.imageSrc));
+          const bipolarImplants = LOCAL_IMPLANT_LIBRARY.filter((i) => i.id.startsWith("bipolar") && !usedImgSrcs.has(i.imageSrc));
+          const kneeImplants    = LOCAL_IMPLANT_LIBRARY.filter((i) => i.type === "knee" && !usedImgSrcs.has(i.imageSrc));
+
+          /* ─ procedure catalogue ─ */
+          const PROCS = {
+            tkr: {
+              key: "tkr", label: "TKR", sub: "Total Knee Replacement",
+              color: "#0891b2", colorLight: "#ecfeff",
+              tagline: "Penggantian sendi lutut total",
+              indication: "OA berat, deformitas varus/valgus, kegagalan konservatif",
+              steps: ["Upload AP long-leg X-ray berdiri penuh (weight-bearing)", "Kalibrasi dengan penggaris/marker referensi", "Ukur HKA, LDFA, MPTA di canvas", "Tentukan sudut distal cut femur (valgus 5-7°)", "Tentukan tibial slope (0-7°)", "Pilih & pasang template implant knee"],
+              landmarks: ["CFH — Center of Femoral Head", "CK — Center of Knee (notch)", "CA — Center of Ankle (talar dome)", "Kondilus femur medial & lateral", "Plateau tibia medial & lateral"],
+              angles: [{ name: "HKA", normal: "0° ± 3°" }, { name: "LDFA", normal: "87° ± 3°" }, { name: "MPTA", normal: "87° ± 3°" }, { name: "JLCA", normal: "0° ± 2°" }],
+              icon: (<img src="/images/quick-panel/tka-icon.png" alt="TKR" className="h-full w-full object-contain" />),
+            },
+            tha: {
+              key: "tha", label: "THA", sub: "Total Hip Arthroplasty",
+              color: "#c2410c", colorLight: "#fff7ed",
+              tagline: "Penggantian sendi panggul total",
+              indication: "AVN, OA panggul, fraktur collum femur pada usia muda-sedang",
+              steps: ["Upload AP pelvis X-ray (weight-bearing, pusat pada simfisis)", "Kalibrasi dengan kepala femur kontralateral atau penggaris", "Identifikasi teardrop bilateral & ilioischial line", "Ukur offset panggul & panjang kaki (LLD)", "Pilih stem femoral sesuai templating", "Pilih cup asetabular (abduction angle 40°, anteversion 15°)"],
+              landmarks: ["Teardrop bilateral (basis acetabulum)", "Ilioischial line (kolom posterior)", "Batas acetabulum medial & lateral", "Titik lesser trochanter", "Sumbu femur distal"],
+              angles: [{ name: "Cup Abduction", normal: "40° ± 10°" }, { name: "Cup Anteversion", normal: "15° ± 10°" }, { name: "Offset", normal: "Simetris" }, { name: "LLD", normal: "< 5 mm" }],
+              icon: (<img src="/images/quick-panel/hip-icon.png" alt="THA" className="h-full w-full object-contain" />),
+            },
+            hemi: {
+              key: "hemi", label: "Hemi", sub: "Hemiarthroplasty",
+              color: "#7c3aed", colorLight: "#f5f3ff",
+              tagline: "Penggantian kepala femur",
+              indication: "Fraktur collum femur (displaced, Garden III-IV) pada lansia, AVN grade awal",
+              steps: ["Upload AP panggul atau AP proximal femur", "Kalibrasi menggunakan penggaris atau marker diketahui", "Ukur diameter kepala femur sisi kontralateral", "Pilih ukuran bipolar head yang sesuai", "Pilih stem femoral (ukuran kanal femur)", "Pasang template — verifikasi offset & panjang kaki"],
+              landmarks: ["Teardrop ipsilateral", "Intertrochanteric line", "Diameter kepala femur kontralateral", "Kanalis medularis isthmus", "Lesser trochanter (referensi rotasi)"],
+              angles: [{ name: "Neck-Shaft", normal: "130° ± 7°" }, { name: "Anteversion", normal: "10-15°" }, { name: "Head Diameter", normal: "Sesuai kontralateral" }, { name: "LLD", normal: "< 5 mm" }],
+              icon: (<img src="/images/quick-panel/hip-icon.png" alt="Hemi" className="h-full w-full object-contain opacity-80" />),
+            },
+          };
+
+          const TOTAL_STEPS = wizardProcedure ? 6 : 2;
+          const selProc = PROCS[wizardProcedure];
+
+          /* ─ step labels ─ */
+          const stepLabels = ["Persiapan", "Prosedur", "Panduan", "Implant", "Canvas", "Simpan"];
+
+          /* ─ reusable implant card ─ */
+          const ImplantCard = ({ item, selected, onSelect, recommended }) => (
+            <button type="button" onClick={() => onSelect(item.id)}
+              className={`relative flex w-full items-center gap-2.5 rounded-[16px] border px-3 py-2.5 text-left transition ${
+                selected ? "border-cyan-400 bg-cyan-50/90" : "border-white/70 bg-[#eef2f7]/80 hover:bg-white/60 shadow-[2px_2px_5px_rgba(148,163,184,0.18),-1px_-1px_3px_rgba(255,255,255,0.8)]"}`}>
+              {recommended && (<span className="absolute -top-1.5 left-2.5 rounded-full bg-amber-400 px-1.5 py-0.5 text-[8px] font-black text-white">Rekomendasi</span>)}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/60 bg-white/50 text-[9px] font-black text-slate-500">
+                {item.brand?.slice(0, 3).toUpperCase() || "IMP"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[10px] font-black text-slate-800">{item.label}</div>
+                <div className="text-[9px] text-slate-500">{item.brand} · {item.system || "—"}</div>
+              </div>
+              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[9px] font-black transition ${selected ? "border-cyan-500 bg-cyan-500 text-white" : "border-slate-300 bg-white"}`}>
+                {selected ? "✓" : ""}
+              </div>
+            </button>
+          );
+
+          /* ─ tip box ─ */
+          const Tip = ({ color = "#0891b2", icon = "💡", text }) => (
+            <div className="flex items-start gap-2 rounded-[12px] border px-3 py-2" style={{ borderColor: `${color}30`, background: `${color}08` }}>
+              <span className="mt-0.5 text-sm">{icon}</span>
+              <p className="text-[10px] leading-relaxed" style={{ color }}>{text}</p>
+            </div>
+          );
+
+          /* ─ apply implant helper ─ */
+          const applyImplant = (id, label) => {
+            const item = LOCAL_IMPLANT_LIBRARY.find((i) => i.id === id);
+            if (!item) return;
+            setSelectedImplantType(item.type);
+            setSelectedImplantLibraryId(id);
+            setTimeout(() => useSelectedImplantLibraryAsLayer(), 60);
+            setNotice(`${label || item.label} ditambahkan ke canvas. Geser & sesuaikan posisinya.`);
+          };
+
+          return (
+            <motion.div key="templating-wizard-backdrop"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[98] flex items-end justify-center bg-slate-950/45 p-2 pb-[calc(env(safe-area-inset-bottom)+6px)] backdrop-blur-sm sm:items-center sm:p-4"
+              onClick={(e) => { if (e.target === e.currentTarget) setTemplatingWizardOpen(false); }}
+            >
+              <motion.div key="templating-wizard-modal"
+                initial={{ opacity: 0, y: 24, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                transition={PANEL_SPRING}
+                role="dialog" aria-modal="true"
+                className="flex max-h-[90dvh] w-full max-w-[min(100%,600px)] flex-col overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/80 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
+              >
+                {/* ══ Header ══ */}
+                <div className="flex shrink-0 items-center gap-2 border-b border-white/60 px-4 py-3">
+                  <svg className="h-4 w-4 shrink-0 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M5 2h6l.8 2.5H4.2L5 2z"/><rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/><path d="M5 6 L4.5 14 M11 6 L11.5 14"/><path d="M5 9.5 Q8 8.5 11 9.5"/></svg>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-extrabold text-slate-800">
+                      Panduan Templating
+                      {selProc ? <span className="ml-1.5 font-black" style={{ color: selProc.color }}>— {selProc.label}</span> : ""}
+                    </div>
+                    <div className="text-[9px] font-semibold text-slate-400 truncate">{stepLabels[wizardStep - 1]} · langkah {wizardStep} dari {TOTAL_STEPS}</div>
+                  </div>
+                  <button type="button" onClick={() => setTemplatingWizardOpen(false)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-500 shadow-[3px_3px_7px_rgba(100,116,139,0.18),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                    <X className="h-3 w-3" strokeWidth={2.2} />
+                  </button>
+                </div>
+
+                {/* ══ Step progress bar ══ */}
+                <div className="shrink-0 flex gap-1 px-4 pt-2.5 pb-1 overflow-x-auto">
+                  {stepLabels.slice(0, TOTAL_STEPS).map((label, idx) => {
+                    const s = idx + 1;
+                    const done = s < wizardStep;
+                    const active = s === wizardStep;
+                    return (
+                      <div key={label} className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
+                        <div className={`h-1.5 w-full rounded-full transition-all ${done ? "bg-emerald-400" : active ? "bg-cyan-500" : "bg-slate-200"}`} />
+                        <span className={`text-[8px] font-black whitespace-nowrap transition-colors ${done ? "text-emerald-600" : active ? "text-cyan-700" : "text-slate-300"}`}>
+                          {done ? "✓ " : ""}{label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ══ Scrollable body ══ */}
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-3 space-y-3">
+
+                  {/* ─── STEP 1: Persiapan ─── */}
+                  {wizardStep === 1 && (
+                    <>
+                      <div className="rounded-[18px] border border-white/80 bg-[#eef2f7] px-4 py-3.5 shadow-[4px_4px_10px_rgba(148,163,184,0.2),-4px_-4px_10px_rgba(255,255,255,0.82)]">
+                        <div className="text-base font-extrabold text-slate-800">Sebelum Memulai</div>
+                        <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Wizard ini akan memandu Anda langkah demi langkah dalam proses digital templating ortopedi. Pastikan dua syarat berikut terpenuhi sebelum lanjut.</p>
+                      </div>
+
+                      {/* Checklist */}
+                      <div className="space-y-2">
+                        {/* Upload */}
+                        <div className={`flex items-start gap-3 rounded-[16px] border px-3 py-3 ${image ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50/60"}`}>
+                          <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${image ? "bg-emerald-500 text-white" : "bg-amber-400 text-white"}`}>{image ? "✓" : "1"}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-[11px] font-extrabold ${image ? "text-emerald-800" : "text-amber-800"}`}>Upload X-ray</div>
+                            <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
+                              {image ? `Gambar sudah diunggah.` : "Gunakan X-ray AP weight-bearing dengan posisi berdiri (full-length untuk TKR, AP pelvis untuk THA/Hemi)."}
+                            </p>
+                            {!image && (
+                              <button type="button" onClick={() => { setTemplatingWizardOpen(false); mainUploadInputRef.current?.click(); }}
+                                className="mt-2 rounded-[10px] border border-amber-300 bg-amber-100 px-3 py-1.5 text-[10px] font-black text-amber-800">
+                                Upload Sekarang
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Kalibrasi */}
+                        <div className={`flex items-start gap-3 rounded-[16px] border px-3 py-3 ${hasCalibration ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50/60"}`}>
+                          <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${hasCalibration ? "bg-emerald-500 text-white" : "bg-amber-400 text-white"}`}>{hasCalibration ? "✓" : "2"}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-[11px] font-extrabold ${hasCalibration ? "text-emerald-800" : "text-amber-800"}`}>Kalibrasi Skala</div>
+                            <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
+                              {hasCalibration ? `Kalibrasi aktif (${measurementUnit}).` : "Tanpa kalibrasi, implant tidak dapat diposisikan pada skala nyata. Gunakan penggaris radiologis, bola kalibrasi, atau marker yang diketahui ukurannya."}
+                            </p>
+                            {!hasCalibration && image && (
+                              <button type="button" onClick={() => { setTemplatingWizardOpen(false); openSimpleCalibrationModal("Kalibrasi diperlukan sebelum templating."); }}
+                                className="mt-2 rounded-[10px] border border-amber-300 bg-amber-100 px-3 py-1.5 text-[10px] font-black text-amber-800">
+                                Mulai Kalibrasi
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <Tip color="#0891b2" icon="📋" text="Radiograf ideal: AP berdiri, seluruh ekstremitas, jarak fokus-film 100–120 cm, central beam pada lutut (TKR) atau simfisis pubis (THA/Hemi)." />
+                    </>
+                  )}
+
+                  {/* ─── STEP 2: Pilih Prosedur ─── */}
+                  {wizardStep === 2 && (
+                    <>
+                      <p className="text-center text-[11px] font-semibold text-slate-500">Pilih jenis prosedur yang akan ditemplating</p>
+                      <div className="grid gap-2.5">
+                        {Object.values(PROCS).map((proc) => (
+                          <button key={proc.key} type="button"
+                            onClick={() => { setWizardProcedure(proc.key); setWizardStemId(null); setWizardCupId(null); setWizardStep(3); }}
+                            className={`flex items-center gap-3.5 rounded-[20px] border px-4 py-3.5 text-left transition active:scale-[0.99] ${wizardProcedure === proc.key ? "border-2 shadow-[inset_2px_2px_6px_rgba(0,0,0,0.06)]" : "border-white/75 bg-[#eef2f7] shadow-[4px_4px_10px_rgba(148,163,184,0.22),-4px_-4px_10px_rgba(255,255,255,0.82)]"}`}
+                            style={wizardProcedure === proc.key ? { borderColor: proc.color, background: proc.colorLight } : {}}
+                          >
+                            <div className="h-12 w-12 shrink-0 rounded-[14px] border border-white/60 p-2 shadow-[2px_2px_6px_rgba(148,163,184,0.2)]" style={{ color: proc.color, background: proc.colorLight }}>{proc.icon}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-sm font-black" style={{ color: proc.color }}>{proc.label}</span>
+                                <span className="text-[9px] font-semibold text-slate-500">{proc.sub}</span>
+                              </div>
+                              <p className="mt-0.5 text-[9px] text-slate-500 leading-relaxed">{proc.tagline}</p>
+                              <p className="mt-0.5 text-[8px] text-slate-400 italic">{proc.indication}</p>
+                            </div>
+                            {wizardProcedure === proc.key
+                              ? <span className="shrink-0 text-[11px]" style={{ color: proc.color }}>✓</span>
+                              : <svg className="h-4 w-4 shrink-0 text-slate-300" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 3 L11 8 L6 13"/></svg>}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* ─── STEP 3: Panduan Klinis ─── */}
+                  {wizardStep === 3 && selProc && (
+                    <>
+                      <div className="flex items-center gap-3 rounded-[16px] px-3 py-2.5" style={{ background: selProc.colorLight, border: `1px solid ${selProc.color}30` }}>
+                        <div className="h-10 w-10 shrink-0 rounded-[12px] p-1.5" style={{ color: selProc.color, background: `${selProc.color}18` }}>{selProc.icon}</div>
+                        <div>
+                          <div className="text-[11px] font-extrabold" style={{ color: selProc.color }}>{selProc.label} — {selProc.sub}</div>
+                          <div className="text-[9px] text-slate-500">{selProc.indication}</div>
+                        </div>
+                      </div>
+
+                      {/* Langkah klinis */}
+                      <div className="rounded-[16px] border border-white/70 bg-[#eef2f7] px-3 py-3 shadow-[2px_2px_6px_rgba(148,163,184,0.16)]">
+                        <div className="mb-2 text-[9px] font-black uppercase tracking-widest text-slate-400">Urutan Langkah Klinis</div>
+                        <ol className="space-y-2">
+                          {selProc.steps.map((step, idx) => (
+                            <li key={idx} className="flex items-start gap-2.5">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-black text-white" style={{ background: selProc.color }}>{idx + 1}</span>
+                              <span className="text-[10px] leading-relaxed text-slate-700">{step}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+
+                      {/* Landmark list */}
+                      <div className="rounded-[16px] border border-white/70 bg-[#eef2f7] px-3 py-3 shadow-[2px_2px_6px_rgba(148,163,184,0.16)]">
+                        <div className="mb-2 text-[9px] font-black uppercase tracking-widest text-slate-400">Landmark Anatomis</div>
+                        <ul className="space-y-1">
+                          {selProc.landmarks.map((lm, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-[10px] text-slate-600">
+                              <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: selProc.color }} />
+                              {lm}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Angles reference */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {selProc.angles.map((a) => (
+                          <div key={a.name} className="rounded-[12px] border border-white/60 bg-white/40 px-2.5 py-2 shadow-[1px_1px_4px_rgba(148,163,184,0.15)]">
+                            <div className="text-[9px] font-black" style={{ color: selProc.color }}>{a.name}</div>
+                            <div className="text-[8px] text-slate-500">Normal: <span className="font-black text-slate-700">{a.normal}</span></div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* CTA ke planning */}
+                      <button type="button"
+                        onClick={() => { setTemplatingWizardOpen(false); openSimplePlanningModal(selProc.key === "tkr" ? "tka" : "hip"); }}
+                        className="flex w-full items-center justify-center gap-2 rounded-[14px] border py-2.5 text-[10px] font-black transition" style={{ borderColor: `${selProc.color}40`, color: selProc.color, background: selProc.colorLight }}>
+                        Buka Planning {selProc.label === "TKR" ? "TKA" : "HIP"} (pengukuran sudut)
+                      </button>
+                      <Tip color={selProc.color} icon="📐" text={selProc.key === "tkr" ? "Lakukan pengukuran HKA & JLA terlebih dahulu sebelum menentukan sudut reseksi. Ini memastikan koreksi deformitas yang akurat." : "Ukur offset panggul bilateral untuk menentukan restorasi panjang kaki (LLD < 5 mm adalah target klinis)."} />
+                    </>
+                  )}
+
+                  {/* ─── STEP 4: Pilih Implant ─── */}
+                  {wizardStep === 4 && selProc && (
+                    <>
+                      <div className="text-[10px] font-semibold text-slate-500">Pilih implant dari library. Implant akan ditambahkan ke canvas pada langkah berikutnya.</div>
+
+                      {selProc.key === "tkr" && (
+                        <>
+                          <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Knee Implant Template</div>
+                          {kneeImplants.length === 0 ? (
+                            <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-center text-[10px] text-emerald-700">
+                              ✓ Semua implant knee sudah ada di canvas
+                            </div>
+                          ) : (
+                            <div className="grid gap-1.5 max-h-[42vh] overflow-y-auto pr-0.5">
+                              {kneeImplants.map((item, idx) => (<ImplantCard key={item.id} item={item} selected={wizardStemId === item.id} onSelect={setWizardStemId} recommended={idx === 0} />))}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {selProc.key === "tha" && (
+                        <>
+                          <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">① Stem Femoral</div>
+                          {stemImplants.length === 0 ? (
+                            <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700">✓ Semua stem sudah ada di canvas</div>
+                          ) : (
+                            <div className="grid gap-1.5 max-h-[24vh] overflow-y-auto pr-0.5">
+                              {stemImplants.map((item, idx) => (<ImplantCard key={item.id} item={item} selected={wizardStemId === item.id} onSelect={setWizardStemId} recommended={idx === 0} />))}
+                            </div>
+                          )}
+                          <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">② Cup Asetabular</div>
+                          {cupImplants.length === 0 ? (
+                            <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700">✓ Semua cup sudah ada di canvas</div>
+                          ) : (
+                            <div className="grid gap-1.5 max-h-[24vh] overflow-y-auto pr-0.5">
+                              {cupImplants.map((item, idx) => (<ImplantCard key={item.id} item={item} selected={wizardCupId === item.id} onSelect={setWizardCupId} recommended={idx === 0} />))}
+                            </div>
+                          )}
+                          <Tip color="#c2410c" icon="📏" text="Pasang stem dulu, sesuaikan offset & rotasi, lalu pasang cup. Verifikasi anteversion cup ±15° dari garis ilioischial." />
+                        </>
+                      )}
+
+                      {selProc.key === "hemi" && (
+                        <>
+                          <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Bipolar Head</div>
+                          {bipolarImplants.length === 0 ? (
+                            <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700">✓ Semua bipolar head sudah ada di canvas</div>
+                          ) : (
+                            <div className="grid gap-1.5 max-h-[24vh] overflow-y-auto pr-0.5">
+                              {bipolarImplants.map((item, idx) => (<ImplantCard key={item.id} item={item} selected={wizardStemId === item.id} onSelect={setWizardStemId} recommended={idx === 0} />))}
+                            </div>
+                          )}
+                          <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Stem Femoral</div>
+                          {stemImplants.length === 0 ? (
+                            <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700">✓ Semua stem sudah ada di canvas</div>
+                          ) : (
+                            <div className="grid gap-1.5 max-h-[22vh] overflow-y-auto pr-0.5">
+                              {stemImplants.slice(0, 5).map((item, idx) => (<ImplantCard key={item.id} item={item} selected={wizardCupId === item.id} onSelect={setWizardCupId} recommended={idx === 0} />))}
+                            </div>
+                          )}
+                          <Tip color="#7c3aed" icon="📏" text="Pilih bipolar head yang diameternya sama dengan kepala femur kontralateral ±2 mm untuk restorasi offset yang baik." />
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {/* ─── STEP 5: Pasang ke Canvas ─── */}
+                  {wizardStep === 5 && selProc && (
+                    <>
+                      <div className="rounded-[16px] border border-white/70 bg-[#eef2f7] px-3 py-3 shadow-[2px_2px_6px_rgba(148,163,184,0.16)]">
+                        <div className="text-[11px] font-extrabold text-slate-800">Cara Memposisikan Implant</div>
+                        <ol className="mt-2 space-y-2">
+                          {[
+                            "Tekan tombol di bawah — implant akan muncul di tengah canvas",
+                            "Tap/klik implant di canvas untuk memilihnya",
+                            "Seret untuk memindahkan ke posisi anatomis yang tepat",
+                            selProc.key === "tkr"
+                              ? "Sejajarkan tibial tray dengan garis reseksi tibia; kondil femur tangent terhadap permukaan distal femur"
+                              : "Posisikan kepala femoral tepat di atas acetabulum; sesuaikan offset & panjang kaki",
+                            "Gunakan slider Rotate di panel bawah untuk koreksi rotasi",
+                            "Aktifkan Compare (kiri-kanan) untuk validasi simetri",
+                          ].map((tip, idx) => (
+                            <li key={idx} className="flex items-start gap-2.5">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-black text-white" style={{ background: selProc.color }}>{idx + 1}</span>
+                              <span className="text-[10px] leading-relaxed text-slate-700">{tip}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+
+                      {/* Apply buttons */}
+                      <div className="grid gap-2">
+                        {selProc.key !== "tha" && (
+                          <button type="button"
+                            onClick={() => applyImplant(wizardStemId, selProc.key === "tkr" ? "Knee Implant" : "Bipolar Head")}
+                            disabled={!wizardStemId}
+                            className="flex items-center justify-center gap-2 rounded-[16px] py-3 text-xs font-black text-white shadow-[0_4px_14px_rgba(0,0,0,0.22)] disabled:opacity-40"
+                            style={{ background: `linear-gradient(135deg, ${selProc.color}, ${selProc.color}cc)` }}>
+                            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2 V10 M5 7 L8 10 L11 7"/><path d="M2 13 H14"/></svg>
+                            Pasang {selProc.key === "tkr" ? "Knee Implant" : "Bipolar"} ke Canvas
+                          </button>
+                        )}
+                        {selProc.key === "tha" && (
+                          <>
+                            <button type="button" onClick={() => applyImplant(wizardStemId, "Stem Femoral")} disabled={!wizardStemId}
+                              className="flex items-center justify-center gap-2 rounded-[16px] py-2.5 text-xs font-black text-white disabled:opacity-40"
+                              style={{ background: "linear-gradient(135deg,#c2410c,#9a3412)", boxShadow: "0 4px 12px rgba(194,65,12,0.3)" }}>
+                              <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2 V10 M5 7 L8 10 L11 7"/><path d="M2 13 H14"/></svg>
+                              ① Pasang Stem ke Canvas
+                            </button>
+                            <button type="button" onClick={() => applyImplant(wizardCupId, "Cup Asetabular")} disabled={!wizardCupId}
+                              className="flex items-center justify-center gap-2 rounded-[16px] py-2.5 text-xs font-black text-white disabled:opacity-40"
+                              style={{ background: "linear-gradient(135deg,#0891b2,#0e7490)", boxShadow: "0 4px 12px rgba(8,145,178,0.3)" }}>
+                              <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2 V10 M5 7 L8 10 L11 7"/><path d="M2 13 H14"/></svg>
+                              ② Pasang Cup ke Canvas
+                            </button>
+                          </>
+                        )}
+                        {selProc.key === "hemi" && wizardCupId && (
+                          <button type="button" onClick={() => applyImplant(wizardCupId, "Stem Femoral")} disabled={!wizardCupId}
+                            className="flex items-center justify-center gap-2 rounded-[16px] py-2.5 text-xs font-black text-white"
+                            style={{ background: "linear-gradient(135deg,#7c3aed,#6d28d9)", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
+                            ② Pasang Stem ke Canvas
+                          </button>
+                        )}
+                      </div>
+                      <Tip color={selProc.color} icon="🖱️" text="Setelah implant muncul di canvas: tap untuk pilih → seret untuk pindah → gunakan handle sudut untuk rotasi. Gunakan Undo (Ctrl+Z) jika perlu koreksi." />
+                    </>
+                  )}
+
+                  {/* ─── STEP 6: Simpan ─── */}
+                  {wizardStep === 6 && (
+                    <>
+                      {/* Summary card */}
+                      <div className="rounded-[18px] border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+                        <div className="text-sm font-black text-emerald-800 mb-2.5">Ringkasan Templating</div>
+                        <div className="space-y-1.5 text-[10px]">
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-600">Prosedur:</span>
+                            <span className="rounded-full px-2 py-0.5 font-black text-white text-[9px]" style={{ background: selProc?.color }}>{selProc?.label} — {selProc?.sub}</span>
+                          </div>
+                          <div className="flex items-center gap-2"><span className="font-black text-slate-600">X-ray:</span><span className={image ? "text-emerald-700 font-semibold" : "text-amber-600"}>{image ? "Sudah upload ✓" : "Belum upload"}</span></div>
+                          <div className="flex items-center gap-2"><span className="font-black text-slate-600">Kalibrasi:</span><span className={hasCalibration ? "text-emerald-700 font-semibold" : "text-amber-600"}>{hasCalibration ? `Aktif (${measurementUnit}) ✓` : "Belum kalibrasi"}</span></div>
+                          {(wizardStemId) && <div><span className="font-black text-slate-600">{selProc?.key === "tkr" ? "Knee:" : selProc?.key === "hemi" ? "Bipolar:" : "Stem:"} </span>{LOCAL_IMPLANT_LIBRARY.find((i) => i.id === wizardStemId)?.label || "—"}</div>}
+                          {(wizardCupId) && <div><span className="font-black text-slate-600">{selProc?.key === "tha" ? "Cup:" : "Stem:"} </span>{LOCAL_IMPLANT_LIBRARY.find((i) => i.id === wizardCupId)?.label || "—"}</div>}
+                          <div className="flex items-center gap-2"><span className="font-black text-slate-600">Layer:</span><span className="text-slate-700">{cutLayers.length} layer di canvas</span></div>
+                          <div className="flex items-center gap-2"><span className="font-black text-slate-600">Ukuran:</span><span className="text-slate-700">{measurementRows.length} pengukuran</span></div>
+                        </div>
+                      </div>
+
+                      {/* Save options */}
+                      <div className="grid gap-2">
+                        <button type="button" onClick={() => { setTemplatingWizardOpen(false); openSaveTemplateModal(); }} disabled={!image}
+                          className="flex items-center justify-center gap-2.5 rounded-[16px] bg-emerald-600 py-3 text-xs font-black text-white shadow-[0_4px_14px_rgba(5,150,105,0.35)] disabled:opacity-40">
+                          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 10 V13 Q2 14 3 14 H13 Q14 14 14 13 V10"/><path d="M8 2 V9 M5 6 L8 9 L11 6"/></svg>
+                          Simpan Template ke Google Drive
+                        </button>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button type="button" onClick={() => { setTemplatingWizardOpen(false); exportReportPng?.(); }} disabled={!image}
+                            className="min-h-10 rounded-[12px] border border-cyan-200 bg-cyan-50 text-[10px] font-black text-cyan-700 disabled:opacity-40">PNG</button>
+                          <button type="button" onClick={() => { setTemplatingWizardOpen(false); exportReportJpeg?.(); }} disabled={!image}
+                            className="min-h-10 rounded-[12px] border border-amber-200 bg-amber-50 text-[10px] font-black text-amber-700 disabled:opacity-40">JPEG</button>
+                          <button type="button" onClick={() => { setTemplatingWizardOpen(false); exportReportPdf?.(); }} disabled={!image}
+                            className="min-h-10 rounded-[12px] bg-slate-800 text-[10px] font-black text-white disabled:opacity-40">PDF</button>
+                        </div>
+                        <button type="button" onClick={() => { setTemplatingWizardOpen(false); setPreOpReportModalOpen(true); }} disabled={!image}
+                          className="flex items-center justify-center gap-2 rounded-[16px] bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] py-2.5 text-xs font-black text-white shadow-[0_4px_12px_rgba(37,99,235,0.35)] disabled:opacity-40">
+                          Buat Laporan Pre-Op PDF
+                        </button>
+                      </div>
+                      <Tip color="#059669" icon="✅" text="Template tersimpan di Drive dapat dibuka kembali dan dimodifikasi. Selalu simpan sebelum menutup browser!" />
+                    </>
+                  )}
+                </div>
+
+                {/* ══ Footer navigation ══ */}
+                <div className="flex shrink-0 items-center justify-between gap-2 border-t border-white/60 px-4 py-3">
+                  <button type="button"
+                    onClick={() => { if (wizardStep <= 1) setTemplatingWizardOpen(false); else setWizardStep((s) => s - 1); }}
+                    className="flex items-center gap-1.5 rounded-[14px] border border-white/70 bg-[#eef2f7] px-3 py-2 text-[11px] font-black text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                    {wizardStep <= 1 ? "✕ Tutup" : "← Kembali"}
+                  </button>
+                  <span className="text-[9px] font-bold text-slate-400">{wizardStep} / {TOTAL_STEPS}</span>
+                  {wizardStep < TOTAL_STEPS ? (
+                    <button type="button"
+                      onClick={() => setWizardStep((s) => s + 1)}
+                      disabled={wizardStep === 2 && !wizardProcedure}
+                      className="flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-black text-white shadow-[0_3px_10px_rgba(8,145,178,0.28)] disabled:opacity-40"
+                      style={{ background: `linear-gradient(135deg, ${selProc?.color || "#0891b2"}, ${selProc?.color ? selProc.color + "cc" : "#0e7490"})` }}>
+                      Lanjut →
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => setTemplatingWizardOpen(false)}
+                      className="flex items-center gap-1.5 rounded-[14px] bg-emerald-600 px-4 py-2 text-[11px] font-black text-white shadow-[0_3px_10px_rgba(5,150,105,0.28)]">
+                      Selesai ✓
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })() : null}
+      </AnimatePresence>
+
       <AnimatePresence>
         {isSimpleUiMode && simplePlanningModal ? (
           <motion.div
@@ -23632,7 +25055,7 @@ export default function XrayCalibrationWorkspace({
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {isSimpleUiMode ? (
+          {!isSimpleUiMode && (
             <details
               open={simpleLayerDropdownOpen}
               onToggle={(event) =>
@@ -23753,6 +25176,11 @@ export default function XrayCalibrationWorkspace({
                     setSimpleLayerDropdownOpen(false);
                     openLayerSettingsModal(layerId);
                   }}
+                  onRenameLayer={(layerId, name) =>
+                    setCutLayers((prev) =>
+                      prev.map((l) => (l.id === layerId ? { ...l, name } : l)),
+                    )
+                  }
                   className="mb-3"
                   maxHeightClass="max-h-[min(36vh,300px)]"
                 />
@@ -24253,7 +25681,316 @@ export default function XrayCalibrationWorkspace({
                 </div>
               </div>
             </details>
+          )}
+
+          {/* ── HKA navbar button (simple UI desktop) — only when measurements exist ── */}
+          {isSimpleUiMode && hkaSets.length > 0 ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => { setSimpleDesktopHkaOpen((p) => !p); setSimpleDesktopEditFotoOpen(false); setSimpleDesktopManagerOpen(false); }}
+                className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+                title="HKA · FTA · JLA — Pengukuran Mekanis"
+              >
+                <span className="text-[10px] font-black text-cyan-700">HKA</span>
+                {hkaSets.length > 0 && (
+                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-600 px-1 text-[9px] font-black text-white">
+                    {hkaSets.length}
+                  </span>
+                )}
+              </button>
+              <AnimatePresence>
+                {simpleDesktopHkaOpen && (
+                  <motion.div
+                    key="navbar-hka-popdown"
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                    className="absolute left-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,300px)] rounded-[22px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-xs font-extrabold text-slate-900">HKA · FTA · JLA</div>
+                      <button type="button" onClick={() => setSimpleDesktopHkaOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.22)]"><X className="h-3 w-3" /></button>
+                    </div>
+                    {/* Mode buttons */}
+                    <div className="grid gap-1.5">
+                      {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => {
+                        const isActive = tool === "hkaAuto" && hkaInputMode === modeItem.key;
+                        return (
+                          <button key={modeItem.key} type="button"
+                            onClick={() => { handleHkaModeChange(modeItem.key); handleToolChange("hkaAuto", { skipHkaSidePrompt: true }); setSimpleDesktopHkaOpen(false); }}
+                            className={`flex w-full items-center gap-2 rounded-[14px] border px-3 py-2 text-left text-xs transition ${
+                              isActive
+                                ? "border-cyan-400 bg-cyan-50 text-cyan-900"
+                                : `${SOFT_RAISED_CLASS} text-slate-700`
+                            }`}
+                          >
+                            <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black text-white`} style={{ background: isActive ? "#0891b2" : "#94a3b8" }}>
+                              {modeItem.key === "full" ? "H" : modeItem.key === "fta" ? "F" : "J"}
+                            </span>
+                            <span className="flex-1 leading-tight">
+                              <span className="block font-black text-[10px]">{modeItem.label}</span>
+                              <span className="block text-[9px] opacity-60">{modeItem.modeLabel}</span>
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => { e.stopPropagation(); setHkaInfoBubble((prev) => prev === modeItem.key ? null : modeItem.key); }}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setHkaInfoBubble((prev) => prev === modeItem.key ? null : modeItem.key); } }}
+                              className={`shrink-0 cursor-pointer rounded-full px-1.5 py-0.5 text-[9px] font-black transition-colors ${hkaInfoBubble === modeItem.key ? "bg-indigo-100 text-indigo-700" : "text-indigo-400 hover:bg-indigo-50"}`}
+                              title={`Info ${modeItem.label}`}
+                            >ⓘ</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* HKA result list */}
+                    {hkaSets.length > 0 && (
+                      <div className="mt-2 overflow-hidden rounded-[14px] border border-cyan-200/60 bg-cyan-50/40">
+                        <div className="flex items-center justify-between px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-cyan-700">
+                          <span>Hasil ({hkaSets.length})</span>
+                          <button type="button" onClick={() => { setHkaSets([]); setSelectedHkaId(null); }} className="text-rose-500 hover:text-rose-700">Hapus semua</button>
+                        </div>
+                        <div className="max-h-[140px] overflow-y-auto">
+                          {hkaSets.map((hka) => {
+                            const m = getHkaMeasurementResult(hka);
+                            const isSelected = selectedHka?.id === hka.id;
+                            const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
+                            return (
+                              <button key={hka.id} type="button"
+                                onClick={() => { setSelectedHkaId(hka.id); setSelectedLineId(null); setSimpleDesktopHkaOpen(false); }}
+                                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition hover:bg-white/60 ${isSelected ? "bg-white/70" : ""}`}
+                              >
+                                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-black text-white" style={{ background: modeColors[hka.mode] }}>
+                                  {hka.mode === "full" ? "H" : hka.mode === "fta" ? "F" : "J"}
+                                </span>
+                                <span className="flex-1 min-w-0">
+                                  <span className="block truncate text-[9px] font-black text-slate-700">
+                                    {m?.absoluteDeviation != null ? `${m.absoluteDeviation.toFixed(1)}°` : "–"} · {getHkaSideLabel(hka.side)}
+                                  </span>
+                                </span>
+                                <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setHkaSets((prev) => prev.filter((x) => x.id !== hka.id)); if (selectedHka?.id === hka.id) setSelectedHkaId(null); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setHkaSets((prev) => prev.filter((x) => x.id !== hka.id)); if (selectedHka?.id === hka.id) setSelectedHkaId(null); } }} className="shrink-0 cursor-pointer text-[9px] text-rose-400 hover:text-rose-600">✕</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           ) : null}
+
+          {/* ── Edit Foto navbar button (simple UI desktop) ── */}
+          {isSimpleUiMode ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => { setSimpleDesktopEditFotoOpen((p) => !p); setSimpleDesktopHkaOpen(false); setSimpleDesktopManagerOpen(false); }}
+                className={`${simpleDesktopEditFotoOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+                title="Edit Foto — Kontras, Kecerahan, Inversi, Crop"
+              >
+                <Icon name="preset" className="h-3.5 w-3.5 shrink-0 text-slate-600" />
+                <span className="text-slate-700">Edit Foto</span>
+                {(invertImage || cropRect || contrast !== 100 || level !== 100 || flipX || flipY) && (
+                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black text-white">!</span>
+                )}
+              </button>
+              <AnimatePresence>
+                {simpleDesktopEditFotoOpen && (
+                  <motion.div
+                    key="navbar-editfoto-popdown"
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                    className="absolute left-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,280px)] rounded-[22px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-xs font-extrabold text-slate-900">Edit Foto</div>
+                      <button type="button" onClick={() => setSimpleDesktopEditFotoOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.22)]"><X className="h-3 w-3" /></button>
+                    </div>
+                    {/* Compact sliders row */}
+                    {[
+                      { label: "Kontras", value: contrast, min: 20, max: 300, onChange: (v) => setContrast(v), color: "#0ea5e9" },
+                      { label: "Cerah", value: level, min: 20, max: 220, onChange: (v) => setLevel(v), color: "#f59e0b" },
+                    ].map(({ label, value, min, max, onChange, color }) => (
+                      <div key={label} className="rounded-[14px] border border-white/60 bg-[#eef2f7] px-3 py-2 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]">
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-wide">{label}</span>
+                          <span className="min-w-[36px] rounded-lg border border-white/60 bg-white/50 px-1.5 py-0.5 text-center text-[10px] font-black" style={{ color }}>{value}%</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => onChange(clamp(value - 5, min, max))}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-[10px] font-black text-slate-600 shadow-[1px_1px_3px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.8)]">−</button>
+                          <input type="range" min={min} max={max} step={1} value={value}
+                            onChange={(e) => onChange(Number(e.target.value))}
+                            className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full outline-none"
+                            style={{ accentColor: color }}
+                          />
+                          <button type="button" onClick={() => onChange(clamp(value + 5, min, max))}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-[10px] font-black text-slate-600 shadow-[1px_1px_3px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.8)]">+</button>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Quick toggles row */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button type="button" onClick={() => setInvertImage((prev) => !prev)}
+                        className={`flex items-center justify-center gap-1.5 rounded-[14px] border py-2.5 text-[10px] font-black transition ${
+                          invertImage ? "border-slate-600 bg-slate-800 text-white" : "border-white/60 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]"}`}>
+                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="8" r="6"/><path d="M8 2 A6 6 0 0 1 8 14" fill="currentColor" opacity="0.5"/></svg>
+                        Inversi
+                      </button>
+                      <button type="button"
+                        onClick={() => { setCropToolActive((prev) => !prev); setCropDraftPoints(null); setSimpleDesktopEditFotoOpen(false); }}
+                        className={`flex items-center justify-center gap-1.5 rounded-[14px] border py-2.5 text-[10px] font-black transition ${
+                          cropToolActive ? "border-cyan-400 bg-cyan-50 text-cyan-800" : "border-white/60 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]"}`}>
+                        <Crop className="h-3 w-3 shrink-0" strokeWidth={2} />
+                        Crop
+                      </button>
+                    </div>
+                    {/* Rotate/Flip row */}
+                    <div className="grid grid-cols-4 gap-1">
+                      {[
+                        { icon: "rotateLeft", label: "↺", title: "Putar -90°", fn: rotateLeft },
+                        { icon: "rotateRight", label: "↻", title: "Putar +90°", fn: rotateRight },
+                        { icon: "flipH", label: "↔", title: "Flip H", fn: () => setFlipX((p) => !p), active: flipX },
+                        { icon: "flipV", label: "↕", title: "Flip V", fn: () => setFlipY((p) => !p), active: flipY },
+                      ].map((btn) => (
+                        <button key={btn.title} type="button" onClick={btn.fn} title={btn.title}
+                          className={`flex min-h-9 items-center justify-center rounded-[12px] border text-sm font-black transition ${
+                            btn.active ? "border-cyan-400 bg-cyan-50 text-cyan-800" : "border-white/60 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]"}`}>
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                    {cropRect && (
+                      <button type="button"
+                        onClick={() => { setCropRect(null); setTimeout(() => fitImageToViewport(), 0); setNotice("Crop direset."); }}
+                        className="w-full rounded-[12px] border border-emerald-200 bg-emerald-50 py-1.5 text-[10px] font-black text-emerald-700">
+                        ✕ Reset Crop
+                      </button>
+                    )}
+                    <button type="button"
+                      onClick={() => { setContrast(100); setLevel(100); setInvertImage(false); setRotation(0); setFlipX(false); setFlipY(false); setNotice("Reset foto."); }}
+                      className="w-full rounded-[12px] border border-white/60 bg-[#eef2f7] py-1.5 text-[9px] font-black text-slate-400 shadow-[1px_1px_3px_rgba(148,163,184,0.16)]">
+                      Reset Semua
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : null}
+
+          {/* ── Templating Wizard trigger (simple UI desktop) ── */}
+          {isSimpleUiMode ? (
+            <button type="button"
+              onClick={() => { setTemplatingWizardOpen(true); setWizardStep(1); setWizardProcedure(null); setWizardStemId(null); setWizardCupId(null); setSimpleDesktopManagerOpen(false); setSimpleDesktopHkaOpen(false); setSimpleDesktopEditFotoOpen(false); }}
+              className={`${SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+              title="Mulai Templating — panduan TKR · THA · Hemi"
+            >
+              <svg className="h-3.5 w-3.5 shrink-0 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M5 2h6l.8 2.5H4.2L5 2z"/><rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/>
+                <path d="M5 6 L4.5 14 M11 6 L11.5 14"/><path d="M5 9.5 Q8 8.5 11 9.5"/>
+              </svg>
+              <span className="font-black text-cyan-700">Templating</span>
+            </button>
+          ) : null}
+
+          {/* ── Manager navbar button (simple UI desktop) ── */}
+          {isSimpleUiMode ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setSimpleDesktopManagerOpen((p) => !p)}
+                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+                title="Layer · Line · Implant Manager"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <rect x="1" y="1" width="6" height="6" rx="1.5" />
+                  <rect x="9" y="1" width="6" height="6" rx="1.5" />
+                  <rect x="1" y="9" width="6" height="6" rx="1.5" />
+                  <rect x="9" y="9" width="6" height="6" rx="1.5" />
+                </svg>
+                <span className={simpleDesktopManagerOpen ? "text-cyan-800 font-black" : "text-slate-700"}>
+                  Manager
+                </span>
+                {(cutLayers.length > 0 || lines.filter(l => l.id !== calibrationLineId).length > 0) && (
+                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-600 px-1 text-[9px] font-black text-white">
+                    {cutLayers.length + lines.filter(l => l.id !== calibrationLineId).length}
+                  </span>
+                )}
+              </button>
+              <AnimatePresence>
+                {simpleDesktopManagerOpen && (
+                  <motion.div
+                    key="navbar-manager-popdown"
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                    className="absolute right-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,380px)]"
+                  >
+                    <ManagerPanel
+                      style={{ maxHeight: "min(76vh,580px)" }}
+                      activeTab={simpleManagerTab}
+                      onTabChange={setSimpleManagerTab}
+                      onClose={() => setSimpleDesktopManagerOpen(false)}
+                      contrast={contrast}
+                      level={level}
+                      onContrastChange={setContrast}
+                      onLevelChange={setLevel}
+                      onResetContrastLevel={() => { setContrast(100); setLevel(100); }}
+                      layers={cutLayers}
+                      selectedLayerId={selectedCutLayerId}
+                      onSelectLayer={(layerId) => selectLayerFromCanvas(layerId, { openPanel: false })}
+                      onToggleLayerVisibility={toggleCutLayerVisibility}
+                      onMoveLayer={moveCutLayerInStack}
+                      onOpenLayerSettings={(layerId) => {
+                        selectLayerFromCanvas(layerId, { openPanel: false });
+                        setSimpleDesktopManagerOpen(false);
+                        openLayerSettingsModal(layerId);
+                      }}
+                      onRenameLayer={(layerId, name) =>
+                        setCutLayers((prev) =>
+                          prev.map((l) => (l.id === layerId ? { ...l, name } : l)),
+                        )
+                      }
+                      lines={lines.filter((l) => l.id !== calibrationLineId)}
+                      selectedLineId={selectedLineId}
+                      onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
+                      onRenameLine={renameLineById}
+                      onChangeLineColor={changeLineColorById}
+                      getLineLength={getLineLength}
+                      formatMeasurementFromPx={formatMeasurementFromPx}
+                      lineTypeLabel={lineTypeLabel}
+                      implantItems={LOCAL_IMPLANT_LIBRARY}
+                      selectedImplantType={selectedImplantType}
+                      selectedImplantItemId={selectedImplantLibraryId}
+                      onSelectImplantType={setSelectedImplantType}
+                      onSelectImplantItemId={setSelectedImplantLibraryId}
+                      onUseSelectedImplant={() => {
+                        setSimpleDesktopManagerOpen(false);
+                        useSelectedImplantLibraryAsLayer();
+                      }}
+                      onReplaceSelectedImplant={() => {
+                        setSimpleDesktopManagerOpen(false);
+                        void replaceSelectedLayerWithSelectedImplant();
+                      }}
+                      canReplaceSelectedImplant={Boolean(
+                        selectedCutLayer && isImageBackedLayerKind(selectedCutLayer.kind),
+                      )}
+                      implantDisabled={!image || !modelWidth || !modelHeight}
+                      implantInstruction={implantLibraryScaleInstruction}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : null}
+
           {isSimpleUiMode ? (
             <details className="group relative">
               <summary
@@ -24774,12 +26511,49 @@ export default function XrayCalibrationWorkspace({
                 />
                 <IconButton
                   icon="save"
-                  label="Export PDF"
+                  label="Export PDF Sederhana"
                   onClick={exportReportPdf}
                   disabled={!hasCalibration}
                   className="h-8 w-8 shrink-0"
                 />
               </div>
+
+              {/* Laporan Pre-Op Profesional */}
+              <button
+                type="button"
+                onClick={() => setPreOpReportModalOpen(true)}
+                disabled={!image}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3 py-2.5 text-xs font-black text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)] transition hover:shadow-[0_6px_20px_rgba(37,99,235,0.5)] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.98]"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                {isLeftSidebarCompact ? null : "Buat Laporan Pre-Op"}
+              </button>
+
+              {/* Manajemen Kasus Pasien */}
+              <button
+                type="button"
+                onClick={() => setPatientCaseManagerOpen(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-black text-purple-700 transition hover:bg-purple-100 active:scale-[0.98]"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {isLeftSidebarCompact ? null : "Kasus Pasien"}
+              </button>
+
+              {/* Estimator Ukuran Implan */}
+              <button
+                type="button"
+                onClick={() => setImplantSizePanelOpen(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-black text-teal-700 transition hover:bg-teal-100 active:scale-[0.98]"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                {isLeftSidebarCompact ? null : "Estimator Ukuran Implan"}
+              </button>
 
               {/* Baris 2: Simpan ke Drive */}
               {!isLeftSidebarCompact ? (
@@ -24932,13 +26706,13 @@ export default function XrayCalibrationWorkspace({
               <Icon name="preset" className="h-4 w-4 text-slate-600" />
               {!isLeftSidebarCompact ? (
                 <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
-                  Adjust
+                  Edit Foto
                 </span>
               ) : null}
-              <InfoTooltip text="Contrast, level, rotate, flip, dan reset cut layer." />
+              <InfoTooltip text="Contrast, kecerahan, invert, rotasi, flip, potong, dan reset." />
             </div>
             <CompactSliderField
-              label="Contrast"
+              label="Kontras"
               valueText={`${contrast}%`}
               min={20}
               max={300}
@@ -24949,7 +26723,7 @@ export default function XrayCalibrationWorkspace({
               onIncrease={() => setContrast((prev) => clamp(prev + 2, 20, 300))}
             />
             <CompactSliderField
-              label="Light"
+              label="Cerah"
               valueText={`${level}%`}
               min={20}
               max={220}
@@ -24959,38 +26733,99 @@ export default function XrayCalibrationWorkspace({
               onDecrease={() => setLevel((prev) => clamp(prev - 2, 20, 220))}
               onIncrease={() => setLevel((prev) => clamp(prev + 2, 20, 220))}
             />
+            {/* Invert toggle + status */}
+            <button
+              type="button"
+              onClick={() => setInvertImage((prev) => !prev)}
+              title="Inversi warna X-ray (negatif/positif)"
+              className={`flex w-full items-center justify-between rounded-[14px] border px-3 py-1.5 text-xs font-semibold transition ${
+                invertImage
+                  ? "border-slate-700 bg-slate-800 text-white"
+                  : `${SOFT_RAISED_CLASS} text-slate-700`
+              }`}
+            >
+              <span>Inversi Warna</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${invertImage ? "bg-white/20 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {invertImage ? "ON" : "OFF"}
+              </span>
+            </button>
             <div className={SIDEBAR_ICON_GRID_CLASS}>
               <IconButton
                 icon="rotateLeft"
-                label="Rotate -90"
+                label="Putar -90°"
                 onClick={rotateLeft}
                 className="h-8 w-full"
               />
               <IconButton
                 icon="rotateRight"
-                label="Rotate +90"
+                label="Putar +90°"
                 onClick={rotateRight}
                 className="h-8 w-full"
               />
               <IconButton
                 icon="flipH"
-                label="Flip Horizontal"
+                label="Balik Horizontal"
                 onClick={() => setFlipX((prev) => !prev)}
+                active={flipX}
                 className="h-8 w-full"
               />
               <IconButton
                 icon="flipV"
-                label="Flip Vertical"
+                label="Balik Vertikal"
                 onClick={() => setFlipY((prev) => !prev)}
-                className="h-8 w-full"
-              />
-              <IconButton
-                icon="resetCrop"
-                label="Reset Cut Layers"
-                onClick={resetCutArea}
+                active={flipY}
                 className="h-8 w-full"
               />
             </div>
+            {/* Crop tool */}
+            <button
+              type="button"
+              onClick={() => {
+                setCropToolActive((prev) => !prev);
+                setCropDraftPoints(null);
+              }}
+              title="Potong (Crop): seret pada canvas untuk memilih area"
+              className={`flex w-full items-center gap-2 rounded-[14px] border px-3 py-1.5 text-xs font-semibold transition ${
+                cropToolActive
+                  ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-[inset_2px_2px_6px_rgba(6,182,212,0.15)]"
+                  : `${SOFT_RAISED_CLASS} text-slate-700`
+              }`}
+            >
+              <Crop className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+              <span className="flex-1 text-left">
+                {cropToolActive ? "Seret di canvas untuk crop…" : "Potong (Crop)"}
+              </span>
+            </button>
+            {/* Reset crop */}
+            {cropRect && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCropRect(null);
+                  setTimeout(() => fitImageToViewport(), 0);
+                  setNotice("Crop direset — gambar penuh.");
+                }}
+                className={`${SOFT_TEXT_BUTTON_CLASS} w-full px-3 py-1.5 text-xs text-emerald-700`}
+              >
+                Reset Crop → Gambar Penuh
+              </button>
+            )}
+            {/* Reset all adjustments */}
+            <button
+              type="button"
+              onClick={() => {
+                setContrast(100);
+                setLevel(100);
+                setInvertImage(false);
+                setRotation(0);
+                setFlipX(false);
+                setFlipY(false);
+                setNotice("Semua penyesuaian foto direset.");
+              }}
+              className={`${SOFT_TEXT_BUTTON_CLASS} w-full px-3 py-1.5 text-[10px] text-slate-500`}
+            >
+              Reset Semua Adjust
+            </button>
           </motion.div>
 
           <motion.div
@@ -25733,6 +27568,67 @@ export default function XrayCalibrationWorkspace({
                     ? `Selected: ${formatMeasurementFromPx(selectedLengthPx)}`
                     : "Selected: belum dikalibrasi"
                   : "Mode zoom % aktif (tanpa garis referensi)."}
+              </div>
+            ) : null}
+            {/* ── 3-step calibration progress indicator ── */}
+            {!isLeftSidebarCompact && calibrationMode === "line" ? (
+              <div className="rounded-[14px] border border-slate-200/70 bg-white/50 px-2.5 py-2">
+                {[
+                  {
+                    n: 1,
+                    label: "Buat atau pilih garis",
+                    done: !!calibrationReferenceLine,
+                    active: !calibrationReferenceLine,
+                  },
+                  {
+                    n: 2,
+                    label: "Isi nilai real (cm/mm)",
+                    done: !!(
+                      calibrationReferenceLine && Number(actualMmInput) > 0
+                    ),
+                    active: !!(
+                      calibrationReferenceLine && !(Number(actualMmInput) > 0)
+                    ),
+                  },
+                  {
+                    n: 3,
+                    label: "Tekan Simpan Kalibrasi",
+                    done: hasCalibration,
+                    active: !!(
+                      calibrationReferenceLine &&
+                      Number(actualMmInput) > 0 &&
+                      !hasCalibration
+                    ),
+                  },
+                ].map((step) => (
+                  <div key={step.n} className="flex items-center gap-2 py-[3px]">
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black transition-colors ${
+                        step.done
+                          ? "bg-emerald-500 text-white"
+                          : step.active
+                            ? "bg-cyan-500 text-white"
+                            : "bg-slate-200 text-slate-400"
+                      }`}
+                    >
+                      {step.done ? "✓" : step.n}
+                    </span>
+                    <span
+                      className={`flex-1 text-[10px] leading-tight ${
+                        step.done
+                          ? "text-emerald-700"
+                          : step.active
+                            ? "font-bold text-cyan-800"
+                            : "text-slate-400"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                    {step.active && (
+                      <span className="text-[9px] text-cyan-500">◀</span>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : null}
             {!hasCalibration && calibrationMode === "line" ? (
@@ -27262,32 +29158,68 @@ export default function XrayCalibrationWorkspace({
                        HKA & TKA
                     </span>
                   </div>
-                  <div className={SIDEBAR_TEXT_BUTTON_GRID_CLASS}>
-                    <button
-                      type="button"
-                      onClick={() => handleToolChange("hkaAuto")}
-                      className={measurePresetButtonClass(
-                        tool === "hkaAuto",
-                        "text-cyan-700",
-                      )}
-                    >
-                     HKA Line
-                    </button>
-                  </div>
-                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                    {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => (
-                      <button
-                        key={modeItem.key}
-                        type="button"
-                        onClick={() => handleHkaModeChange(modeItem.key)}
-                        className={measurePresetButtonClass(
-                          hkaInputMode === modeItem.key,
-                          "text-cyan-700",
-                        )}
-                      >
-                        {modeItem.label}
-                      </button>
-                    ))}
+                  {/* Mode buttons — each one sets mode AND starts the HKA tool */}
+                  <div className="grid gap-1.5">
+                    {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => {
+                      const isActive = tool === "hkaAuto" && hkaInputMode === modeItem.key;
+                      const isSelected = hkaInputMode === modeItem.key && tool !== "hkaAuto";
+                      return (
+                        <button
+                          key={modeItem.key}
+                          type="button"
+                          onClick={() => {
+                            handleHkaModeChange(modeItem.key);
+                            handleToolChange("hkaAuto", { skipHkaSidePrompt: true });
+                          }}
+                          title={`Mulai ${modeItem.modeLabel}`}
+                          className={`flex w-full items-center gap-2 rounded-[16px] px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border border-cyan-300 bg-gradient-to-r from-cyan-100 to-teal-50 text-cyan-900 shadow-[inset_2px_2px_6px_rgba(6,182,212,0.15)]"
+                              : isSelected
+                                ? `${SOFT_PRESSED_CLASS} text-cyan-800`
+                                : `${SOFT_RAISED_CLASS} text-slate-700 hover:text-cyan-800`
+                          }`}
+                        >
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black transition-colors ${
+                              isActive ? "bg-cyan-600 text-white" : isSelected ? "bg-slate-400 text-white" : "bg-slate-200 text-slate-500"
+                            }`}
+                          >
+                            {isActive ? "●" : "▶"}
+                          </span>
+                          <span className="flex-1 leading-tight">
+                            <span className="block font-black text-[11px]">
+                              {isActive ? `${modeItem.label} aktif` : `Mulai ${modeItem.label}`}
+                            </span>
+                            <span className="block text-[9px] font-normal opacity-60">
+                              {modeItem.modeLabel}
+                            </span>
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHkaInfoBubble((prev) => prev === modeItem.key ? null : modeItem.key);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.stopPropagation();
+                                setHkaInfoBubble((prev) => prev === modeItem.key ? null : modeItem.key);
+                              }
+                            }}
+                            className={`shrink-0 cursor-pointer rounded-full px-1.5 py-0.5 text-[9px] font-black transition-colors ${
+                              hkaInfoBubble === modeItem.key
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "text-indigo-500 hover:bg-indigo-50"
+                            }`}
+                            title={`Info ${modeItem.label}`}
+                          >
+                            ⓘ
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                   <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                     {[
@@ -27450,6 +29382,86 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 )}
               </div>
+              {lines.length > 0 && (
+                <LineManager
+                  lines={lines}
+                  selectedLineId={selectedLineId}
+                  onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
+                  onRenameLine={renameLineById}
+                  onChangeLineColor={changeLineColorById}
+                  getLineLength={getLineLength}
+                  formatMeasurementFromPx={formatMeasurementFromPx}
+                  lineTypeLabel={lineTypeLabel}
+                  className="mx-1 mb-1"
+                  maxHeightClass="max-h-[min(30vh,280px)]"
+                />
+              )}
+
+              {/* ── HKA / FTA / JLA compact list ─────────────────────────── */}
+              {hkaSets.length > 0 && (
+                <div className="mx-1 mb-1 overflow-hidden rounded-[16px] border border-cyan-200/60 bg-cyan-50/40">
+                  <div className="flex items-center justify-between px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-cyan-700">
+                    <span>HKA · FTA · JLA ({hkaSets.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => { setHkaSets([]); setSelectedHkaId(null); }}
+                      className="text-[9px] text-slate-400 hover:text-rose-500"
+                      title="Hapus semua HKA/FTA/JLA"
+                    >
+                      Hapus semua
+                    </button>
+                  </div>
+                  <div className="max-h-[180px] overflow-y-auto">
+                    {hkaSets.map((hka) => {
+                      const m = getHkaMeasurementResult(hka);
+                      const isSelected = selectedHka?.id === hka.id;
+                      const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
+                      const modeColor = modeColors[hka.mode] || "#64748b";
+                      return (
+                        <button
+                          key={hka.id}
+                          type="button"
+                          onClick={() => { setSelectedHkaId(hka.id); setSelectedLineId(null); setSelectedAngleId(null); setSelectedCircleId(null); }}
+                          className={`flex w-full items-center gap-2 border-t border-cyan-100/60 px-3 py-1.5 text-left transition ${
+                            isSelected ? "bg-cyan-100/80" : "hover:bg-cyan-50/60"
+                          }`}
+                        >
+                          <span
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-black text-white"
+                            style={{ background: modeColor }}
+                          >
+                            {hka.mode === "jla" ? "J" : hka.mode === "fta" ? "F" : "H"}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[10px] font-black truncate" style={{ color: modeColor }}>
+                              {hka.mode.toUpperCase()} #{hka.id}
+                              {hka.mode === "full" && m.absoluteDeviation !== null
+                                ? ` · ${m.absoluteDeviation.toFixed(1)}° ${m.direction}`
+                                : hka.mode === "fta" && m.fta !== null
+                                  ? ` · FTA ${m.fta.toFixed(1)}°`
+                                  : hka.mode === "jla" && m.jla
+                                    ? ` · LDFA ${m.jla.LDFA}° MPTA ${m.jla.MPTA}°`
+                                    : ""}
+                            </span>
+                            <span className="block text-[8px] text-slate-400">
+                              {getHkaSideLabel?.(hka.side) || hka.side || ""}
+                            </span>
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => { e.stopPropagation(); setHkaSets((prev) => prev.filter((h) => h.id !== hka.id)); if (selectedHka?.id === hka.id) setSelectedHkaId(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setHkaSets((prev) => prev.filter((h) => h.id !== hka.id)); if (selectedHka?.id === hka.id) setSelectedHkaId(null); } }}
+                            className="shrink-0 cursor-pointer text-[9px] text-slate-300 hover:text-rose-500"
+                            title="Hapus"
+                          >✕</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {selectedLine ? (
                 <div
                   className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-emerald-900`}
@@ -28060,11 +30072,37 @@ export default function XrayCalibrationWorkspace({
                     <div className="font-medium text-cyan-950">
                       HKA Settings #{selectedHka.id}
                     </div>
-                    <span className="text-[10px] text-cyan-700">
-                      {selectedHkaMetrics.valueDeg !== null
-                        ? `${selectedHkaMetrics.valueDeg.toFixed(1)}°`
-                        : "-"}
-                    </span>
+                    {/* Main value with hover tooltip */}
+                    {(() => {
+                      const tipKey = selectedHkaMetrics.mode === "fta" ? "FTA" : selectedHkaMetrics.mode === "jla" ? "LDFA" : "HKA";
+                      const tip = METRIC_TOOLTIPS[tipKey];
+                      return (
+                        <div
+                          className="relative cursor-default"
+                          onMouseEnter={() => setHoveredMetricKey(`header-${tipKey}`)}
+                          onMouseLeave={() => setHoveredMetricKey(null)}
+                        >
+                          <span
+                            className="rounded-[10px] border px-2 py-0.5 text-[11px] font-black"
+                            style={{ borderColor: `${tip?.color}40`, background: `${tip?.color}12`, color: tip?.color }}
+                          >
+                            {selectedHkaMetrics.valueDeg !== null
+                              ? `${selectedHkaMetrics.valueDeg.toFixed(1)}°`
+                              : selectedHkaMetrics.mode === "jla" && selectedHkaMetrics.jla
+                                ? `${selectedHkaMetrics.jla.LDFA}° / ${selectedHkaMetrics.jla.MPTA}°`
+                                : "-"}
+                          </span>
+                          {hoveredMetricKey === `header-${tipKey}` && tip && (
+                            <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-[14px] border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.14)]">
+                              <div className="text-[9px] font-black leading-tight mb-1" style={{ color: tip.color }}>{tip.title}</div>
+                              <div className="text-[8px] font-bold text-slate-500 mb-1">Normal: <span style={{ color: tip.color }}>{tip.normal}</span></div>
+                              <div className="text-[8px] leading-relaxed text-slate-600">{tip.desc}</div>
+                              <div className="absolute -top-[5px] right-4 h-2.5 w-2.5 rotate-45 border-l border-t border-slate-200 bg-white" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="rounded-[16px] border border-cyan-100 bg-cyan-50/70 px-3 py-2 text-[10px] text-cyan-800">
                     <div className="font-semibold text-cyan-950">
@@ -28078,11 +30116,25 @@ export default function XrayCalibrationWorkspace({
                     </div>
                     {selectedHkaMetrics.mode === "fta" ? (
                       <>
-                        <div className="mt-0.5">
+                        <div
+                          className="group relative mt-0.5 inline-block cursor-default"
+                          onMouseEnter={() => setHoveredMetricKey("FTA-val")}
+                          onMouseLeave={() => setHoveredMetricKey(null)}
+                        >
                           FTA:{" "}
-                          {selectedHkaMetrics.fta !== null
-                            ? `${selectedHkaMetrics.fta.toFixed(2)}°`
-                            : "-"}
+                          <span className="font-semibold">
+                            {selectedHkaMetrics.fta !== null
+                              ? `${selectedHkaMetrics.fta.toFixed(2)}°`
+                              : "-"}
+                          </span>
+                          {hoveredMetricKey === "FTA-val" && (
+                            <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-52 rounded-[14px] border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.14)]">
+                              <div className="text-[9px] font-black mb-1" style={{ color: METRIC_TOOLTIPS.FTA.color }}>{METRIC_TOOLTIPS.FTA.title}</div>
+                              <div className="text-[8px] text-slate-500 mb-1">Normal: <span style={{ color: METRIC_TOOLTIPS.FTA.color }}>{METRIC_TOOLTIPS.FTA.normal}</span></div>
+                              <div className="text-[8px] text-slate-600 leading-relaxed">{METRIC_TOOLTIPS.FTA.desc}</div>
+                              <div className="absolute -top-[5px] left-4 h-2.5 w-2.5 rotate-45 border-l border-t border-slate-200 bg-white" />
+                            </div>
+                          )}
                         </div>
                         <div className="mt-0.5">
                           Prediksi HKAA:{" "}
@@ -28091,21 +30143,129 @@ export default function XrayCalibrationWorkspace({
                             : "-"}
                         </div>
                       </>
+                    ) : selectedHkaMetrics.mode === "jla" && selectedHkaMetrics.jla ? (
+                      <>
+                        <div className="mt-0.5">LDFA: {selectedHkaMetrics.jla.LDFA}° &nbsp;·&nbsp; MPTA: {selectedHkaMetrics.jla.MPTA}°</div>
+                        <div className="mt-0.5">JLCA: {selectedHkaMetrics.jla.JLCA}° &nbsp;·&nbsp; JLO: {selectedHkaMetrics.jla.JLO_hsu}°</div>
+                        <div className="mt-0.5 font-semibold text-indigo-700">{selectedHkaMetrics.jla.cpakType} · {selectedHkaMetrics.jla.cpakHKACategory}</div>
+                        {selectedHkaMetrics.jla.micicoiReduction > 0 && (
+                          <div className="mt-0.5 text-amber-700">Micicoi: −{selectedHkaMetrics.jla.micicoiReduction}° koreksi</div>
+                        )}
+                      </>
                     ) : (
-                      <div className="mt-0.5">
+                      <div
+                        className="relative mt-0.5 inline-block cursor-default"
+                        onMouseEnter={() => setHoveredMetricKey("HKA-val")}
+                        onMouseLeave={() => setHoveredMetricKey(null)}
+                      >
                         Signed coronal:{" "}
-                        {selectedHkaMetrics.signedDeg !== null
-                          ? `${selectedHkaMetrics.signedDeg.toFixed(2)}°`
-                          : "-"}
+                        <span className="font-semibold">
+                          {selectedHkaMetrics.signedDeg !== null
+                            ? `${selectedHkaMetrics.signedDeg.toFixed(2)}°`
+                            : "-"}
+                        </span>
+                        {hoveredMetricKey === "HKA-val" && (
+                          <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-52 rounded-[14px] border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.14)]">
+                            <div className="text-[9px] font-black mb-1" style={{ color: METRIC_TOOLTIPS.HKA.color }}>{METRIC_TOOLTIPS.HKA.title}</div>
+                            <div className="text-[8px] text-slate-500 mb-1">Normal: <span style={{ color: METRIC_TOOLTIPS.HKA.color }}>{METRIC_TOOLTIPS.HKA.normal}</span></div>
+                            <div className="text-[8px] text-slate-600 leading-relaxed">{METRIC_TOOLTIPS.HKA.desc}</div>
+                            <div className="absolute -top-[5px] left-4 h-2.5 w-2.5 rotate-45 border-l border-t border-slate-200 bg-white" />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                   <div className="mt-1.5 text-[10px] text-cyan-700">
                     {selectedHkaMetrics.mode === "fta"
                       ? "FTA jurnal memakai 4 landmark: Fem2, femoral notch, Tib1 4 cm, dan Tib1 10 cm. Hover atau klik line FTA di canvas untuk melihat nilai ringkas, lalu buka panel ini untuk panduan lengkapnya."
-                      : "Sign varus/valgus tetap bisa dipilih manual karena orientasi AP kanan/kiri dapat membingungkan. Label hasil HKA juga bisa di-drag langsung di canvas."}
+                      : selectedHkaMetrics.mode === "jla"
+                        ? "JLA memakai 7 landmark: CFH, CK, CA (axis mekanis) + MFC, LFC, MTP, LTP (titik joint line). Label di canvas menampilkan CPAK + LDFA dan saat di-hover menampilkan ringkasan lengkap."
+                        : "Sign varus/valgus tetap bisa dipilih manual karena orientasi AP kanan/kiri dapat membingungkan. Label hasil HKA juga bisa di-drag langsung di canvas."}
                   </div>
-                  {selectedHkaMetrics.mode === "fta" ? (
+                  {selectedHkaMetrics.mode === "jla" ? (
+                    <div className="mt-1.5 space-y-1.5">
+                      {selectedHkaMetrics.jla && (
+                        <div className={`${SOFT_SURFACE_CLASS} px-3 py-2 text-[10px] text-slate-800`}>
+                          <div className="relative flex items-center justify-between gap-2 mb-1.5">
+                            <span
+                              className="cursor-default font-black text-indigo-700 text-sm"
+                              onMouseEnter={() => setHoveredMetricKey("CPAK")}
+                              onMouseLeave={() => setHoveredMetricKey(null)}
+                            >
+                              {selectedHkaMetrics.jla.cpakType}
+                              {hoveredMetricKey === "CPAK" && METRIC_TOOLTIPS.CPAK && (
+                                <div className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 w-52 rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-left shadow-[0_8px_24px_rgba(0,0,0,0.14)]">
+                                  <div className="text-[9px] font-black leading-tight mb-1" style={{ color: METRIC_TOOLTIPS.CPAK.color }}>{METRIC_TOOLTIPS.CPAK.title}</div>
+                                  <div className="text-[8px] font-bold text-slate-500 mb-1">Normal: <span style={{ color: METRIC_TOOLTIPS.CPAK.color }}>{METRIC_TOOLTIPS.CPAK.normal}</span></div>
+                                  <div className="text-[8px] leading-relaxed text-slate-600">{METRIC_TOOLTIPS.CPAK.desc}</div>
+                                  <div className="absolute -top-[5px] left-4 h-2.5 w-2.5 rotate-45 border-l border-t border-slate-200 bg-white" />
+                                </div>
+                              )}
+                            </span>
+                            <span className="text-[9px] text-slate-500">{selectedHkaMetrics.jla.cpakJLOCategory} · {selectedHkaMetrics.jla.cpakHKACategory}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            {[
+                              { l: "LDFA", v: `${selectedHkaMetrics.jla.LDFA}°`, flag: selectedHkaMetrics.jla.ldfaFlag },
+                              { l: "MPTA", v: `${selectedHkaMetrics.jla.MPTA}°`, flag: selectedHkaMetrics.jla.mptaFlag },
+                              { l: "JLCA", v: `${selectedHkaMetrics.jla.JLCA}°`, flag: selectedHkaMetrics.jla.jlcaFlag },
+                              { l: "JLO",  v: `${selectedHkaMetrics.jla.JLO_hsu}°`, flag: selectedHkaMetrics.jla.jloFlag },
+                            ].map(({ l, v, flag }) => {
+                              const tip = METRIC_TOOLTIPS[l];
+                              return (
+                                <div
+                                  key={l}
+                                  className={`group relative cursor-default rounded-lg px-2 py-1 text-center border ${
+                                    flag === "normal"     ? "bg-emerald-50 border-emerald-200 text-emerald-800" :
+                                    flag === "borderline" ? "bg-yellow-50  border-yellow-200  text-yellow-800"  :
+                                                            "bg-red-50     border-red-200     text-red-800"
+                                  }`}
+                                  onMouseEnter={() => setHoveredMetricKey(l)}
+                                  onMouseLeave={() => setHoveredMetricKey(null)}
+                                >
+                                  <div className="text-[8px] font-black uppercase tracking-wider">{l}</div>
+                                  <div className="text-xs font-black">{v}</div>
+                                  {/* Hover tooltip */}
+                                  {hoveredMetricKey === l && tip && (
+                                    <div
+                                      className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-52 -translate-x-1/2 rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-left shadow-[0_8px_24px_rgba(0,0,0,0.14)]"
+                                    >
+                                      <div className="text-[9px] font-black leading-tight mb-1" style={{ color: tip.color }}>{tip.title}</div>
+                                      <div className="text-[8px] font-bold text-slate-500 mb-1">Normal: <span style={{ color: tip.color }}>{tip.normal}</span></div>
+                                      <div className="text-[8px] leading-relaxed text-slate-600">{tip.desc}</div>
+                                      {/* arrow */}
+                                      <div className="absolute -bottom-[5px] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-b border-r border-slate-200 bg-white" />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {selectedHkaMetrics.jla.micicoiReduction > 0 && (
+                            <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] text-amber-800">
+                              Micicoi: kurangi <span className="font-black">{selectedHkaMetrics.jla.micicoiReduction}°</span> dari target koreksi
+                            </div>
+                          )}
+                          <div className={`mt-1.5 rounded-lg border px-2 py-1 text-[9px] ${
+                            selectedHkaMetrics.jla.dloRisk === "high"
+                              ? "border-red-200 bg-red-50 text-red-800"
+                              : selectedHkaMetrics.jla.dloRisk === "moderate"
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          }`}>
+                            {selectedHkaMetrics.jla.dloText}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setJlaGuideModalOpen(true)}
+                        className={`${SOFT_TEXT_BUTTON_CLASS} w-full px-3 py-2 text-[10px] text-indigo-700`}
+                      >
+                        Panduan Lengkap JLA →
+                      </button>
+                    </div>
+                  ) : selectedHkaMetrics.mode === "fta" ? (
                     <div
                       className={`${SOFT_SURFACE_CLASS} mt-1.5 px-3 py-2 text-[10px] text-cyan-900`}
                     >
@@ -30029,6 +32189,17 @@ export default function XrayCalibrationWorkspace({
                       )}
                       implantDisabled={!image || !modelWidth || !modelHeight}
                       implantInstruction={implantLibraryScaleInstruction}
+                      onPreOpReport={() => setPreOpReportModalOpen(true)}
+                      onPatientCases={() => setPatientCaseManagerOpen(true)}
+                      onImplantEstimator={() => setImplantSizePanelOpen(true)}
+                      lines={lines.filter((l) => l.id !== calibrationLineId)}
+                      selectedLineId={selectedLineId}
+                      onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
+                      onRenameLine={renameLineById}
+                      onChangeLineColor={changeLineColorById}
+                      getLineLength={getLineLength}
+                      formatMeasurementFromPx={formatMeasurementFromPx}
+                      lineTypeLabel={lineTypeLabel}
                     />
                   )}
                   </AnimatePresence>
@@ -30071,6 +32242,8 @@ export default function XrayCalibrationWorkspace({
                     />
                   )}
                   </AnimatePresence>
+
+
                 </div>
               ) : null}
               <AnimatePresence>
@@ -30149,73 +32322,76 @@ export default function XrayCalibrationWorkspace({
                         canUndo={historyState.undo > 0}
                         canRedo={historyState.redo > 0}
                       />
-                    ) : simpleMobilePanel === "layer" ? (
-                      <div className="mx-auto max-h-[min(55vh,480px)] w-[min(92vw,360px)] overflow-y-auto rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                        <div className="mb-2.5 flex items-center justify-between">
-                          <p className="text-xs font-black uppercase tracking-wider">Layer</p>
-                          <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-
-                        {/* Contrast/Level compact */}
-                        <div className="mb-2.5 rounded-[18px] border border-white/65 bg-[#eef2f7] p-2.5 shadow-[inset_1px_1px_4px_rgba(148,163,184,0.16)]">
-                          <div className="mb-1.5 flex items-center justify-between">
-                            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Gambar Utama</p>
-                            <button type="button" onClick={() => { setContrast(100); setLevel(100); }}
-                              className="rounded-lg border border-white/65 bg-[#eef2f7] px-2 py-0.5 text-[8px] font-black text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]">
-                              Reset
-                            </button>
-                          </div>
-                          {[{ label: "Contrast", value: contrast, onChange: setContrast }, { label: "Level", value: level, onChange: setLevel }].map((c) => (
-                            <label key={c.label} className="flex items-center gap-2 py-1">
-                              <span className="w-14 text-[9px] font-bold text-slate-600">{c.label}</span>
-                              <input type="range" min={20} max={220} step={1} value={c.value} onChange={(e) => c.onChange(Number(e.target.value))} className="flex-1 h-1.5 accent-cyan-600" />
-                              <span className="w-9 text-right text-[9px] font-mono text-slate-700">{c.value}%</span>
-                            </label>
-                          ))}
-                        </div>
-
-                        <LayerManager
-                          layers={cutLayers}
-                          selectedLayerId={selectedCutLayerId}
-                          onSelectLayer={(layerId) => selectLayerFromCanvas(layerId, { openPanel: false })}
-                          onToggleLayerVisibility={toggleCutLayerVisibility}
-                          onMoveLayer={moveCutLayerInStack}
-                          onOpenSettings={(layerId) => { selectLayerFromCanvas(layerId, { openPanel: false }); setSimpleMobilePanel(null); openLayerSettingsModal(layerId); }}
-                          maxHeightClass="max-h-[min(26vh,220px)]"
-                        />
-                      </div>
-                    ) : simpleMobilePanel === "implant" ? (
-                      <ImplantLayer
-                        className="mx-auto max-h-[min(54vh,480px)] w-[min(94vw,420px)] overflow-y-auto backdrop-blur-xl"
-                        items={LOCAL_IMPLANT_LIBRARY}
-                        selectedType={selectedImplantType}
-                        selectedItemId={selectedImplantLibraryId}
-                        onSelectType={setSelectedImplantType}
-                        onSelectItemId={setSelectedImplantLibraryId}
-                        onUseSelected={() => {
+                    ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
+                      <ManagerPanel
+                        className="mx-auto w-[min(94vw,400px)]"
+                        style={{ maxHeight: "min(72vh,580px)" }}
+                        activeTab={
+                          simpleMobilePanel === "implant"
+                            ? "implant"
+                            : simpleMobilePanel === "layer"
+                              ? "layer"
+                              : simpleManagerTab
+                        }
+                        onTabChange={(tab) => {
+                          setSimpleManagerTab(tab);
+                          setSimpleMobilePanel("manager");
+                        }}
+                        onClose={() => setSimpleMobilePanel(null)}
+                        /* contrast/level */
+                        contrast={contrast}
+                        level={level}
+                        onContrastChange={setContrast}
+                        onLevelChange={setLevel}
+                        onResetContrastLevel={() => { setContrast(100); setLevel(100); }}
+                        /* LayerManager */
+                        layers={cutLayers}
+                        selectedLayerId={selectedCutLayerId}
+                        onSelectLayer={(layerId) => selectLayerFromCanvas(layerId, { openPanel: false })}
+                        onToggleLayerVisibility={toggleCutLayerVisibility}
+                        onMoveLayer={moveCutLayerInStack}
+                        onOpenLayerSettings={(layerId) => {
+                          selectLayerFromCanvas(layerId, { openPanel: false });
+                          setSimpleMobilePanel(null);
+                          openLayerSettingsModal(layerId);
+                        }}
+                        onRenameLayer={(layerId, name) =>
+                          setCutLayers((prev) =>
+                            prev.map((l) => (l.id === layerId ? { ...l, name } : l)),
+                          )
+                        }
+                        /* LineManager */
+                        lines={lines.filter((l) => l.id !== calibrationLineId)}
+                        selectedLineId={selectedLineId}
+                        onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
+                        onRenameLine={renameLineById}
+                        onChangeLineColor={changeLineColorById}
+                        getLineLength={getLineLength}
+                        formatMeasurementFromPx={formatMeasurementFromPx}
+                        lineTypeLabel={lineTypeLabel}
+                        /* ImplantLayer */
+                        implantItems={LOCAL_IMPLANT_LIBRARY}
+                        selectedImplantType={selectedImplantType}
+                        selectedImplantItemId={selectedImplantLibraryId}
+                        onSelectImplantType={setSelectedImplantType}
+                        onSelectImplantItemId={setSelectedImplantLibraryId}
+                        onUseSelectedImplant={() => {
                           setSimpleMobilePanel(null);
                           useSelectedImplantLibraryAsLayer();
                           setMobileCanvasMode("edit");
                         }}
-                        onReplaceSelected={() => {
+                        onReplaceSelectedImplant={() => {
                           setSimpleMobilePanel(null);
                           void replaceSelectedLayerWithSelectedImplant();
                           setMobileCanvasMode("edit");
                         }}
-                        canReplaceSelected={Boolean(
-                          selectedCutLayer &&
-                            isImageBackedLayerKind(selectedCutLayer.kind),
+                        canReplaceSelectedImplant={Boolean(
+                          selectedCutLayer && isImageBackedLayerKind(selectedCutLayer.kind),
                         )}
-                        onClose={() => setSimpleMobilePanel(null)}
-                        disabled={!image || !modelWidth || !modelHeight}
-                        scaleInstruction={implantLibraryScaleInstruction}
-                        showClose
-                          title="Implant Lokal"
-                          subtitle="Template overlay"
-                        />
-                      ) : simpleMobilePanel === "export" ? (
+                        implantDisabled={!image || !modelWidth || !modelHeight}
+                        implantInstruction={implantLibraryScaleInstruction}
+                      />
+                    ) : simpleMobilePanel === "export" ? (
                         <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                           <div className="mb-2.5 flex items-center justify-between">
                             <p className="text-xs font-black uppercase tracking-wider">Export</p>
@@ -30239,9 +32415,47 @@ export default function XrayCalibrationWorkspace({
                               PDF
                             </button>
                           </div>
+                          {/* ── FLAGSHIP FEATURES ── */}
+                          <div className="mt-2 space-y-1.5">
+                            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">ZakData</p>
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); setPreOpReportModalOpen(true); }}
+                              disabled={!image}
+                              className="flex w-full items-center gap-2 min-h-11 rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3 text-[11px] font-black text-white shadow-[0_4px_14px_rgba(37,99,235,0.4)] disabled:opacity-40"
+                            >
+                              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              Buat Laporan Pre-Op PDF
+                            </button>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => { setSimpleMobilePanel(null); setPatientCaseManagerOpen(true); }}
+                                className="flex items-center gap-1.5 min-h-11 rounded-2xl border border-purple-200 bg-purple-50 px-2.5 text-[10px] font-black text-purple-700"
+                              >
+                                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Kasus Pasien
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setSimpleMobilePanel(null); setImplantSizePanelOpen(true); }}
+                                className="flex items-center gap-1.5 min-h-11 rounded-2xl border border-teal-200 bg-teal-50 px-2.5 text-[10px] font-black text-teal-700"
+                              >
+                                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                Estimator Implan
+                              </button>
+                            </div>
+                          </div>
+
                           <button type="button" onClick={() => { setSimpleMobilePanel(null); openSaveTemplateModal(); }} disabled={!image}
                             className="mt-1.5 w-full min-h-10 rounded-2xl bg-emerald-600 text-[11px] font-black text-white shadow-[2px_2px_8px_rgba(16,185,129,0.22)] disabled:opacity-40">
-                            💾 Simpan Template ke Drive
+                            Simpan Template ke Drive
                           </button>
 
                           {/* Stats */}
@@ -30296,39 +32510,140 @@ export default function XrayCalibrationWorkspace({
                             <X className="h-3 w-3" />
                           </button>
                         </div>
+                        {/* Templating wizard trigger */}
+                        <button type="button"
+                          onClick={() => { setSimpleMobilePanel(null); setTemplatingWizardOpen(true); setWizardStep(1); setWizardProcedure(null); }}
+                          className="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/70 bg-[linear-gradient(135deg,#ecfeff,#cffafe)] px-3 py-2.5 shadow-[2px_2px_8px_rgba(6,182,212,0.18)]">
+                          <svg className="h-5 w-5 shrink-0 text-cyan-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9 3h6l1 4H8L9 3z"/><rect x="6" y="7" width="12" height="2" rx="1"/>
+                            <path d="M8 9 L7 21 M16 9 L17 21"/><path d="M8 15 Q12 13 16 15"/>
+                          </svg>
+                          <span className="flex-1 text-left">
+                            <span className="block text-[11px] font-black text-cyan-900">Mulai Templating</span>
+                            <span className="block text-[9px] font-semibold text-cyan-700 opacity-80">TKR · THA · Hemi — wizard panduan</span>
+                          </span>
+                          <span className="text-[10px] text-cyan-500">▶</span>
+                        </button>
                         <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { label: "TKA", onClick: () => { setSimpleMobilePanel(null); openSimplePlanningModal("tka"); } },
-                            { label: "HIP", onClick: () => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); } },
-                            { label: "Guide", onClick: () => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); } },
-                            { label: "HKA", onClick: () => { setSimpleMobilePanel(null); setMobileCanvasMode("edit"); handleToolChange("hkaAuto"); } },
-                          ].map((btn) => (
-                            <button key={btn.label} type="button" onClick={btn.onClick}
-                              className="min-h-11 rounded-[18px] border border-white/70 bg-[#eef2f7] text-xs font-black text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
-                              {btn.label}
+                          {/* TKA */}
+                          <button type="button" onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("tka"); }}
+                            className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                            <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M10 2 L10 11 Q10 15 16 15 Q22 15 22 11 L22 2"/>
+                              <rect x="9" y="15" width="14" height="2.5" rx="1" fill="currentColor" opacity="0.22" strokeWidth="1.4"/>
+                              <path d="M13 17.5 L12 30"/><path d="M19 17.5 L20 30"/>
+                              <ellipse cx="7" cy="13" rx="2.5" ry="3.5" fill="currentColor" opacity="0.12" strokeWidth="1.3"/>
+                            </svg>
+                            <span className="text-[10px] font-black">TKA</span>
+                          </button>
+                          {/* HIP/THA */}
+                          <button type="button" onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); }}
+                            className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                            <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M4 10 Q3 4 10 3 Q16 2 16 10"/>
+                              <path d="M28 10 Q29 4 22 3 Q16 2 16 10"/>
+                              <path d="M10 10 Q10 18 16 19 Q22 18 22 10"/>
+                              <circle cx="16" cy="14" r="4.5" fill="currentColor" opacity="0.15" strokeWidth="1.4"/>
+                              <path d="M19.5 17.5 L23 28"/>
+                            </svg>
+                            <span className="text-[10px] font-black">HIP</span>
+                          </button>
+                          {/* Guide */}
+                          <button type="button" onClick={() => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); }}
+                            className="col-span-2 flex items-center justify-center gap-2 rounded-[18px] border border-white/70 bg-[#eef2f7] py-2.5 text-[10px] font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 8 H14 M8 2 V14" strokeDasharray="2 1.5"/><rect x="1" y="1" width="14" height="14" rx="3"/></svg>
+                            Guide / Panduan
+                          </button>
+                        </div>
+                        {/* HKA mode buttons */}
+                        <div className="mt-2 grid gap-1.5">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">HKA · FTA · JLA</p>
+                          {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => {
+                            const isActive = tool === "hkaAuto" && hkaInputMode === modeItem.key;
+                            const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
+                            return (
+                              <button key={modeItem.key} type="button"
+                                onClick={() => { handleHkaModeChange(modeItem.key); handleToolChange("hkaAuto", { skipHkaSidePrompt: true }); setSimpleMobilePanel(null); setMobileCanvasMode("edit"); }}
+                                className={`flex w-full items-center gap-2 rounded-[14px] border px-2.5 py-2 text-left transition ${
+                                  isActive ? "border-cyan-300 bg-cyan-50/90 text-cyan-900" : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"}`}
+                              >
+                                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black text-white"
+                                  style={{ background: isActive ? modeColors[modeItem.key] : "#94a3b8" }}>
+                                  {modeItem.key === "full" ? "H" : modeItem.key === "fta" ? "F" : "J"}
+                                </span>
+                                <span className="flex-1 leading-tight">
+                                  <span className="block text-[10px] font-black">{modeItem.label}</span>
+                                  <span className="block text-[8px] opacity-60">{modeItem.modeLabel}</span>
+                                </span>
+                                {isActive && <span className="text-[9px] font-black text-cyan-600">●</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* Edit Foto compact row */}
+                        <div className="mt-2">
+                          <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-400">Edit Foto</p>
+                          <div className="grid grid-cols-4 gap-1">
+                            <button type="button" onClick={() => setInvertImage((prev) => !prev)}
+                              className={`min-h-9 rounded-xl border text-[9px] font-black transition ${invertImage ? "border-slate-600 bg-slate-800 text-white" : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]"}`}>
+                              {invertImage ? "INV✓" : "INV"}
                             </button>
-                          ))}
+                            <button type="button" onClick={() => { setCropToolActive((prev) => !prev); setCropDraftPoints(null); setSimpleMobilePanel(null); }}
+                              className={`min-h-9 rounded-xl border text-[9px] font-black transition ${cropToolActive ? "border-cyan-400 bg-cyan-50 text-cyan-800" : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]"}`}>
+                              CROP
+                            </button>
+                            <button type="button" onClick={rotateLeft}
+                              className="min-h-9 rounded-xl border border-white/70 bg-[#eef2f7] text-[9px] font-black text-slate-700 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]">
+                              ↺-90
+                            </button>
+                            <button type="button"
+                              onClick={() => { setContrast(100); setLevel(100); setInvertImage(false); setRotation(0); setFlipX(false); setFlipY(false); setNotice("Reset foto."); }}
+                              className="min-h-9 rounded-xl border border-white/70 bg-[#eef2f7] text-[9px] font-black text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]">
+                              RST
+                            </button>
+                          </div>
+                          {cropRect && (
+                            <button type="button"
+                              onClick={() => { setCropRect(null); setTimeout(() => fitImageToViewport(), 0); setNotice("Crop direset."); }}
+                              className="mt-1 w-full rounded-xl border border-emerald-200 bg-emerald-50 py-1 text-[9px] font-black text-emerald-700">
+                              Reset Crop → Gambar Penuh
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
                     </motion.div>
                   ) : null}
                 </AnimatePresence>
-              {isSimpleUiMode && isMobileViewport && !image ? (
-                <div className="pointer-events-auto absolute top-3 left-3 z-30 max-w-[calc(100vw-1.5rem)] rounded-[24px] border border-white/75 bg-[#eef2f7]/95 px-3 py-3 text-slate-700 shadow-[3px_3px_10px_rgba(148,163,184,0.26),-3px_-3px_10px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                  <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
-                    Alur cepat
+              {isSimpleUiMode && !image && !workflowOverlayDismissed ? (
+                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
+                  <div className={`pointer-events-auto w-full rounded-[24px] border border-white/80 bg-[#eef2f7]/96 shadow-[4px_4px_14px_rgba(148,163,184,0.28),-4px_-4px_14px_rgba(255,255,255,0.82)] backdrop-blur-xl ${isMobileViewport ? "max-w-[min(100%,320px)] px-3 py-3" : "max-w-[min(100%,360px)] px-4 py-4"}`}>
+                    <div className={`font-black tracking-widest text-slate-400 uppercase mb-2.5 ${isMobileViewport ? "text-[9px]" : "text-[9px]"}`}>Alur Kerja Digital Templating</div>
+                    <div className={`flex flex-col ${isMobileViewport ? "gap-1.5" : "gap-2"}`}>
+                      {[
+                        { n: 1, label: "Upload X-ray", sub: "AP weight-bearing, full-leg / pelvis", action: () => mainUploadInputRef.current?.click(), color: "#0f172a" },
+                        { n: 2, label: "Kalibrasi Skala", sub: "Ruler marker atau bola kalibrasi", action: () => openSimpleCalibrationModal(), color: "#0891b2" },
+                        { n: 3, label: "Pengukuran", sub: "HKA, LDFA, MPTA, offset", action: null, color: "#7c3aed" },
+                        { n: 4, label: "Templating", sub: "Pilih prosedur & pasang implant", highlight: true, action: () => { setWorkflowOverlayDismissed(true); setTemplatingWizardOpen(true); setWizardStep(1); setWizardProcedure(null); setWizardStemId(null); setWizardCupId(null); }, color: "#0891b2" },
+                        { n: 5, label: "Simpan & Export", sub: "Drive, PDF, PNG", action: null, color: "#059669" },
+                      ].map(({ n, label, sub, action, color, highlight }) => (
+                        <div key={n} className={`flex items-center gap-3 rounded-[16px] border px-3 py-2 ${highlight ? "border-cyan-300/70 bg-[linear-gradient(135deg,#ecfeff,#cffafe)]" : "border-white/60 bg-white/30"}`}>
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white shadow-sm" style={{ background: color }}>{n}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] font-extrabold text-slate-800">{label}</div>
+                            {sub && !isMobileViewport && <div className="text-[9px] text-slate-500">{sub}</div>}
+                          </div>
+                          {action && (
+                            <button type="button" onClick={action}
+                              className="shrink-0 rounded-[10px] px-2.5 py-1.5 text-[9px] font-black text-white shadow-[0_2px_6px_rgba(0,0,0,0.18)]"
+                              style={{ background: color }}>
+                              {n === 1 ? "Upload" : n === 4 ? "Mulai" : "Buka"}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-1 text-xs font-extrabold text-slate-800">
-                    {"Upload -> Kalibrasi -> Pengukuran -> Templating -> Simpan"}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => mainUploadInputRef.current?.click()}
-                    className="mt-2 min-h-11 rounded-2xl border border-white/70 bg-slate-900 px-4 text-xs font-black text-white shadow-[2px_2px_8px_rgba(15,23,42,0.22)]"
-                  >
-                    Upload X-ray
-                  </button>
                 </div>
               ) : null}
 
@@ -31575,6 +33890,178 @@ export default function XrayCalibrationWorkspace({
                   });
                 }}
               />
+
+              {/* ── HKA Wizard ─────────────────────────────────────────────────── */}
+              <AnimatePresence>
+                {tool === "hkaAuto" ? (() => {
+                  const def = getHkaModeDefinition(hkaInputMode);
+                  const step = draftHkaPoints.length;
+                  const total = def.points.length;
+                  const isDone = step >= total;
+                  const pct = Math.round((step / total) * 100);
+
+                  return (
+                    <motion.div
+                      key="hka-wizard"
+                      initial={{ opacity: 0, x: -22, scale: 0.97 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -18, scale: 0.97 }}
+                      transition={PANEL_SPRING}
+                      className="pointer-events-auto absolute left-2 top-2 z-20 w-[226px] select-none overflow-hidden rounded-[22px] border border-white/80 bg-[#e9eef5]/97 shadow-[12px_12px_30px_rgba(15,23,42,0.28),-8px_-8px_22px_rgba(255,255,255,0.70)] backdrop-blur-md"
+                    >
+                      {/* ── Header ── */}
+                      <div className="flex items-center gap-2 px-3.5 pt-3 pb-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[8px] font-black tracking-[0.18em] text-indigo-600 uppercase">
+                            {def.modeLabel || def.label}
+                          </div>
+                          <div className="mt-0.5 text-xs font-black text-slate-800">
+                            {isDone ? "Semua landmark terpasang" : `Langkah ${step + 1} dari ${total}`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setDraftHkaPoints([]); handleToolChange("pan"); }}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/75 bg-[#e9eef5] text-slate-500 shadow-[3px_3px_7px_rgba(100,116,139,0.2),-3px_-3px_7px_rgba(255,255,255,0.72)] hover:text-rose-600 transition-colors"
+                          title="Batalkan (Esc)"
+                        >
+                          <X className="h-3 w-3" strokeWidth={2.5} />
+                        </button>
+                      </div>
+
+                      {/* ── Progress bar ── */}
+                      <div className="px-3.5 pb-2.5">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80">
+                          <motion.div
+                            className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-teal-400"
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.35, ease: "easeOut" }}
+                          />
+                        </div>
+                        <div className="mt-1 text-[8px] text-slate-400 text-right">{pct}%</div>
+                      </div>
+
+                      {/* ── Step list ── */}
+                      <div className="max-h-[58vh] overflow-y-auto px-2.5 pb-2.5 space-y-1">
+                        {def.points.map((ptDef, i) => {
+                          const h = HKA_POINT_HINTS[ptDef.key] || {};
+                          const done   = i < step;
+                          const active = i === step && !isDone;
+                          const pending = i > step;
+                          return (
+                            <motion.div
+                              key={ptDef.key}
+                              layout
+                              animate={active ? { scale: 1 } : { scale: 1 }}
+                              className={`overflow-hidden rounded-[14px] border transition-all duration-200 ${
+                                active
+                                  ? "border-white/90 shadow-[4px_4px_10px_rgba(100,116,139,0.18),-3px_-3px_8px_rgba(255,255,255,0.7)]"
+                                  : done
+                                    ? "border-white/60"
+                                    : "border-transparent"
+                              }`}
+                              style={active ? { backgroundColor: `${h.color || "#6366f1"}12` } : {}}
+                            >
+                              <div className={`flex items-center gap-2.5 px-3 ${active ? "py-2.5" : "py-1.5"}`}>
+
+                                {/* Step number / check */}
+                                <div
+                                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-black transition-all duration-300 ${
+                                    done
+                                      ? "bg-emerald-500 text-white shadow-[0_2px_5px_rgba(16,185,129,0.4)]"
+                                      : active
+                                        ? "text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)]"
+                                        : "bg-slate-200/80 text-slate-400"
+                                  }`}
+                                  style={active ? { backgroundColor: h.color || "#6366f1" } : {}}
+                                >
+                                  {done ? "✓" : i + 1}
+                                </div>
+
+                                {/* Label */}
+                                <div className="min-w-0 flex-1">
+                                  <div className={`text-[11px] font-black leading-tight transition-colors ${
+                                    done    ? "text-slate-400 line-through"
+                                    : active  ? "text-slate-900"
+                                    : "text-slate-400"
+                                  }`}
+                                    style={active ? { color: h.color || "#1e293b" } : {}}
+                                  >
+                                    {h.label || ptDef.shortLabel}
+                                  </div>
+                                  {!pending && !done && (
+                                    <div className="text-[9px] text-slate-500 leading-tight">
+                                      {ptDef.promptLabel}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Arrow indicator on active */}
+                                {active && (
+                                  <motion.div
+                                    animate={{ x: [0, 3, 0] }}
+                                    transition={{ repeat: Infinity, duration: 1.1, ease: "easeInOut" }}
+                                    className="shrink-0 text-[14px]"
+                                    style={{ color: h.color || "#6366f1" }}
+                                  >
+                                    ›
+                                  </motion.div>
+                                )}
+                              </div>
+
+                              {/* Active step hint card */}
+                              {active && (
+                                <AnimatePresence mode="wait">
+                                  <motion.div
+                                    key={step}
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.22, ease: "easeOut" }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div
+                                      className="mx-2.5 mb-2.5 rounded-xl px-3 py-2"
+                                      style={{ backgroundColor: `${h.color || "#6366f1"}18` }}
+                                    >
+                                      <p className="text-[10px] font-semibold leading-relaxed"
+                                        style={{ color: h.color || "#475569" }}>
+                                        {h.hint || ptDef.promptLabel}
+                                      </p>
+                                      <p className="mt-1 text-[9px] text-slate-400">
+                                        Klik pada gambar X-ray untuk memasang titik ini
+                                      </p>
+                                    </div>
+                                  </motion.div>
+                                </AnimatePresence>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+
+                        {/* Done state */}
+                        {isDone && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="rounded-[14px] border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-center"
+                          >
+                            <div className="text-xl">✓</div>
+                            <div className="text-[11px] font-black text-emerald-700">Semua titik terpasang!</div>
+                            <div className="text-[9px] text-emerald-600 mt-0.5">Hasil langsung tampil di canvas</div>
+                          </motion.div>
+                        )}
+                      </div>
+
+                      {/* ── Footer ── */}
+                      <div className="border-t border-white/60 px-3.5 py-2 flex items-center justify-between">
+                        <span className="text-[8px] text-slate-400">Esc · Batalkan</span>
+                        <span className="text-[8px] text-slate-400">Scroll untuk zoom X-ray</span>
+                      </div>
+                    </motion.div>
+                  );
+                })() : null}
+              </AnimatePresence>
             </div>
 
             {compareMode ? (
@@ -31615,6 +34102,99 @@ export default function XrayCalibrationWorkspace({
           </div>
         </motion.div>
       </motion.section>
+
+      {/* ── FLAGSHIP MODALS ── */}
+      <PreOpReportModal
+        isOpen={preOpReportModalOpen}
+        onClose={() => setPreOpReportModalOpen(false)}
+        measurementRows={measurementRows}
+        templateInventoryRows={templateInventoryRows}
+        hkaSets={hkaSets}
+        imageName={imageName}
+        selectedImplantLibraryItem={selectedImplantLibraryItem}
+        getCanvasSnapshot={createReportCanvasSnapshotRef.current}
+        getHkaMeasurementResult={getHkaMeasurementResult}
+      />
+
+      <PatientCaseManager
+        isOpen={patientCaseManagerOpen}
+        onClose={() => setPatientCaseManagerOpen(false)}
+        onLoadAsLayer={(url, layerName) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            const id = nextCutLayerIdRef.current;
+            nextCutLayerIdRef.current += 1;
+            const w = img.naturalWidth || img.width || modelWidth;
+            const h = img.naturalHeight || img.height || modelHeight;
+            setCutLayers((prev) => [
+              ...prev,
+              {
+                id,
+                kind: "upload",
+                image: img,
+                imageSrc: url,
+                name: layerName || `Compare #${id}`,
+                sourceX: 0,
+                sourceY: 0,
+                sourceWidth: w,
+                sourceHeight: h,
+                displayWidth: modelWidth,
+                displayHeight: modelHeight,
+                centerX: modelWidth / 2,
+                centerY: modelHeight / 2,
+                rotation: 0,
+                flipX: false,
+                flipY: false,
+                opacity: 0.45,
+                contrast: 100,
+                level: 100,
+                lockScale: false,
+                hidden: false,
+                autoScaleFromCalibration: false,
+                rulerPxPerMm: null,
+                physicalSize: null,
+                physicalSizeLabel: "",
+                physicalWidthMm: null,
+                physicalHeightMm: null,
+                transparentWhiteBackground: false,
+              },
+            ]);
+            setPatientCaseManagerOpen(false);
+            setNotice(`Layer "${layerName || `Compare #${id}`}" ditambahkan sebagai overlay perbandingan.`);
+          };
+          img.onerror = () => setNotice("Gagal memuat gambar kasus sebagai layer.");
+          img.src = url;
+        }}
+        currentSession={{
+          imageName,
+          measurementCount: measurementRows.length,
+          templateCount: templateInventoryRows.length,
+          hkaSummary: hkaSets.map((h) => getHkaMeasurementResult(h)).filter((r) => r?.absoluteDeviation !== null),
+          implant: selectedImplantLibraryItem,
+          // All implant layers placed on canvas (may have multiple: femoral + tibial + insert, etc.)
+          implantLayers: cutLayers
+            .map((l) => l.implantLibraryItem)
+            .filter(Boolean)
+            .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx),
+          snapshotFn: () => {
+            const c = createReportCanvasSnapshotRef.current?.("simpan kasus", { exportScale: 0.5 });
+            try { return c ? c.toDataURL("image/jpeg", 0.6) : null; } catch { return null; }
+          },
+        }}
+      />
+
+      <ImplantSizePanel
+        isOpen={implantSizePanelOpen}
+        onClose={() => setImplantSizePanelOpen(false)}
+        measurementRows={measurementRows}
+        lines={lines}
+        mmPerPixel={mmPerPixel}
+        implantLibraryItems={cutLayers.map((l) => l.implantLibraryItem).filter(Boolean)}
+        onSelectImplant={(id) => {
+          setImplantSizePanelOpen(false);
+        }}
+      />
     </div>
   );
 }

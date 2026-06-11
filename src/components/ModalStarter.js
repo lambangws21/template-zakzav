@@ -38,6 +38,7 @@ export default function ModalStarter({
   confirmLabel = "Saya Mengerti",
   onExit,
   onConfirm,
+  onStartTemplating,
 }) {
   if (!open) return null;
 
@@ -52,17 +53,15 @@ export default function ModalStarter({
     >
       <style>{MODAL_STARTER_STYLES}</style>
 
-      <div className="w-full max-w-[580px] rounded-[32px] p-7 text-slate-900 starter-neu-card">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-red-50 text-rose-500 shadow-sm">
-              <Info className="h-4 w-4" />
-            </div>
-            <h2 className="text-base font-black tracking-tight text-slate-900 md:text-lg">
-              {title}
-            </h2>
+      <div className="w-full max-w-[480px] rounded-[32px] p-7 text-slate-900 text-center starter-neu-card">
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-50 text-rose-500 shadow-sm">
+            <Info className="h-5 w-5" />
           </div>
-          <p className="text-xs leading-relaxed font-semibold text-slate-600 md:text-sm">
+          <h2 className="text-base font-black tracking-tight text-slate-900 md:text-lg">
+            {title}
+          </h2>
+          <p className="text-xs leading-relaxed font-semibold text-slate-500 md:text-sm">
             {description}
           </p>
         </div>
@@ -73,7 +72,23 @@ export default function ModalStarter({
           </p>
         </div>
 
-        <div className="mt-5 flex items-center justify-end gap-3 pt-1">
+        {onStartTemplating && (
+          <button
+            type="button"
+            onClick={onStartTemplating}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-600 to-cyan-700 py-3 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-all hover:from-cyan-500 hover:to-cyan-600 active:scale-[0.99]"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M5 2h6l.8 2.5H4.2L5 2z"/>
+              <rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/>
+              <path d="M5 6 L4.5 14 M11 6 L11.5 14"/>
+              <path d="M5 9.5 Q8 8.5 11 9.5"/>
+            </svg>
+            Mulai Templating
+          </button>
+        )}
+
+        <div className="mt-4 flex items-center justify-center gap-3 pt-1">
           <button
             type="button"
             onClick={onExit}

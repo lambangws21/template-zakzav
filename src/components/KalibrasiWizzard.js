@@ -49,6 +49,7 @@ export default function CalibrationWizard({
   canSave = true,
   hasCalibration = false,
   measurementUnit = "cm",
+  onStartTemplating,
 } = {}) {
   const [step, setStep] = useState(1);
   const [showQCDetail, setShowQCDetail] = useState(false);
@@ -484,14 +485,27 @@ export default function CalibrationWizard({
               Lanjut <ChevronRight className="h-4 w-4" />
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!canSave}
-              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 py-3.5 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <Save className="h-4 w-4" /> Simpan Kalibrasi
-            </button>
+            <div className="flex flex-1 flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!canSave}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 py-3.5 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Save className="h-4 w-4" /> Simpan Kalibrasi
+              </button>
+              {onStartTemplating && (
+                <button
+                  type="button"
+                  onClick={() => { onSave?.(); onStartTemplating(); }}
+                  disabled={!canSave}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-600 to-cyan-700 py-3 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 2h6l.8 2.5H4.2L5 2z"/><rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/><path d="M5 6 L4.5 14 M11 6 L11.5 14"/><path d="M5 9.5 Q8 8.5 11 9.5"/></svg>
+                  Simpan &amp; Mulai Templating
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

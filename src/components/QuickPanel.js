@@ -22,6 +22,8 @@ import {
   Scaling,
   Sliders,
   Upload,
+  Users,
+  Zap,
   X,
 } from "lucide-react";
 import {
@@ -160,6 +162,17 @@ export default function QuickPanel({
   canReplaceSelectedImplant = false,
   implantDisabled = false,
   implantInstruction = "",
+  onPreOpReport,
+  onPatientCases,
+  onImplantEstimator,
+  lines = [],
+  selectedLineId = null,
+  onSelectLine,
+  onRenameLine,
+  onChangeLineColor,
+  getLineLength,
+  formatMeasurementFromPx,
+  lineTypeLabel,
 }) {
   const [uploadOpen, setUploadOpen]   = useState(false);
   const [actionsOpen, setActionsOpen] = useState(true);
@@ -347,6 +360,24 @@ export default function QuickPanel({
                     <Btn icon={FileText} iconCls="text-slate-700" disabled={!canExport} onClick={onExportPdf} className="py-2">PDF</Btn>
                   </motion.div>
 
+                  {/* Flagship Features */}
+                  <motion.p variants={STAGGER_ITEM} className="text-[8px] font-black tracking-widest text-blue-500 uppercase">Fitur Unggulan</motion.p>
+                  <motion.div variants={STAGGER_ITEM}>
+                    <motion.button
+                      type="button"
+                      onClick={onPreOpReport}
+                      className="flex w-full items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3 py-2.5 text-[10px] font-black text-white shadow-[0_3px_12px_rgba(37,99,235,0.4)] transition active:scale-[0.97]"
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0" />
+                      Laporan Pre-Op PDF
+                    </motion.button>
+                  </motion.div>
+                  <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-1.5">
+                    <Btn icon={Users} iconCls="text-purple-500" onClick={onPatientCases} className="py-2">Kasus Pasien</Btn>
+                    <Btn icon={Zap} iconCls="text-teal-500" onClick={onImplantEstimator} className="py-2">Estimator</Btn>
+                  </motion.div>
+
                   {/* Divider */}
                   <motion.div variants={STAGGER_ITEM} className="h-px bg-slate-200/60 my-0.5" />
 
@@ -508,6 +539,7 @@ export default function QuickPanel({
             ) : null}
           </AnimatePresence>
         </div>
+
 
       </div>
     </motion.div>

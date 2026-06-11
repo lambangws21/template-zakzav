@@ -4,6 +4,16 @@ const SPREADSHEET_ID = "1YazKry6R9KYlVl_uV9V6m1g5X2n1fmxA5CHnQD5slbM";
 const SHEET_HEADERS = ["id", "name", "tags", "driveId", "createdAt", "updatedAt"];
 const DRIVE_ID_PATTERN = /^[a-zA-Z0-9_-]{20,}$/;
 
+const PATIENT_CASES_SHEET = "PatientCases";
+const PATIENT_CASES_HEADERS = [
+  "id", "createdAt", "patientName", "procedure", "notes",
+  "imageName", "measurementCount", "templateCount",
+  "hkaSummaryJson", "implantLabel",
+  "snapshotDriveId", "snapshotUrl", "source",
+  "preOpSizeNum", "operationDate", "actualImplantLabel",
+  "actualSizeNum", "postOpHka", "postOpNotes", "postOpUpdatedAt",
+];
+
 const IMPLANT_SUBMISSION_SHEET = "ImplantUsageSubmissions";
 const IMPLANT_ITEM_SHEET = "ImplantUsageItems";
 const IMPLANT_SIGNATURE_SHEET = "ImplantUsageSignatures";
@@ -296,6 +306,10 @@ function doGet(e) {
         status: "success",
         items: readImplantSubmissions_(),
       });
+    }
+
+    if (action === "listpatientcases" || action === "list_patient_cases" || action === "readpatientcases") {
+      return jsonOutput_({ ok: true, status: "success", items: readPatientCases_() });
     }
 
     const sheet = getSheet_();
@@ -655,6 +669,18 @@ function doPost(e) {
 
     if (action === "createimplantusage" || action === "create_implant_usage") {
       return jsonOutput_(createImplantUsage_(payload));
+    }
+
+    if (action === "createpatientcase" || action === "create_patient_case") {
+      return jsonOutput_(createPatientCase_(payload));
+    }
+
+    if (action === "deletepatientcase" || action === "delete_patient_case") {
+      return jsonOutput_(deletePatientCase_(payload));
+    }
+
+    if (action === "updatepatientcase" || action === "update_patient_case") {
+      return jsonOutput_(updatePatientCase_(payload));
     }
 
     if (isImplantReviewUpdateAction_(action)) {
@@ -2047,4 +2073,143 @@ function jsonOutput_(payload) {
 
 function getErrorMessage_(error) {
   return error && error.message ? String(error.message) : String(error);
+}
+
+// ─── Patient Cases ─────────────────────────────────────────────────────────────
+
+function readPatientCases_() {
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  var values = sheet.getRange(2, 1, lastRow - 1, PATIENT_CASES_HEADERS.length).getValues();
+  return values.map(function (row) {
+    var actualSizeRaw = row[16];
+    var postOpHkaRaw = row[17];
+    return {
+      id: String(row[0] || ""),
+      createdAt: String(row[1] || ""),
+      patientName: String(row[2] || ""),
+      procedure: String(row[3] || ""),
+      notes: String(row[4] || ""),
+      imageName: String(row[5] || ""),
+      measurementCount: Number(row[6] || 0),
+      templateCount: Number(row[7] || 0),
+      hkaSummaryJson: String(row[8] || "[]"),
+      implantLabel: String(row[9] || ""),
+      snapshotDriveId: String(row[10] || ""),
+      snapshotUrl: String(row[11] || ""),
+      source: String(row[12] || ""),
+      preOpSizeNum: row[13] !== "" && row[13] !== null ? Number(row[13]) || null : null,
+      operationDate: String(row[14] || ""),
+      actualImplantLabel: String(row[15] || ""),
+      actualSizeNum: actualSizeRaw !== "" && actualSizeRaw !== null ? Number(actualSizeRaw) || null : null,
+      postOpHka: postOpHkaRaw !== "" && postOpHkaRaw !== null ? Number(postOpHkaRaw) || null : null,
+      postOpNotes: String(row[18] || ""),
+      postOpUpdatedAt: String(row[19] || ""),
+    };
+  }).filter(function (item) { return item.id; });
+}
+
+function createPatientCase_(payload) {
+  var data = payload && payload.data && typeof payload.data === "object" ? payload.data : (payload || {});
+  var now = isoNow_();
+  var id = String(data.id || "").trim() || Utilities.getUuid();
+
+  var snapshotDriveId = "";
+  var snapshotUrl = "";
+  if (data.snapshotDataUrl && typeof data.snapshotDataUrl === "string" && data.snapshotDataUrl.length > 100) {
+    try {
+      snapshotDriveId = uploadImageFromDataUrl_({
+        imageDataUrl: data.snapshotDataUrl,
+        fileName: "case-snapshot-" + id + ".jpg",
+        mimeType: "image/jpeg",
+      });
+      if (snapshotDriveId) snapshotUrl = driveIdToImageUrl_(snapshotDriveId);
+    } catch (_ignored) {}
+  }
+
+  var hkaSummaryJson = "[]";
+  if (Array.isArray(data.hkaSummary)) {
+    hkaSummaryJson = JSON.stringify(data.hkaSummary);
+  } else if (typeof data.hkaSummaryJson === "string") {
+    hkaSummaryJson = data.hkaSummaryJson;
+  }
+
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var row = [
+    id, now,
+    String(data.patientName || ""),
+    String(data.procedure || ""),
+    String(data.notes || ""),
+    String(data.imageName || ""),
+    Number(data.measurementCount || 0),
+    Number(data.templateCount || 0),
+    hkaSummaryJson,
+    String(data.implantLabel || ""),
+    snapshotDriveId,
+    snapshotUrl,
+    String(data.source || "zakzav-templating"),
+    data.preOpSizeNum != null ? Number(data.preOpSizeNum) : "",
+    "", "", "", "", "", "",
+  ];
+  sheet.appendRow(row);
+
+  return {
+    ok: true,
+    status: "success",
+    message: "Kasus pasien berhasil disimpan.",
+    id: id,
+    createdAt: now,
+    snapshotDriveId: snapshotDriveId,
+    snapshotUrl: snapshotUrl,
+  };
+}
+
+function updatePatientCase_(payload) {
+  var id = String((payload && payload.id) || "").trim();
+  if (!id) throw new Error("id wajib diisi untuk update kasus pasien.");
+
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var rowIndex = findRowById_(sheet, id);
+  if (rowIndex < 2) throw new Error("Kasus pasien id " + id + " tidak ditemukan.");
+
+  var row = sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).getValues()[0];
+  var data = (payload && payload.data && typeof payload.data === "object") ? payload.data : (payload || {});
+  var now = isoNow_();
+
+  if (data.preOpSizeNum !== undefined && data.preOpSizeNum !== null && data.preOpSizeNum !== "") {
+    row[13] = Number(data.preOpSizeNum);
+  }
+  if (data.operationDate !== undefined) row[14] = String(data.operationDate || "");
+  if (data.actualImplantLabel !== undefined) row[15] = String(data.actualImplantLabel || "");
+  if (data.actualSizeNum !== undefined && data.actualSizeNum !== null && data.actualSizeNum !== "") {
+    row[16] = Number(data.actualSizeNum);
+  }
+  if (data.postOpHka !== undefined && data.postOpHka !== null && data.postOpHka !== "") {
+    row[17] = Number(data.postOpHka);
+  }
+  if (data.postOpNotes !== undefined) row[18] = String(data.postOpNotes || "");
+  row[19] = now;
+
+  sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).setValues([row]);
+  return { ok: true, status: "success", id: id, postOpUpdatedAt: now };
+}
+
+function deletePatientCase_(payload) {
+  var id = String((payload && payload.id) || (payload && payload.item && payload.item.id) || "").trim();
+  if (!id) throw new Error("id wajib diisi untuk delete kasus pasien.");
+
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var rowIndex = findRowById_(sheet, id);
+  if (rowIndex < 2) throw new Error("Kasus pasien id " + id + " tidak ditemukan.");
+
+  var row = sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).getValues()[0];
+  var snapshotDriveId = String(row[10] || "");
+  sheet.deleteRow(rowIndex);
+
+  if (payload.deleteSnapshot && snapshotDriveId) {
+    trashDriveFileSafe_(snapshotDriveId);
+  }
+
+  return { ok: true, status: "success", id: id };
 }

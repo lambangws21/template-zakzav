@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ArrowDown,
   ArrowDownToLine,
@@ -8,6 +9,8 @@ import {
   Eye,
   EyeOff,
   Settings2,
+  Pencil,
+  Check,
 } from "lucide-react";
 
 function LayerIconButton({
@@ -41,9 +44,25 @@ export default function LayerManager({
   onToggleLayerVisibility,
   onMoveLayer,
   onOpenSettings,
+  onRenameLayer,
   className = "",
   maxHeightClass = "max-h-72",
 }) {
+  const [renameId, setRenameId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const startRename = (layer) => {
+    setRenameId(layer.id);
+    setRenameValue(layer.name || `Layer #${layer.id}`);
+  };
+
+  const confirmRename = (layerId) => {
+    const trimmed = renameValue.trim();
+    if (trimmed) onRenameLayer?.(layerId, trimmed);
+    setRenameId(null);
+    setRenameValue("");
+  };
+
   const stackRows = [...layers].reverse();
 
   return (
@@ -74,6 +93,7 @@ export default function LayerManager({
             const stackIndex = layers.findIndex((item) => item.id === layer.id);
             const isSelected = String(selectedLayerId) === String(layer.id);
             const isHidden = Boolean(layer.hidden);
+            const isRenaming = renameId === layer.id;
             return (
               <div
                 key={layer.id}
@@ -90,14 +110,52 @@ export default function LayerManager({
                     className="min-w-0 flex-1 text-left"
                     title={layer.name || `Layer #${layer.id}`}
                   >
-                    <div className="truncate text-xs font-black text-slate-800">
-                      {layer.name || `Layer #${layer.id}`}
-                    </div>
-                    <div className="mt-0.5 truncate text-[9px] font-bold tracking-wide text-slate-400 uppercase">
-                      #{layer.id} | {stackIndex + 1}/{layers.length}
-                      {isHidden ? " | hidden" : ""}
-                    </div>
+                    {isRenaming ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={() => confirmRename(layer.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") confirmRename(layer.id);
+                          if (e.key === "Escape") { setRenameId(null); setRenameValue(""); }
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full rounded-xl border border-cyan-300 bg-white px-2 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-cyan-200"
+                        placeholder={`Layer #${layer.id}`}
+                      />
+                    ) : (
+                      <>
+                        <div className="truncate text-xs font-black text-slate-800">
+                          {layer.name || `Layer #${layer.id}`}
+                        </div>
+                        <div className="mt-0.5 truncate text-[9px] font-bold tracking-wide text-slate-400 uppercase">
+                          #{layer.id} | {stackIndex + 1}/{layers.length}
+                          {isHidden ? " | hidden" : ""}
+                        </div>
+                      </>
+                    )}
                   </button>
+
+                  {isRenaming ? (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); confirmRename(layer.id); }}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-700 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)] transition active:scale-95"
+                      title="Simpan nama"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <LayerIconButton
+                      icon={Pencil}
+                      label="Ubah nama layer"
+                      onClick={(e) => { e.stopPropagation(); startRename(layer); }}
+                    />
+                  )}
+
                   <LayerIconButton
                     icon={isHidden ? EyeOff : Eye}
                     label={isHidden ? "Show layer" : "Hide layer"}
