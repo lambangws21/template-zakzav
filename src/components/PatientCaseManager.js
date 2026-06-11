@@ -23,6 +23,8 @@ import {
   BarChart2,
   ClipboardCheck,
   FileText,
+  Pencil,
+  Save,
 } from "lucide-react";
 import PostOpDataModal from "./PostOpDataModal";
 import TemplatingAnalytics from "./TemplatingAnalytics";
@@ -528,6 +530,147 @@ function SaveForm({ currentSession, onSave, onCancel }) {
   );
 }
 
+// ─── Edit Case Form ────────────────────────────────────────────────────────────
+
+function EditCaseForm({ caseData, onSave, onCancel }) {
+  const [patientName, setPatientName] = useState(caseData.patientName || "");
+  const [procedure, setProcedure] = useState(caseData.procedure || "Total Knee Arthroplasty (TKA)");
+  const [notes, setNotes] = useState(caseData.notes || "");
+  const [implantLabel, setImplantLabel] = useState(caseData.implantLabel || "");
+  const [preOpSizeNum, setPreOpSizeNum] = useState(
+    caseData.preOpSizeNum != null ? String(caseData.preOpSizeNum) : ""
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60 shadow-sm"
+    >
+      {/* header */}
+      <div className="flex items-center justify-between bg-amber-600 px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <Pencil className="h-3.5 w-3.5 text-amber-100" />
+          <p className="text-xs font-black text-white">Edit Data Kasus</p>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-amber-100 hover:bg-white/20"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+
+      <div className="space-y-3 px-4 py-4">
+        {/* Row 1: Nama + Prosedur */}
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Nama Pasien</span>
+            <input
+              type="text"
+              value={patientName}
+              onChange={(e) => setPatientName(e.target.value)}
+              placeholder="Nama pasien"
+              autoFocus
+              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Prosedur</span>
+            <select
+              value={procedure}
+              onChange={(e) => setProcedure(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            >
+              <option>Total Knee Arthroplasty (TKA)</option>
+              <option>Total Hip Arthroplasty (THA)</option>
+              <option>Unicompartmental Knee Arthroplasty (UKA)</option>
+              <option>Revision Knee Arthroplasty</option>
+              <option>Hemiarthroplasty Hip</option>
+              <option>Osteotomy</option>
+              <option>Lainnya</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Komponen implant (teks bebas) */}
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+            Komponen Rencana Pre-Op
+          </span>
+          <input
+            type="text"
+            value={implantLabel}
+            onChange={(e) => setImplantLabel(e.target.value)}
+            placeholder='mis. "Femoral: 4 · Tibial: 3 · Insert PE: 10 mm"'
+            className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+          />
+          <span className="text-[8px] text-slate-400">Pisahkan komponen dengan " · "</span>
+        </label>
+
+        {/* Ukuran primer + Catatan */}
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Ukuran Primer</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              value={preOpSizeNum}
+              onChange={(e) => setPreOpSizeNum(e.target.value)}
+              placeholder="mis. 4"
+              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Catatan</span>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Catatan singkat"
+              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            />
+          </label>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-2 pt-0.5">
+          <button
+            type="button"
+            onClick={() =>
+              onSave({
+                patientName: patientName.trim(),
+                procedure,
+                notes: notes.trim(),
+                implantLabel: implantLabel.trim(),
+                preOpSizeNum:
+                  preOpSizeNum !== "" && !isNaN(Number(preOpSizeNum))
+                    ? Number(preOpSizeNum)
+                    : null,
+              })
+            }
+            disabled={!patientName.trim()}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-amber-600 py-2.5 text-xs font-black text-white shadow-[0_3px_10px_rgba(217,119,6,0.3)] disabled:opacity-40"
+          >
+            <Save className="h-3.5 w-3.5" />
+            Simpan Perubahan
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-500"
+          >
+            Batal
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PatientCaseManager({ isOpen, onClose, currentSession, onLoadAsLayer }) {
@@ -539,6 +682,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [search, setSearch] = useState("");
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [selectedCaseId, setSelectedCaseId] = useState(null);
+  const [editingCaseId, setEditingCaseId] = useState(null);
   const [postOpCase, setPostOpCase] = useState(null);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [preOpReportCase, setPreOpReportCase] = useState(null);
@@ -674,6 +818,18 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
     [cases, selectedCaseId, hasCloud],
   );
 
+  const handleUpdate = useCallback(
+    (id, updatedFields) => {
+      const updated = cases.map((c) =>
+        c.id === id ? { ...c, ...updatedFields } : c
+      );
+      setCases(updated);
+      saveCases(updated);
+      setEditingCaseId(null);
+    },
+    [cases],
+  );
+
   const selectedCase = cases.find((c) => c.id === selectedCaseId);
 
   if (typeof document === "undefined") return null;
@@ -788,9 +944,25 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                   />
                 </div>
 
+                {/* Edit Case Form */}
+                <AnimatePresence>
+                  {editingCaseId && (() => {
+                    const editCase = cases.find((c) => c.id === editingCaseId);
+                    if (!editCase) return null;
+                    return (
+                      <EditCaseForm
+                        key={`edit-${editingCaseId}`}
+                        caseData={editCase}
+                        onSave={(fields) => handleUpdate(editingCaseId, fields)}
+                        onCancel={() => setEditingCaseId(null)}
+                      />
+                    );
+                  })()}
+                </AnimatePresence>
+
                 {/* Selected case — Pre-Op Report */}
                 <AnimatePresence>
-                  {selectedCase && (() => {
+                  {selectedCase && !editingCaseId && (() => {
                     const preComponents = selectedCase.implantLabel
                       ? selectedCase.implantLabel.split(" · ").map((s) => s.trim()).filter(Boolean)
                       : [];
@@ -947,6 +1119,14 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
 
                         {/* Action buttons */}
                         <div className="border-t border-slate-100 px-4 py-3 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingCaseId(selectedCase.id)}
+                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Edit Data Kasus
+                          </button>
                           <button
                             type="button"
                             onClick={() => setPostOpCase(selectedCase)}

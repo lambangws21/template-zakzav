@@ -95,6 +95,9 @@ import MobileNavigation from "./MobileNavigation";
 import PanelActions from "./PanelActions";
 import QuickPanel from "./QuickPanel";
 import TemplateStoragePicker from "./TemplateStoragePicker";
+import WorkflowProgress from "./WorkflowProgress";
+import SmartHintBanner from "./SmartHintBanner";
+import PreOpSummaryModal from "./PreOpSummaryModal";
 import PreOpReportModal from "./PreOpReportModal";
 import ImplantSizePanel from "./ImplantSizePanel";
 import PatientCaseManager from "./PatientCaseManager";
@@ -4184,6 +4187,7 @@ export default function XrayCalibrationWorkspace({
   const nextCircleIdRef = useRef(1);
   const nextHkaIdRef = useRef(1);
   const hkaCompletionFiredRef = useRef(false);
+  const pendingHkaUpdateIdRef = useRef(null);
   const nextCutLayerIdRef = useRef(1);
   const nextAnnotationIdRef = useRef(1);
   const historyPastRef = useRef([]);
@@ -4467,6 +4471,7 @@ export default function XrayCalibrationWorkspace({
     useState(false);
   const [simpleCalibrationModalOpen, setSimpleCalibrationModalOpen] =
     useState(false);
+  const [calibAdjustFloating, setCalibAdjustFloating] = useState(false);
   const [simpleLayerDropdownOpen, setSimpleLayerDropdownOpen] =
     useState(false);
   const [simpleLayerFloatingPopup, setSimpleLayerFloatingPopup] =
@@ -4476,10 +4481,13 @@ export default function XrayCalibrationWorkspace({
   const [templatingWizardOpen, setTemplatingWizardOpen] = useState(false);
   const [workflowOverlayDismissed, setWorkflowOverlayDismissed] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
+  const [wizardMaxStep, setWizardMaxStep] = useState(1);
   const [wizardProcedure, setWizardProcedure] = useState(null);
   const [wizardStemId, setWizardStemId] = useState(null);
   const [wizardCupId, setWizardCupId] = useState(null);
+  const [wizardConfirmOpen, setWizardConfirmOpen] = useState(false);
   const [jlaGuideModalOpen, setJlaGuideModalOpen] = useState(false);
+  const [preOpSummaryOpen, setPreOpSummaryOpen] = useState(false);
   const [hkaInfoBubble, setHkaInfoBubble] = useState(null);
   const [hoveredMetricKey, setHoveredMetricKey] = useState(null);
   const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
@@ -6161,6 +6169,29 @@ export default function XrayCalibrationWorkspace({
     [updateHkaById],
   );
 
+  const deleteHkaById = useCallback((hkaId) => {
+    setHkaSets((prev) => prev.filter((item) => item.id !== hkaId));
+    setSelectedHkaId((prev) => (prev === hkaId ? null : prev));
+  }, []);
+
+  const getHkaMeasurementLabel = useCallback((hka) => {
+    const r = getHkaMeasurementResult(hka);
+    if (!r || r.absoluteDeviation === null) return null;
+    return r.label;
+  }, []);
+
+  const renameHkaById = useCallback((hkaId, name) => {
+    updateHkaById(hkaId, { name });
+  }, [updateHkaById]);
+
+  const changeHkaColorById = useCallback((hkaId, color) => {
+    updateHkaById(hkaId, { lineColor: color });
+  }, [updateHkaById]);
+
+  const changeHkaStrokeById = useCallback((hkaId, strokeWidth) => {
+    updateHkaById(hkaId, { strokeWidth });
+  }, [updateHkaById]);
+
   const formatTemplateLayerRealSize = useCallback(
     (valueMm) => {
       if (valueMm === null || !Number.isFinite(valueMm)) return "-";
@@ -6194,6 +6225,11 @@ export default function XrayCalibrationWorkspace({
     if (measurementEntityCount === 0) return 3;
     return 4;
   }, [hasCalibration, image, measurementEntityCount]);
+
+  const hasAppliedImplant = useMemo(
+    () => cutLayers.some((l) => l.autoScaleFromCalibration),
+    [cutLayers],
+  );
   const calibrationQuality = useMemo(() => {
     const zoomPercent = Number(sourceZoomPercent);
     const safeZoomPercent =
@@ -7520,6 +7556,17 @@ export default function XrayCalibrationWorkspace({
     [getIdleTool],
   );
 
+  const openTemplatingWizard = useCallback((fresh = false) => {
+    if (fresh) {
+      setWizardStep(1);
+      setWizardMaxStep(1);
+      setWizardProcedure(null);
+      setWizardStemId(null);
+      setWizardCupId(null);
+    }
+    setTemplatingWizardOpen(true);
+  }, []);
+
   const openSimpleCalibrationModal = useCallback(
     (
       message = "Kalibrasi line wajib untuk measurement akurat. Buat atau pilih garis referensi, isi ukuran real, lalu simpan kalibrasi.",
@@ -7879,6 +7926,123 @@ export default function XrayCalibrationWorkspace({
       setDraftLine,
     ],
   );
+
+  const handleUpdateHka = useCallback(
+    (hka) => {
+      pendingHkaUpdateIdRef.current = hka.id;
+      setHkaInputMode(hka.mode);
+      setHkaSide(normalizeHkaSide(hka.side));
+      handleToolChange("hkaAuto", { skipHkaSidePrompt: true });
+      setNotice(
+        `Gambar ulang landmark untuk memperbarui HKA ${getHkaSideLabel(hka.side)} #${hka.id}.`,
+      );
+    },
+    [handleToolChange],
+  );
+
+  const workflowSteps = useMemo(
+    () => [
+      {
+        id: "upload",
+        label: "Upload X-ray",
+        description: "Foto AP/lateral pasien",
+        done: Boolean(image),
+        hint: "Tap area canvas atau gunakan tombol Upload di toolbar.",
+        actionLabel: null,
+        onAction: null,
+      },
+      {
+        id: "calib",
+        label: "Kalibrasi",
+        description: "Tandai ruler untuk akurasi",
+        done: hasCalibration,
+        hint: "Kalibrasi wajib agar ukuran HKA dan implant akurat.",
+        actionLabel: "Kalibrasi",
+        onAction: () => openSimpleCalibrationModal(),
+      },
+      {
+        id: "hka",
+        label: "Ukur HKA",
+        description: "Gambar landmark alignment",
+        done: hkaSets.length > 0,
+        hint: "Gambar 3 titik (CFH, CK, CA) untuk HKA full, atau pilih mode FTA/JLA.",
+        actionLabel: "Mulai HKA",
+        onAction: () => handleToolChange("hkaAuto"),
+      },
+      {
+        id: "implant",
+        label: "Template Implant",
+        description: "Pilih dan sesuaikan implant",
+        done: hasAppliedImplant,
+        hint: "Pilih implant dari library dan terapkan ke canvas untuk templating.",
+        actionLabel: "Pilih Implant",
+        onAction: () => {
+          setSimpleManagerTab("implant");
+          setSimpleDesktopManagerOpen(true);
+        },
+      },
+    ],
+    [
+      image,
+      hasCalibration,
+      hkaSets,
+      hasAppliedImplant,
+      openSimpleCalibrationModal,
+      handleToolChange,
+    ],
+  );
+
+  const smartHint = useMemo(() => {
+    if (!image)
+      return {
+        key: "no-image",
+        type: "info",
+        text: "Upload foto X-ray untuk memulai perencanaan pre-operatif.",
+        actionLabel: null,
+        onAction: null,
+      };
+    if (!hasCalibration)
+      return {
+        key: "no-calib",
+        type: "warning",
+        text: "Kalibrasi belum dilakukan — hasil pengukuran tidak akan akurat.",
+        actionLabel: "Kalibrasi",
+        onAction: () => openSimpleCalibrationModal(),
+      };
+    if (hkaSets.length === 0)
+      return {
+        key: "no-hka",
+        type: "hint",
+        text: "Gambar landmark HKA untuk menilai deformitas varus/valgus.",
+        actionLabel: "Mulai HKA",
+        onAction: () => handleToolChange("hkaAuto"),
+      };
+    if (!hasAppliedImplant)
+      return {
+        key: "no-implant",
+        type: "hint",
+        text: "HKA selesai. Lanjutkan dengan template implant untuk perencanaan operasi.",
+        actionLabel: "Template Implant",
+        onAction: () => {
+          setSimpleManagerTab("implant");
+          setSimpleDesktopManagerOpen(true);
+        },
+      };
+    return {
+      key: "all-done",
+      type: "success",
+      text: "Perencanaan pre-op lengkap! Lihat ringkasan untuk export laporan.",
+      actionLabel: "Ringkasan",
+      onAction: () => setPreOpSummaryOpen(true),
+    };
+  }, [
+    image,
+    hasCalibration,
+    hkaSets,
+    hasAppliedImplant,
+    openSimpleCalibrationModal,
+    handleToolChange,
+  ]);
 
   const activateFreeLineMode = useCallback(
     (nextMode = "freehand") => {
@@ -15041,6 +15205,37 @@ export default function XrayCalibrationWorkspace({
           // Guard: prevent double-fire from React StrictMode functional updater invocations
           if (hkaCompletionFiredRef.current) return [];
           hkaCompletionFiredRef.current = true;
+
+          // If updating an existing HKA item, overwrite its points instead of creating new
+          if (pendingHkaUpdateIdRef.current !== null) {
+            const updateId = pendingHkaUpdateIdRef.current;
+            pendingHkaUpdateIdRef.current = null;
+            const pointFields = definition.points.reduce(
+              (accumulator, pointDef, index) => {
+                accumulator[pointDef.key] = next[index];
+                return accumulator;
+              },
+              {},
+            );
+            if (hkaInputMode === "full") {
+              pointFields.direction = inferHkaDirectionFromPoints(
+                pointFields.hip,
+                pointFields.knee,
+                pointFields.ankle,
+                hkaSide,
+                "varus",
+              );
+            }
+            updateHkaById(updateId, pointFields);
+            setSelectedHkaId(updateId);
+            setNotice(`${definition.label} diperbarui (${getHkaSideLabel(hkaSide)}).`);
+            setTool(getIdleTool());
+            if (shouldUseMobileOneShotTool) {
+              setMobileControlsOpen(false);
+            }
+            return [];
+          }
+
           const nextHka = definition.points.reduce(
             (accumulator, pointDef, index) => {
               accumulator[pointDef.key] = next[index];
@@ -19905,13 +20100,7 @@ export default function XrayCalibrationWorkspace({
       id: 5,
       label: "Templating",
       done: cutLayers.some((l) => l.autoScaleFromCalibration),
-      onClick: () => {
-        setTemplatingWizardOpen(true);
-        setWizardStep(1);
-        setWizardProcedure(null);
-        setWizardStemId(null);
-        setWizardCupId(null);
-      },
+      onClick: () => openTemplatingWizard(),
     },
   ];
   const selectedLayerDropdownLabel = selectedCutLayer
@@ -20052,13 +20241,7 @@ export default function XrayCalibrationWorkspace({
         open={showStartupCalibrationAlert}
         onExit={goToCalibrationPanel}
         onConfirm={goToCalibrationPanel}
-        onStartTemplating={() => {
-          setTemplatingWizardOpen(true);
-          setWizardStep(1);
-          setWizardProcedure(null);
-          setWizardStemId(null);
-          setWizardCupId(null);
-        }}
+        onStartTemplating={() => openTemplatingWizard(true)}
       />
       <input
         ref={mainUploadInputRef}
@@ -23504,7 +23687,11 @@ export default function XrayCalibrationWorkspace({
             : ""
         }
         onCreatePresetFromInput={createCalibrationPresetLineFromInput}
-        onCreatePresetLine={createCalibrationPresetLine}
+        onCreatePresetLine={(mm) => {
+          createCalibrationPresetLine(mm);
+          setSimpleCalibrationModalOpen(false);
+          setCalibAdjustFloating(true);
+        }}
         onManualDraw={() => {
           setSimpleCalibrationModalOpen(false);
           handleToolChange("draw");
@@ -23530,15 +23717,40 @@ export default function XrayCalibrationWorkspace({
         canSave={calibrationMode === "line" ? Boolean(calibrationReferenceLine) : true}
         hasCalibration={hasCalibration}
         measurementUnit={measurementUnit}
-        onStartTemplating={() => {
-          setSimpleCalibrationModalOpen(false);
-          setTemplatingWizardOpen(true);
-          setWizardStep(1);
-          setWizardProcedure(null);
-          setWizardStemId(null);
-          setWizardCupId(null);
-        }}
+        onStartTemplating={() => { setSimpleCalibrationModalOpen(false); openTemplatingWizard(true); }}
       />
+
+      {/* ── Floating pill: ruler adjustment mode ── */}
+      <AnimatePresence>
+        {isSimpleUiMode && calibAdjustFloating && (
+          <motion.div
+            key="calib-adjust-pill"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ type: "spring", damping: 22, stiffness: 280 }}
+            className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+108px)] left-0 right-0 z-[97] flex justify-center px-4"
+          >
+            <div className="pointer-events-auto flex w-full max-w-[400px] items-center gap-3 rounded-[20px] bg-cyan-700 px-4 py-3 shadow-[0_8px_28px_rgba(0,0,0,0.32)]">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-white/20">
+                <RulerDimensionLine className="h-4 w-4 text-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-black text-white">Ruler ditambahkan ke canvas</p>
+                <p className="text-[10px] text-cyan-200">Geser &amp; sesuaikan ujung-ujungnya dengan ruler X-ray</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setCalibAdjustFloating(false); setSimpleCalibrationModalOpen(true); }}
+                className="shrink-0 flex items-center gap-1 rounded-[14px] bg-white px-3 py-2 text-[10px] font-black text-cyan-700 shadow-sm"
+              >
+                Selesai →
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {isSimpleUiMode && simpleGuideModalOpen ? (
           <motion.div
@@ -23830,6 +24042,25 @@ export default function XrayCalibrationWorkspace({
           /* ─ step labels ─ */
           const stepLabels = ["Persiapan", "Prosedur", "Panduan", "Implant", "Canvas", "Simpan"];
 
+          /* ─ track max reached step ─ */
+          if (wizardStep > wizardMaxStep) setWizardMaxStep(wizardStep);
+
+          /* ─ per-step completion status ─ */
+          const stepDone = (s) => {
+            if (s === 1) return wizardMaxStep >= 2;
+            if (s === 2) return Boolean(wizardProcedure);
+            if (s === 3) return wizardMaxStep >= 4;
+            if (s === 4) return Boolean(wizardStemId);
+            if (s === 5) return cutLayers.some((l) => l.autoScaleFromCalibration);
+            if (s === 6) return false;
+            return false;
+          };
+
+          /* ─ first incomplete step for resume banner ─ */
+          const firstIncomplete = wizardMaxStep > 1
+            ? [1,2,3,4,5,6].find((s) => s <= TOTAL_STEPS && !stepDone(s))
+            : null;
+
           /* ─ reusable implant card ─ */
           const ImplantCard = ({ item, selected, onSelect, recommended }) => (
             <button type="button" onClick={() => onSelect(item.id)}
@@ -23858,12 +24089,25 @@ export default function XrayCalibrationWorkspace({
           );
 
           /* ─ apply implant helper ─ */
+          // Direct canvas apply — bypasses stale-closure issue of going through
+          // selectedImplantLibraryId state → useSelectedImplantLibraryAsLayer timeout.
           const applyImplant = (id, label) => {
             const item = LOCAL_IMPLANT_LIBRARY.find((i) => i.id === id);
             if (!item) return;
             setSelectedImplantType(item.type);
             setSelectedImplantLibraryId(id);
-            setTimeout(() => useSelectedImplantLibraryAsLayer(), 60);
+            void addTemplateToCanvas({
+              id: item.id,
+              name: item.label,
+              imageSrc: item.imageSrc,
+              sourceWidth: 0,
+              sourceHeight: 0,
+              autoScaleFromCalibration: true,
+              physicalSize: item.physicalSize || null,
+              physicalWidthMm: item.physicalWidthMm ?? null,
+              physicalHeightMm: item.physicalHeightMm ?? null,
+              transparentWhiteBackground: Boolean(item.transparentWhiteBackground),
+            });
             setNotice(`${label || item.label} ditambahkan ke canvas. Geser & sesuaikan posisinya.`);
           };
 
@@ -23879,7 +24123,7 @@ export default function XrayCalibrationWorkspace({
                 exit={{ opacity: 0, y: 14, scale: 0.98 }}
                 transition={PANEL_SPRING}
                 role="dialog" aria-modal="true"
-                className="flex max-h-[90dvh] w-full max-w-[min(100%,600px)] flex-col overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/80 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
+                className="relative flex max-h-[90dvh] w-full max-w-[min(100%,600px)] flex-col overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/80 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
               >
                 {/* ══ Header ══ */}
                 <div className="flex shrink-0 items-center gap-2 border-b border-white/60 px-4 py-3">
@@ -23916,6 +24160,34 @@ export default function XrayCalibrationWorkspace({
 
                 {/* ══ Scrollable body ══ */}
                 <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-3 space-y-3">
+
+                  {/* ─── Resume banner: shown when returning to a partially-done wizard ─── */}
+                  {wizardMaxStep > 1 && wizardStep === 1 && firstIncomplete && firstIncomplete > 1 && (
+                    <div className="rounded-[16px] border border-amber-200 bg-amber-50/80 px-3 py-2.5">
+                      <div className="text-[10px] font-black text-amber-800 mb-1.5">Lanjutkan dari langkah terakhir</div>
+                      <div className="flex flex-col gap-1 mb-2">
+                        {stepLabels.slice(0, TOTAL_STEPS).map((label, idx) => {
+                          const s = idx + 1;
+                          const done = stepDone(s);
+                          const incomplete = !done && s <= wizardMaxStep;
+                          return (
+                            <div key={s} className={`flex items-center gap-2 rounded-[10px] px-2 py-1 ${done ? "bg-emerald-50" : incomplete ? "bg-amber-100/60" : "bg-transparent"}`}>
+                              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-black ${done ? "bg-emerald-500 text-white" : incomplete ? "bg-amber-400 text-white" : "bg-slate-200 text-slate-400"}`}>
+                                {done ? "✓" : s}
+                              </span>
+                              <span className={`text-[10px] font-semibold ${done ? "text-emerald-700 line-through opacity-60" : incomplete ? "text-amber-800" : "text-slate-400"}`}>{label}</span>
+                              {incomplete && <span className="ml-auto text-[8px] font-black text-amber-600">Belum selesai</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <button type="button"
+                        onClick={() => setWizardStep(firstIncomplete)}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-amber-500 py-2 text-[10px] font-black text-white">
+                        Lanjutkan ke Langkah {firstIncomplete} — {stepLabels[firstIncomplete - 1]} →
+                      </button>
+                    </div>
+                  )}
 
                   {/* ─── STEP 1: Persiapan ─── */}
                   {wizardStep === 1 && (
@@ -24121,6 +24393,16 @@ export default function XrayCalibrationWorkspace({
                   {/* ─── STEP 5: Pasang ke Canvas ─── */}
                   {wizardStep === 5 && selProc && (
                     <>
+                      {/* Auto-applied success banner */}
+                      {cutLayers.some((l) => l.autoScaleFromCalibration) && (
+                        <div className="flex items-center gap-2.5 rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                          <span className="text-base">✅</span>
+                          <div>
+                            <p className="text-[10px] font-black text-emerald-800">Implant sudah ada di canvas</p>
+                            <p className="text-[9px] text-emerald-700">Geser & sesuaikan posisi anatomis, lalu lanjut ke langkah berikutnya</p>
+                          </div>
+                        </div>
+                      )}
                       <div className="rounded-[16px] border border-white/70 bg-[#eef2f7] px-3 py-3 shadow-[2px_2px_6px_rgba(148,163,184,0.16)]">
                         <div className="text-[11px] font-extrabold text-slate-800">Cara Memposisikan Implant</div>
                         <ol className="mt-2 space-y-2">
@@ -24237,8 +24519,14 @@ export default function XrayCalibrationWorkspace({
                   <span className="text-[9px] font-bold text-slate-400">{wizardStep} / {TOTAL_STEPS}</span>
                   {wizardStep < TOTAL_STEPS ? (
                     <button type="button"
-                      onClick={() => setWizardStep((s) => s + 1)}
-                      disabled={wizardStep === 2 && !wizardProcedure}
+                      onClick={() => {
+                        if (wizardStep === 4 && (wizardStemId || wizardCupId)) {
+                          setWizardConfirmOpen(true);
+                        } else {
+                          setWizardStep((s) => s + 1);
+                        }
+                      }}
+                      disabled={(wizardStep === 2 && !wizardProcedure) || (wizardStep === 4 && !wizardStemId && !wizardCupId)}
                       className="flex items-center gap-1.5 rounded-[14px] px-4 py-2 text-[11px] font-black text-white shadow-[0_3px_10px_rgba(8,145,178,0.28)] disabled:opacity-40"
                       style={{ background: `linear-gradient(135deg, ${selProc?.color || "#0891b2"}, ${selProc?.color ? selProc.color + "cc" : "#0e7490"})` }}>
                       Lanjut →
@@ -24250,6 +24538,80 @@ export default function XrayCalibrationWorkspace({
                     </button>
                   )}
                 </div>
+
+                {/* ══ Confirm Template Overlay ══ */}
+                {wizardConfirmOpen && (() => {
+                  const stemItem = wizardStemId ? LOCAL_IMPLANT_LIBRARY.find((i) => i.id === wizardStemId) : null;
+                  const cupItem = wizardCupId ? LOCAL_IMPLANT_LIBRARY.find((i) => i.id === wizardCupId) : null;
+                  const confirmAndApply = () => {
+                    if (selProc?.key === "tkr" && stemItem) applyImplant(stemItem.id, "Knee Implant");
+                    if (selProc?.key === "tha") {
+                      if (stemItem) applyImplant(stemItem.id, "Stem Femoral");
+                      if (cupItem) setTimeout(() => applyImplant(cupItem.id, "Cup Asetabular"), 80);
+                    }
+                    if (selProc?.key === "hemi") {
+                      if (stemItem) applyImplant(stemItem.id, "Bipolar Head");
+                      if (cupItem) setTimeout(() => applyImplant(cupItem.id, "Stem Femoral"), 80);
+                    }
+                    setWizardConfirmOpen(false);
+                    setWizardStep(5);
+                  };
+                  return (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/55 p-5 backdrop-blur-[3px]">
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.94, y: 8 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="w-full max-w-[320px] rounded-[26px] border border-white/80 bg-[#e9eef5] p-5 shadow-[12px_12px_32px_rgba(15,23,42,0.28),-8px_-8px_22px_rgba(255,255,255,0.7)]"
+                      >
+                        <div className="mb-4 text-center">
+                          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-100 text-cyan-600">
+                            <svg className="h-5 w-5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 2h6l.8 2.5H4.2L5 2z"/><rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/><path d="M5 6 L4.5 14 M11 6 L11.5 14"/><path d="M5 9.5 Q8 8.5 11 9.5"/></svg>
+                          </div>
+                          <p className="text-sm font-black text-slate-800">Konfirmasi Template</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">Apakah template berikut sudah sesuai?</p>
+                        </div>
+
+                        <div className="mb-4 space-y-2">
+                          {stemItem && (
+                            <div className="flex items-center gap-2.5 rounded-[14px] border border-cyan-200 bg-cyan-50/80 px-3 py-2.5">
+                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-white/70 bg-white text-[9px] font-black text-slate-500">{stemItem.brand?.slice(0,3).toUpperCase() || "IMP"}</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[10px] font-black text-slate-800">{stemItem.label}</div>
+                                <div className="text-[9px] text-slate-500">{stemItem.brand} · {selProc?.key === "tkr" ? "Knee" : selProc?.key === "hemi" ? "Bipolar" : "Stem"}</div>
+                              </div>
+                              <span className="text-[11px] text-emerald-500">✓</span>
+                            </div>
+                          )}
+                          {cupItem && (
+                            <div className="flex items-center gap-2.5 rounded-[14px] border border-amber-200 bg-amber-50/80 px-3 py-2.5">
+                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-white/70 bg-white text-[9px] font-black text-slate-500">{cupItem.brand?.slice(0,3).toUpperCase() || "IMP"}</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[10px] font-black text-slate-800">{cupItem.label}</div>
+                                <div className="text-[9px] text-slate-500">{cupItem.brand} · {selProc?.key === "tha" ? "Cup Asetabular" : "Stem"}</div>
+                              </div>
+                              <span className="text-[11px] text-emerald-500">✓</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button type="button"
+                            onClick={() => setWizardConfirmOpen(false)}
+                            className="flex-1 rounded-[14px] border border-slate-200 bg-white py-2.5 text-[11px] font-black text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.18),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                            ← Pilih Ulang
+                          </button>
+                          <button type="button"
+                            onClick={confirmAndApply}
+                            className="flex-1 rounded-[14px] py-2.5 text-[11px] font-black text-white shadow-[0_3px_10px_rgba(8,145,178,0.28)]"
+                            style={{ background: `linear-gradient(135deg, ${selProc?.color || "#0891b2"}, ${selProc?.color ? selProc.color+"cc" : "#0e7490"})` }}>
+                            Ya, Terapkan →
+                          </button>
+                        </div>
+                      </motion.div>
+                    </div>
+                  );
+                })()}
+
               </motion.div>
             </motion.div>
           );
@@ -25887,7 +26249,7 @@ export default function XrayCalibrationWorkspace({
           {/* ── Templating Wizard trigger (simple UI desktop) ── */}
           {isSimpleUiMode ? (
             <button type="button"
-              onClick={() => { setTemplatingWizardOpen(true); setWizardStep(1); setWizardProcedure(null); setWizardStemId(null); setWizardCupId(null); setSimpleDesktopManagerOpen(false); setSimpleDesktopHkaOpen(false); setSimpleDesktopEditFotoOpen(false); }}
+              onClick={() => { setSimpleDesktopManagerOpen(false); setSimpleDesktopHkaOpen(false); setSimpleDesktopEditFotoOpen(false); openTemplatingWizard(); }}
               className={`${SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
               title="Mulai Templating — panduan TKR · THA · Hemi"
             >
@@ -25966,6 +26328,16 @@ export default function XrayCalibrationWorkspace({
                       getLineLength={getLineLength}
                       formatMeasurementFromPx={formatMeasurementFromPx}
                       lineTypeLabel={lineTypeLabel}
+                      hkaSets={hkaSets}
+                      selectedHkaId={selectedHkaId}
+                      onSelectHka={(id) => { setSelectedHkaId(id); setNotice(`HKA #${id} dipilih.`); }}
+                      onDeleteHka={deleteHkaById}
+                      onUpdateHka={handleUpdateHka}
+                      onToggleHkaSide={updateHkaSideById}
+                      getHkaMeasurement={getHkaMeasurementLabel}
+                      onRenameHka={renameHkaById}
+                      onChangeHkaColor={changeHkaColorById}
+                      onChangeHkaStroke={changeHkaStrokeById}
                       implantItems={LOCAL_IMPLANT_LIBRARY}
                       selectedImplantType={selectedImplantType}
                       selectedImplantItemId={selectedImplantLibraryId}
@@ -25989,6 +26361,22 @@ export default function XrayCalibrationWorkspace({
                 )}
               </AnimatePresence>
             </div>
+          ) : null}
+
+          {/* ── Ringkasan button (simple UI desktop) ── */}
+          {isSimpleUiMode ? (
+            <button
+              type="button"
+              onClick={() => setPreOpSummaryOpen(true)}
+              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950`}
+              title="Ringkasan Pre-Op"
+            >
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <rect x="2" y="1.5" width="12" height="13" rx="2"/>
+                <path d="M5 5.5h6M5 8h6M5 10.5h4"/>
+              </svg>
+              <span>Ringkasan</span>
+            </button>
           ) : null}
 
           {isSimpleUiMode ? (
@@ -32065,7 +32453,7 @@ export default function XrayCalibrationWorkspace({
                   }
                   className={`absolute z-30 ${
                     isMobileViewport
-                      ? "right-2 bottom-[calc(env(safe-area-inset-bottom)+94px)] left-2"
+                      ? "right-2 bottom-[calc(env(safe-area-inset-bottom)+108px)] left-2"
                       : "top-3 left-3 max-w-sm"
                   }`}
                 >
@@ -32369,6 +32757,16 @@ export default function XrayCalibrationWorkspace({
                         getLineLength={getLineLength}
                         formatMeasurementFromPx={formatMeasurementFromPx}
                         lineTypeLabel={lineTypeLabel}
+                        hkaSets={hkaSets}
+                        selectedHkaId={selectedHkaId}
+                        onSelectHka={(id) => { setSelectedHkaId(id); setNotice(`HKA #${id} dipilih.`); }}
+                        onDeleteHka={deleteHkaById}
+                        onUpdateHka={(hka) => { setSimpleMobilePanel(null); handleUpdateHka(hka); }}
+                        onToggleHkaSide={updateHkaSideById}
+                        getHkaMeasurement={getHkaMeasurementLabel}
+                        onRenameHka={renameHkaById}
+                        onChangeHkaColor={changeHkaColorById}
+                        onChangeHkaStroke={changeHkaStrokeById}
                         /* ImplantLayer */
                         implantItems={LOCAL_IMPLANT_LIBRARY}
                         selectedImplantType={selectedImplantType}
@@ -32450,6 +32848,17 @@ export default function XrayCalibrationWorkspace({
                                 </svg>
                                 Estimator Implan
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => { setSimpleMobilePanel(null); setPreOpSummaryOpen(true); }}
+                                className="col-span-2 flex items-center justify-center gap-1.5 min-h-11 rounded-2xl border border-cyan-200 bg-cyan-50 px-2.5 text-[10px] font-black text-cyan-700"
+                              >
+                                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                                  <rect x="2" y="1.5" width="12" height="13" rx="2"/>
+                                  <path d="M5 5.5h6M5 8h6M5 10.5h4"/>
+                                </svg>
+                                Ringkasan Pre-Op
+                              </button>
                             </div>
                           </div>
 
@@ -32512,7 +32921,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                         {/* Templating wizard trigger */}
                         <button type="button"
-                          onClick={() => { setSimpleMobilePanel(null); setTemplatingWizardOpen(true); setWizardStep(1); setWizardProcedure(null); }}
+                          onClick={() => { setSimpleMobilePanel(null); openTemplatingWizard(); }}
                           className="flex w-full items-center gap-3 rounded-[18px] border border-cyan-300/70 bg-[linear-gradient(135deg,#ecfeff,#cffafe)] px-3 py-2.5 shadow-[2px_2px_8px_rgba(6,182,212,0.18)]">
                           <svg className="h-5 w-5 shrink-0 text-cyan-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M9 3h6l1 4H8L9 3z"/><rect x="6" y="7" width="12" height="2" rx="1"/>
@@ -32624,7 +33033,7 @@ export default function XrayCalibrationWorkspace({
                         { n: 1, label: "Upload X-ray", sub: "AP weight-bearing, full-leg / pelvis", action: () => mainUploadInputRef.current?.click(), color: "#0f172a" },
                         { n: 2, label: "Kalibrasi Skala", sub: "Ruler marker atau bola kalibrasi", action: () => openSimpleCalibrationModal(), color: "#0891b2" },
                         { n: 3, label: "Pengukuran", sub: "HKA, LDFA, MPTA, offset", action: null, color: "#7c3aed" },
-                        { n: 4, label: "Templating", sub: "Pilih prosedur & pasang implant", highlight: true, action: () => { setWorkflowOverlayDismissed(true); setTemplatingWizardOpen(true); setWizardStep(1); setWizardProcedure(null); setWizardStemId(null); setWizardCupId(null); }, color: "#0891b2" },
+                        { n: 4, label: "Templating", sub: "Pilih prosedur & pasang implant", highlight: true, action: () => { setWorkflowOverlayDismissed(true); openTemplatingWizard(true); }, color: "#0891b2" },
                         { n: 5, label: "Simpan & Export", sub: "Drive, PDF, PNG", action: null, color: "#059669" },
                       ].map(({ n, label, sub, action, color, highlight }) => (
                         <div key={n} className={`flex items-center gap-3 rounded-[16px] border px-3 py-2 ${highlight ? "border-cyan-300/70 bg-[linear-gradient(135deg,#ecfeff,#cffafe)]" : "border-white/60 bg-white/30"}`}>
@@ -33731,6 +34140,44 @@ export default function XrayCalibrationWorkspace({
                   ) : null}
                 </motion.div>
               ) : null}
+
+                {/* ── Workflow progress pill (bottom-right, above mobile nav) ── */}
+                {isSimpleUiMode && (
+                  <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+108px)] right-3 z-[96] lg:bottom-6 lg:right-4">
+                    <WorkflowProgress
+                      steps={workflowSteps}
+                      onOpenSummary={() => setPreOpSummaryOpen(true)}
+                    />
+                  </div>
+                )}
+
+                {/* ── Smart hint banner (centered above mobile nav) ── */}
+                {isSimpleUiMode && (
+                  <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+108px)] left-0 right-0 z-[95] flex justify-center px-4 lg:bottom-6 lg:left-4 lg:right-auto lg:justify-start">
+                    <div className="pointer-events-auto w-full max-w-[min(calc(100%-56px),380px)] lg:max-w-[340px]">
+                      <SmartHintBanner hint={smartHint} />
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Pre-op summary modal ── */}
+                {preOpSummaryOpen && (
+                  <PreOpSummaryModal
+                    open={preOpSummaryOpen}
+                    onClose={() => setPreOpSummaryOpen(false)}
+                    onExportPng={image ? exportReportPng : undefined}
+                    onExportPdf={image ? exportReportPdf : undefined}
+                    workflowSteps={workflowSteps}
+                    hkaSets={hkaSets}
+                    lines={lines.filter((l) => l.id !== calibrationLineId)}
+                    cutLayers={cutLayers}
+                    getHkaMeasurement={getHkaMeasurementLabel}
+                    getMeasurement={(line) => {
+                      const px = getLineLength(line);
+                      return px > 0 ? formatMeasurementFromPx(px) : null;
+                    }}
+                  />
+                )}
 
                 <MobileNavigation
                   className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 px-2 lg:hidden"

@@ -46,6 +46,17 @@ export default function ManagerPanel({
   getLineLength,
   formatMeasurementFromPx,
   lineTypeLabel,
+  /* HKA (passed to LineManager) */
+  hkaSets = [],
+  selectedHkaId = null,
+  onSelectHka,
+  onDeleteHka,
+  onUpdateHka,
+  onToggleHkaSide,
+  getHkaMeasurement,
+  onRenameHka,
+  onChangeHkaColor,
+  onChangeHkaStroke,
   /* ImplantLayer */
   implantItems = [],
   selectedImplantType = "cup",
@@ -163,6 +174,16 @@ export default function ManagerPanel({
             getLineLength={getLineLength}
             formatMeasurementFromPx={formatMeasurementFromPx}
             lineTypeLabel={lineTypeLabel}
+            hkaSets={hkaSets}
+            selectedHkaId={selectedHkaId}
+            onSelectHka={onSelectHka}
+            onDeleteHka={onDeleteHka}
+            onUpdateHka={onUpdateHka}
+            onToggleHkaSide={onToggleHkaSide}
+            getHkaMeasurement={getHkaMeasurement}
+            onRenameHka={onRenameHka}
+            onChangeHkaColor={onChangeHkaColor}
+            onChangeHkaStroke={onChangeHkaStroke}
             maxHeightClass="max-h-[min(38vh,320px)]"
           />
         )}
