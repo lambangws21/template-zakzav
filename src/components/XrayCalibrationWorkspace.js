@@ -4208,19 +4208,15 @@ function CupAssessmentOverlayInline({ onClose }) {
     if (dragging === "center") { setCx(p.x); setCy(p.y); return; }
     if (dragging === "top" || dragging === "bottom") {
       const dx = p.x - cx, dy = p.y - cy;
-      const newA = Math.sqrt(dx * dx + dy * dy);
-      // ensure a always stays larger than b to keep anteversion < 90°
-      setA(prev => Math.max(b + 8, newA));
+      setA(Math.max(8, Math.sqrt(dx * dx + dy * dy)));
       setAngle(dragging === "top" ? Math.atan2(dy, dx) + Math.PI : Math.atan2(dy, dx));
       return;
     }
     if (dragging === "left" || dragging === "right") {
       const dx = p.x - cx, dy = p.y - cy;
-      const proj = Math.abs(dx * sin - dy * cos);
-      // clamp b < a so anteversion never reaches 90°
-      setB(Math.max(4, Math.min(a - 8, proj)));
+      setB(Math.max(4, Math.abs(dx * sin - dy * cos)));
     }
-  }, [dragging, cx, cy, a, b, cos, sin, svgPt]);
+  }, [dragging, cx, cy, cos, sin, svgPt]);
 
   const onPU = useCallback(() => setDragging(null), []);
 
@@ -4275,10 +4271,10 @@ function CupAssessmentOverlayInline({ onClose }) {
   }, [cx, cy, a, b, cos, sin]);
 
   // Inclination: angle of major axis vs horizontal, normalised 0–90°
-  const rawDeg = (angle * 180) / Math.PI;
-  const inclination = Math.min(90, Math.abs(((rawDeg % 180) + 180) % 180 > 90 ? 180 - (((rawDeg % 180) + 180) % 180) : ((rawDeg % 180) + 180) % 180));
-  // Anteversion: radiographic = arcsin(b/a), b always < a so ratio < 1
-  const ratio = Math.min(0.9999, Math.abs(b / a));
+  const rawDeg = ((angle * 180) / Math.PI % 180 + 180) % 180;
+  const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
+  // Anteversion: radiographic arcsin(b/a), capped < 90° for display
+  const ratio = a > 0 ? Math.min(0.9999, Math.abs(b / a)) : 0;
   const anteversion = (Math.asin(ratio) * 180) / Math.PI;
   const zone = cupZoneStatus(inclination, anteversion);
 
