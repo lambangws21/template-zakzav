@@ -46,6 +46,7 @@ async function generatePreOpPDF({
   canvasDataUrl,
   imageName,
   prefillCase = null,
+  cupAssessment = null,
 }) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -215,6 +216,49 @@ async function generatePreOpPDF({
       cursor += 13;
     }
     cursor += 2;
+  }
+
+  // ════════════════════════════════════════════════
+  // CUP ASSESSMENT (acetabular cup positioning)
+  // ════════════════════════════════════════════════
+  if (cupAssessment) {
+    addNewPageIfNeeded(30);
+    const AMBER = [245, 158, 11];
+    setFill(AMBER);
+    roundRect(doc, MARGIN, cursor, CONTENT_W, 8, 2);
+    setFont(8, "bold");
+    setColor(WHITE);
+    doc.text("PENILAIAN POSISI CUP ACETABULAR", MARGIN + 4, cursor + 5.5);
+    cursor += 11;
+
+    const cupInc = parseFloat(cupAssessment.inclination).toFixed(1);
+    const cupAv = parseFloat(cupAssessment.anteversion).toFixed(1);
+    const cupSide = cupAssessment.side === "left" ? "Kiri" : "Kanan";
+    const halfW = (CONTENT_W - 2) / 2;
+
+    // Row 1: Inclination + Anteversion
+    setFill(LIGHT);
+    roundRect(doc, MARGIN, cursor, halfW, 14, 2);
+    roundRect(doc, MARGIN + halfW + 2, cursor, halfW, 14, 2);
+    setFont(7, "normal"); setColor([100, 116, 139]);
+    doc.text("Inklinasi", MARGIN + 4, cursor + 5);
+    doc.text("Anteversion", MARGIN + halfW + 6, cursor + 5);
+    setFont(12, "bold"); setColor([245, 158, 11]);
+    doc.text(`${cupInc}°`, MARGIN + 4, cursor + 12);
+    setColor([14, 165, 233]);
+    doc.text(`${cupAv}°`, MARGIN + halfW + 6, cursor + 12);
+    cursor += 17;
+
+    // Row 2: side + zone
+    setFill(LIGHT);
+    roundRect(doc, MARGIN, cursor, CONTENT_W, 10, 2);
+    setFont(8, "bold"); setColor(NAVY);
+    doc.text(`Sisi: ${cupSide}  •  Status: ${cupAssessment.zone || "—"}`, MARGIN + 4, cursor + 6.5);
+    if (cupAssessment.savedAt) {
+      setFont(6, "normal"); setColor([148, 163, 184]);
+      doc.text(`Disimpan: ${cupAssessment.savedAt}`, MARGIN + CONTENT_W - 4, cursor + 6.5, { align: "right" });
+    }
+    cursor += 13;
   }
 
   // ════════════════════════════════════════════════
@@ -517,6 +561,7 @@ export default function PreOpReportModal({
   selectedImplantLibraryItem = null,
   getCanvasSnapshot,
   getHkaMeasurementResult,
+  cupAssessment = null,
   // Optional: pre-fill from a saved patient case
   prefillCase = null,
 }) {
@@ -588,6 +633,7 @@ export default function PreOpReportModal({
         canvasDataUrl,
         imageName,
         prefillCase,
+        cupAssessment,
       });
 
       if (print) {
@@ -754,6 +800,30 @@ export default function PreOpReportModal({
                           {h.label} • {h.deviation}° {h.direction.toUpperCase()}
                         </span>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Cup Assessment */}
+                  {cupAssessment && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-1.5">
+                      <p className="text-[8px] font-black uppercase tracking-wider text-amber-600">⊙ Cup Assessment</p>
+                      <div className="flex gap-2 flex-wrap">
+                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-black text-amber-800">
+                          INC {parseFloat(cupAssessment.inclination).toFixed(1)}°
+                        </span>
+                        <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-black text-sky-800">
+                          AV {parseFloat(cupAssessment.anteversion).toFixed(1)}°
+                        </span>
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black ${cupAssessment.side === "left" ? "bg-sky-100 text-sky-700" : "bg-orange-100 text-orange-700"}`}>
+                          {cupAssessment.side === "left" ? "◁ Kiri" : "Kanan ▷"}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[9px] font-bold text-slate-600">
+                          {cupAssessment.zone}
+                        </span>
+                      </div>
+                      {cupAssessment.savedAt && (
+                        <p className="text-[8px] text-amber-400">Disimpan pukul {cupAssessment.savedAt}</p>
+                      )}
                     </div>
                   )}
 

@@ -165,6 +165,8 @@ export default function QuickPanel({
   onPreOpReport,
   onPatientCases,
   onImplantEstimator,
+  onCupAssessment,
+  cupAssessmentActive = false,
   lines = [],
   selectedLineId = null,
   onSelectLine,

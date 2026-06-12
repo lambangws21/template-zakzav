@@ -23,6 +23,19 @@ import { useState } from "react";
 
 // ─── icon + color maps ────────────────────────────────────────────────────────
 
+// Cup Assessment SVG icon component
+function CupIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="12" y1="7" x2="12" y2="17"/>
+      <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+      <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+    </svg>
+  );
+}
+
 const TOOL_ICON_MAP = {
   draw: PenTool,
   pan: Move,
@@ -36,6 +49,7 @@ const TOOL_ICON_MAP = {
   guideBuilder: Grid,
   annotation: MessageSquare,
   imageProcess: Activity,
+  cupAssessment: CupIcon,
 };
 
 // active bg + text + glow
@@ -49,8 +63,9 @@ const TOOL_ACCENT = {
   circle:       { bg: "bg-violet-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(139,92,246,0.55)]" },
   hkaAuto:      { bg: "bg-purple-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(168,85,247,0.55)]" },
   guideBuilder: { bg: "bg-teal-500",    text: "text-white", glow: "shadow-[0_0_12px_rgba(20,184,166,0.55)]" },
-  annotation:   { bg: "bg-orange-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(249,115,22,0.55)]" },
-  imageProcess: { bg: "bg-sky-600",     text: "text-white", glow: "shadow-[0_0_12px_rgba(2,132,199,0.55)]" },
+  annotation:    { bg: "bg-orange-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(249,115,22,0.55)]" },
+  imageProcess:  { bg: "bg-sky-600",     text: "text-white", glow: "shadow-[0_0_12px_rgba(2,132,199,0.55)]" },
+  cupAssessment: { bg: "bg-amber-500",   text: "text-white", glow: "shadow-[0_0_12px_rgba(245,158,11,0.55)]" },
 };
 
 const IDLE_ICON_COLOR = {
@@ -58,6 +73,7 @@ const IDLE_ICON_COLOR = {
   freeLine: "text-emerald-400", freeLinePoint: "text-indigo-400",
   angle: "text-amber-400", circle: "text-violet-400", hkaAuto: "text-purple-400",
   guideBuilder: "text-teal-400", annotation: "text-orange-400", imageProcess: "text-sky-500",
+  cupAssessment: "text-amber-400",
 };
 
 // ─── grouping ─────────────────────────────────────────────────────────────────
@@ -191,6 +207,8 @@ export default function PanelActions({
   onRedo,
   canUndo = true,
   canRedo = true,
+  onCupAssessment,
+  cupAssessmentActive = false,
 }) {
   const groups = groupTools(tools);
 
@@ -200,10 +218,12 @@ export default function PanelActions({
       : activeTool === item.key,
   );
 
-  const isItemActive = (item) =>
-    item.freeLineMode
+  const isItemActive = (item) => {
+    if (item.key === "cupAssessment") return cupAssessmentActive;
+    return item.freeLineMode
       ? activeTool === "freeLine" && activeFreeLineMode === item.freeLineMode
       : activeTool === item.key;
+  };
 
   return (
     <motion.div
