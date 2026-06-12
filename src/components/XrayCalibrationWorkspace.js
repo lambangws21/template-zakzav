@@ -4168,6 +4168,7 @@ function CupAssessmentOverlayInline({ onClose }) {
   const [dragging, setDragging] = useState(null);
   const [handleSize, setHandleSize] = useState("small"); // "small" | "normal"
   const [minimized, setMinimized] = useState(false);
+  const [side, setSide] = useState("right"); // "left" | "right" hip
 
   const W = typeof window !== "undefined" ? window.innerWidth : 800;
   const H = typeof window !== "undefined" ? window.innerHeight : 600;
@@ -4324,6 +4325,7 @@ function CupAssessmentOverlayInline({ onClose }) {
         React.createElement("svg", { viewBox: "0 0 24 24", style: { width: 14, height: 14, flexShrink: 0 }, fill: "none", stroke: "#f97316", strokeWidth: 2 },
           React.createElement("ellipse", { cx: 12, cy: 12, rx: 9, ry: 5, strokeDasharray: "3 1.5" }),
         ),
+        React.createElement("span", { style: { fontSize: 9, fontWeight: 900, padding: "1px 6px", borderRadius: 6, background: side === "left" ? "rgba(14,165,233,0.2)" : "rgba(249,115,22,0.2)", color: side === "left" ? "#38bdf8" : "#fb923c" } }, side === "left" ? "KIRI" : "KANAN"),
         // Values
         React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: inclination >= 30 && inclination <= 50 ? "#4ade80" : "#f87171", letterSpacing: "0.02em" } },
           `INC ${inclination.toFixed(1)}°`),
@@ -4417,7 +4419,10 @@ function CupAssessmentOverlayInline({ onClose }) {
     },
       // Header
       React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", borderBottom: "1px solid rgba(0,0,0,0.1)", background: "rgba(255,255,255,0.9)" } },
-        React.createElement("span", { style: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: "#334155" } }, "⊙ Cup Assessment"),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+          React.createElement("span", { style: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: "#334155" } }, "⊙ Cup Assessment"),
+          React.createElement("span", { style: { fontSize: 9, fontWeight: 800, padding: "1px 7px", borderRadius: 8, background: side === "left" ? "#e0f2fe" : "#fff7ed", color: side === "left" ? "#0284c7" : "#ea580c" } }, side === "left" ? "KIRI" : "KANAN"),
+        ),
         React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
           // Minimize button
           React.createElement("button", {
@@ -4433,6 +4438,27 @@ function CupAssessmentOverlayInline({ onClose }) {
         React.createElement("div", { style: { padding: "6px 10px", borderRadius: 10, background: zone.bg, border: `1.5px solid ${zone.border}` } },
           React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: zone.color } }, zone.label),
         ),
+        // Side toggle — kiri / kanan
+        React.createElement("div", { style: { display: "flex", borderRadius: 12, overflow: "hidden", border: "1.5px solid #e2e8f0", background: "white" } },
+          ...[
+            { v: "left",  label: "◁ Kiri",  color: "#0ea5e9" },
+            { v: "right", label: "Kanan ▷", color: "#f97316" },
+          ].map(({ v, label, color }) =>
+            React.createElement("button", {
+              key: v,
+              onClick: () => setSide(v),
+              style: {
+                flex: 1, padding: "6px 0", border: "none", cursor: "pointer",
+                fontSize: 10, fontWeight: 900, letterSpacing: "0.04em",
+                transition: "all 0.15s",
+                background: side === v ? color : "transparent",
+                color: side === v ? "white" : "#94a3b8",
+                borderRight: v === "left" ? "1.5px solid #e2e8f0" : "none",
+              }
+            }, label)
+          ),
+        ),
+
         // Handle size toggle
         React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: 10, background: "rgba(255,255,255,0.7)", border: "1px solid #e2e8f0" } },
           React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: "#475569" } }, "Ukuran titik"),
