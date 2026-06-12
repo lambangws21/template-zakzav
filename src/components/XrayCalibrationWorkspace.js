@@ -26697,28 +26697,6 @@ export default function XrayCalibrationWorkspace({
             </button>
           ) : null}
 
-          {/* ── Cup Assessment button (simple UI desktop) ── */}
-          {isSimpleUiMode ? (
-            <button
-              type="button"
-              onClick={() => setShowCupAssessment(v => !v)}
-              title="Cup Assessment — Inclination & Anteversion"
-              className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition ${
-                showCupAssessment
-                  ? "bg-orange-500 text-white shadow-md"
-                  : `${SOFT_RAISED_CLASS} text-slate-700 hover:text-slate-950`
-              }`}
-            >
-              <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-                <line x1="3" y1="12" x2="21" y2="12"/>
-                <line x1="12" y1="7" x2="12" y2="17"/>
-                <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-                <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-              </svg>
-              <span>Cup Assessment</span>
-            </button>
-          ) : null}
 
           {isSimpleUiMode ? (
             <details className="group relative">
@@ -27284,25 +27262,6 @@ export default function XrayCalibrationWorkspace({
                 {isLeftSidebarCompact ? null : "Estimator Ukuran Implan"}
               </button>
 
-              {/* Cup Assessment — acetabular inclination & anteversion */}
-              <button
-                type="button"
-                onClick={() => setShowCupAssessment(v => !v)}
-                className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-xs font-black transition active:scale-[0.98] ${
-                  showCupAssessment
-                    ? "border-orange-300 bg-orange-500 text-white shadow-md"
-                    : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
-                }`}
-              >
-                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-                  <line x1="3" y1="12" x2="21" y2="12"/>
-                  <line x1="12" y1="7" x2="12" y2="17"/>
-                  <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-                  <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-                </svg>
-                {isLeftSidebarCompact ? null : "Cup Assessment"}
-              </button>
 
               {/* Baris 2: Simpan ke Drive */}
               {!isLeftSidebarCompact ? (
@@ -27391,12 +27350,6 @@ export default function XrayCalibrationWorkspace({
                 active={tool === "freeLine" && freeLineMode === "point"}
               />
             </div>
-              <ToolIconButton
-                icon="angle"
-                label="Angle Tool"
-                onClick={() => handleToolChange("angle")}
-                active={tool === "angle"}
-              />
               <ToolIconButton
                 icon="annotation"
                 label="Annotation"
@@ -29391,13 +29344,6 @@ export default function XrayCalibrationWorkspace({
                   label="Point Mode"
                   onClick={() => activateFreeLineMode("point")}
                   active={tool === "freeLine" && freeLineMode === "point"}
-                  className="h-9 w-full"
-                />
-                <ToolIconButton
-                  icon="angle"
-                  label="Angle Tool"
-                  onClick={() => handleToolChange("angle")}
-                  active={tool === "angle"}
                   className="h-9 w-full"
                 />
                 <ToolIconButton
@@ -32990,6 +32936,8 @@ export default function XrayCalibrationWorkspace({
                       onRedo={redoHistory}
                       canUndo={historyState.undo > 0}
                       canRedo={historyState.redo > 0}
+                      onCupAssessment={() => setShowCupAssessment(v => !v)}
+                      cupAssessmentActive={showCupAssessment}
                     />
                   )}
                   </AnimatePresence>
@@ -33072,6 +33020,8 @@ export default function XrayCalibrationWorkspace({
                         }}
                         canUndo={historyState.undo > 0}
                         canRedo={historyState.redo > 0}
+                        onCupAssessment={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
+                        cupAssessmentActive={showCupAssessment}
                       />
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
@@ -33210,21 +33160,6 @@ export default function XrayCalibrationWorkspace({
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                 </svg>
                                 Estimator Implan
-                              </button>
-                              {/* Cup Assessment — simple UI mobile */}
-                              <button
-                                type="button"
-                                onClick={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
-                                className={`flex items-center gap-1.5 min-h-11 rounded-2xl border px-2.5 text-[10px] font-black transition ${showCupAssessment ? "border-orange-300 bg-orange-500 text-white" : "border-orange-200 bg-orange-50 text-orange-700"}`}
-                              >
-                                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-                                  <line x1="3" y1="12" x2="21" y2="12"/>
-                                  <line x1="12" y1="7" x2="12" y2="17"/>
-                                  <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-                                  <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-                                </svg>
-                                Cup Assessment
                               </button>
                               <button
                                 type="button"
