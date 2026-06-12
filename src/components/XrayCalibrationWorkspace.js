@@ -20458,6 +20458,7 @@ export default function XrayCalibrationWorkspace({
     },
     { icon: "hka", label: "HKA", desc: "axis knee", key: "hkaAuto" },
     { icon: "guideBuilder", label: "Guide", desc: "parallel", key: "guideBuilder" },
+    { icon: "cupAssessment", label: "Cup Assess", desc: "incl & AV", key: "cupAssessment", action: "cupAssessment" },
   ];
   const mobileNavigationTabs = [
     {
@@ -32921,18 +32922,16 @@ export default function XrayCalibrationWorkspace({
                       activeTool={tool}
                       activeFreeLineMode={freeLineMode}
                       onMinimize={() => setSimpleToolPanelMinimized(true)}
-                      onSelectTool={(item) =>
-                        item.action === "imageProcessing"
-                          ? openImageProcessingModal()
-                          : item.freeLineMode
-                            ? activateFreeLineMode(item.freeLineMode)
-                            : handleToolChange(item.key)
-                      }
+                      onSelectTool={(item) => {
+                        if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
+                        if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
+                        if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
+                        handleToolChange(item.key);
+                      }}
                       onUndo={undoHistory}
                       onRedo={redoHistory}
                       canUndo={historyState.undo > 0}
                       canRedo={historyState.redo > 0}
-                      onCupAssessment={() => setShowCupAssessment(v => !v)}
                       cupAssessmentActive={showCupAssessment}
                     />
                   )}
@@ -32994,16 +32993,11 @@ export default function XrayCalibrationWorkspace({
                         activeFreeLineMode={freeLineMode}
                         onMinimize={() => setSimpleMobilePanel(null)}
                           onSelectTool={(item) => {
-                            setSimpleMobilePanel(null);
-                            setMobileCanvasMode("edit");
-                          if (item.action === "imageProcessing") {
-                            openImageProcessingModal();
-                            return;
-                          }
-                            if (item.freeLineMode) {
-                              activateFreeLineMode(item.freeLineMode);
-                              return;
-                          }
+                          setSimpleMobilePanel(null);
+                          setMobileCanvasMode("edit");
+                          if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
+                          if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
+                          if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
                           handleToolChange(item.key);
                         }}
                         onUndo={() => {
