@@ -4175,8 +4175,10 @@ function CupAssessmentOverlayInline({ onClose }) {
 
   const [cx, setCx] = useState(W * 0.35);
   const [cy, setCy] = useState(H * 0.45);
-  const [a, setA] = useState(Math.min(W, H) * 0.16);
-  const [b, setB] = useState(Math.min(W, H) * 0.07);
+  const initA = Math.min(W, H) * 0.16;
+  const [a, setA] = useState(initA);
+  // b = a × sin(15°) → anteversion default ~15°
+  const [b, setB] = useState(initA * 0.259);
   const [angle, setAngle] = useState((40 * Math.PI) / 180);
 
   const cos = Math.cos(angle), sin = Math.sin(angle);
@@ -4208,15 +4210,20 @@ function CupAssessmentOverlayInline({ onClose }) {
     if (dragging === "center") { setCx(p.x); setCy(p.y); return; }
     if (dragging === "top" || dragging === "bottom") {
       const dx = p.x - cx, dy = p.y - cy;
-      setA(Math.max(8, Math.sqrt(dx * dx + dy * dy)));
+      const newA = Math.max(12, Math.sqrt(dx * dx + dy * dy));
+      setA(newA);
+      // jika a mengecil sampai di bawah b, ikut kecilkan b agar rasio tetap valid
+      setB(prev => Math.min(prev, newA * 0.9));
       setAngle(dragging === "top" ? Math.atan2(dy, dx) + Math.PI : Math.atan2(dy, dx));
       return;
     }
     if (dragging === "left" || dragging === "right") {
       const dx = p.x - cx, dy = p.y - cy;
-      setB(Math.max(4, Math.abs(dx * sin - dy * cos)));
+      const proj = Math.abs(dx * sin - dy * cos);
+      // cap b di 90% dari a supaya anteversion max ~64°, tidak mentok 89°
+      setB(Math.max(4, Math.min(a * 0.9, proj)));
     }
-  }, [dragging, cx, cy, cos, sin, svgPt]);
+  }, [dragging, cx, cy, a, cos, sin, svgPt]);
 
   const onPU = useCallback(() => setDragging(null), []);
 
