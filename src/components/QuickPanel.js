@@ -165,6 +165,8 @@ export default function QuickPanel({
   onPreOpReport,
   onPatientCases,
   onImplantEstimator,
+  onCupAssessment,
+  cupAssessmentActive = false,
   lines = [],
   selectedLineId = null,
   onSelectLine,
@@ -376,6 +378,28 @@ export default function QuickPanel({
                   <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-1.5">
                     <Btn icon={Users} iconCls="text-purple-500" onClick={onPatientCases} className="py-2">Kasus Pasien</Btn>
                     <Btn icon={Zap} iconCls="text-teal-500" onClick={onImplantEstimator} className="py-2">Estimator</Btn>
+                  </motion.div>
+                  {/* Cup Assessment */}
+                  <motion.div variants={STAGGER_ITEM}>
+                    <motion.button
+                      type="button"
+                      onClick={onCupAssessment}
+                      whileTap={{ scale: 0.97 }}
+                      className={`flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-[10px] font-black transition active:scale-[0.97] ${
+                        cupAssessmentActive
+                          ? "bg-orange-500 text-white shadow-[0_3px_12px_rgba(249,115,22,0.4)]"
+                          : "border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                      }`}
+                    >
+                      <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <line x1="12" y1="7" x2="12" y2="17"/>
+                        <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+                        <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+                      </svg>
+                      Cup Assessment {cupAssessmentActive ? "● Aktif" : "— Incl & AV"}
+                    </motion.button>
                   </motion.div>
 
                   {/* Divider */}

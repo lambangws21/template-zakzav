@@ -4167,6 +4167,7 @@ function CupAssessmentOverlayInline({ onClose }) {
   const svgRef = useRef(null);
   const [dragging, setDragging] = useState(null);
   const [handleSize, setHandleSize] = useState("small"); // "small" | "normal"
+  const [minimized, setMinimized] = useState(false);
 
   const W = typeof window !== "undefined" ? window.innerWidth : 800;
   const H = typeof window !== "undefined" ? window.innerHeight : 600;
@@ -4254,6 +4255,55 @@ function CupAssessmentOverlayInline({ onClose }) {
   const avLabelX  = handles.right.x - 16 * sin - 8;
   const avLabelY  = handles.right.y + 16 * cos + 8;
 
+  // ── Minimized chip — shows only INC/AV values, SVG non-interactive ──
+  if (minimized) {
+    return React.createElement("div", { style: { position: "absolute", inset: 0, zIndex: 80, pointerEvents: "none" } },
+      // Dim ellipse still visible but non-interactive
+      React.createElement("svg", {
+        ref: svgRef, width: W, height: H, viewBox: `0 0 ${W} ${H}`,
+        style: { position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.35 },
+      },
+        React.createElement("line", { x1: 0, y1: cy, x2: W, y2: cy, stroke: "#facc15", strokeWidth: 1, strokeDasharray: "10 5" }),
+        React.createElement("path", { d: ePath, fill: "none", stroke: "#f97316", strokeWidth: 2 }),
+        React.createElement("path", { d: ePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.5, strokeDasharray: "4 2" }),
+      ),
+      // Floating chip (bottom-left, above toolbar)
+      React.createElement("div", {
+        style: {
+          position: "fixed", bottom: 96, left: 16, zIndex: 85,
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 14px", borderRadius: 24,
+          background: "rgba(15,23,42,0.88)", backdropFilter: "blur(10px)",
+          border: `1.5px solid ${zone.border}`,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.28)",
+          pointerEvents: "auto", cursor: "default",
+          fontFamily: "system-ui,sans-serif",
+        }
+      },
+        // Ellipse icon
+        React.createElement("svg", { viewBox: "0 0 24 24", style: { width: 14, height: 14, flexShrink: 0 }, fill: "none", stroke: "#f97316", strokeWidth: 2 },
+          React.createElement("ellipse", { cx: 12, cy: 12, rx: 9, ry: 5, strokeDasharray: "3 1.5" }),
+        ),
+        // Values
+        React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: inclination >= 30 && inclination <= 50 ? "#4ade80" : "#f87171", letterSpacing: "0.02em" } },
+          `INC ${inclination.toFixed(1)}°`),
+        React.createElement("span", { style: { width: 1, height: 12, background: "rgba(255,255,255,0.2)", flexShrink: 0 } }),
+        React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: anteversion >= 5 && anteversion <= 25 ? "#22d3ee" : "#f87171", letterSpacing: "0.02em" } },
+          `AV ${anteversion.toFixed(1)}°`),
+        // Restore button
+        React.createElement("button", {
+          onClick: () => setMinimized(false),
+          style: { marginLeft: 4, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 8, padding: "2px 7px", fontSize: 9, fontWeight: 900, color: "white", cursor: "pointer", letterSpacing: "0.05em" }
+        }, "BUKA"),
+        // Close button
+        React.createElement("button", {
+          onClick: onClose,
+          style: { background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 14, fontWeight: 900, padding: "0 2px", lineHeight: 1 }
+        }, "✕"),
+      ),
+    );
+  }
+
   return React.createElement("div", {
     style: { position: "absolute", inset: 0, zIndex: 80, pointerEvents: "none" }
   },
@@ -4324,7 +4374,15 @@ function CupAssessmentOverlayInline({ onClose }) {
       // Header
       React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", borderBottom: "1px solid rgba(0,0,0,0.1)", background: "rgba(255,255,255,0.9)" } },
         React.createElement("span", { style: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: "#334155" } }, "⊙ Cup Assessment"),
-        React.createElement("button", { onClick: onClose, style: { background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16, fontWeight: 900, lineHeight: 1, padding: "0 2px" } }, "✕"),
+        React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+          // Minimize button
+          React.createElement("button", {
+            onClick: () => setMinimized(true),
+            title: "Minimize — tetap bisa gambar line",
+            style: { background: "rgba(241,245,249,1)", border: "1px solid #e2e8f0", borderRadius: 7, cursor: "pointer", color: "#64748b", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: "2px 7px" }
+          }, "—"),
+          React.createElement("button", { onClick: onClose, style: { background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16, fontWeight: 900, lineHeight: 1, padding: "0 2px" } }, "✕"),
+        ),
       ),
       React.createElement("div", { style: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } },
         // Zone badge
@@ -32883,6 +32941,8 @@ export default function XrayCalibrationWorkspace({
                       onPreOpReport={() => setPreOpReportModalOpen(true)}
                       onPatientCases={() => setPatientCaseManagerOpen(true)}
                       onImplantEstimator={() => setImplantSizePanelOpen(true)}
+                      onCupAssessment={() => setShowCupAssessment(v => !v)}
+                      cupAssessmentActive={showCupAssessment}
                       lines={lines.filter((l) => l.id !== calibrationLineId)}
                       selectedLineId={selectedLineId}
                       onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
