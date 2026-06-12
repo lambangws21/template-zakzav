@@ -314,72 +314,32 @@ export default function PanelActions({
                   ))}
                 </div>
               )}
-              {/* Cup Assessment card — after Planning group */}
+              {/* Cup Assessment — same style as ToolBtn fullWidth */}
               {group.key === "Planning" && onCupAssessment && (
                 <motion.button
                   variants={ITEM_V}
                   type="button"
                   onClick={onCupAssessment}
-                  whileHover={{ scale: 1.025, y: -1 }}
-                  whileTap={{ scale: 0.96 }}
-                  animate={cupAssessmentActive
-                    ? { boxShadow: ["0 3px 12px rgba(249,115,22,0.35)", "0 5px 20px rgba(249,115,22,0.55)", "0 3px 12px rgba(249,115,22,0.35)"] }
-                    : { boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }
-                  }
-                  transition={cupAssessmentActive ? { boxShadow: { repeat: Infinity, duration: 2, ease: "easeInOut" } } : {}}
-                  className={`relative w-full overflow-hidden rounded-2xl border text-left transition-colors ${
+                  {...TAP}
+                  layout
+                  className={`relative flex w-full flex-row items-center justify-start gap-2.5 rounded-2xl px-3 py-2.5 transition-all ${
                     cupAssessmentActive
-                      ? "border-orange-300 bg-gradient-to-br from-orange-500 to-orange-600 text-white"
-                      : "border-slate-200/80 bg-white/70 text-slate-700 hover:border-orange-200 hover:bg-orange-50/60"
+                      ? "bg-amber-500 shadow-[0_0_14px_rgba(245,158,11,0.5)] text-white"
+                      : "border border-white/70 bg-white/60 shadow-[2px_2px_5px_rgba(148,163,184,0.22),-1px_-1px_3px_rgba(255,255,255,0.9)] hover:bg-white/90 text-slate-600"
                   }`}
                 >
-                  {/* Subtle pattern overlay when active */}
-                  {cupAssessmentActive && (
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute inset-0 opacity-10"
-                      style={{ backgroundImage: "radial-gradient(circle at 70% 30%, white 1px, transparent 1px)", backgroundSize: "14px 14px" }}
-                    />
-                  )}
-
-                  <span className="relative flex items-center gap-2.5 px-3 py-2.5">
-                    {/* Icon badge */}
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
-                      cupAssessmentActive
-                        ? "bg-white/20"
-                        : "bg-gradient-to-br from-orange-100 to-amber-100 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]"
-                    }`}>
-                      <svg
-                        className={`h-4 w-4 ${cupAssessmentActive ? "text-white" : "text-orange-500"}`}
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
-                      >
-                        <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-                        <line x1="3" y1="12" x2="21" y2="12"/>
-                        <line x1="12" y1="7" x2="12" y2="17"/>
-                        <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-                        <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-                      </svg>
-                    </span>
-
-                    {/* Labels */}
-                    <span className="flex min-w-0 flex-col">
-                      <span className={`text-[10px] font-black leading-tight ${cupAssessmentActive ? "text-white" : "text-slate-800"}`}>
-                        Cup Assessment
-                      </span>
-                      <span className={`text-[8px] font-semibold leading-tight ${cupAssessmentActive ? "text-orange-100" : "text-slate-400"}`}>
-                        {cupAssessmentActive ? "● Aktif — ketuk untuk tutup" : "Incl & Anteversion"}
-                      </span>
-                    </span>
-
-                    {/* Live indicator dot */}
-                    {cupAssessmentActive && (
-                      <motion.span
-                        animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
-                        transition={{ repeat: Infinity, duration: 1.4, ease: "easeInOut" }}
-                        className="ml-auto h-2 w-2 shrink-0 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]"
-                      />
-                    )}
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${
+                    cupAssessmentActive ? "" : "bg-slate-50/80 shadow-inner text-amber-400"
+                  }`}>
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+                      <line x1="3" y1="12" x2="21" y2="12"/>
+                      <line x1="12" y1="7" x2="12" y2="17"/>
+                      <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+                      <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+                    </svg>
                   </span>
+                  <span className="text-[10px] font-bold leading-none truncate">Cup Assessment</span>
                 </motion.button>
               )}
             </motion.div>
