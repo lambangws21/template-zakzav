@@ -4238,6 +4238,37 @@ function CupAssessmentOverlayInline({ onClose }) {
     return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z";
   }, [cx, cy, a, b, cos, sin]);
 
+  // Cup dome — semicircle at the bottom pole of the major axis
+  // Parameterised so it always curves OUTWARD from center regardless of rotation angle
+  // e1 = minor-axis unit vec (sin, -cos), e2 = outward-major unit vec (cos, sin)
+  const domePath = useMemo(() => {
+    const bx = cx + a * cos; // bottom pole x
+    const by = cy + a * sin; // bottom pole y
+    const pts = Array.from({ length: 33 }, (_, i) => {
+      const t = (i / 32) * Math.PI;
+      return {
+        x: bx + b * Math.cos(t) * sin + b * Math.sin(t) * cos,
+        y: by - b * Math.cos(t) * cos + b * Math.sin(t) * sin,
+      };
+    });
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  }, [cx, cy, a, b, cos, sin]);
+
+  // Inner dome (liner) — same shape at 0.82 scale
+  const domePathInner = useMemo(() => {
+    const bx = cx + a * 0.82 * cos;
+    const by = cy + a * 0.82 * sin;
+    const bi = b * 0.82;
+    const pts = Array.from({ length: 33 }, (_, i) => {
+      const t = (i / 32) * Math.PI;
+      return {
+        x: bx + bi * Math.cos(t) * sin + bi * Math.sin(t) * cos,
+        y: by - bi * Math.cos(t) * cos + bi * Math.sin(t) * sin,
+      };
+    });
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  }, [cx, cy, a, b, cos, sin]);
+
   const inclination = Math.abs((angle * 180) / Math.PI);
   const ratio = Math.min(Math.abs(b / a), 1);
   const anteversion = (Math.asin(ratio) * 180) / Math.PI;
@@ -4265,7 +4296,9 @@ function CupAssessmentOverlayInline({ onClose }) {
       },
         React.createElement("line", { x1: 0, y1: cy, x2: W, y2: cy, stroke: "#facc15", strokeWidth: 1, strokeDasharray: "10 5" }),
         React.createElement("path", { d: ePath, fill: "none", stroke: "#f97316", strokeWidth: 2 }),
+        React.createElement("path", { d: domePath, fill: "none", stroke: "#f97316", strokeWidth: 2, strokeLinecap: "round" }),
         React.createElement("path", { d: ePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.5, strokeDasharray: "4 2" }),
+        React.createElement("path", { d: domePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.5, strokeDasharray: "4 2", strokeLinecap: "round" }),
       ),
       // Floating chip (bottom-left, above toolbar)
       React.createElement("div", {
@@ -4323,8 +4356,12 @@ function CupAssessmentOverlayInline({ onClose }) {
 
       // Outer cup ellipse (orange)
       React.createElement("path", { d: ePath, fill: "rgba(249,115,22,0.08)", stroke: "#f97316", strokeWidth: 2.5 }),
+      // Outer dome semicircle — cup shell
+      React.createElement("path", { d: domePath, fill: "none", stroke: "#f97316", strokeWidth: 2.5, strokeLinecap: "round" }),
       // Inner liner ellipse (cyan dashed)
       React.createElement("path", { d: ePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.8, strokeDasharray: "4 2" }),
+      // Inner dome semicircle — liner
+      React.createElement("path", { d: domePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.8, strokeDasharray: "4 2", strokeLinecap: "round" }),
 
       // Inclination angle arc
       React.createElement("path", {
