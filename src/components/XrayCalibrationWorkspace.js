@@ -4246,17 +4246,16 @@ function CupAssessmentOverlayInline({ onClose }) {
     return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z";
   }, [cx, cy, a, b, cos, sin]);
 
-  // Cup dome — semicircle at the bottom pole of the major axis
-  // Parameterised so it always curves OUTWARD from center regardless of rotation angle
-  // e1 = minor-axis unit vec (sin, -cos), e2 = outward-major unit vec (cos, sin)
+  // Cup dome — semicircle at the TOP pole (same direction as green major-axis line)
+  // e1 = minor-axis unit vec (sin, -cos), e2 = outward from TOP = (-cos, -sin)
   const domePath = useMemo(() => {
-    const bx = cx + a * cos; // bottom pole x
-    const by = cy + a * sin; // bottom pole y
+    const tx = cx - a * cos; // top pole x
+    const ty = cy - a * sin; // top pole y
     const pts = Array.from({ length: 33 }, (_, i) => {
       const t = (i / 32) * Math.PI;
       return {
-        x: bx + b * Math.cos(t) * sin + b * Math.sin(t) * cos,
-        y: by - b * Math.cos(t) * cos + b * Math.sin(t) * sin,
+        x: tx + b * Math.cos(t) * sin  + b * Math.sin(t) * (-cos),
+        y: ty + b * Math.cos(t) * (-cos) + b * Math.sin(t) * (-sin),
       };
     });
     return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
@@ -4264,14 +4263,14 @@ function CupAssessmentOverlayInline({ onClose }) {
 
   // Inner dome (liner) — same shape at 0.82 scale
   const domePathInner = useMemo(() => {
-    const bx = cx + a * 0.82 * cos;
-    const by = cy + a * 0.82 * sin;
+    const tx = cx - a * 0.82 * cos;
+    const ty = cy - a * 0.82 * sin;
     const bi = b * 0.82;
     const pts = Array.from({ length: 33 }, (_, i) => {
       const t = (i / 32) * Math.PI;
       return {
-        x: bx + bi * Math.cos(t) * sin + bi * Math.sin(t) * cos,
-        y: by - bi * Math.cos(t) * cos + bi * Math.sin(t) * sin,
+        x: tx + bi * Math.cos(t) * sin  + bi * Math.sin(t) * (-cos),
+        y: ty + bi * Math.cos(t) * (-cos) + bi * Math.sin(t) * (-sin),
       };
     });
     return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
