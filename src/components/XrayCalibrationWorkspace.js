@@ -4160,7 +4160,7 @@ function SvgLabel(React, x, y, text, color, anchor = "middle") {
   );
 }
 
-function CupAssessmentOverlayInline({ onClose }) {
+function CupAssessmentOverlayInline({ onClose, onSave, savedData }) {
   const React = require("react");
   const { useState, useRef, useCallback, useMemo } = React;
 
@@ -4169,6 +4169,7 @@ function CupAssessmentOverlayInline({ onClose }) {
   const [handleSize, setHandleSize] = useState("small"); // "small" | "normal"
   const [minimized, setMinimized] = useState(false);
   const [side, setSide] = useState("right"); // "left" | "right" hip
+  const [justSaved, setJustSaved] = useState(false);
 
   const W = typeof window !== "undefined" ? window.innerWidth : 800;
   const H = typeof window !== "undefined" ? window.innerHeight : 600;
@@ -4401,9 +4402,38 @@ function CupAssessmentOverlayInline({ onClose }) {
         ),
       ),
       React.createElement("div", { style: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } },
-        // Zone badge
-        React.createElement("div", { style: { padding: "6px 10px", borderRadius: 10, background: zone.bg, border: `1.5px solid ${zone.border}` } },
-          React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: zone.color } }, zone.label),
+        // Zone badge + Save button row
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+          React.createElement("div", { style: { flex: 1, padding: "6px 10px", borderRadius: 10, background: zone.bg, border: `1.5px solid ${zone.border}` } },
+            React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: zone.color } }, zone.label),
+          ),
+          // Save button
+          React.createElement("button", {
+            onClick: () => {
+              if (onSave) {
+                onSave({ inclination, anteversion, side, zone: zone.label });
+                setJustSaved(true);
+                setTimeout(() => setJustSaved(false), 2000);
+              }
+            },
+            title: "Simpan ke laporan pra-operasi",
+            style: {
+              flexShrink: 0,
+              background: justSaved ? "#dcfce7" : "linear-gradient(135deg,#22c55e,#16a34a)",
+              border: justSaved ? "1.5px solid #86efac" : "1.5px solid #15803d",
+              borderRadius: 8, cursor: "pointer",
+              color: justSaved ? "#15803d" : "#fff",
+              fontSize: 10, fontWeight: 800, lineHeight: 1,
+              padding: "5px 10px",
+              transition: "all 0.3s",
+              whiteSpace: "nowrap",
+            }
+          }, justSaved ? "✓ Tersimpan" : "💾 Simpan"),
+        ),
+        // Saved indicator
+        savedData && React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" } },
+          React.createElement("span", { style: { fontSize: 10, color: "#16a34a", fontWeight: 700 } }, "✓ Data tersimpan"),
+          React.createElement("span", { style: { fontSize: 9, color: "#15803d", marginLeft: "auto" } }, savedData.savedAt),
         ),
         // Side toggle — kiri / kanan
         React.createElement("div", { style: { display: "flex", borderRadius: 12, overflow: "hidden", border: "1.5px solid #e2e8f0", background: "white" } },
@@ -4873,6 +4903,8 @@ export default function XrayCalibrationWorkspace({
   const [patientCaseManagerOpen, setPatientCaseManagerOpen] = useState(false);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
+  const [savedCupAssessment, setSavedCupAssessment] = useState(null);
+  // { inclination, anteversion, side, zone, savedAt }
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -34901,6 +34933,7 @@ export default function XrayCalibrationWorkspace({
         selectedImplantLibraryItem={selectedImplantLibraryItem}
         getCanvasSnapshot={createReportCanvasSnapshotRef.current}
         getHkaMeasurementResult={getHkaMeasurementResult}
+        cupAssessment={savedCupAssessment}
       />
 
       <PatientCaseManager
@@ -34959,6 +34992,7 @@ export default function XrayCalibrationWorkspace({
           templateCount: templateInventoryRows.length,
           hkaSummary: hkaSets.map((h) => getHkaMeasurementResult(h)).filter((r) => r?.absoluteDeviation !== null),
           implant: selectedImplantLibraryItem,
+          cupAssessment: savedCupAssessment,
           // All implant layers placed on canvas (may have multiple: femoral + tibial + insert, etc.)
           implantLayers: cutLayers
             .map((l) => l.implantLibraryItem)
@@ -34975,6 +35009,11 @@ export default function XrayCalibrationWorkspace({
       {showCupAssessment && (
         <CupAssessmentOverlayInline
           onClose={() => setShowCupAssessment(false)}
+          onSave={(data) => {
+            setSavedCupAssessment({ ...data, savedAt: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) });
+            setNotice(`Cup Assessment disimpan — INC ${data.inclination.toFixed(1)}°, AV ${data.anteversion.toFixed(1)}° (${data.side === "left" ? "Kiri" : "Kanan"})`);
+          }}
+          savedData={savedCupAssessment}
         />
       )}
 

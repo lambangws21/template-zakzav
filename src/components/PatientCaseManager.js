@@ -197,6 +197,8 @@ async function apiDeleteCase(id) {
 function mapCloudCase(raw) {
   let hkaSummary = [];
   try { hkaSummary = JSON.parse(raw.hkaSummaryJson || "[]"); } catch {}
+  let cupAssessment = null;
+  try { cupAssessment = raw.cupAssessmentJson ? JSON.parse(raw.cupAssessmentJson) : null; } catch {}
   return {
     id: raw.id,
     patientName: raw.patientName || "",
@@ -211,6 +213,7 @@ function mapCloudCase(raw) {
     snapshotUrl: raw.snapshotUrl || null,
     savedAt: raw.createdAt || new Date().toISOString(),
     _cloud: true,
+    cupAssessment,
     // Pre-op sizing (saved at case creation)
     preOpSizeNum: raw.preOpSizeNum != null && raw.preOpSizeNum !== ""
       ? Number(raw.preOpSizeNum) : null,
@@ -400,6 +403,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
     currentSession?.templateCount && `${currentSession.templateCount} tmpl`,
     (currentSession?.hkaSummary || []).length && `${(currentSession.hkaSummary || []).length} HKA`,
     allLabels.length && `${allLabels.length} implant`,
+    currentSession?.cupAssessment && `Cup INC ${parseFloat(currentSession.cupAssessment.inclination).toFixed(1)}° AV ${parseFloat(currentSession.cupAssessment.anteversion).toFixed(1)}°`,
   ].filter(Boolean);
 
   return (
@@ -761,6 +765,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         savedAt: new Date().toISOString(),
         _cloud: false,
         source: "zakzav-templating",
+        // Cup Assessment
+        cupAssessment: currentSession?.cupAssessment || null,
         // Post-op fields start empty
         operationDate: "",
         actualImplantLabel: "",
@@ -775,6 +781,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           const result = await apiCreateCase({
             ...caseData,
             snapshotDataUrl: snapshot,
+            cupAssessmentJson: caseData.cupAssessment ? JSON.stringify(caseData.cupAssessment) : "",
           });
           caseData.snapshotUrl = result.snapshotUrl || null;
           caseData.snapshot = caseData.snapshotUrl || snapshot;
@@ -1033,6 +1040,29 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                               </div>
                             </div>
                           </div>
+
+                          {/* Cup Assessment */}
+                          {selectedCase.cupAssessment && (
+                            <div className="px-4 py-2.5 space-y-1.5 border-t border-amber-100 bg-amber-50/50">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">⊙ Cup Assessment</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-800">
+                                  INC {parseFloat(selectedCase.cupAssessment.inclination).toFixed(1)}°
+                                </span>
+                                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-black text-sky-800">
+                                  AV {parseFloat(selectedCase.cupAssessment.anteversion).toFixed(1)}°
+                                </span>
+                                <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${selectedCase.cupAssessment.side === "left" ? "bg-sky-100 text-sky-700" : "bg-orange-100 text-orange-700"}`}>
+                                  {selectedCase.cupAssessment.side === "left" ? "◁ Kiri" : "Kanan ▷"}
+                                </span>
+                                {selectedCase.cupAssessment.zone && (
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600">
+                                    {selectedCase.cupAssessment.zone}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Pre-Op plan */}
                           <div className="px-4 py-2.5 space-y-1.5">

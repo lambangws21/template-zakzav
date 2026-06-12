@@ -12,6 +12,7 @@ const PATIENT_CASES_HEADERS = [
   "snapshotDriveId", "snapshotUrl", "source",
   "preOpSizeNum", "operationDate", "actualImplantLabel",
   "actualSizeNum", "postOpHka", "postOpNotes", "postOpUpdatedAt",
+  "cupAssessmentJson",
 ];
 
 const IMPLANT_SUBMISSION_SHEET = "ImplantUsageSubmissions";
@@ -2106,6 +2107,7 @@ function readPatientCases_() {
       postOpHka: postOpHkaRaw !== "" && postOpHkaRaw !== null ? Number(postOpHkaRaw) || null : null,
       postOpNotes: String(row[18] || ""),
       postOpUpdatedAt: String(row[19] || ""),
+      cupAssessmentJson: String(row[20] || ""),
     };
   }).filter(function (item) { return item.id; });
 }
@@ -2151,6 +2153,7 @@ function createPatientCase_(payload) {
     String(data.source || "zakzav-templating"),
     data.preOpSizeNum != null ? Number(data.preOpSizeNum) : "",
     "", "", "", "", "", "",
+    String(data.cupAssessmentJson || ""),
   ];
   sheet.appendRow(row);
 
