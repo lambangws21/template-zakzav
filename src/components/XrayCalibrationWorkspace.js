@@ -26639,6 +26639,29 @@ export default function XrayCalibrationWorkspace({
             </button>
           ) : null}
 
+          {/* ── Cup Assessment button (simple UI desktop) ── */}
+          {isSimpleUiMode ? (
+            <button
+              type="button"
+              onClick={() => setShowCupAssessment(v => !v)}
+              title="Cup Assessment — Inclination & Anteversion"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition ${
+                showCupAssessment
+                  ? "bg-orange-500 text-white shadow-md"
+                  : `${SOFT_RAISED_CLASS} text-slate-700 hover:text-slate-950`
+              }`}
+            >
+              <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+                <line x1="3" y1="12" x2="21" y2="12"/>
+                <line x1="12" y1="7" x2="12" y2="17"/>
+                <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+                <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+              </svg>
+              <span>Cup Assessment</span>
+            </button>
+          ) : null}
+
           {isSimpleUiMode ? (
             <details className="group relative">
               <summary
@@ -33127,6 +33150,21 @@ export default function XrayCalibrationWorkspace({
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                 </svg>
                                 Estimator Implan
+                              </button>
+                              {/* Cup Assessment — simple UI mobile */}
+                              <button
+                                type="button"
+                                onClick={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
+                                className={`flex items-center gap-1.5 min-h-11 rounded-2xl border px-2.5 text-[10px] font-black transition ${showCupAssessment ? "border-orange-300 bg-orange-500 text-white" : "border-orange-200 bg-orange-50 text-orange-700"}`}
+                              >
+                                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+                                  <line x1="3" y1="12" x2="21" y2="12"/>
+                                  <line x1="12" y1="7" x2="12" y2="17"/>
+                                  <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+                                  <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+                                </svg>
+                                Cup Assessment
                               </button>
                               <button
                                 type="button"
