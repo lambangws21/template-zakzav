@@ -27272,23 +27272,6 @@ export default function XrayCalibrationWorkspace({
                 onClick={() => handleToolChange("angle")}
                 active={tool === "angle"}
               />
-              {/* Cup Assessment button — next to Angle tool */}
-              <motion.button
-                type="button"
-                onClick={() => setShowCupAssessment(v => !v)}
-                title="Cup Assessment — Inclination & Anteversion"
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.94 }}
-                className={`inline-flex h-10 w-10 items-center justify-center transition sm:h-9 sm:w-9 rounded-lg ${showCupAssessment ? "bg-orange-500 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-                  <line x1="3" y1="12" x2="21" y2="12"/>
-                  <line x1="12" y1="7" x2="12" y2="17"/>
-                  <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-                  <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-                </svg>
-              </motion.button>
               <ToolIconButton
                 icon="annotation"
                 label="Annotation"
@@ -29292,23 +29275,6 @@ export default function XrayCalibrationWorkspace({
                   active={tool === "angle"}
                   className="h-9 w-full"
                 />
-                {/* Cup Assessment mobile button */}
-                <motion.button
-                  type="button"
-                  onClick={() => setShowCupAssessment(v => !v)}
-                  title="Cup Assessment"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.94 }}
-                  className={`inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-[10px] font-black transition ${showCupAssessment ? "bg-orange-500 text-white" : "text-slate-500 hover:bg-slate-100"}`}
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-                    <line x1="3" y1="12" x2="21" y2="12"/>
-                    <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-                    <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-                  </svg>
-                  Cup Assess
-                </motion.button>
                 <ToolIconButton
                   icon="annotation"
                   label="Annotation"
@@ -34900,6 +34866,48 @@ export default function XrayCalibrationWorkspace({
           },
         }}
       />
+
+      {/* ── Cup Assessment Floating Button ── */}
+      <motion.button
+        type="button"
+        onClick={() => setShowCupAssessment(v => !v)}
+        title="Cup Assessment — Inclination & Anteversion"
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.93 }}
+        animate={showCupAssessment ? { boxShadow: "0 0 0 4px rgba(249,115,22,0.35)" } : { boxShadow: "0 4px 16px rgba(0,0,0,0.22)" }}
+        style={{
+          position: "fixed",
+          bottom: 88,
+          right: 16,
+          zIndex: 75,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 3,
+          width: 56,
+          height: 56,
+          borderRadius: 16,
+          border: "none",
+          cursor: "pointer",
+          background: showCupAssessment
+            ? "linear-gradient(135deg,#f97316,#ea580c)"
+            : "linear-gradient(135deg,#1e293b,#334155)",
+          color: "white",
+          fontFamily: "system-ui,sans-serif",
+        }}
+      >
+        <svg viewBox="0 0 24 24" style={{ width: 22, height: 22 }} fill="none" stroke="currentColor" strokeWidth={2}>
+          <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="12" y1="7" x2="12" y2="17"/>
+          <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+          <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+        </svg>
+        <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: "0.04em", lineHeight: 1, textAlign: "center" }}>
+          CUP{"\n"}ASSESS
+        </span>
+      </motion.button>
 
       {/* Cup Assessment Overlay */}
       {showCupAssessment && (
