@@ -4166,6 +4166,7 @@ function CupAssessmentOverlayInline({ onClose }) {
 
   const svgRef = useRef(null);
   const [dragging, setDragging] = useState(null);
+  const [handleSize, setHandleSize] = useState("small"); // "small" | "normal"
 
   const W = typeof window !== "undefined" ? window.innerWidth : 800;
   const H = typeof window !== "undefined" ? window.innerHeight : 600;
@@ -4241,6 +4242,12 @@ function CupAssessmentOverlayInline({ onClose }) {
   const anteversion = (Math.asin(ratio) * 180) / Math.PI;
   const zone = cupZoneStatus(inclination, anteversion);
 
+  // Handle radius based on size toggle
+  const HR  = handleSize === "small" ? 5  : 9;   // handle radius
+  const HBG = handleSize === "small" ? 9  : 14;  // halo radius
+  const CS  = handleSize === "small" ? 6  : 10;  // center circle radius
+  const CL  = handleSize === "small" ? 4  : 6;   // center crosshair half-length
+
   // Label positions — outside ellipse, offset from handles
   const incLabelX = handles.bottom.x + 16 * cos + 8;
   const incLabelY = handles.bottom.y + 16 * sin + 8;
@@ -4259,7 +4266,7 @@ function CupAssessmentOverlayInline({ onClose }) {
       // Horizontal reference line
       React.createElement("line", { x1: 0, y1: cy, x2: W, y2: cy, stroke: "#facc15", strokeWidth: 1.5, strokeDasharray: "10 5", opacity: 0.55 }),
 
-      // Major axis extended line (beyond handles for clarity)
+      // Major axis extended line
       React.createElement("line", { x1: handles.top.x - cos * 20, y1: handles.top.y - sin * 20, x2: handles.bottom.x + cos * 20, y2: handles.bottom.y + sin * 20, stroke: "#a3e635", strokeWidth: 1.5, strokeDasharray: "6 3", opacity: 0.7 }),
       // Minor axis line
       React.createElement("line", { x1: handles.left.x, y1: handles.left.y, x2: handles.right.x, y2: handles.right.y, stroke: "#22d3ee", strokeWidth: 1.5, opacity: 0.8 }),
@@ -4275,36 +4282,33 @@ function CupAssessmentOverlayInline({ onClose }) {
         fill: "none", stroke: "#a3e635", strokeWidth: 1.8, strokeDasharray: "3 2"
       }),
 
-      // ── Outside labels with pill background ──
-      // Inclination label — near bottom handle, outside ellipse
+      // ── Outside labels ──
       SvgLabel(React, incLabelX, incLabelY, `INC ${inclination.toFixed(1)}°`, inclination >= 30 && inclination <= 50 ? "#4ade80" : "#f87171"),
-      // Anteversion label — near right handle, outside ellipse
       SvgLabel(React, avLabelX, avLabelY, `AV ${anteversion.toFixed(1)}°`, anteversion >= 5 && anteversion <= 25 ? "#22d3ee" : "#f87171"),
-      // Horizontal label
       SvgLabel(React, 60, cy - 8, "HORIZONTAL", "#fde047", "middle"),
 
       // ── Drag handles ──
-      // Center — move whole ellipse (purple circle with cross)
-      React.createElement("circle", { cx, cy, r: 10, fill: "rgba(109,40,217,0.25)", stroke: "#6d28d9", strokeWidth: 2, style: { cursor: "move", pointerEvents: "all" }, onPointerDown: onPD("center") }),
-      React.createElement("line", { x1: cx - 6, y1: cy, x2: cx + 6, y2: cy, stroke: "#6d28d9", strokeWidth: 2, style: { pointerEvents: "none" } }),
-      React.createElement("line", { x1: cx, y1: cy - 6, x2: cx, y2: cy + 6, stroke: "#6d28d9", strokeWidth: 2, style: { pointerEvents: "none" } }),
+      // Center
+      React.createElement("circle", { cx, cy, r: CS, fill: "rgba(109,40,217,0.25)", stroke: "#6d28d9", strokeWidth: 2, style: { cursor: "move", pointerEvents: "all" }, onPointerDown: onPD("center") }),
+      React.createElement("line", { x1: cx - CL, y1: cy, x2: cx + CL, y2: cy, stroke: "#6d28d9", strokeWidth: 1.5, style: { pointerEvents: "none" } }),
+      React.createElement("line", { x1: cx, y1: cy - CL, x2: cx, y2: cy + CL, stroke: "#6d28d9", strokeWidth: 1.5, style: { pointerEvents: "none" } }),
 
-      // Top handle — adjust major axis / inclination (yellow diamond)
+      // Top/Bottom — inclination (yellow)
       ...[
-        { id: "top",    hx: handles.top.x,    hy: handles.top.y,    fill: "#facc15", label: "↕ Incl" },
-        { id: "bottom", hx: handles.bottom.x,  hy: handles.bottom.y, fill: "#facc15", label: "↕ Incl" },
-      ].flatMap(({ id, hx, hy, fill }) => [
-        React.createElement("circle", { key: id + "_bg", cx: hx, cy: hy, r: 14, fill: "rgba(250,204,21,0.15)", style: { pointerEvents: "none" } }),
-        React.createElement("circle", { key: id, cx: hx, cy: hy, r: 9, fill, stroke: "white", strokeWidth: 2.5, style: { cursor: "crosshair", pointerEvents: "all", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }, onPointerDown: onPD(id) }),
+        { id: "top",    hx: handles.top.x,   hy: handles.top.y   },
+        { id: "bottom", hx: handles.bottom.x, hy: handles.bottom.y },
+      ].flatMap(({ id, hx, hy }) => [
+        React.createElement("circle", { key: id + "_bg", cx: hx, cy: hy, r: HBG, fill: "rgba(250,204,21,0.15)", style: { pointerEvents: "none" } }),
+        React.createElement("circle", { key: id, cx: hx, cy: hy, r: HR, fill: "#facc15", stroke: "white", strokeWidth: 2, style: { cursor: "crosshair", pointerEvents: "all", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }, onPointerDown: onPD(id) }),
       ]),
 
-      // Left/Right handles — adjust minor axis / anteversion (purple)
+      // Left/Right — anteversion (purple)
       ...[
         { id: "left",  hx: handles.left.x,  hy: handles.left.y  },
         { id: "right", hx: handles.right.x, hy: handles.right.y },
       ].flatMap(({ id, hx, hy }) => [
-        React.createElement("circle", { key: id + "_bg", cx: hx, cy: hy, r: 14, fill: "rgba(109,40,217,0.15)", style: { pointerEvents: "none" } }),
-        React.createElement("circle", { key: id, cx: hx, cy: hy, r: 9, fill: "#7c3aed", stroke: "white", strokeWidth: 2.5, style: { cursor: "ew-resize", pointerEvents: "all", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }, onPointerDown: onPD(id) }),
+        React.createElement("circle", { key: id + "_bg", cx: hx, cy: hy, r: HBG, fill: "rgba(109,40,217,0.15)", style: { pointerEvents: "none" } }),
+        React.createElement("circle", { key: id, cx: hx, cy: hy, r: HR, fill: "#7c3aed", stroke: "white", strokeWidth: 2, style: { cursor: "ew-resize", pointerEvents: "all", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }, onPointerDown: onPD(id) }),
       ]),
     ),
 
@@ -4326,6 +4330,26 @@ function CupAssessmentOverlayInline({ onClose }) {
         // Zone badge
         React.createElement("div", { style: { padding: "6px 10px", borderRadius: 10, background: zone.bg, border: `1.5px solid ${zone.border}` } },
           React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: zone.color } }, zone.label),
+        ),
+        // Handle size toggle
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: 10, background: "rgba(255,255,255,0.7)", border: "1px solid #e2e8f0" } },
+          React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: "#475569" } }, "Ukuran titik"),
+          React.createElement("div", { style: { display: "flex", gap: 4 } },
+            React.createElement("button", {
+              onClick: () => setHandleSize("small"),
+              style: { padding: "3px 8px", borderRadius: 8, border: "1.5px solid", fontSize: 9, fontWeight: 800, cursor: "pointer",
+                borderColor: handleSize === "small" ? "#f97316" : "#cbd5e1",
+                background: handleSize === "small" ? "#fff7ed" : "white",
+                color: handleSize === "small" ? "#ea580c" : "#94a3b8" }
+            }, "Kecil"),
+            React.createElement("button", {
+              onClick: () => setHandleSize("normal"),
+              style: { padding: "3px 8px", borderRadius: 8, border: "1.5px solid", fontSize: 9, fontWeight: 800, cursor: "pointer",
+                borderColor: handleSize === "normal" ? "#f97316" : "#cbd5e1",
+                background: handleSize === "normal" ? "#fff7ed" : "white",
+                color: handleSize === "normal" ? "#ea580c" : "#94a3b8" }
+            }, "Normal"),
+          ),
         ),
         // Big value display
         React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 } },
@@ -27179,6 +27203,26 @@ export default function XrayCalibrationWorkspace({
                 {isLeftSidebarCompact ? null : "Estimator Ukuran Implan"}
               </button>
 
+              {/* Cup Assessment — acetabular inclination & anteversion */}
+              <button
+                type="button"
+                onClick={() => setShowCupAssessment(v => !v)}
+                className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-xs font-black transition active:scale-[0.98] ${
+                  showCupAssessment
+                    ? "border-orange-300 bg-orange-500 text-white shadow-md"
+                    : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                }`}
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
+                  <line x1="3" y1="12" x2="21" y2="12"/>
+                  <line x1="12" y1="7" x2="12" y2="17"/>
+                  <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
+                  <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
+                </svg>
+                {isLeftSidebarCompact ? null : "Cup Assessment"}
+              </button>
+
               {/* Baris 2: Simpan ke Drive */}
               {!isLeftSidebarCompact ? (
                 <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
@@ -34866,48 +34910,6 @@ export default function XrayCalibrationWorkspace({
           },
         }}
       />
-
-      {/* ── Cup Assessment Floating Button ── */}
-      <motion.button
-        type="button"
-        onClick={() => setShowCupAssessment(v => !v)}
-        title="Cup Assessment — Inclination & Anteversion"
-        whileHover={{ scale: 1.08 }}
-        whileTap={{ scale: 0.93 }}
-        animate={showCupAssessment ? { boxShadow: "0 0 0 4px rgba(249,115,22,0.35)" } : { boxShadow: "0 4px 16px rgba(0,0,0,0.22)" }}
-        style={{
-          position: "fixed",
-          bottom: 88,
-          right: 16,
-          zIndex: 75,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 3,
-          width: 56,
-          height: 56,
-          borderRadius: 16,
-          border: "none",
-          cursor: "pointer",
-          background: showCupAssessment
-            ? "linear-gradient(135deg,#f97316,#ea580c)"
-            : "linear-gradient(135deg,#1e293b,#334155)",
-          color: "white",
-          fontFamily: "system-ui,sans-serif",
-        }}
-      >
-        <svg viewBox="0 0 24 24" style={{ width: 22, height: 22 }} fill="none" stroke="currentColor" strokeWidth={2}>
-          <ellipse cx="12" cy="12" rx="9" ry="5" strokeDasharray="3 1.5"/>
-          <line x1="3" y1="12" x2="21" y2="12"/>
-          <line x1="12" y1="7" x2="12" y2="17"/>
-          <circle cx="12" cy="7" r="1.5" fill="currentColor"/>
-          <circle cx="12" cy="17" r="1.5" fill="currentColor"/>
-        </svg>
-        <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: "0.04em", lineHeight: 1, textAlign: "center" }}>
-          CUP{"\n"}ASSESS
-        </span>
-      </motion.button>
 
       {/* Cup Assessment Overlay */}
       {showCupAssessment && (
