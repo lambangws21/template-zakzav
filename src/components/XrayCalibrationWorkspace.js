@@ -4634,7 +4634,7 @@ export default function XrayCalibrationWorkspace({
   const [calibrationMode, setCalibrationMode] = useState("line");
   const [sourceZoomPercent, setSourceZoomPercent] = useState("100");
   const [mmPerPixelAt100Input, setMmPerPixelAt100Input] = useState("0.63");
-  const [actualMmInput, setActualMmInput] = useState("13");
+  const [actualMmInput, setActualMmInput] = useState("10");
   const [actualUnit, setActualUnit] = useState("cm");
   const [calibrationDraftStrokeWidth, setCalibrationDraftStrokeWidth] =
     useState(DEFAULT_LINE_STROKE_WIDTH);
@@ -8049,11 +8049,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const halfLength = clamp(
-        Math.min(modelWidth * 0.18, modelHeight * 0.26),
-        52,
-        Math.max(52, modelWidth * 0.34),
-      );
+      const halfLength = 114; // fixed 228px total ruler length
       const centerX = modelWidth / 2;
       const rulerY = clamp(
         modelHeight - Math.max(38, modelHeight * 0.08),
@@ -8991,7 +8987,7 @@ export default function XrayCalibrationWorkspace({
         setCalibrationMode(payload.calibrationMode || "line");
         setSourceZoomPercent(payload.sourceZoomPercent || "100");
         setMmPerPixelAt100Input(payload.mmPerPixelAt100Input || "0.63");
-        setActualMmInput(payload.actualMmInput || "13");
+        setActualMmInput(payload.actualMmInput || "10");
         setActualUnit(payload.actualUnit || "cm");
         setCalibrationDraftStrokeWidth(
           clamp(
