@@ -4910,6 +4910,7 @@ export default function XrayCalibrationWorkspace({
   const canvasCupDragRef = useRef(null);
   // { handle: "center"|"top"|"side", startImgX, startImgY, startCup }
   const [canvasCupSide, setCanvasCupSide] = useState("right");
+  const [cupInfoModalOpen, setCupInfoModalOpen] = useState(false);
   // { inclination, anteversion, side, zone, savedAt }
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
@@ -35254,9 +35255,199 @@ export default function XrayCalibrationWorkspace({
               }}
               style={{ padding: "4px 12px", borderRadius: 9, border: "1px solid #16a34a", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
             >💾 Simpan</button>
+            {/* info button */}
+            <button onClick={() => setCupInfoModalOpen(true)} title="Informasi Safe Zone" style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid rgba(56,189,248,0.4)", background: "rgba(56,189,248,0.12)", color: "#38bdf8", fontSize: 13, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>ℹ</button>
             {/* reset + close */}
             <button onClick={() => setCanvasCup(null)} style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Reset</button>
             <button onClick={() => { setShowCupAssessment(false); setCanvasCup(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#475569", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>✕</button>
+          </div>
+        );
+      })()}
+
+      {/* Cup Orientation Info Modal */}
+      {cupInfoModalOpen && (() => {
+        const rawDeg = canvasCup ? ((canvasCup.angle * 180 / Math.PI) % 180 + 180) % 180 : null;
+        const inc = rawDeg != null ? (rawDeg > 90 ? 180 - rawDeg : rawDeg) : null;
+        const ratio = canvasCup && canvasCup.a > 0 ? Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a)) : 0;
+        const av = canvasCup ? (Math.asin(ratio) * 180) / Math.PI : null;
+        const zone = inc != null ? cupZoneStatus(inc, av) : null;
+        return (
+          <div onClick={() => setCupInfoModalOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)", borderRadius: 20, width: "min(92vw,540px)", maxHeight: "90dvh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.7)" }}>
+
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#0369a1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⊙</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.04em" }}>Cup Orientation Guide</div>
+                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>Panduan posisi acetabular cup THA</div>
+                  </div>
+                </div>
+                <button onClick={() => setCupInfoModalOpen(false)} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, width: 30, height: 30, cursor: "pointer", color: "#94a3b8", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              </div>
+
+              <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* Current reading */}
+                {inc != null && (
+                  <div style={{ background: zone.bg, border: `1.5px solid ${zone.border}`, borderRadius: 14, padding: "12px 16px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: zone.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Hasil Pengukuran Saat Ini</div>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 100, background: "rgba(255,255,255,0.7)", borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "#78716c", textTransform: "uppercase", letterSpacing: "0.08em" }}>Inklinasi</div>
+                        <div style={{ fontSize: 26, fontWeight: 900, color: "#f97316", lineHeight: 1.1 }}>{inc.toFixed(1)}°</div>
+                        <div style={{ fontSize: 9, color: "#a8a29e" }}>Normal: 30–50°</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 100, background: "rgba(255,255,255,0.7)", borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "#78716c", textTransform: "uppercase", letterSpacing: "0.08em" }}>Anteversion</div>
+                        <div style={{ fontSize: 26, fontWeight: 900, color: "#0ea5e9", lineHeight: 1.1 }}>{av.toFixed(1)}°</div>
+                        <div style={{ fontSize: 9, color: "#a8a29e" }}>Normal: 5–25°</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 100, background: zone.bg, border: `1px solid ${zone.border}`, borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: zone.color, textTransform: "uppercase", letterSpacing: "0.08em" }}>Status</div>
+                        <div style={{ fontSize: 13, fontWeight: 900, color: zone.color, marginTop: 4 }}>{zone.label}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Safe Zone Chart */}
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Safe Zone Reference</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {/* Callanan optimal */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(22,163,74,0.12)", border: "1.5px solid rgba(22,163,74,0.3)" }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#4ade80" }}>Safe Zone Optimal (Callanan 2001)</div>
+                        <div style={{ fontSize: 10, color: "#86efac", marginTop: 2 }}>Inklinasi: 30–45°  ·  Anteversion: 10–25°</div>
+                      </div>
+                      {inc != null && inc >= 30 && inc <= 45 && av >= 10 && av <= 25 && (
+                        <span style={{ fontSize: 9, fontWeight: 800, color: "#16a34a", background: "#dcfce7", borderRadius: 6, padding: "2px 6px" }}>✓ Masuk</span>
+                      )}
+                    </div>
+                    {/* Lewinnek */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(217,119,6,0.1)", border: "1.5px solid rgba(217,119,6,0.3)" }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#d97706", flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#fbbf24" }}>Safe Zone Lewinnek (1978)</div>
+                        <div style={{ fontSize: 10, color: "#fde68a", marginTop: 2 }}>Inklinasi: 30–50°  ·  Anteversion: 5–25°</div>
+                      </div>
+                      {inc != null && inc >= 30 && inc <= 50 && av >= 5 && av <= 25 && !(inc >= 30 && inc <= 45 && av >= 10 && av <= 25) && (
+                        <span style={{ fontSize: 9, fontWeight: 800, color: "#d97706", background: "#fef3c7", borderRadius: 6, padding: "2px 6px" }}>~ Masuk</span>
+                      )}
+                    </div>
+                    {/* Danger */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(220,38,38,0.08)", border: "1.5px solid rgba(220,38,38,0.2)" }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#dc2626", flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#f87171" }}>Di Luar Safe Zone</div>
+                        <div style={{ fontSize: 10, color: "#fca5a5", marginTop: 2 }}>Risiko dislokasi, impingement, atau wear yang meningkat</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diagram visual */}
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Diagram Safe Zone</div>
+                  <svg viewBox="0 0 300 220" style={{ width: "100%", maxWidth: 360, display: "block", margin: "0 auto" }}>
+                    {/* grid */}
+                    {[0,10,20,30,40,50,60,70].map(v => (
+                      <line key={v} x1={20 + v * 3.5} y1={10} x2={20 + v * 3.5} y2={200} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>
+                    ))}
+                    {[0,10,20,30,40].map(v => (
+                      <line key={v} x1={20} y1={10 + v * 4.8} x2={275} y2={10 + v * 4.8} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>
+                    ))}
+                    {/* Lewinnek zone (amber) */}
+                    <rect x={20 + 30*3.5} y={10 + (40-25)*4.8} width={20*3.5} height={20*4.8} fill="rgba(217,119,6,0.25)" stroke="#d97706" strokeWidth="1.5" rx="4"/>
+                    {/* Callanan zone (green) */}
+                    <rect x={20 + 30*3.5} y={10 + (40-25)*4.8} width={15*3.5} height={15*4.8} fill="rgba(22,163,74,0.35)" stroke="#16a34a" strokeWidth="1.5" rx="4"/>
+                    {/* current point */}
+                    {inc != null && (
+                      <>
+                        <circle cx={20 + inc*3.5} cy={10 + (40-av)*4.8} r={6} fill="#f97316" stroke="#fff" strokeWidth="1.5"/>
+                        <line x1={20 + inc*3.5} y1={10} x2={20 + inc*3.5} y2={200} stroke="rgba(249,115,22,0.4)" strokeWidth="1" strokeDasharray="4,3"/>
+                        <line x1={20} y1={10 + (40-av)*4.8} x2={275} y2={10 + (40-av)*4.8} stroke="rgba(249,115,22,0.4)" strokeWidth="1" strokeDasharray="4,3"/>
+                      </>
+                    )}
+                    {/* axes */}
+                    <line x1={20} y1={200} x2={275} y2={200} stroke="#475569" strokeWidth="1.5"/>
+                    <line x1={20} y1={10} x2={20} y2={200} stroke="#475569" strokeWidth="1.5"/>
+                    {/* axis labels */}
+                    <text x={148} y={215} textAnchor="middle" fill="#64748b" fontSize="9" fontWeight="bold">Inklinasi (°)</text>
+                    <text x={9} y={110} textAnchor="middle" fill="#64748b" fontSize="9" fontWeight="bold" transform="rotate(-90,9,110)">Anteversion (°)</text>
+                    {/* ticks X */}
+                    {[30,40,50,60].map(v => (
+                      <g key={v}>
+                        <line x1={20+v*3.5} y1={200} x2={20+v*3.5} y2={204} stroke="#475569" strokeWidth="1"/>
+                        <text x={20+v*3.5} y={212} textAnchor="middle" fill="#64748b" fontSize="7">{v}</text>
+                      </g>
+                    ))}
+                    {/* ticks Y */}
+                    {[0,10,20,30,40].map(v => (
+                      <g key={v}>
+                        <line x1={20} y1={10+(40-v)*4.8} x2={16} y2={10+(40-v)*4.8} stroke="#475569" strokeWidth="1"/>
+                        <text x={14} y={13+(40-v)*4.8} textAnchor="end" fill="#64748b" fontSize="7">{v}</text>
+                      </g>
+                    ))}
+                    {/* legend */}
+                    <rect x={170} y={15} width={10} height={10} fill="rgba(22,163,74,0.5)" stroke="#16a34a" strokeWidth="1" rx="2"/>
+                    <text x={184} y={24} fill="#4ade80" fontSize="8" fontWeight="bold">Callanan (Optimal)</text>
+                    <rect x={170} y={30} width={10} height={10} fill="rgba(217,119,6,0.3)" stroke="#d97706" strokeWidth="1" rx="2"/>
+                    <text x={184} y={39} fill="#fbbf24" fontSize="8" fontWeight="bold">Lewinnek</text>
+                    {inc != null && <circle cx={175} cy={49} r={4} fill="#f97316" stroke="#fff" strokeWidth="1"/>}
+                    {inc != null && <text x={184} y={53} fill="#f97316" fontSize="8" fontWeight="bold">Posisi Saat Ini</text>}
+                  </svg>
+                </div>
+
+                {/* Definisi */}
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em" }}>Definisi</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.2)", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: "#f97316", marginBottom: 4 }}>Inklinasi (Abduction)</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5 }}>Sudut cup terhadap bidang horizontal pelvis. Diukur dari sumbu mayor elips pada radiografi AP.</div>
+                    </div>
+                    <div style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: "#0ea5e9", marginBottom: 4 }}>Anteversion (Murray)</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5 }}>Sudut rotasi cup ke depan. Dihitung dari rasio sumbu minor/mayor: arcsin(b/a).</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#475569", padding: "8px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 8, lineHeight: 1.6 }}>
+                    <span style={{ color: "#64748b", fontWeight: 700 }}>Formula:</span> Anteversion = arcsin(b/a)  ·  b = sumbu minor,  a = sumbu mayor (radiografik Murray 1993)
+                  </div>
+                </div>
+
+                {/* Klinisi */}
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Pertimbangan Klinis</div>
+                  {[
+                    { icon: "⚠", color: "#f59e0b", title: "Inklinasi terlalu tinggi (>50°)", desc: "Meningkatkan risiko impingement superior dan edge loading polietilen." },
+                    { icon: "⚠", color: "#f59e0b", title: "Inklinasi terlalu rendah (<30°)", desc: "Dapat menyebabkan impingement inferior dan keterbatasan range of motion." },
+                    { icon: "⚠", color: "#ef4444", title: "Anteversion berlebih (>25°)", desc: "Risiko dislokasi posterior meningkat, terutama saat fleksi-adduksi." },
+                    { icon: "⚠", color: "#ef4444", title: "Anteversion kurang (<5°)", desc: "Risiko dislokasi anterior, impingement anterior dalam ekstensi-rotasi eksternal." },
+                    { icon: "✓", color: "#22c55e", title: "Combined anteversion", desc: "Pertimbangkan anteversion femoral stem + cup secara total (target: 25–50°)." },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start" }}>
+                      <span style={{ color: item.color, fontSize: 13, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "#cbd5e1" }}>{item.title}</div>
+                        <div style={{ fontSize: 9, color: "#64748b", marginTop: 2, lineHeight: 1.5 }}>{item.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer */}
+                <div style={{ fontSize: 9, color: "#334155", textAlign: "center", lineHeight: 1.6, padding: "0 4px" }}>
+                  Referensi: Lewinnek et al. 1978 · Callanan et al. 2011 · Murray 1993 · Widmer 2004<br/>
+                  <span style={{ color: "#1e3a5f" }}>Alat bantu perencanaan — bukan pengganti penilaian klinis dokter.</span>
+                </div>
+
+              </div>
+            </div>
           </div>
         );
       })()}
