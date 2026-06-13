@@ -25,6 +25,9 @@ import {
   FileText,
   Pencil,
   Save,
+  ZoomIn,
+  Maximize2,
+  X as XIcon,
 } from "lucide-react";
 import PostOpDataModal from "./PostOpDataModal";
 import TemplatingAnalytics from "./TemplatingAnalytics";
@@ -255,10 +258,79 @@ function timeAgo(isoString) {
   return formatDate(isoString).split(",")[0];
 }
 
+// ─── Image Preview Lightbox ───────────────────────────────────────────────────
+
+function ImagePreviewLightbox({ src, patientName, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}
+    >
+      <motion.div
+        initial={{ scale: 0.88, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.92, opacity: 0 }}
+        transition={{ type: "spring", damping: 22, stiffness: 280 }}
+        onClick={(e) => e.stopPropagation()}
+        className="relative flex max-h-[90dvh] max-w-[92vw] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)" }}
+      >
+        {/* header */}
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-sky-400" />
+            <span className="text-xs font-black text-slate-200 tracking-wide">
+              {patientName || "X-Ray Preview"}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* image */}
+        <div className="relative flex items-center justify-center overflow-hidden" style={{ background: "#070d1a" }}>
+          <img
+            src={src}
+            alt={patientName || "X-Ray"}
+            className="max-h-[78dvh] max-w-[88vw] object-contain"
+            style={{ display: "block" }}
+          />
+          {/* scan overlay */}
+          <div style={{
+            position: "absolute", inset: 0, pointerEvents: "none",
+            background: "linear-gradient(to bottom,transparent 70%,rgba(14,165,233,0.04) 100%)",
+          }} />
+        </div>
+
+        {/* footer hint */}
+        <div className="px-4 py-2 text-center text-[9px] text-slate-600 tracking-widest uppercase">
+          Klik di luar atau tekan Esc untuk tutup
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
+  );
+}
+
 // ─── Case Card ────────────────────────────────────────────────────────────────
 
 function CaseCard({ c, onSelect, onDelete, selected }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const timerRef = useRef(null);
   const hkaList = c.hkaSummary || [];
   const thumbnail = snapshotSrc(c.snapshot || c.snapshotUrl || null);
@@ -266,112 +338,161 @@ function CaseCard({ c, onSelect, onDelete, selected }) {
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className={`group relative overflow-hidden rounded-2xl border transition-all ${
-        selected
-          ? "border-blue-300 bg-blue-50 shadow-md"
-          : "border-slate-200 bg-white/70 hover:border-slate-300 hover:bg-white"
-      }`}
-    >
-      <div className="flex items-stretch gap-0">
-        {/* thumbnail */}
-        <div className="flex h-full w-20 shrink-0 items-center justify-center overflow-hidden rounded-l-2xl bg-slate-900">
-          {thumbnail ? (
-            <img src={thumbnail} alt="X-ray" className="h-full w-full object-cover opacity-80" />
-          ) : (
-            <Activity className="h-6 w-6 text-slate-600" />
-          )}
-        </div>
+    <>
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        className={`group relative overflow-hidden rounded-2xl border transition-all ${
+          selected
+            ? "border-blue-300 bg-blue-50 shadow-md"
+            : "border-slate-200 bg-white/70 hover:border-slate-300 hover:bg-white"
+        }`}
+      >
+        <div className="flex items-stretch gap-0">
 
-        {/* content */}
-        <button
-          type="button"
-          onClick={() => onSelect(c)}
-          className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
-        >
-          {/* Row 1: name + cloud + post-op badge */}
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-xs font-black text-slate-800">
-              {c.patientName || "Pasien Tanpa Nama"}
-            </span>
-            {c._cloud && <Cloud className="h-2.5 w-2.5 shrink-0 text-blue-400" />}
-            {c.actualImplantLabel && (
-              <span className="ml-auto shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black text-emerald-700">
-                POST-OP ✓
-              </span>
+          {/* thumbnail */}
+          <div className="relative flex h-full w-24 shrink-0 overflow-hidden rounded-l-2xl bg-slate-900">
+            {thumbnail ? (
+              <>
+                <img
+                  src={thumbnail}
+                  alt="X-ray"
+                  className="h-full w-full object-cover transition-all duration-300 group-hover:opacity-60"
+                  style={{ minHeight: 80 }}
+                />
+                {/* overlay zoom button */}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Preview gambar"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/90 shadow-lg">
+                    <ZoomIn className="h-4 w-4 text-white" />
+                  </div>
+                  <span className="text-[8px] font-black text-sky-200 tracking-wider uppercase">Preview</span>
+                </button>
+              </>
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-1" style={{ minHeight: 80 }}>
+                <Activity className="h-6 w-6 text-slate-600" />
+                <span className="text-[7px] text-slate-600">No image</span>
+              </div>
+            )}
+            {/* cloud badge */}
+            {c._cloud && (
+              <div className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500/80">
+                <Cloud className="h-2.5 w-2.5 text-white" />
+              </div>
             )}
           </div>
-          {/* Row 2: procedure */}
-          <p className="truncate text-[9px] text-slate-500">{c.procedure || "Belum ada prosedur"}</p>
-          {/* Row 3: pre-op component chips (max 2) */}
-          {c.implantLabel && (
-            <div className="mt-0.5 flex flex-wrap gap-0.5">
-              {c.implantLabel.split(" · ").slice(0, 2).map((part, i) => (
-                <span key={i} className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[8px] text-blue-700 border border-blue-100">
-                  {part.trim()}
-                </span>
-              ))}
-              {c.implantLabel.split(" · ").length > 2 && (
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] text-slate-400">
-                  +{c.implantLabel.split(" · ").length - 2}
+
+          {/* content */}
+          <button
+            type="button"
+            onClick={() => onSelect(c)}
+            className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
+          >
+            {/* Row 1: name + post-op badge */}
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-xs font-black text-slate-800">
+                {c.patientName || "Pasien Tanpa Nama"}
+              </span>
+              {c.actualImplantLabel && (
+                <span className="ml-auto shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black text-emerald-700">
+                  POST-OP ✓
                 </span>
               )}
             </div>
-          )}
-          {/* Row 4: HKA + time */}
-          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-            {hkaList.slice(0, 2).map((h, i) => (
-              <span key={i} className={`rounded-full px-1.5 py-0.5 text-[8px] font-black ${
-                h.direction === "varus" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-              }`}>
-                {h.absoluteDeviation?.toFixed?.(1) ?? h.absoluteDeviation}° {h.direction}
-              </span>
-            ))}
-            <span className="ml-auto flex items-center gap-0.5 text-[8px] text-slate-400">
-              <Clock className="h-2 w-2" />{timeAgo(c.savedAt)}
-            </span>
-          </div>
-        </button>
-
-        {/* actions */}
-        <div className="flex flex-col items-center justify-between py-2 pr-2">
-          <ChevronRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600" />
-          <AnimatePresence mode="wait">
-            {confirmDelete ? (
-              <motion.button
-                key="confirm"
-                initial={{ scale: 0.8 }}
-                animate={{ scale: 1 }}
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white"
-                title="Konfirmasi hapus"
-              >
-                <Trash2 className="h-3 w-3" />
-              </motion.button>
-            ) : (
-              <motion.button
-                key="idle"
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmDelete(true);
-                  timerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
-                }}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-400 group-hover:opacity-100"
-                title="Hapus kasus"
-              >
-                <Trash2 className="h-3 w-3" />
-              </motion.button>
+            {/* Row 2: procedure */}
+            <p className="truncate text-[9px] text-slate-500">{c.procedure || "Belum ada prosedur"}</p>
+            {/* Row 3: pre-op component chips (max 2) */}
+            {c.implantLabel && (
+              <div className="mt-0.5 flex flex-wrap gap-0.5">
+                {c.implantLabel.split(" · ").slice(0, 2).map((part, i) => (
+                  <span key={i} className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[8px] text-blue-700 border border-blue-100">
+                    {part.trim()}
+                  </span>
+                ))}
+                {c.implantLabel.split(" · ").length > 2 && (
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] text-slate-400">
+                    +{c.implantLabel.split(" · ").length - 2}
+                  </span>
+                )}
+              </div>
             )}
-          </AnimatePresence>
+            {/* Row 4: cup assessment badge */}
+            {c.cupAssessment && (
+              <div className="mt-0.5 flex items-center gap-1">
+                <span className="rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[8px] font-black text-amber-700">
+                  ⊙ INC {parseFloat(c.cupAssessment.inclination).toFixed(1)}° AV {parseFloat(c.cupAssessment.anteversion).toFixed(1)}°
+                </span>
+              </div>
+            )}
+            {/* Row 5: HKA + time */}
+            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+              {hkaList.slice(0, 2).map((h, i) => (
+                <span key={i} className={`rounded-full px-1.5 py-0.5 text-[8px] font-black ${
+                  h.direction === "varus" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                }`}>
+                  {h.absoluteDeviation?.toFixed?.(1) ?? h.absoluteDeviation}° {h.direction}
+                </span>
+              ))}
+              <span className="ml-auto flex items-center gap-0.5 text-[8px] text-slate-400">
+                <Clock className="h-2 w-2" />{timeAgo(c.savedAt)}
+              </span>
+            </div>
+          </button>
+
+          {/* actions */}
+          <div className="flex flex-col items-center justify-between py-2 pr-2">
+            <ChevronRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600" />
+            <AnimatePresence mode="wait">
+              {confirmDelete ? (
+                <motion.button
+                  key="confirm"
+                  initial={{ scale: 0.8 }}
+                  animate={{ scale: 1 }}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white"
+                  title="Konfirmasi hapus"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </motion.button>
+              ) : (
+                <motion.button
+                  key="idle"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete(true);
+                    timerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-400 group-hover:opacity-100"
+                  title="Hapus kasus"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
-      </div>
-    </motion.div>
+      </motion.div>
+
+      {/* Lightbox preview */}
+      <AnimatePresence>
+        {showPreview && thumbnail && (
+          <ImagePreviewLightbox
+            src={thumbnail}
+            patientName={c.patientName}
+            onClose={() => setShowPreview(false)}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
@@ -690,6 +811,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [postOpCase, setPostOpCase] = useState(null);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [preOpReportCase, setPreOpReportCase] = useState(null);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [lightboxName, setLightboxName] = useState(null);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
@@ -1009,16 +1132,36 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                         </div>
 
                         <div className="divide-y divide-slate-100">
-                          {/* Snapshot + date */}
-                          <div className="flex items-center gap-3 px-4 py-2.5">
-                            {(selectedCase.snapshot || selectedCase.snapshotUrl) && (
-                              <img
-                                src={snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl)}
-                                alt="X-ray"
-                                className="h-14 w-14 shrink-0 rounded-xl object-cover border border-slate-200"
-                              />
-                            )}
-                            <div className="min-w-0 space-y-1">
+                          {/* Snapshot banner */}
+                          {(selectedCase.snapshot || selectedCase.snapshotUrl) && (() => {
+                            const src = snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl);
+                            return (
+                              <div className="relative overflow-hidden" style={{ background: "#0a0f1c" }}>
+                                <img
+                                  src={src}
+                                  alt="X-ray"
+                                  className="w-full object-cover"
+                                  style={{ maxHeight: 160, opacity: 0.85 }}
+                                />
+                                {/* gradient overlay */}
+                                <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
+                                {/* preview button */}
+                                <button
+                                  type="button"
+                                  onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
+                                  className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black text-white shadow-lg transition-all hover:scale-105"
+                                  style={{ background: "rgba(14,165,233,0.85)", backdropFilter: "blur(4px)" }}
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                  Perbesar
+                                </button>
+                              </div>
+                            );
+                          })()}
+
+                          {/* date + notes */}
+                          <div className="flex items-start gap-3 px-4 py-2.5">
+                            <div className="min-w-0 space-y-1 w-full">
                               <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
                                 <Calendar className="h-3 w-3 shrink-0" />
                                 <span>Templating: {formatDate(selectedCase.savedAt)}</span>
@@ -1290,6 +1433,15 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         hkaSets={[]}
         imageName={preOpReportCase?.imageName || ""}
       />
+      <AnimatePresence>
+        {lightboxSrc && (
+          <ImagePreviewLightbox
+            src={lightboxSrc}
+            patientName={lightboxName}
+            onClose={() => { setLightboxSrc(null); setLightboxName(null); }}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }
