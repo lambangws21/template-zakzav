@@ -26,7 +26,10 @@ import {
   Pencil,
   Save,
   ZoomIn,
+  ZoomOut,
   Maximize2,
+  RotateCcw,
+  ImageIcon,
   X as XIcon,
 } from "lucide-react";
 import PostOpDataModal from "./PostOpDataModal";
@@ -260,12 +263,106 @@ function timeAgo(isoString) {
 
 // ─── Image Preview Lightbox ───────────────────────────────────────────────────
 
-function ImagePreviewLightbox({ src, patientName, onClose }) {
+function ImagePreviewLightbox({ src: initialSrc, patientName, onClose, onReplaceSnapshot }) {
+  const [src, setSrc] = useState(initialSrc);
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragStart = useRef(null);
+  const fileInputRef = useRef(null);
+  const containerRef = useRef(null);
+
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 5;
+  const zoomStep = 0.3;
+
+  const resetView = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
+
+  const zoomIn  = () => setZoom(z => Math.min(ZOOM_MAX, parseFloat((z + zoomStep).toFixed(2))));
+  const zoomOut = () => setZoom(z => { const n = parseFloat((z - zoomStep).toFixed(2)); if (n <= 1) { setOffset({ x: 0, y: 0 }); } return Math.max(ZOOM_MIN, n); });
+
+  // keyboard shortcuts
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "+" || e.key === "=") zoomIn();
+      if (e.key === "-") zoomOut();
+      if (e.key === "0") resetView();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // wheel zoom
+  const onWheel = (e) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? zoomStep : -zoomStep;
+    setZoom(z => {
+      const n = parseFloat((z + delta).toFixed(2));
+      if (n <= 1) setOffset({ x: 0, y: 0 });
+      return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, n));
+    });
+  };
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // drag pan
+  const onMouseDown = (e) => {
+    if (zoom <= 1) return;
+    e.preventDefault();
+    setDragging(true);
+    dragStart.current = { mx: e.clientX, my: e.clientY, ox: offset.x, oy: offset.y };
+  };
+  const onMouseMove = (e) => {
+    if (!dragging || !dragStart.current) return;
+    setOffset({ x: dragStart.current.ox + e.clientX - dragStart.current.mx, y: dragStart.current.oy + e.clientY - dragStart.current.my });
+  };
+  const onMouseUp = () => setDragging(false);
+
+  // touch zoom/pan
+  const lastTouch = useRef(null);
+  const onTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      lastTouch.current = { tx: e.touches[0].clientX, ty: e.touches[0].clientY, ox: offset.x, oy: offset.y, dist: null };
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      lastTouch.current = { ...lastTouch.current, dist, zoomAtStart: zoom };
+    }
+  };
+  const onTouchMove = (e) => {
+    e.preventDefault();
+    if (e.touches.length === 2 && lastTouch.current?.dist != null) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      const ratio = dist / lastTouch.current.dist;
+      const newZ = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat((lastTouch.current.zoomAtStart * ratio).toFixed(2))));
+      if (newZ <= 1) setOffset({ x: 0, y: 0 });
+      setZoom(newZ);
+    } else if (e.touches.length === 1 && zoom > 1 && lastTouch.current) {
+      setOffset({ x: lastTouch.current.ox + e.touches[0].clientX - lastTouch.current.tx, y: lastTouch.current.oy + e.touches[0].clientY - lastTouch.current.ty });
+    }
+  };
+  const onTouchEnd = () => { lastTouch.current = null; };
+
+  // replace photo
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      setSrc(dataUrl);
+      resetView();
+      if (onReplaceSnapshot) onReplaceSnapshot(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const pct = Math.round(zoom * 100);
 
   return createPortal(
     <motion.div
@@ -273,8 +370,8 @@ function ImagePreviewLightbox({ src, patientName, onClose }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.92)", backdropFilter: "blur(8px)" }}
     >
       <motion.div
         initial={{ scale: 0.88, opacity: 0 }}
@@ -282,43 +379,86 @@ function ImagePreviewLightbox({ src, patientName, onClose }) {
         exit={{ scale: 0.92, opacity: 0 }}
         transition={{ type: "spring", damping: 22, stiffness: 280 }}
         onClick={(e) => e.stopPropagation()}
-        className="relative flex max-h-[90dvh] max-w-[92vw] flex-col overflow-hidden rounded-2xl shadow-2xl"
-        style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)" }}
+        className="relative flex flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)", width: "min(92vw,820px)", maxHeight: "92dvh" }}
       >
-        {/* header */}
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-sky-400" />
-            <span className="text-xs font-black text-slate-200 tracking-wide">
-              {patientName || "X-Ray Preview"}
-            </span>
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-2 w-2 shrink-0 rounded-full bg-sky-400" />
+            <span className="truncate text-xs font-black text-slate-200">{patientName || "X-Ray Preview"}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
-          >
+          {/* zoom badge */}
+          <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-black text-sky-300 tabular-nums">
+            {pct}%
+          </span>
+          <button onClick={onClose} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
             <XIcon className="h-4 w-4" />
           </button>
         </div>
 
-        {/* image */}
-        <div className="relative flex items-center justify-center overflow-hidden" style={{ background: "#070d1a" }}>
+        {/* ── Image area ── */}
+        <div
+          ref={containerRef}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          className="relative flex-1 overflow-hidden"
+          style={{ background: "#070d1a", cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "default", userSelect: "none", minHeight: 200 }}
+        >
           <img
             src={src}
             alt={patientName || "X-Ray"}
-            className="max-h-[78dvh] max-w-[88vw] object-contain"
-            style={{ display: "block" }}
+            draggable={false}
+            style={{
+              display: "block",
+              maxWidth: "100%",
+              maxHeight: "72dvh",
+              width: "100%",
+              objectFit: "contain",
+              transform: `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`,
+              transformOrigin: "center center",
+              transition: dragging ? "none" : "transform 0.15s ease",
+            }}
           />
-          {/* scan overlay */}
-          <div style={{
-            position: "absolute", inset: 0, pointerEvents: "none",
-            background: "linear-gradient(to bottom,transparent 70%,rgba(14,165,233,0.04) 100%)",
-          }} />
         </div>
 
-        {/* footer hint */}
-        <div className="px-4 py-2 text-center text-[9px] text-slate-600 tracking-widest uppercase">
-          Klik di luar atau tekan Esc untuk tutup
+        {/* ── Toolbar ── */}
+        <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+          {/* zoom controls */}
+          <div className="flex items-center gap-1.5">
+            <button onClick={zoomOut} disabled={zoom <= ZOOM_MIN} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-slate-300 hover:bg-white/15 hover:text-white disabled:opacity-30 transition-colors" title="Zoom out ( - )">
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <button onClick={resetView} className="rounded-xl bg-white/8 px-3 py-1.5 text-[10px] font-black text-slate-400 hover:bg-white/15 hover:text-white transition-colors" title="Reset (0)">
+              {pct}%
+            </button>
+            <button onClick={zoomIn} disabled={zoom >= ZOOM_MAX} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-slate-300 hover:bg-white/15 hover:text-white disabled:opacity-30 transition-colors" title="Zoom in ( + )">
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button onClick={resetView} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-slate-400 hover:bg-white/15 hover:text-white transition-colors" title="Reset view (0)">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* ganti foto */}
+          <div className="flex items-center gap-1.5">
+            <span className="hidden text-[9px] text-slate-600 sm:block">Scroll/pinch untuk zoom · drag untuk geser</span>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[10px] font-black text-white transition-all hover:opacity-90"
+              style={{ background: "linear-gradient(135deg,#0ea5e9,#0369a1)" }}
+              title="Ganti foto snapshot"
+            >
+              <ImageIcon className="h-3.5 w-3.5" />
+              Ganti Foto
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          </div>
         </div>
       </motion.div>
     </motion.div>,
@@ -328,7 +468,7 @@ function ImagePreviewLightbox({ src, patientName, onClose }) {
 
 // ─── Case Card ────────────────────────────────────────────────────────────────
 
-function CaseCard({ c, onSelect, onDelete, selected }) {
+function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const timerRef = useRef(null);
@@ -489,6 +629,7 @@ function CaseCard({ c, onSelect, onDelete, selected }) {
             src={thumbnail}
             patientName={c.patientName}
             onClose={() => setShowPreview(false)}
+            onReplaceSnapshot={(dataUrl) => onUpdateSnapshot?.(c.id, dataUrl)}
           />
         )}
       </AnimatePresence>
@@ -813,6 +954,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [preOpReportCase, setPreOpReportCase] = useState(null);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [lightboxName, setLightboxName] = useState(null);
+  const [lightboxCaseId, setLightboxCaseId] = useState(null);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
@@ -1148,7 +1290,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                                 {/* preview button */}
                                 <button
                                   type="button"
-                                  onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
+                                  onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
                                   className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black text-white shadow-lg transition-all hover:scale-105"
                                   style={{ background: "rgba(14,165,233,0.85)", backdropFilter: "blur(4px)" }}
                                 >
@@ -1374,6 +1516,13 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                           onSelect={(c) => setSelectedCaseId(c.id === selectedCaseId ? null : c.id)}
                           onDelete={handleDelete}
                           selected={c.id === selectedCaseId}
+                          onUpdateSnapshot={(id, dataUrl) => {
+                            setCases(prev => {
+                              const updated = prev.map(x => x.id === id ? { ...x, snapshot: dataUrl } : x);
+                              saveCases(updated);
+                              return updated;
+                            });
+                          }}
                         />
                       ))}
                     </AnimatePresence>
@@ -1438,7 +1587,16 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           <ImagePreviewLightbox
             src={lightboxSrc}
             patientName={lightboxName}
-            onClose={() => { setLightboxSrc(null); setLightboxName(null); }}
+            onClose={() => { setLightboxSrc(null); setLightboxName(null); setLightboxCaseId(null); }}
+            onReplaceSnapshot={(dataUrl) => {
+              if (!lightboxCaseId) return;
+              setCases(prev => {
+                const updated = prev.map(c => c.id === lightboxCaseId ? { ...c, snapshot: dataUrl } : c);
+                saveCases(updated);
+                return updated;
+              });
+              setLightboxSrc(dataUrl);
+            }}
           />
         )}
       </AnimatePresence>
