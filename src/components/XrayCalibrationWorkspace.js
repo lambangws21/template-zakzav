@@ -4904,6 +4904,12 @@ export default function XrayCalibrationWorkspace({
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
+  // Cup assessment drawn directly on canvas (image-space coords)
+  const [canvasCup, setCanvasCup] = useState(null);
+  // { cx, cy, a, b, angle, side } — all in image-space pixels
+  const canvasCupDragRef = useRef(null);
+  // { handle: "center"|"top"|"side", startImgX, startImgY, startCup }
+  const [canvasCupSide, setCanvasCupSide] = useState("right");
   // { inclination, anteversion, side, zone, savedAt }
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
@@ -4954,6 +4960,24 @@ export default function XrayCalibrationWorkspace({
   const imageHeight = image?.naturalHeight || image?.height || 0;
   const modelWidth = cropRect?.width || imageWidth;
   const modelHeight = cropRect?.height || imageHeight;
+
+  // Init canvasCup when cup assessment mode is toggled on
+  useEffect(() => {
+    if (showCupAssessment && !canvasCup && modelWidth > 0 && modelHeight > 0) {
+      const initA = Math.min(modelWidth, modelHeight) * 0.18;
+      setCanvasCup({
+        cx: modelWidth * 0.5,
+        cy: modelHeight * 0.38,
+        a: initA,
+        b: initA * 0.259,
+        angle: (40 * Math.PI) / 180,
+      });
+    }
+    if (!showCupAssessment) {
+      canvasCupDragRef.current = null;
+    }
+  }, [showCupAssessment, modelWidth, modelHeight]);
+
   const orientedSize = useMemo(
     () => getOrientedSize(modelWidth, modelHeight, rotation),
     [modelHeight, modelWidth, rotation],
@@ -12820,6 +12844,109 @@ export default function XrayCalibrationWorkspace({
       );
     }
 
+    // ── Cup Assessment canvas overlay ───────────────────────────────────────
+    if (showCupAssessment && canvasCup) {
+      const { cx, cy, a, b, angle } = canvasCup;
+      const center = imageToScreenPoint(cx, cy);
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      const scale = view.scale;
+      const sa = a * scale; // semi-major in screen px
+      const sb = b * scale; // semi-minor in screen px
+
+      // inclination & anteversion labels
+      const rawDeg = ((angle * 180 / Math.PI) % 180 + 180) % 180;
+      const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
+      const ratio = a > 0 ? Math.min(0.9999, Math.abs(b / a)) : 0;
+      const anteversion = (Math.asin(ratio) * 180) / Math.PI;
+
+      overlayCtx.save();
+
+      // horizontal reference line
+      overlayCtx.strokeStyle = "rgba(148,163,184,0.45)";
+      overlayCtx.lineWidth = 1;
+      overlayCtx.setLineDash([6, 5]);
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(center.x - sa - 18, center.y);
+      overlayCtx.lineTo(center.x + sa + 18, center.y);
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+
+      // major axis line (green)
+      overlayCtx.strokeStyle = "#4ade80";
+      overlayCtx.lineWidth = 1.5;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(center.x - cosA * sa, center.y - sinA * sa);
+      overlayCtx.lineTo(center.x + cosA * sa, center.y + sinA * sa);
+      overlayCtx.stroke();
+
+      // minor axis line (cyan dashed)
+      overlayCtx.strokeStyle = "#22d3ee";
+      overlayCtx.lineWidth = 1;
+      overlayCtx.setLineDash([4, 4]);
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(center.x - sinA * sb, center.y + cosA * sb);
+      overlayCtx.lineTo(center.x + sinA * sb, center.y - cosA * sb);
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+
+      // outer ellipse (orange)
+      overlayCtx.save();
+      overlayCtx.translate(center.x, center.y);
+      overlayCtx.rotate(angle);
+      overlayCtx.strokeStyle = "#f97316";
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.ellipse(0, 0, sa, sb, 0, 0, Math.PI * 2);
+      overlayCtx.stroke();
+      // inner ellipse (cyan dashed)
+      overlayCtx.strokeStyle = "#22d3ee";
+      overlayCtx.lineWidth = 1;
+      overlayCtx.setLineDash([5, 5]);
+      overlayCtx.beginPath();
+      overlayCtx.ellipse(0, 0, sa * 0.72, sb * 0.72, 0, 0, Math.PI * 2);
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+      overlayCtx.restore();
+
+      // handles
+      const handleR = 6;
+      const handles = [
+        { x: center.x, y: center.y, color: "#f8fafc" }, // center
+        { x: center.x - cosA * sa, y: center.y - sinA * sa, color: "#4ade80" }, // top
+        { x: center.x + cosA * sa, y: center.y + sinA * sa, color: "#4ade80" }, // bottom
+        { x: center.x + sinA * sb, y: center.y - cosA * sb, color: "#22d3ee" }, // right
+        { x: center.x - sinA * sb, y: center.y + cosA * sb, color: "#22d3ee" }, // left
+      ];
+      for (const h of handles) {
+        overlayCtx.beginPath();
+        overlayCtx.arc(h.x, h.y, handleR, 0, Math.PI * 2);
+        overlayCtx.fillStyle = h.color;
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = "#0f172a";
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.stroke();
+      }
+
+      // result label pill
+      const lblText = `INC ${inclination.toFixed(1)}°  AV ${anteversion.toFixed(1)}°  ${canvasCupSide === "left" ? "◁ Kiri" : "Kanan ▷"}`;
+      const pillX = center.x;
+      const pillY = center.y - sa - 22;
+      overlayCtx.font = "bold 11px Inter, sans-serif";
+      const tw = overlayCtx.measureText(lblText).width;
+      const ph = 18; const pw = tw + 20; const pr = 9;
+      overlayCtx.fillStyle = "rgba(15,23,42,0.82)";
+      overlayCtx.beginPath();
+      overlayCtx.roundRect(pillX - pw / 2, pillY - ph / 2, pw, ph, pr);
+      overlayCtx.fill();
+      overlayCtx.fillStyle = "#f97316";
+      overlayCtx.textAlign = "center";
+      overlayCtx.textBaseline = "middle";
+      overlayCtx.fillText(lblText, pillX, pillY);
+
+      overlayCtx.restore();
+    }
+
     // ── Crop selection draft overlay ────────────────────────────────────────
     if (cropDraftPoints) {
       const s1 = imageToScreenPoint(cropDraftPoints.startX, cropDraftPoints.startY);
@@ -12914,6 +13041,9 @@ export default function XrayCalibrationWorkspace({
     view.scale,
     viewport.height,
     viewport.width,
+    showCupAssessment,
+    canvasCup,
+    canvasCupSide,
   ]);
 
   useEffect(() => {
@@ -13607,6 +13737,37 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      // ── Cup Assessment canvas drag ──────────────────────────────────────────
+      if (showCupAssessment && canvasCup) {
+        const { cx, cy, a, b, angle } = canvasCup;
+        const center = { x: point.x, y: point.y };
+        const cScr = imageToScreenPoint(cx, cy);
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const sc = view.scale;
+        const sa = a * sc;
+        const sb = b * sc;
+        const HIT = 12;
+        const handles = [
+          { key: "center", x: cScr.x, y: cScr.y },
+          { key: "top",    x: cScr.x - cosA * sa, y: cScr.y - sinA * sa },
+          { key: "bottom", x: cScr.x + cosA * sa, y: cScr.y + sinA * sa },
+          { key: "sideR",  x: cScr.x + sinA * sb, y: cScr.y - cosA * sb },
+          { key: "sideL",  x: cScr.x - sinA * sb, y: cScr.y + cosA * sb },
+        ];
+        const hit = handles.find(h => Math.hypot(center.x - h.x, center.y - h.y) < HIT);
+        if (hit) {
+          canvasCupDragRef.current = {
+            handle: hit.key,
+            startScrX: point.x,
+            startScrY: point.y,
+            startCup: { ...canvasCup },
+          };
+          interactionRef.current = { mode: "cupDrag", startX: point.x, startY: point.y };
+          return;
+        }
+      }
 
       // ── Crop selection tool ─────────────────────────────────────────────────
       if (cropToolActive) {
@@ -15845,12 +16006,56 @@ export default function XrayCalibrationWorkspace({
       view.panX,
       view.panY,
       view.scale,
+      showCupAssessment,
+      canvasCup,
+      imageToScreenPoint,
     ],
   );
 
   const handlePointerMove = useCallback(
     (event) => {
       if (!image) return;
+
+      // ── Cup Assessment drag update ──────────────────────────────────────────
+      if (interactionRef.current?.mode === "cupDrag" && canvasCupDragRef.current) {
+        const point = getLocalPoint(event);
+        const drag = canvasCupDragRef.current;
+        const sc = view.scale;
+        const dScrX = point.x - drag.startScrX;
+        const dScrY = point.y - drag.startScrY;
+        const dImgX = dScrX / sc;
+        const dImgY = dScrY / sc;
+        const { cx, cy, a, b, angle } = drag.startCup;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+
+        if (drag.handle === "center") {
+          setCanvasCup(prev => ({ ...prev, cx: cx + dImgX, cy: cy + dImgY }));
+        } else if (drag.handle === "top" || drag.handle === "bottom") {
+          const sign = drag.handle === "top" ? -1 : 1;
+          const tipX = cx + sign * cosA * a + dImgX;
+          const tipY = cy + sign * sinA * a + dImgY;
+          const dx = tipX - cx;
+          const dy = tipY - cy;
+          const newA = Math.max(8, Math.sqrt(dx * dx + dy * dy));
+          const newAngle = drag.handle === "top" ? Math.atan2(dy, dx) + Math.PI : Math.atan2(dy, dx);
+          setCanvasCup(prev => ({
+            ...prev,
+            a: newA,
+            b: Math.min(prev.b, newA * 0.9),
+            angle: newAngle,
+          }));
+        } else if (drag.handle === "sideR" || drag.handle === "sideL") {
+          const sign = drag.handle === "sideR" ? 1 : -1;
+          const tipX = cx + sign * sinA * b + dImgX;
+          const tipY = cy - sign * cosA * b + dImgY;
+          const dx = tipX - cx;
+          const dy = tipY - cy;
+          const proj = Math.abs(dx * sinA - dy * cosA);
+          setCanvasCup(prev => ({ ...prev, b: Math.max(4, Math.min(a * 0.9, proj)) }));
+        }
+        return;
+      }
 
       // ── Crop drag update ────────────────────────────────────────────────────
       if (interactionRef.current?.mode === "cropSelect") {
@@ -16911,6 +17116,7 @@ export default function XrayCalibrationWorkspace({
       tool,
       trackMobileGesturePointer,
       updateMobilePrecisionOverlay,
+      view.scale,
     ],
   );
 
@@ -16918,6 +17124,13 @@ export default function XrayCalibrationWorkspace({
     removeMobileGesturePointer(event?.pointerId);
     clearMobileLongPress();
     const completedInteractionMode = interactionRef.current.mode;
+
+    // ── Cup Assessment drag end ──────────────────────────────────────────────
+    if (completedInteractionMode === "cupDrag") {
+      canvasCupDragRef.current = null;
+      interactionRef.current = { mode: null, startX: 0, startY: 0 };
+      return;
+    }
 
     // ── Apply crop selection ─────────────────────────────────────────────────
     if (completedInteractionMode === "cropSelect") {
@@ -35005,17 +35218,48 @@ export default function XrayCalibrationWorkspace({
         }}
       />
 
-      {/* Cup Assessment Overlay */}
-      {showCupAssessment && (
-        <CupAssessmentOverlayInline
-          onClose={() => setShowCupAssessment(false)}
-          onSave={(data) => {
-            setSavedCupAssessment({ ...data, savedAt: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) });
-            setNotice(`Cup Assessment disimpan — INC ${data.inclination.toFixed(1)}°, AV ${data.anteversion.toFixed(1)}° (${data.side === "left" ? "Kiri" : "Kanan"})`);
-          }}
-          savedData={savedCupAssessment}
-        />
-      )}
+      {/* Cup Assessment — compact canvas-attached panel */}
+      {showCupAssessment && canvasCup && (() => {
+        const rawDeg = ((canvasCup.angle * 180 / Math.PI) % 180 + 180) % 180;
+        const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
+        const ratio = canvasCup.a > 0 ? Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a)) : 0;
+        const anteversion = (Math.asin(ratio) * 180) / Math.PI;
+        const { label: zoneLabel, color: zoneColor, bg: zoneBg } = cupZoneStatus(inclination, anteversion);
+        return (
+          <div style={{
+            position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
+            zIndex: 120, display: "flex", alignItems: "center", gap: 8,
+            background: "rgba(15,23,42,0.88)", backdropFilter: "blur(10px)",
+            border: "1.5px solid rgba(56,189,248,0.25)", borderRadius: 16,
+            padding: "7px 14px", boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+            pointerEvents: "all",
+          }}>
+            {/* zone badge */}
+            <span style={{ fontSize: 10, fontWeight: 900, padding: "2px 8px", borderRadius: 8, background: zoneBg, color: zoneColor, border: `1px solid ${zoneColor}40` }}>{zoneLabel}</span>
+            {/* inclination */}
+            <span style={{ fontSize: 11, fontWeight: 800, color: "#f97316" }}>INC <span style={{ fontSize: 14, fontWeight: 900 }}>{inclination.toFixed(1)}°</span></span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "#22d3ee" }}>AV <span style={{ fontSize: 14, fontWeight: 900 }}>{anteversion.toFixed(1)}°</span></span>
+            {/* side toggle */}
+            <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,0.12)" }}>
+              {[{ v: "left", label: "◁ Kiri", c: "#0ea5e9" }, { v: "right", label: "Kanan ▷", c: "#f97316" }].map(({ v, label, c }) => (
+                <button key={v} onClick={() => setCanvasCupSide(v)} style={{ padding: "3px 10px", fontSize: 10, fontWeight: 800, cursor: "pointer", border: "none", background: canvasCupSide === v ? c : "transparent", color: canvasCupSide === v ? "#fff" : "#64748b", transition: "all 0.2s" }}>{label}</button>
+              ))}
+            </div>
+            {/* save button */}
+            <button
+              onClick={() => {
+                const data = { inclination, anteversion, side: canvasCupSide, zone: zoneLabel };
+                setSavedCupAssessment({ ...data, savedAt: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) });
+                setNotice(`Cup Assessment disimpan — INC ${inclination.toFixed(1)}°, AV ${anteversion.toFixed(1)}° (${canvasCupSide === "left" ? "Kiri" : "Kanan"})`);
+              }}
+              style={{ padding: "4px 12px", borderRadius: 9, border: "1px solid #16a34a", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+            >💾 Simpan</button>
+            {/* reset + close */}
+            <button onClick={() => setCanvasCup(null)} style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Reset</button>
+            <button onClick={() => { setShowCupAssessment(false); setCanvasCup(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#475569", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>✕</button>
+          </div>
+        );
+      })()}
 
       <ImplantSizePanel
         isOpen={implantSizePanelOpen}
