@@ -1659,8 +1659,15 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           if (updatedData) {
             setCases(prev => {
               const next = prev.map(c => c.id === id ? { ...c, ...updatedData } : c);
-              saveCases(next);
-              return next;
+              // Jangan simpan dataURL ke localStorage — terlalu besar, bisa corrupt
+              // Hanya Drive URLs (http/https) yang di-persist
+              saveCases(next.map(c => ({
+                ...c,
+                postOpPhotos: (c.postOpPhotos || []).filter(
+                  p => typeof p === "string" && p.startsWith("http")
+                ),
+              })));
+              return next; // In-memory tetap punya dataURL untuk tampil sesi ini
             });
           }
           // Refresh from cloud to get updated post-op data

@@ -213,11 +213,32 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
     reader.readAsDataURL(file);
   }), []);
 
+  // Kompres ke maks 1024px dan JPEG 78% — dari ~2MB jadi ~150-300KB
+  const compressImage = useCallback((dataUrl) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1024;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback ke asli jika gagal
+    img.src = dataUrl;
+  }), []);
+
   const handlePhotoFiles = useCallback(async (files) => {
     const valid = Array.from(files).filter(f => f.type.startsWith("image/")).slice(0, 10);
-    const results = await Promise.all(valid.map(readFileAsDataUrl));
+    const results = await Promise.all(
+      valid.map(async (f) => compressImage(await readFileAsDataUrl(f)))
+    );
     setPostOpPhotos(prev => [...prev, ...results].slice(0, 10));
-  }, [readFileAsDataUrl]);
+  }, [readFileAsDataUrl, compressImage]);
 
   const removePhoto = useCallback((idx) => {
     setPostOpPhotos(prev => prev.filter((_, i) => i !== idx));

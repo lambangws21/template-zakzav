@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 90;
+
+// Izinkan body besar untuk upload foto post-op (base64 ~10MB)
+export const config = {
+  api: { bodyParser: { sizeLimit: "20mb" } },
+};
 
 const REQUEST_TIMEOUT_MS = 90_000;
 const HTML_TAG_PATTERN = /^\s*<(?:!doctype\s+html|html)\b/i;
