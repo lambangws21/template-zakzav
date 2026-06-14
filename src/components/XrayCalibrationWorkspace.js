@@ -25967,20 +25967,26 @@ export default function XrayCalibrationWorkspace({
       <header
         className={`${SOFT_PANEL_CLASS} relative z-50 ${
           isSimpleUiMode ? "hidden lg:flex" : "flex"
-        } flex-wrap items-start justify-between gap-2 px-3 pt-2 pb-1 sm:px-4 sm:py-3`}
+        } items-center justify-between gap-3 px-4 py-0`}
+        style={{ height: 52, minHeight: 52 }}
       >
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <div className="flex shrink-0 flex-col gap-0.5">
-            <h1 className="text-base font-semibold text-slate-900 sm:text-xl">
+        <div className="flex min-w-0 shrink items-center gap-3 overflow-hidden">
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-[0_0_10px_rgba(14,165,233,0.35)]" style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }}>
+              <svg width="13" height="13" viewBox="0 0 38 38" fill="none">
+                <rect x="8" y="17" width="22" height="4" rx="2" fill="white"/>
+                <circle cx="8" cy="19" r="6" fill="white" opacity="0.9"/>
+                <circle cx="30" cy="19" r="6" fill="white" opacity="0.9"/>
+              </svg>
+            </div>
+            <h1 className="whitespace-nowrap text-sm font-black tracking-tight text-slate-900">
               My Counteinvas
             </h1>
-            <p className="hidden text-xs text-slate-600 sm:block">
-              Upload, kalibrasi & ukur
-            </p>
           </div>
+          <div className="h-5 w-px shrink-0 bg-slate-200/80" />
 
           {isSimpleUiMode ? (
-            <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/75 bg-[#eef2f7] p-1 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]">
+            <div className="flex items-center gap-0.5 overflow-x-auto rounded-full border border-white/75 bg-[#eef2f7] p-0.5 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]">
               {simpleWorkflowSteps.map((step) => {
                 const active = workflowStep === step.id;
                 return (
@@ -25988,11 +25994,11 @@ export default function XrayCalibrationWorkspace({
                     key={step.id}
                     type="button"
                     onClick={step.onClick}
-                    className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[10px] font-extrabold transition ${
+                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[10px] font-extrabold transition ${
                       active
-                        ? "bg-slate-900 text-white shadow-[2px_2px_7px_rgba(15,23,42,0.22),-2px_-2px_7px_rgba(255,255,255,0.9)]"
+                        ? "bg-slate-900 text-white shadow-[2px_2px_6px_rgba(15,23,42,0.22),-2px_-2px_6px_rgba(255,255,255,0.9)]"
                         : step.done
-                          ? "bg-emerald-500 text-white shadow-[2px_2px_7px_rgba(16,185,129,0.24),-2px_-2px_7px_rgba(255,255,255,0.86)]"
+                          ? "bg-emerald-500 text-white shadow-[2px_2px_6px_rgba(16,185,129,0.22),-2px_-2px_6px_rgba(255,255,255,0.86)]"
                           : "text-slate-500 hover:bg-white/60 hover:text-slate-900"
                     }`}
                     title={`${step.id}. ${step.label}`}
@@ -26014,7 +26020,7 @@ export default function XrayCalibrationWorkspace({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           {!isSimpleUiMode && (
             <details
               open={simpleLayerDropdownOpen}
@@ -26649,7 +26655,7 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => { setSimpleDesktopHkaOpen((p) => !p); setSimpleDesktopEditFotoOpen(false); setSimpleDesktopManagerOpen(false); }}
-                className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+                className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
                 title="HKA · FTA · JLA — Pengukuran Mekanis"
               >
                 <span className="text-[10px] font-black text-cyan-700">HKA</span>
@@ -26749,7 +26755,7 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => { setSimpleDesktopEditFotoOpen((p) => !p); setSimpleDesktopHkaOpen(false); setSimpleDesktopManagerOpen(false); }}
-                className={`${simpleDesktopEditFotoOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+                className={`${simpleDesktopEditFotoOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
                 title="Edit Foto — Kontras, Kecerahan, Inversi, Crop"
               >
                 <Icon name="preset" className="h-3.5 w-3.5 shrink-0 text-slate-600" />
@@ -26848,7 +26854,7 @@ export default function XrayCalibrationWorkspace({
           {isSimpleUiMode ? (
             <button type="button"
               onClick={() => { setSimpleDesktopManagerOpen(false); setSimpleDesktopHkaOpen(false); setSimpleDesktopEditFotoOpen(false); openTemplatingWizard(); }}
-              className={`${SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
               title="Mulai Templating — panduan TKR · THA · Hemi"
             >
               <svg className="h-3.5 w-3.5 shrink-0 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
@@ -26865,7 +26871,7 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => setSimpleDesktopManagerOpen((p) => !p)}
-                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition hover:text-slate-950`}
+                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
                 title="Layer · Line · Implant Manager"
               >
                 <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -26966,7 +26972,7 @@ export default function XrayCalibrationWorkspace({
             <button
               type="button"
               onClick={() => setPreOpSummaryOpen(true)}
-              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950`}
+              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold text-slate-700 transition hover:text-slate-950`}
               title="Ringkasan Pre-Op"
             >
               <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
@@ -26981,7 +26987,7 @@ export default function XrayCalibrationWorkspace({
           {isSimpleUiMode ? (
             <details className="group relative">
               <summary
-                className={`${selectedAnnotation ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex cursor-pointer list-none items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden`}
+                className={`${selectedAnnotation ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex cursor-pointer list-none items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden`}
               >
                 <Icon name="annotation" className="h-3.5 w-3.5" />
                 {/* <span>Anotasi</span> */}
@@ -27130,21 +27136,27 @@ export default function XrayCalibrationWorkspace({
             </details>
           ) : null}
           {isSimpleUiMode && typeof onOpenAdvancedUi === "function" ? (
-            <button
-              type="button"
-              onClick={onOpenAdvancedUi}
-              className={`${SOFT_RAISED_CLASS} rounded-full px-4 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950`}
-            >
-              Advanced UI
-            </button>
+            <>
+              <div className="h-5 w-px bg-slate-200/80" />
+              <button
+                type="button"
+                onClick={onOpenAdvancedUi}
+                className="flex items-center gap-1.5 rounded-full border border-slate-300/60 bg-slate-900 px-3 py-1.5 text-[10px] font-bold text-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
+              >
+                Advanced UI
+              </button>
+            </>
           ) : typeof onOpenSimpleUi === "function" ? (
-            <button
-              type="button"
-              onClick={onOpenSimpleUi}
-              className={`${SOFT_RAISED_CLASS} rounded-full px-4 py-2 text-xs font-semibold text-slate-700 transition hover:text-slate-950`}
-            >
-              Simple UI
-            </button>
+            <>
+              <div className="h-5 w-px bg-slate-200/80" />
+              <button
+                type="button"
+                onClick={onOpenSimpleUi}
+                className={`${SOFT_RAISED_CLASS} rounded-full px-3 py-1.5 text-[10px] font-semibold text-slate-700 transition hover:text-slate-950`}
+              >
+                Simple UI
+              </button>
+            </>
           ) : null}
           {!isSimpleUiMode ? (
             <IconButton
