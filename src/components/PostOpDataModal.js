@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, ClipboardCheck, Save, Loader2, CheckCircle2,
   Ruler, Calendar, FileText, ArrowRight, Lock, Pencil,
+  Camera, ImagePlus, Trash2, ZoomIn,
 } from "lucide-react";
 
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
@@ -164,6 +165,10 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
   const [saving, setSaving]   = useState(false);
   const [done, setDone]       = useState(false);
   const [error, setError]     = useState("");
+  const [postOpPhotos, setPostOpPhotos] = useState([]); // array of dataURL strings
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   // Reset on open
   useEffect(() => {
@@ -171,6 +176,8 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
     setOperationDate(patientCase.operationDate || "");
     setPostOpHka(patientCase.postOpHka != null ? String(patientCase.postOpHka) : "");
     setPostOpNotes(patientCase.postOpNotes || "");
+    setPostOpPhotos(patientCase.postOpPhotos || []);
+    setLightboxPhoto(null);
     setDone(false);
     setError("");
 
@@ -198,6 +205,23 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
   }, [isOpen, patientCase]);
 
   const setExtra = (key, val) => setExtras((prev) => ({ ...prev, [key]: val }));
+
+  const readFileAsDataUrl = useCallback((file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("Gagal membaca file"));
+    reader.readAsDataURL(file);
+  }), []);
+
+  const handlePhotoFiles = useCallback(async (files) => {
+    const valid = Array.from(files).filter(f => f.type.startsWith("image/")).slice(0, 10);
+    const results = await Promise.all(valid.map(readFileAsDataUrl));
+    setPostOpPhotos(prev => [...prev, ...results].slice(0, 10));
+  }, [readFileAsDataUrl]);
+
+  const removePhoto = useCallback((idx) => {
+    setPostOpPhotos(prev => prev.filter((_, i) => i !== idx));
+  }, []);
 
   // Parse pre-op reference values for extras from structured implantLabel
   const preOpExtras = useMemo(() => {
@@ -250,9 +274,19 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
         preOpSizeNum: preOpPrimary !== "" ? Number(preOpPrimary) : null,
         postOpHka: postOpHka !== "" ? Number(postOpHka) : null,
         postOpNotes: postOpNotes.trim(),
+        postOpPhotos,
       });
       setDone(true);
-      if (onSaved) onSaved(patientCase.id);
+      if (onSaved) onSaved(patientCase.id, {
+        operationDate: operationDate || "",
+        actualImplantLabel: buildActualLabel(),
+        actualSizeNum: actualPrimary !== "" ? Number(actualPrimary) : null,
+        preOpSizeNum: preOpPrimary !== "" ? Number(preOpPrimary) : null,
+        postOpHka: postOpHka !== "" ? Number(postOpHka) : null,
+        postOpNotes: postOpNotes.trim(),
+        postOpPhotos,
+        postOpUpdatedAt: new Date().toISOString(),
+      });
     } catch (err) {
       setError(err.message || "Gagal menyimpan.");
     } finally {
@@ -261,6 +295,30 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
   };
 
   if (typeof document === "undefined" || !patientCase) return null;
+
+  const lightboxContent = lightboxPhoto && (
+    <motion.div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => setLightboxPhoto(null)}
+    >
+      <motion.div
+        className="relative max-h-full max-w-full overflow-hidden rounded-3xl"
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img src={lightboxPhoto} alt="preview" className="max-h-[85dvh] max-w-full rounded-3xl object-contain" />
+        <button type="button" onClick={() => setLightboxPhoto(null)}
+          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
+          <X className="h-4 w-4" />
+        </button>
+      </motion.div>
+    </motion.div>
+  );
 
   const content = (
     <AnimatePresence>
@@ -463,6 +521,69 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
                         className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
                     </label>
 
+                    {/* Foto Post-Op */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                          <Camera className="h-3 w-3 text-slate-400" />
+                          Foto Post-Op
+                          <span className="font-normal normal-case text-slate-400">({postOpPhotos.length}/10)</span>
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button type="button"
+                            onClick={() => cameraInputRef.current?.click()}
+                            className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-black text-slate-600 hover:bg-slate-50">
+                            <Camera className="h-3 w-3" /> Kamera
+                          </button>
+                          <button type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-black text-slate-600 hover:bg-slate-50">
+                            <ImagePlus className="h-3 w-3" /> Galeri
+                          </button>
+                        </div>
+                      </div>
+                      <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+                        onChange={(e) => { handlePhotoFiles(e.target.files); e.target.value = ""; }} />
+                      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                        onChange={(e) => { handlePhotoFiles(e.target.files); e.target.value = ""; }} />
+                      {postOpPhotos.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {postOpPhotos.map((src, idx) => (
+                            <div key={idx} className="group relative aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                              <img src={src} alt={`foto-${idx + 1}`} className="h-full w-full object-cover" />
+                              <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                                <button type="button" onClick={() => setLightboxPhoto(src)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 hover:bg-white">
+                                  <ZoomIn className="h-3.5 w-3.5" />
+                                </button>
+                                <button type="button" onClick={() => removePhoto(idx)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500/90 text-white hover:bg-red-600">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                              <span className="absolute bottom-1 right-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[8px] font-black text-white">
+                                {idx + 1}
+                              </span>
+                            </div>
+                          ))}
+                          {postOpPhotos.length < 10 && (
+                            <button type="button" onClick={() => fileInputRef.current?.click()}
+                              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300 hover:bg-slate-100">
+                              <ImagePlus className="h-5 w-5" />
+                              <span className="text-[8px] font-bold">Tambah</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => fileInputRef.current?.click()}
+                          className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 py-6 text-slate-400 hover:border-slate-300 hover:bg-slate-100">
+                          <ImagePlus className="h-8 w-8" />
+                          <span className="text-[10px] font-bold">Tap untuk menambahkan foto post-op</span>
+                          <span className="text-[9px] text-slate-300">JPG, PNG · Maks 10 foto</span>
+                        </button>
+                      )}
+                    </div>
+
                     {error && (
                       <p className="rounded-xl bg-red-50 px-3 py-2 text-[10px] text-red-600">{error}</p>
                     )}
@@ -488,5 +609,12 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
     </AnimatePresence>
   );
 
-  return createPortal(content, document.body);
+  return (
+    <>
+      {createPortal(content, document.body)}
+      <AnimatePresence>
+        {lightboxPhoto && createPortal(lightboxContent, document.body)}
+      </AnimatePresence>
+    </>
+  );
 }

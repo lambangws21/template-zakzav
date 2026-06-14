@@ -205,6 +205,8 @@ function mapCloudCase(raw) {
   try { hkaSummary = JSON.parse(raw.hkaSummaryJson || "[]"); } catch {}
   let cupAssessment = null;
   try { cupAssessment = raw.cupAssessmentJson ? JSON.parse(raw.cupAssessmentJson) : null; } catch {}
+  let postOpPhotos = [];
+  try { postOpPhotos = raw.postOpPhotosJson ? JSON.parse(raw.postOpPhotosJson) : []; } catch {}
   return {
     id: raw.id,
     patientName: raw.patientName || "",
@@ -231,6 +233,7 @@ function mapCloudCase(raw) {
     postOpHka: raw.postOpHka != null && raw.postOpHka !== ""
       ? Number(raw.postOpHka) : null,
     postOpNotes: raw.postOpNotes || "",
+    postOpPhotos,
     postOpUpdatedAt: raw.postOpUpdatedAt || "",
   };
 }
@@ -1038,6 +1041,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         actualSizeNum: null,
         postOpHka: null,
         postOpNotes: "",
+        postOpPhotos: [],
         postOpUpdatedAt: "",
       };
 
@@ -1047,6 +1051,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
             ...caseData,
             snapshotDataUrl: snapshot,
             cupAssessmentJson: caseData.cupAssessment ? JSON.stringify(caseData.cupAssessment) : "",
+            postOpPhotosJson: "[]",
           });
           caseData.snapshotUrl = result.snapshotUrl || null;
           caseData.snapshot = caseData.snapshotUrl || snapshot;
@@ -1424,6 +1429,23 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                               {selectedCase.postOpNotes && (
                                 <p className="text-[10px] italic text-slate-500">"{selectedCase.postOpNotes}"</p>
                               )}
+                              {selectedCase.postOpPhotos?.length > 0 && (
+                                <div className="space-y-1.5 pt-1">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Foto Post-Op ({selectedCase.postOpPhotos.length})</p>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {selectedCase.postOpPhotos.map((src, idx) => (
+                                      <button key={idx} type="button"
+                                        onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
+                                        className="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                                        <img src={src} alt={`post-op-${idx+1}`} className="h-full w-full object-cover" />
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                                          <ZoomIn className="h-4 w-4 text-white" />
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="px-4 py-2 text-[10px] italic text-slate-400">
@@ -1555,8 +1577,15 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         isOpen={Boolean(postOpCase)}
         onClose={() => setPostOpCase(null)}
         patientCase={postOpCase}
-        onSaved={(id) => {
+        onSaved={(id, updatedData) => {
           setPostOpCase(null);
+          if (updatedData) {
+            setCases(prev => {
+              const next = prev.map(c => c.id === id ? { ...c, ...updatedData } : c);
+              saveCases(next);
+              return next;
+            });
+          }
           // Refresh from cloud to get updated post-op data
           if (hasCloud) {
             apiListCases().then((items) => {
