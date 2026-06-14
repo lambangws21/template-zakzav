@@ -528,7 +528,7 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
               <div className="flex h-7 shrink-0 gap-0.5 bg-slate-950/80 px-0.5 py-0.5">
                 {c.postOpPhotos.slice(0, 3).map((src, i) => (
                   <div key={i} className="flex-1 overflow-hidden rounded-sm">
-                    <img src={src} alt="" className="h-full w-full object-cover opacity-80" />
+                    <img src={snapshotSrc(src)} alt="" className="h-full w-full object-cover opacity-80" />
                   </div>
                 ))}
                 {c.postOpPhotos.length > 3 && (
@@ -1335,7 +1335,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                                     </div>
                                     {/* Kanan: Post-Op */}
                                     <div className="relative overflow-hidden">
-                                      <img src={postPhotos[curPostIdx]} alt={`Post-Op ${curPostIdx + 1}`} className="h-full w-full object-cover" />
+                                      <img src={snapshotSrc(postPhotos[curPostIdx])} alt={`Post-Op ${curPostIdx + 1}`} className="h-full w-full object-cover" />
                                       <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
                                       <div className="absolute left-1.5 top-1.5 rounded-full bg-emerald-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
                                         📸 Post-Op
@@ -1359,7 +1359,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                                         </div>
                                       )}
                                       <button type="button"
-                                        onClick={() => { setLightboxSrc(postPhotos[curPostIdx]); setLightboxName(selectedCase.patientName); }}
+                                        onClick={() => { setLightboxSrc(snapshotSrc(postPhotos[curPostIdx])); setLightboxName(selectedCase.patientName); }}
                                         className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
                                         <ZoomIn className="h-3 w-3" />
                                       </button>
@@ -1388,9 +1388,9 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                                     <div className="grid grid-cols-4 gap-1.5">
                                       {postPhotos.map((src, idx) => (
                                         <button key={idx} type="button"
-                                          onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
+                                          onClick={() => { setLightboxSrc(snapshotSrc(src)); setLightboxName(selectedCase.patientName); }}
                                           className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-slate-800">
-                                          <img src={src} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
+                                          <img src={snapshotSrc(src)} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
                                         </button>
                                       ))}
                                     </div>
