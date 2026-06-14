@@ -496,37 +496,51 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
         <div className="flex items-stretch gap-0">
 
           {/* thumbnail */}
-          <div className="relative flex h-full w-24 shrink-0 overflow-hidden rounded-l-2xl bg-slate-900">
+          <div className="relative flex h-full w-24 shrink-0 flex-col overflow-hidden rounded-l-2xl bg-slate-900">
             {thumbnail ? (
               <>
                 <img
                   src={thumbnail}
                   alt="X-ray"
-                  className="h-full w-full object-cover transition-all duration-300 group-hover:opacity-60"
-                  style={{ minHeight: 80 }}
+                  className={`w-full object-cover transition-all duration-300 group-hover:opacity-60 ${c.postOpPhotos?.length > 0 ? "flex-1" : "h-full"}`}
+                  style={{ minHeight: 60 }}
                 />
                 {/* overlay zoom button */}
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className={`absolute left-0 right-0 top-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${c.postOpPhotos?.length > 0 ? "bottom-[28px]" : "bottom-0"}`}
                   title="Preview gambar"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/90 shadow-lg">
-                    <ZoomIn className="h-4 w-4 text-white" />
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-500/90 shadow-lg">
+                    <ZoomIn className="h-3.5 w-3.5 text-white" />
                   </div>
-                  <span className="text-[8px] font-black text-sky-200 tracking-wider uppercase">Preview</span>
                 </button>
               </>
             ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-1" style={{ minHeight: 80 }}>
+              <div className={`flex flex-col items-center justify-center gap-1 ${c.postOpPhotos?.length > 0 ? "flex-1" : "h-full w-full"}`} style={{ minHeight: 60 }}>
                 <Activity className="h-6 w-6 text-slate-600" />
                 <span className="text-[7px] text-slate-600">No image</span>
               </div>
             )}
+            {/* Post-op photo strip */}
+            {c.postOpPhotos?.length > 0 && (
+              <div className="flex h-7 shrink-0 gap-0.5 bg-slate-950/80 px-0.5 py-0.5">
+                {c.postOpPhotos.slice(0, 3).map((src, i) => (
+                  <div key={i} className="flex-1 overflow-hidden rounded-sm">
+                    <img src={src} alt="" className="h-full w-full object-cover opacity-80" />
+                  </div>
+                ))}
+                {c.postOpPhotos.length > 3 && (
+                  <div className="flex flex-1 items-center justify-center rounded-sm bg-slate-700/80">
+                    <span className="text-[7px] font-black text-slate-300">+{c.postOpPhotos.length - 3}</span>
+                  </div>
+                )}
+              </div>
+            )}
             {/* cloud badge */}
             {c._cloud && (
-              <div className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500/80">
+              <div className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500/80">
                 <Cloud className="h-2.5 w-2.5 text-white" />
               </div>
             )}
@@ -538,16 +552,23 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
             onClick={() => onSelect(c)}
             className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
           >
-            {/* Row 1: name + post-op badge */}
+            {/* Row 1: name + badges */}
             <div className="flex items-center gap-1.5">
               <span className="truncate text-xs font-black text-slate-800">
                 {c.patientName || "Pasien Tanpa Nama"}
               </span>
-              {c.actualImplantLabel && (
-                <span className="ml-auto shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black text-emerald-700">
-                  POST-OP ✓
-                </span>
-              )}
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {c.postOpPhotos?.length > 0 && (
+                  <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[7px] font-black text-teal-700">
+                    📸 {c.postOpPhotos.length}
+                  </span>
+                )}
+                {c.actualImplantLabel && (
+                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black text-emerald-700">
+                    POST-OP ✓
+                  </span>
+                )}
+              </div>
             </div>
             {/* Row 2: procedure */}
             <p className="truncate text-[9px] text-slate-500">{c.procedure || "Belum ada prosedur"}</p>
@@ -1279,29 +1300,59 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                         </div>
 
                         <div className="divide-y divide-slate-100">
-                          {/* Snapshot banner */}
-                          {(selectedCase.snapshot || selectedCase.snapshotUrl) && (() => {
-                            const src = snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl);
+                          {/* Photo gallery: Pre-Op + Post-Op */}
+                          {(() => {
+                            const preOpSrc = (selectedCase.snapshot || selectedCase.snapshotUrl)
+                              ? snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl)
+                              : null;
+                            const postPhotos = selectedCase.postOpPhotos || [];
+                            if (!preOpSrc && postPhotos.length === 0) return null;
                             return (
-                              <div className="relative overflow-hidden" style={{ background: "#0a0f1c" }}>
-                                <img
-                                  src={src}
-                                  alt="X-ray"
-                                  className="w-full object-cover"
-                                  style={{ maxHeight: 160, opacity: 0.85 }}
-                                />
-                                {/* gradient overlay */}
-                                <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
-                                {/* preview button */}
-                                <button
-                                  type="button"
-                                  onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
-                                  className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black text-white shadow-lg transition-all hover:scale-105"
-                                  style={{ background: "rgba(14,165,233,0.85)", backdropFilter: "blur(4px)" }}
-                                >
-                                  <Maximize2 className="h-3 w-3" />
-                                  Perbesar
-                                </button>
+                              <div style={{ background: "#0a0f1c" }}>
+                                {/* Pre-Op X-ray banner */}
+                                {preOpSrc && (
+                                  <div className="relative overflow-hidden">
+                                    <div className="absolute top-2 left-2 z-10 rounded-full bg-sky-500/80 px-2 py-0.5 text-[8px] font-black text-white backdrop-blur-sm">
+                                      📷 X-Ray Pre-Op
+                                    </div>
+                                    <img
+                                      src={preOpSrc}
+                                      alt="X-ray Pre-Op"
+                                      className="w-full object-cover"
+                                      style={{ maxHeight: 160, opacity: 0.85 }}
+                                    />
+                                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
+                                    <button
+                                      type="button"
+                                      onClick={() => { setLightboxSrc(preOpSrc); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
+                                      className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black text-white shadow-lg transition-all hover:scale-105"
+                                      style={{ background: "rgba(14,165,233,0.85)", backdropFilter: "blur(4px)" }}
+                                    >
+                                      <Maximize2 className="h-3 w-3" />
+                                      Perbesar
+                                    </button>
+                                  </div>
+                                )}
+                                {/* Post-Op photos strip */}
+                                {postPhotos.length > 0 && (
+                                  <div className="px-3 pt-2 pb-3">
+                                    <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-400">
+                                      📸 Foto Post-Op ({postPhotos.length})
+                                    </p>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                      {postPhotos.map((src, idx) => (
+                                        <button key={idx} type="button"
+                                          onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
+                                          className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-slate-800">
+                                          <img src={src} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
+                                          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                            <ZoomIn className="h-3.5 w-3.5 text-white" />
+                                          </div>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
@@ -1428,23 +1479,6 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                               )}
                               {selectedCase.postOpNotes && (
                                 <p className="text-[10px] italic text-slate-500">"{selectedCase.postOpNotes}"</p>
-                              )}
-                              {selectedCase.postOpPhotos?.length > 0 && (
-                                <div className="space-y-1.5 pt-1">
-                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Foto Post-Op ({selectedCase.postOpPhotos.length})</p>
-                                  <div className="grid grid-cols-3 gap-1.5">
-                                    {selectedCase.postOpPhotos.map((src, idx) => (
-                                      <button key={idx} type="button"
-                                        onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
-                                        className="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                                        <img src={src} alt={`post-op-${idx+1}`} className="h-full w-full object-cover" />
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
-                                          <ZoomIn className="h-4 w-4 text-white" />
-                                        </div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
                               )}
                             </div>
                           ) : (
