@@ -979,6 +979,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [lightboxName, setLightboxName] = useState(null);
   const [lightboxCaseId, setLightboxCaseId] = useState(null);
+  const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
@@ -1129,6 +1130,9 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   );
 
   const selectedCase = cases.find((c) => c.id === selectedCaseId);
+
+  // Reset post-op photo index when case changes
+  useEffect(() => { setPostOpPhotoIdx(0); }, [selectedCaseId]);
 
   if (typeof document === "undefined") return null;
 
@@ -1300,42 +1304,84 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                         </div>
 
                         <div className="divide-y divide-slate-100">
-                          {/* Photo gallery: Pre-Op + Post-Op */}
+                          {/* Photo comparison: Pre-Op kiri | Post-Op kanan */}
                           {(() => {
                             const preOpSrc = (selectedCase.snapshot || selectedCase.snapshotUrl)
                               ? snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl)
                               : null;
                             const postPhotos = selectedCase.postOpPhotos || [];
                             if (!preOpSrc && postPhotos.length === 0) return null;
+
+                            const hasBoth = preOpSrc && postPhotos.length > 0;
+                            const curPostIdx = Math.min(postOpPhotoIdx, postPhotos.length - 1);
+
                             return (
                               <div style={{ background: "#0a0f1c" }}>
-                                {/* Pre-Op X-ray banner */}
-                                {preOpSrc && (
-                                  <div className="relative overflow-hidden">
-                                    <div className="absolute top-2 left-2 z-10 rounded-full bg-sky-500/80 px-2 py-0.5 text-[8px] font-black text-white backdrop-blur-sm">
+                                {hasBoth ? (
+                                  /* ── Side-by-side comparison ── */
+                                  <div className="grid grid-cols-2 divide-x divide-white/10" style={{ height: 180 }}>
+                                    {/* Kiri: Pre-Op */}
+                                    <div className="relative overflow-hidden">
+                                      <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
+                                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
+                                      <div className="absolute left-1.5 top-1.5 rounded-full bg-sky-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
+                                        📷 Pre-Op
+                                      </div>
+                                      <button type="button"
+                                        onClick={() => { setLightboxSrc(preOpSrc); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
+                                        className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 text-[7px] font-black text-white hover:bg-black/70">
+                                        <Maximize2 className="h-2.5 w-2.5" /> Besar
+                                      </button>
+                                    </div>
+                                    {/* Kanan: Post-Op */}
+                                    <div className="relative overflow-hidden">
+                                      <img src={postPhotos[curPostIdx]} alt={`Post-Op ${curPostIdx + 1}`} className="h-full w-full object-cover" />
+                                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
+                                      <div className="absolute left-1.5 top-1.5 rounded-full bg-emerald-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
+                                        📸 Post-Op
+                                      </div>
+                                      {/* Photo counter + nav */}
+                                      {postPhotos.length > 1 && (
+                                        <div className="absolute bottom-1.5 left-0 right-0 flex items-center justify-center gap-1.5">
+                                          <button type="button"
+                                            onClick={() => setPostOpPhotoIdx(i => (i - 1 + postPhotos.length) % postPhotos.length)}
+                                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
+                                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M5 1L2 4l3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                                          </button>
+                                          <span className="rounded-full bg-black/50 px-2 py-0.5 text-[7px] font-black text-white">
+                                            {curPostIdx + 1}/{postPhotos.length}
+                                          </span>
+                                          <button type="button"
+                                            onClick={() => setPostOpPhotoIdx(i => (i + 1) % postPhotos.length)}
+                                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
+                                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M3 1l3 3-3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                                          </button>
+                                        </div>
+                                      )}
+                                      <button type="button"
+                                        onClick={() => { setLightboxSrc(postPhotos[curPostIdx]); setLightboxName(selectedCase.patientName); }}
+                                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
+                                        <ZoomIn className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : preOpSrc ? (
+                                  /* ── Hanya Pre-Op ── */
+                                  <div className="relative overflow-hidden" style={{ height: 160 }}>
+                                    <div className="absolute left-2 top-2 z-10 rounded-full bg-sky-500/80 px-2 py-0.5 text-[8px] font-black text-white">
                                       📷 X-Ray Pre-Op
                                     </div>
-                                    <img
-                                      src={preOpSrc}
-                                      alt="X-ray Pre-Op"
-                                      className="w-full object-cover"
-                                      style={{ maxHeight: 160, opacity: 0.85 }}
-                                    />
+                                    <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
                                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
-                                    <button
-                                      type="button"
+                                    <button type="button"
                                       onClick={() => { setLightboxSrc(preOpSrc); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
-                                      className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black text-white shadow-lg transition-all hover:scale-105"
-                                      style={{ background: "rgba(14,165,233,0.85)", backdropFilter: "blur(4px)" }}
-                                    >
-                                      <Maximize2 className="h-3 w-3" />
-                                      Perbesar
+                                      className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-sky-500/85 px-3 py-1.5 text-[9px] font-black text-white">
+                                      <Maximize2 className="h-3 w-3" /> Perbesar
                                     </button>
                                   </div>
-                                )}
-                                {/* Post-Op photos strip */}
-                                {postPhotos.length > 0 && (
-                                  <div className="px-3 pt-2 pb-3">
+                                ) : (
+                                  /* ── Hanya Post-Op ── */
+                                  <div className="px-3 pb-3 pt-2">
                                     <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-400">
                                       📸 Foto Post-Op ({postPhotos.length})
                                     </p>
@@ -1345,9 +1391,6 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                                           onClick={() => { setLightboxSrc(src); setLightboxName(selectedCase.patientName); }}
                                           className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-slate-800">
                                           <img src={src} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
-                                          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                                            <ZoomIn className="h-3.5 w-3.5 text-white" />
-                                          </div>
                                         </button>
                                       ))}
                                     </div>
