@@ -767,9 +767,7 @@ function CanvasArea({
               {renderPreview()}
             </svg>
           </>
-        ) : (
-          <DropZone onUpload={null} />
-        )}
+        ) : null}
       </div>
 
       {/* Empty state */}
