@@ -13,6 +13,7 @@ const PATIENT_CASES_HEADERS = [
   "preOpSizeNum", "operationDate", "actualImplantLabel",
   "actualSizeNum", "postOpHka", "postOpNotes", "postOpUpdatedAt",
   "cupAssessmentJson",
+  "postOpPhotosJson",
 ];
 
 const IMPLANT_SUBMISSION_SHEET = "ImplantUsageSubmissions";
@@ -2108,6 +2109,7 @@ function readPatientCases_() {
       postOpNotes: String(row[18] || ""),
       postOpUpdatedAt: String(row[19] || ""),
       cupAssessmentJson: String(row[20] || ""),
+      postOpPhotosJson: String(row[21] || ""),
     };
   }).filter(function (item) { return item.id; });
 }
@@ -2154,6 +2156,7 @@ function createPatientCase_(payload) {
     data.preOpSizeNum != null ? Number(data.preOpSizeNum) : "",
     "", "", "", "", "", "",
     String(data.cupAssessmentJson || ""),
+    "[]",
   ];
   sheet.appendRow(row);
 
@@ -2193,9 +2196,33 @@ function updatePatientCase_(payload) {
   }
   if (data.postOpNotes !== undefined) row[18] = String(data.postOpNotes || "");
   row[19] = now;
+  // cupAssessmentJson (row[20]) tidak diupdate di sini — diset saat createCase
+
+  // Upload foto post-op ke Drive, simpan URL-nya (bukan dataURL mentah)
+  if (Array.isArray(data.postOpPhotos) && data.postOpPhotos.length > 0) {
+    var existingUrls = [];
+    try { existingUrls = JSON.parse(String(row[21] || "[]")); } catch (_e) {}
+    var photoUrls = [];
+    for (var i = 0; i < data.postOpPhotos.length; i++) {
+      var photoSrc = String(data.postOpPhotos[i] || "");
+      if (photoSrc.startsWith("data:image")) {
+        try {
+          var driveId = uploadImageFromDataUrl_({
+            imageDataUrl: photoSrc,
+            fileName: "postop-" + id + "-" + i + ".jpg",
+            mimeType: "image/jpeg",
+          });
+          if (driveId) photoUrls.push(driveIdToImageUrl_(driveId));
+        } catch (_err) { /* lewati foto yang gagal */ }
+      } else if (photoSrc.startsWith("http")) {
+        photoUrls.push(photoSrc); // sudah URL Drive, pertahankan
+      }
+    }
+    row[21] = JSON.stringify(photoUrls);
+  }
 
   sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).setValues([row]);
-  return { ok: true, status: "success", id: id, postOpUpdatedAt: now };
+  return { ok: true, status: "success", id: id, postOpUpdatedAt: now, postOpPhotosJson: String(row[21] || "[]") };
 }
 
 function deletePatientCase_(payload) {

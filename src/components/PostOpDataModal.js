@@ -267,7 +267,7 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
     setSaving(true);
     setError("");
     try {
-      await apiUpdateCase(patientCase.id, {
+      const remote = await apiUpdateCase(patientCase.id, {
         operationDate: operationDate || "",
         actualImplantLabel: buildActualLabel(),
         actualSizeNum: actualPrimary !== "" ? Number(actualPrimary) : null,
@@ -276,6 +276,11 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
         postOpNotes: postOpNotes.trim(),
         postOpPhotos,
       });
+      // Gunakan Drive URLs dari response jika tersedia, fallback ke dataURLs lokal
+      let savedPhotos = postOpPhotos;
+      if (remote?.postOpPhotosJson) {
+        try { savedPhotos = JSON.parse(remote.postOpPhotosJson); } catch (_) {}
+      }
       setDone(true);
       if (onSaved) onSaved(patientCase.id, {
         operationDate: operationDate || "",
@@ -284,8 +289,8 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
         preOpSizeNum: preOpPrimary !== "" ? Number(preOpPrimary) : null,
         postOpHka: postOpHka !== "" ? Number(postOpHka) : null,
         postOpNotes: postOpNotes.trim(),
-        postOpPhotos,
-        postOpUpdatedAt: new Date().toISOString(),
+        postOpPhotos: savedPhotos,
+        postOpUpdatedAt: remote?.postOpUpdatedAt || new Date().toISOString(),
       });
     } catch (err) {
       setError(err.message || "Gagal menyimpan.");
