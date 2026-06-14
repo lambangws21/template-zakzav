@@ -186,7 +186,6 @@ function TopBar({ step, setStep, patientName, doctorName }) {
               }}>
                 {s.n}
               </span>
-              <span style={{ display: "none", "@media(min-width:768px)": { display: "block" } }}>{s.label}</span>
               <span>{s.label}</span>
             </button>
             {i < STEPS.length - 1 && (
