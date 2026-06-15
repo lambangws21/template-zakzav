@@ -1,0 +1,136 @@
+<svg width="220" height="220" viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      /* ── Siklus total 5.5 detik, infinite ── */
+
+      /* Z: draw on → tahan → hapus → ulang */
+      @keyframes draw-z-loop {
+        0%        { stroke-dashoffset: 430; opacity: 0; }
+        6%        { opacity: 1; }
+        35%       { stroke-dashoffset: 0; }
+        70%       { stroke-dashoffset: 0; opacity: 1; }
+        88%, 100% { stroke-dashoffset: 430; opacity: 0; }
+      }
+
+      /* Glow Z pulse saat sudah tergambar */
+      @keyframes z-glow {
+        0%, 100% { filter: url(#glow-f); }
+        50%      { filter: url(#glow-bright); }
+      }
+
+      /* Bone: muncul bersamaan Z selesai, hilang saat Z hapus */
+      @keyframes bone-loop {
+        0%, 28%   { opacity: 0; }
+        40%, 65%  { opacity: 1; }
+        82%, 100% { opacity: 0; }
+      }
+
+      /* Text shimmer cycle */
+      @keyframes text-loop {
+        0%, 30%   { opacity: 0; }
+        45%, 65%  { opacity: 1; }
+        80%, 100% { opacity: 0; }
+      }
+
+      /* Ring lambat terus-menerus */
+      @keyframes ring-spin { to { transform: rotate(360deg); } }
+      @keyframes ring-spin-rev { to { transform: rotate(-360deg); } }
+
+      /* Classes */
+      .z-path {
+        stroke-dasharray: 430;
+        animation: draw-z-loop 5.5s cubic-bezier(.4,0,.2,1) infinite;
+      }
+      .bone-group {
+        animation: bone-loop 5.5s ease-in-out infinite;
+      }
+      .logo-text {
+        animation: text-loop 5.5s ease-in-out infinite;
+      }
+    </style>
+
+    <filter id="glow-f" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glow-bright" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="bone-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <linearGradient id="xray" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#38bdf8"/>
+      <stop offset="50%"  stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#e0f2fe"/>
+    </linearGradient>
+
+    <linearGradient id="scan-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#7dd3fc" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#7dd3fc" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0"/>
+    </linearGradient>
+
+    <clipPath id="box-clip">
+      <rect width="220" height="220" rx="28"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="220" height="220" rx="28" fill="#020617"/>
+
+  <!-- Outer spinning ring -->
+  <circle cx="110" cy="110" r="103" fill="none" stroke="#38bdf8" stroke-width="1" stroke-dasharray="9 18" opacity="0.18">
+    <animateTransform attributeName="transform" type="rotate" from="0 110 110" to="360 110 110" dur="14s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Inner counter-spinning ring -->
+  <circle cx="110" cy="110" r="96" fill="none" stroke="#0ea5e9" stroke-width="1" stroke-dasharray="5 22" opacity="0.13">
+    <animateTransform attributeName="transform" type="rotate" from="0 110 110" to="-360 110 110" dur="9s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Z path — draw loop -->
+  <path
+    class="z-path"
+    d="M50 55 H170 L65 165 H170"
+    stroke="url(#xray)"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow-f)"
+  />
+
+  <!-- Bone group — sync dengan Z -->
+  <g class="bone-group" filter="url(#bone-glow)">
+    <circle cx="85" cy="85" r="12" fill="#e0f2fe"/>
+    <circle cx="75" cy="75" r="6"  fill="#bae6fd"/>
+    <circle cx="135" cy="135" r="12" fill="#e0f2fe"/>
+    <circle cx="145" cy="145" r="6"  fill="#bae6fd"/>
+    <rect x="82" y="90" width="56" height="10" rx="5" transform="rotate(45 82 90)" fill="url(#xray)"/>
+    <line x1="90" y1="90" x2="130" y2="130" stroke="#e0f2fe" stroke-width="2" opacity="0.65"/>
+  </g>
+
+  <!-- Scan line — selalu bergerak -->
+  <g clip-path="url(#box-clip)">
+    <rect x="0" y="0" width="220" height="14" fill="url(#scan-grad)" opacity="0.5">
+      <animateTransform attributeName="transform" type="translate" from="0 -14" to="0 234" dur="2.6s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- ZAKZAV text — sync dengan Z -->
+  <text
+    class="logo-text"
+    x="110" y="196"
+    text-anchor="middle"
+    fill="#7dd3fc"
+    font-size="19"
+    font-weight="bold"
+    font-family="Arial, sans-serif"
+    letter-spacing="4"
+  >ZAKZAV</text>
+</svg>

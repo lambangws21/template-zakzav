@@ -1,5 +1,29 @@
 "use client";
 
+import {
+  SOFT_SURFACE_CLASS,
+  SOFT_RAISED_CLASS,
+  SOFT_PRESSED_CLASS,
+  SOFT_INSET_CLASS,
+  SOFT_INPUT_CLASS,
+  SOFT_SELECT_CLASS,
+  SOFT_TEXT_BUTTON_CLASS,
+  SOFT_DANGER_BUTTON_CLASS,
+  SOFT_PRIMARY_BUTTON_CLASS,
+  SOFT_DARK_BUTTON_CLASS,
+  SOFT_PANEL_CLASS,
+  SOFT_CARD_CLASS,
+  SOFT_SECTION_CLASS,
+  SOFT_TINT_CARD_CLASS,
+  SOFT_FLOAT_SURFACE_CLASS,
+  PANEL_VARIANTS,
+  MODAL_VARIANTS,
+  OVERLAY_VARIANTS,
+  SLIDE_RIGHT_VARIANTS,
+  SLIDE_UP_VARIANTS,
+} from "@/lib/uiTokens";
+import ThemeToggle from "@/components/ThemeToggle";
+import LogoutButton from "@/components/LogoutButton";
 import { ID, Query } from "appwrite";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -207,28 +231,6 @@ const BUTTON_HOVER = { scale: 1.03, y: -1 };
 const BUTTON_TAP = { scale: 0.97 };
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
 const MOBILE_PANEL_TRANSITION = { duration: 0.12, ease: "easeOut" };
-const SOFT_SURFACE_CLASS =
-  "rounded-[24px] border border-white/78 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] shadow-[10px_10px_22px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.34)]";
-const SOFT_RAISED_CLASS =
-  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#fbfdff_0%,#ecf1f6_100%)] shadow-[6px_6px_14px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.28)]";
-const SOFT_PRESSED_CLASS =
-  "rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#edf2f7_0%,#fafcff_100%)] shadow-[inset_6px_6px_12px_rgba(71,85,105,0.14),inset_-3px_-3px_8px_rgba(255,255,255,0.3)]";
-const SOFT_INSET_CLASS =
-  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#eef2f7_0%,#f9fbfd_100%)] shadow-[inset_6px_6px_12px_rgba(71,85,105,0.12),inset_-3px_-3px_8px_rgba(255,255,255,0.26)]";
-const SOFT_INPUT_CLASS = `${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700 outline-none`;
-const SOFT_SELECT_CLASS = `${SOFT_RAISED_CLASS} px-3 py-2 text-xs text-slate-700 outline-none`;
-const SOFT_TEXT_BUTTON_CLASS = `${SOFT_RAISED_CLASS} px-3 py-2 text-xs font-medium text-slate-700 transition hover:text-slate-900`;
-const SOFT_DANGER_BUTTON_CLASS = `${SOFT_RAISED_CLASS} px-3 py-2 text-xs font-medium text-rose-600 transition hover:text-rose-700`;
-const SOFT_PRIMARY_BUTTON_CLASS =
-  "rounded-[18px] border border-[#d8fff1] bg-[linear-gradient(180deg,#ddfff2_0%,#c5f3e6_100%)] px-3 py-2 text-xs font-medium text-slate-800 shadow-[8px_8px_18px_rgba(16,185,129,0.12),-2px_-2px_6px_rgba(255,255,255,0.24)] transition hover:text-slate-900";
-const SOFT_DARK_BUTTON_CLASS =
-  "rounded-[18px] border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] px-3 py-2 text-xs font-medium text-white shadow-[8px_8px_18px_rgba(15,23,42,0.26),-2px_-2px_8px_rgba(255,255,255,0.08)] transition";
-const SOFT_PANEL_CLASS = `${SOFT_SURFACE_CLASS} p-3`;
-const SOFT_CARD_CLASS = `${SOFT_SURFACE_CLASS} p-2.5`;
-const SOFT_SECTION_CLASS = `${SOFT_SURFACE_CLASS} flex flex-col gap-2 p-2.5`;
-const SOFT_TINT_CARD_CLASS = `${SOFT_SURFACE_CLASS} border border-white/90`;
-const SOFT_FLOAT_SURFACE_CLASS =
-  "rounded-[24px] border border-white/58 bg-[linear-gradient(180deg,rgba(244,247,251,0.92)_0%,rgba(229,236,244,0.9)_100%)] shadow-[0_12px_28px_rgba(15,23,42,0.3),0_1px_4px_rgba(255,255,255,0.08)] backdrop-blur";
 const MEASUREMENT_WORKFLOW_ITEMS = [
   {
     key: "line",
@@ -27158,6 +27160,8 @@ export default function XrayCalibrationWorkspace({
               </button>
             </>
           ) : null}
+          <ThemeToggle className="ml-1" />
+          <LogoutButton variant="header" />
           {!isSimpleUiMode ? (
             <IconButton
               icon={mobileControlsOpen ? "close" : "menu"}
@@ -34739,21 +34743,19 @@ export default function XrayCalibrationWorkspace({
                 </motion.div>
               ) : null}
 
-                {/* ── Workflow progress pill (bottom-right, above mobile nav) ── */}
+                {/* ── Hint banner + workflow progress — single row, never overlap ── */}
                 {isSimpleUiMode && (
-                  <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+108px)] right-3 z-[96] lg:bottom-6 lg:right-4">
-                    <WorkflowProgress
-                      steps={workflowSteps}
-                      onOpenSummary={() => setPreOpSummaryOpen(true)}
-                    />
-                  </div>
-                )}
-
-                {/* ── Smart hint banner (centered above mobile nav) ── */}
-                {isSimpleUiMode && (
-                  <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+108px)] left-0 right-0 z-[95] flex justify-center px-4 lg:bottom-6 lg:left-4 lg:right-auto lg:justify-start">
-                    <div className="pointer-events-auto w-full max-w-[min(calc(100%-56px),380px)] lg:max-w-[340px]">
+                  <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+108px)] left-0 right-0 z-[96] flex items-end gap-2 px-3 lg:bottom-6 lg:px-4">
+                    {/* Banner kiri — ambil sisa lebar */}
+                    <div className="pointer-events-auto min-w-0 flex-1">
                       <SmartHintBanner hint={smartHint} />
+                    </div>
+                    {/* Workflow pill kanan — tidak tertutup banner */}
+                    <div className="pointer-events-auto shrink-0">
+                      <WorkflowProgress
+                        steps={workflowSteps}
+                        onOpenSummary={() => setPreOpSummaryOpen(true)}
+                      />
                     </div>
                   </div>
                 )}

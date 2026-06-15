@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
+import { useTheme } from "@/hooks/useTheme";
+import ThemeToggle from "@/components/ThemeToggle";
 
 /* ─── Dynamic import — XCW sebagai mesin canvas ───────────────────────────── */
 
@@ -15,7 +17,7 @@ function CanvasPlaceholder({ label = "Memuat…" }) {
   return (
     <div style={{
       flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", gap: 10, background: "#edf2f7",
+      justifyContent: "center", gap: 10, background: "var(--color-surface-alt)",
     }}>
       <div style={{
         width: 40, height: 40, borderRadius: "50%",
@@ -30,19 +32,30 @@ function CanvasPlaceholder({ label = "Memuat…" }) {
           <circle cx="30" cy="19" r="6" fill="white" opacity="0.85"/>
         </svg>
       </div>
-      <div style={{ fontSize: 11, color: "#64748b" }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--cw-text-mut)" }}>{label}</div>
       <style>{`@keyframes xcw-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 
-/* ─── Design tokens ────────────────────────────────────────────────────────── */
-const bg        = "#0d1117";
-const panelBg   = "#161b27";
-const border    = "rgba(255,255,255,0.07)";
-const accent    = "#38bdf8";
-const textPri   = "#e2e8f0";
-const textMut   = "#64748b";
+/* ─── Theme palettes ───────────────────────────────────────────────────────── */
+const DARK_THEME = {
+  bg:       "#0d1117",
+  panelBg:  "#161b27",
+  border:   "rgba(255,255,255,0.07)",
+  textPri:  "#e2e8f0",
+  textMut:  "#64748b",
+};
+
+const LIGHT_THEME = {
+  bg:       "#f3f6fa",
+  panelBg:  "#ffffff",
+  border:   "rgba(0,0,0,0.08)",
+  textPri:  "#1e293b",
+  textMut:  "#64748b",
+};
+
+const accent = "#38bdf8";
 
 const STEPS = [
   { n: 1, label: "Upload" },
@@ -77,18 +90,24 @@ const Ico = {
 /* ─── Panel button ─────────────────────────────────────────────────────────── */
 function PBtn({ icon, label, active, onClick }) {
   return (
-    <button onClick={onClick} style={{
-      all: "unset", cursor: "pointer",
-      display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-      padding: "6px 8px", borderRadius: 7, flex: 1,
-      fontSize: 11, fontWeight: 600,
-      color: active ? "#fff" : textMut,
-      background: active ? "rgba(56,189,248,0.18)" : "rgba(255,255,255,0.04)",
-      border: `1px solid ${active ? "rgba(56,189,248,0.3)" : border}`,
-      transition: "all 0.15s", whiteSpace: "nowrap",
-    }}>
+    <motion.button
+      onClick={onClick}
+      whileHover={{ scale: 1.03, y: -1 }}
+      whileTap={{ scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 400, damping: 22 }}
+      style={{
+        all: "unset", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+        padding: "6px 8px", borderRadius: 7, flex: 1,
+        fontSize: 11, fontWeight: 600,
+        color: active ? "#fff" : "var(--cw-text-mut)",
+        background: active ? "rgba(56,189,248,0.18)" : "rgba(128,128,128,0.06)",
+        border: `1px solid ${active ? "rgba(56,189,248,0.3)" : "var(--cw-border)"}`,
+        whiteSpace: "nowrap",
+      }}
+    >
       {icon}{label && <span>{label}</span>}
-    </button>
+    </motion.button>
   );
 }
 
@@ -97,8 +116,8 @@ function TopBar({ step, onStep }) {
   return (
     <div style={{
       height: 48, display: "flex", alignItems: "center", gap: 10,
-      padding: "0 14px", background: panelBg,
-      borderBottom: `1px solid ${border}`, flexShrink: 0,
+      padding: "0 14px", background: "var(--cw-panel-bg)",
+      borderBottom: "1px solid var(--cw-border)", flexShrink: 0,
     }}>
       {/* Brand */}
       <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
@@ -114,12 +133,12 @@ function TopBar({ step, onStep }) {
             <circle cx="30" cy="19" r="6" fill="white" opacity="0.9"/>
           </svg>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 800, color: textPri, whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--cw-text-pri)", whiteSpace: "nowrap" }}>
           My <span style={{ color: accent }}>Counteinvas</span>
         </span>
       </div>
 
-      <div style={{ width: 1, height: 22, background: border, flexShrink: 0 }} />
+      <div style={{ width: 1, height: 22, background: "var(--cw-border)", flexShrink: 0 }} />
 
       {/* Steps */}
       <div style={{ display: "flex", alignItems: "center", flex: 1, overflow: "hidden" }}>
@@ -130,21 +149,21 @@ function TopBar({ step, onStep }) {
               display: "flex", alignItems: "center", gap: 5, padding: "3px 8px", borderRadius: 99,
               background: step === s.n ? "rgba(56,189,248,0.15)" : "transparent",
               border: `1px solid ${step === s.n ? "rgba(56,189,248,0.3)" : "transparent"}`,
-              color: step === s.n ? accent : step > s.n ? "rgba(56,189,248,0.55)" : textMut,
+              color: step === s.n ? accent : step > s.n ? "rgba(56,189,248,0.55)" : "var(--cw-text-mut)",
               fontSize: 11, fontWeight: 700, transition: "all 0.15s",
             }}>
               <span style={{
                 width: 17, height: 17, borderRadius: "50%", flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 9, fontWeight: 900,
-                background: step >= s.n ? (step === s.n ? accent : "rgba(56,189,248,0.3)") : "rgba(255,255,255,0.06)",
-                color: step >= s.n ? (step === s.n ? "#0a0f1e" : "#fff") : textMut,
+                background: step >= s.n ? (step === s.n ? accent : "rgba(56,189,248,0.3)") : "rgba(128,128,128,0.1)",
+                color: step >= s.n ? (step === s.n ? "#0a0f1e" : "#fff") : "var(--cw-text-mut)",
               }}>{s.n}</span>
               <span>{s.label}</span>
             </button>
             {i < STEPS.length - 1 && (
               <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ margin: "0 2px" }}>
-                <path d="M2 1l3 3-3 3" stroke={step > s.n ? accent : textMut} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M2 1l3 3-3 3" stroke={step > s.n ? accent : "var(--cw-text-mut)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             )}
           </div>
@@ -153,15 +172,22 @@ function TopBar({ step, onStep }) {
 
       {/* Right actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        {["Manager","Summary","Advanced UI"].map(l => (
+        {["Manager","Summary"].map(l => (
           <button key={l} style={{
             all: "unset", cursor: "pointer", padding: "4px 9px", borderRadius: 6,
             fontSize: 11, fontWeight: 600,
-            color: l === "Advanced UI" ? "#0a0f1e" : textMut,
-            background: l === "Advanced UI" ? accent : "rgba(255,255,255,0.05)",
-            border: `1px solid ${l === "Advanced UI" ? "transparent" : border}`,
+            color: "var(--cw-text-mut)",
+            background: "rgba(128,128,128,0.06)",
+            border: "1px solid var(--cw-border)",
           }}>{l}</button>
         ))}
+        <button style={{
+          all: "unset", cursor: "pointer", padding: "4px 9px", borderRadius: 6,
+          fontSize: 11, fontWeight: 700,
+          color: "#0a0f1e", background: accent,
+          border: "1px solid transparent",
+        }}>Advanced UI</button>
+        <ThemeToggle />
         <div style={{
           width: 30, height: 30, borderRadius: "50%", cursor: "pointer",
           background: "linear-gradient(135deg,#7c3aed,#6366f1)",
@@ -178,7 +204,7 @@ function TopBar({ step, onStep }) {
 function ProgressBar({ step }) {
   const pct = ((step - 1) / (STEPS.length - 1)) * 100;
   return (
-    <div style={{ height: 3, background: "rgba(255,255,255,0.06)", position: "relative", flexShrink: 0 }}>
+    <div style={{ height: 3, background: "var(--cw-border)", position: "relative", flexShrink: 0 }}>
       <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.4, ease: "easeInOut" }}
         style={{ position: "absolute", left: 0, top: 0, height: "100%", background: `linear-gradient(90deg,#6366f1,${accent})` }} />
       {STEPS.map(s => (
@@ -186,8 +212,8 @@ function ProgressBar({ step }) {
           position: "absolute", top: "50%", transform: "translate(-50%,-50%)",
           left: `${((s.n - 1) / (STEPS.length - 1)) * 100}%`,
           width: 8, height: 8, borderRadius: "50%",
-          background: step >= s.n ? accent : "rgba(255,255,255,0.15)",
-          border: `2px solid ${bg}`, transition: "background 0.3s",
+          background: step >= s.n ? accent : "rgba(128,128,128,0.2)",
+          border: "2px solid var(--cw-bg)", transition: "background 0.3s",
         }} />
       ))}
     </div>
@@ -202,7 +228,8 @@ function SectionHdr({ title, open, onToggle }) {
       display: "flex", alignItems: "center", justifyContent: "space-between",
       padding: "8px 12px", fontSize: 9.5, fontWeight: 800,
       letterSpacing: "0.12em", textTransform: "uppercase",
-      color: open ? accent : textMut, borderBottom: `1px solid ${border}`,
+      color: open ? accent : "var(--cw-text-mut)",
+      borderBottom: "1px solid var(--cw-border)",
     }}>
       {title} <Ico.Chevron up={open} />
     </button>
@@ -214,12 +241,6 @@ function OperationsPanel({ xcwRef, step, setStep }) {
   const [open, setOpen] = useState({ prep: true, calib: true, analysis: true, exp: false });
   const tog = k => setOpen(v => ({ ...v, [k]: !v[k] }));
 
-  /* ── DOM bridge helpers ── */
-  const xcwClick = useCallback((selector) => {
-    const el = xcwRef.current?.querySelector(selector);
-    el?.click();
-  }, [xcwRef]);
-
   const xcwClickText = useCallback((text) => {
     const btns = xcwRef.current?.querySelectorAll("button");
     if (!btns) return;
@@ -229,14 +250,12 @@ function OperationsPanel({ xcwRef, step, setStep }) {
   }, [xcwRef]);
 
   const triggerUpload = useCallback(() => {
-    // Click XCW's main file input
     const inp = xcwRef.current?.querySelector('input[type="file"][accept*="image"]');
     inp?.click();
   }, [xcwRef]);
 
   const triggerStep = useCallback((n) => {
     setStep(n);
-    // Also click XCW's step button by step number text
     const btns = xcwRef.current?.querySelectorAll("button");
     if (!btns) return;
     for (const btn of btns) {
@@ -254,10 +273,10 @@ function OperationsPanel({ xcwRef, step, setStep }) {
 
   return (
     <div style={{
-      width: 256, flexShrink: 0, background: panelBg,
-      borderRight: `1px solid ${border}`, display: "flex", flexDirection: "column", overflowY: "auto",
+      width: 256, flexShrink: 0, background: "var(--cw-panel-bg)",
+      borderRight: "1px solid var(--cw-border)", display: "flex", flexDirection: "column", overflowY: "auto",
     }}>
-      <div style={{ padding: "9px 12px 7px", fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: textMut, borderBottom: `1px solid ${border}` }}>
+      <div style={{ padding: "9px 12px 7px", fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--cw-text-mut)", borderBottom: "1px solid var(--cw-border)" }}>
         Operations Panel
       </div>
 
@@ -265,7 +284,7 @@ function OperationsPanel({ xcwRef, step, setStep }) {
       <SectionHdr title="1. Preparation" open={open.prep} onToggle={() => tog("prep")} />
       <AnimatePresence initial={false}>
         {open.prep && (
-          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{duration:0.18}} style={{overflow:"hidden"}}>
+          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{height:{type:"spring",stiffness:320,damping:30},opacity:{duration:0.15}}} style={{overflow:"hidden"}}>
             <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
               <button onClick={triggerUpload} style={{
                 all: "unset", cursor: "pointer",
@@ -289,7 +308,7 @@ function OperationsPanel({ xcwRef, step, setStep }) {
       <SectionHdr title="2. Calibration & Planning" open={open.calib} onToggle={() => tog("calib")} />
       <AnimatePresence initial={false}>
         {open.calib && (
-          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{duration:0.18}} style={{overflow:"hidden"}}>
+          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{height:{type:"spring",stiffness:320,damping:30},opacity:{duration:0.15}}} style={{overflow:"hidden"}}>
             <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                 <PBtn icon={<Ico.Ruler />} label="Kalibrasi" active={step===2} onClick={() => triggerStep(2)} />
@@ -308,7 +327,7 @@ function OperationsPanel({ xcwRef, step, setStep }) {
       <SectionHdr title="3. Analysis & Templating" open={open.analysis} onToggle={() => tog("analysis")} />
       <AnimatePresence initial={false}>
         {open.analysis && (
-          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{duration:0.18}} style={{overflow:"hidden"}}>
+          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{height:{type:"spring",stiffness:320,damping:30},opacity:{duration:0.15}}} style={{overflow:"hidden"}}>
             <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                 <PBtn icon={<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><path d="M3 17L10 3l7 14" strokeLinecap="round"/></svg>} label="HKA" active={step===3} onClick={() => { triggerStep(3); xcwClickText("HKA"); }} />
@@ -331,7 +350,7 @@ function OperationsPanel({ xcwRef, step, setStep }) {
       <SectionHdr title="4. Export & Reports" open={open.exp} onToggle={() => tog("exp")} />
       <AnimatePresence initial={false}>
         {open.exp && (
-          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{duration:0.18}} style={{overflow:"hidden"}}>
+          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{height:{type:"spring",stiffness:320,damping:30},opacity:{duration:0.15}}} style={{overflow:"hidden"}}>
             <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
               <PBtn icon={<Ico.Pdf />} label="Laporan Pre-Op PDF" active={step===5} onClick={() => { triggerStep(5); xcwClickText("PDF"); xcwClickText("Laporan"); }} />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -360,28 +379,28 @@ function PropertyPanel({ xcwRef }) {
 
   return (
     <div style={{
-      width: 200, flexShrink: 0, background: panelBg,
-      borderLeft: `1px solid ${border}`, display: "flex", flexDirection: "column", overflowY: "auto",
+      width: 200, flexShrink: 0, background: "var(--cw-panel-bg)",
+      borderLeft: "1px solid var(--cw-border)", display: "flex", flexDirection: "column", overflowY: "auto",
     }}>
-      <div style={{ padding: "9px 12px 7px", fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: textMut, borderBottom: `1px solid ${border}` }}>
+      <div style={{ padding: "9px 12px 7px", fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--cw-text-mut)", borderBottom: "1px solid var(--cw-border)" }}>
         Property Panel
       </div>
 
       {/* Undo / Redo */}
-      <div style={{ padding: "10px 12px", display: "flex", gap: 6, borderBottom: `1px solid ${border}` }}>
+      <div style={{ padding: "10px 12px", display: "flex", gap: 6, borderBottom: "1px solid var(--cw-border)" }}>
         {[["Undo", () => dispatchKey("z", true), <Ico.Undo />], ["Redo", () => dispatchKey("y", true), <Ico.Redo />]].map(([lbl, fn, icon]) => (
           <button key={lbl} onClick={fn} style={{
             all: "unset", cursor: "pointer", flex: 1,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            padding: "6px", borderRadius: 7, fontSize: 11, fontWeight: 600, color: textMut,
-            background: "rgba(255,255,255,0.04)", border: `1px solid ${border}`,
+            padding: "6px", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "var(--cw-text-mut)",
+            background: "rgba(128,128,128,0.06)", border: "1px solid var(--cw-border)",
           }}>{icon}{lbl}</button>
         ))}
       </div>
 
       {/* Colors */}
-      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${border}` }}>
-        <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: textMut, marginBottom: 8 }}>Colors</div>
+      <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--cw-border)" }}>
+        <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--cw-text-mut)", marginBottom: 8 }}>Colors</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
           {PALETTE.map(c => (
             <button key={c} onClick={() => setActiveColor(c)} style={{
@@ -392,29 +411,29 @@ function PropertyPanel({ xcwRef }) {
           ))}
         </div>
         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 6, background: activeColor, border: "1px solid rgba(255,255,255,0.15)" }} />
-          <span style={{ fontSize: 10, color: textMut, fontFamily: "monospace" }}>{activeColor}</span>
+          <div style={{ width: 26, height: 26, borderRadius: 6, background: activeColor, border: "1px solid var(--cw-border)" }} />
+          <span style={{ fontSize: 10, color: "var(--cw-text-mut)", fontFamily: "monospace" }}>{activeColor}</span>
         </div>
       </div>
 
       {/* Layer Management */}
-      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${border}` }}>
+      <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--cw-border)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: textMut }}>Layer Management</div>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--cw-text-mut)" }}>Layer Management</div>
           <button onClick={() => setLayers(v => [...v, { id: Date.now(), name: `Layer ${v.length + 1}`, vis: true }])} style={{ all: "unset", cursor: "pointer", color: accent, fontSize: 18, lineHeight: 1 }}>+</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {layers.map((layer, i) => (
             <div key={layer.id} style={{
               display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7,
-              background: i === 0 ? "rgba(56,189,248,0.1)" : "rgba(255,255,255,0.03)",
-              border: `1px solid ${i === 0 ? "rgba(56,189,248,0.2)" : border}`,
+              background: i === 0 ? "rgba(56,189,248,0.1)" : "rgba(128,128,128,0.04)",
+              border: `1px solid ${i === 0 ? "rgba(56,189,248,0.2)" : "var(--cw-border)"}`,
             }}>
-              <button onClick={() => setLayers(v => v.map((l,j) => j===i ? {...l, vis: !l.vis} : l))} style={{ all: "unset", cursor: "pointer", color: layer.vis ? accent : textMut, fontSize: 12, lineHeight: 1 }}>
+              <button onClick={() => setLayers(v => v.map((l,j) => j===i ? {...l, vis: !l.vis} : l))} style={{ all: "unset", cursor: "pointer", color: layer.vis ? accent : "var(--cw-text-mut)", fontSize: 12, lineHeight: 1 }}>
                 {layer.vis ? "●" : "○"}
               </button>
               <Ico.Layers />
-              <span style={{ fontSize: 10, color: textPri, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{layer.name}</span>
+              <span style={{ fontSize: 10, color: "var(--cw-text-pri)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{layer.name}</span>
             </div>
           ))}
         </div>
@@ -422,11 +441,11 @@ function PropertyPanel({ xcwRef }) {
 
       {/* Implant Library */}
       <div style={{ padding: "10px 12px" }}>
-        <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: textMut, marginBottom: 8 }}>Implant Library</div>
+        <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--cw-text-mut)", marginBottom: 8 }}>Implant Library</div>
         <select style={{
           width: "100%", padding: "6px 8px", borderRadius: 7, fontSize: 11,
-          background: "rgba(255,255,255,0.05)", border: `1px solid ${border}`,
-          color: textPri, cursor: "pointer", outline: "none",
+          background: "rgba(128,128,128,0.06)", border: "1px solid var(--cw-border)",
+          color: "var(--cw-text-pri)", cursor: "pointer", outline: "none",
         }}>
           <option value="">Pilih Implant…</option>
           <optgroup label="TKA">
@@ -455,12 +474,13 @@ function StatusBar({ step }) {
   };
   return (
     <div style={{
-      height: 36, padding: "0 14px", background: panelBg, borderTop: `1px solid ${border}`,
+      height: 36, padding: "0 14px", background: "var(--cw-panel-bg)",
+      borderTop: "1px solid var(--cw-border)",
       display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 6px #22c55e", flexShrink: 0 }} />
-        <span style={{ fontSize: 10, color: textMut }}>
+        <span style={{ fontSize: 10, color: "var(--cw-text-mut)" }}>
           <span style={{ color: "#94a3b8", fontWeight: 600 }}>Current Task:</span>{" "}{hints[step]}
         </span>
       </div>
@@ -476,22 +496,18 @@ function StatusBar({ step }) {
 
 /* ─── CSS that makes XCW fill its host container ──────────────────────────── */
 const XCW_OVERRIDE_CSS = `
-  /* Make XCW fill the container, not 100dvh */
   .xcw-canvas-host > div {
     height: 100% !important;
     min-height: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
   }
-  /* Hide XCW's own header — we provide our own */
   .xcw-canvas-host header {
     display: none !important;
   }
-  /* Remove XCW's background padding/margin that breaks layout */
   .xcw-canvas-host > div {
     padding: 0 !important;
   }
-  /* Ensure canvas section fills available height */
   .xcw-canvas-host section {
     flex: 1 !important;
     min-height: 0 !important;
@@ -502,6 +518,9 @@ const XCW_OVERRIDE_CSS = `
 export default function CounteinvasWorkspace() {
   const [step, setStep] = useState(1);
   const xcwRef = useRef(null);
+  const { isDark } = useTheme();
+
+  const t = isDark ? DARK_THEME : LIGHT_THEME;
 
   // Lock scroll
   useEffect(() => {
@@ -516,11 +535,21 @@ export default function CounteinvasWorkspace() {
   }, []);
 
   return (
-    <div style={{
-      height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden",
-      background: bg, color: textPri,
-      fontFamily: "'Inter','Poppins',system-ui,sans-serif",
-    }}>
+    <div
+      style={{
+        height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden",
+        fontFamily: "'Inter','Poppins',system-ui,sans-serif",
+        // Inject CSS vars scoped to this workspace
+        "--cw-bg":       t.bg,
+        "--cw-panel-bg": t.panelBg,
+        "--cw-border":   t.border,
+        "--cw-text-pri": t.textPri,
+        "--cw-text-mut": t.textMut,
+        background: "var(--cw-bg)",
+        color: "var(--cw-text-pri)",
+        transition: "background 200ms ease, color 200ms ease",
+      }}
+    >
       <style>{XCW_OVERRIDE_CSS}</style>
 
       <TopBar step={step} onStep={setStep} />

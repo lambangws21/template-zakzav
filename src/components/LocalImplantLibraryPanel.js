@@ -9,15 +9,12 @@ import {
   groupImplantLibraryBySystem,
   IMPLANT_LIBRARY_TYPE_LABELS,
 } from "../lib/digitalTemplating/implantLibrary";
-
-const SOFT_SURFACE_CLASS =
-  "rounded-[24px] border border-white/78 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] shadow-[10px_10px_22px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.34)]";
-const SOFT_RAISED_CLASS =
-  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#fbfdff_0%,#ecf1f6_100%)] shadow-[6px_6px_14px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.28)]";
-const SOFT_PRIMARY_BUTTON_CLASS =
-  "rounded-[18px] border border-[#d8fff1] bg-[linear-gradient(180deg,#ddfff2_0%,#c5f3e6_100%)] shadow-[8px_8px_18px_rgba(16,185,129,0.12),-2px_-2px_6px_rgba(255,255,255,0.24)]";
-const SOFT_DARK_BUTTON_CLASS =
-  "rounded-[18px] border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] shadow-[8px_8px_18px_rgba(15,23,42,0.26),-2px_-2px_8px_rgba(255,255,255,0.08)]";
+import {
+  SOFT_SURFACE_CLASS,
+  SOFT_RAISED_CLASS,
+  SOFT_PRIMARY_BUTTON_CLASS,
+  SOFT_DARK_BUTTON_CLASS,
+} from "@/lib/uiTokens";
 
 export default function LocalImplantLibraryPanel({
   items,

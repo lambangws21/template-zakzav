@@ -206,7 +206,7 @@ export default function QuickPanel({
     <>
     <motion.div
       {...PANEL_ENTER}
-      className={`w-[min(84vw,300px)] shrink-0 overflow-hidden rounded-[28px] border border-white/75 bg-[#eef2f7]/96 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.28),-6px_-6px_18px_rgba(255,255,255,0.82)] backdrop-blur-xl ${className}`}
+      className={`w-[min(84vw,300px)] shrink-0 overflow-hidden rounded-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
     >
       {/* ── Header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-200/50 px-4 py-3">
@@ -565,7 +565,7 @@ export default function QuickPanel({
               exit={{ opacity: 0, scale: 0.88, y: 16 }}
               transition={{ type: "spring", damping: 24, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-xs rounded-[28px] border border-white/70 bg-[#eef2f7]/98 p-5 shadow-[8px_8px_24px_rgba(148,163,184,0.36),-8px_-8px_24px_rgba(255,255,255,0.88)] backdrop-blur-xl"
+              className="relative w-full max-w-xs rounded-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] p-5 shadow-[var(--soft-shadow-float)] backdrop-blur-xl"
             >
               {/* close */}
               <button

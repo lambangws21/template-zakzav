@@ -109,6 +109,41 @@ export default function CalibrationLineModalPanel({
               box-shadow: inset 3px 3px 6px #c4cfdc, inset -3px -3px 6px #ffffff;
               border: 1px solid rgba(255, 255, 255, 0.9);
             }
+
+            [data-theme="dark"] .neu-flat {
+              background: #1e2840;
+              box-shadow: 6px 6px 14px rgba(0,5,20,0.60), -6px -6px 14px rgba(50,75,130,0.22);
+            }
+            [data-theme="dark"] .neu-pressed {
+              background: #1a2236;
+              box-shadow: inset 4px 4px 8px rgba(0,5,20,0.55), inset -4px -4px 8px rgba(50,75,130,0.18);
+            }
+            [data-theme="dark"] .neu-card {
+              background: #1a2438;
+              box-shadow: 5px 5px 14px rgba(0,5,20,0.65), -5px -5px 12px rgba(50,75,130,0.20);
+              border: 1px solid rgba(255,255,255,0.09);
+              color: #c8d5e8;
+            }
+            [data-theme="dark"] .neu-button {
+              background: #1e2840;
+              box-shadow: 5px 5px 10px rgba(0,5,20,0.60), -5px -5px 10px rgba(50,75,130,0.20);
+              border: 1px solid rgba(255,255,255,0.09);
+              color: #94a3b8;
+            }
+            [data-theme="dark"] .neu-button:hover {
+              box-shadow: 2px 2px 5px rgba(0,5,20,0.50), -2px -2px 5px rgba(50,75,130,0.16);
+              color: #c8d5e8;
+            }
+            [data-theme="dark"] .neu-button:active,
+            [data-theme="dark"] .neu-button-active {
+              box-shadow: inset 3px 3px 6px rgba(0,5,20,0.50), inset -3px -3px 6px rgba(50,75,130,0.15);
+            }
+            [data-theme="dark"] .neu-input {
+              background: #141d2e;
+              box-shadow: inset 3px 3px 6px rgba(0,5,20,0.50), inset -3px -3px 6px rgba(50,75,130,0.15);
+              border: 1px solid rgba(255,255,255,0.10);
+              color: #c8d5e8;
+            }
           `,
         }}
       />

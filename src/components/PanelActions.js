@@ -227,7 +227,7 @@ export default function PanelActions({
 
   return (
     <motion.div
-      className={`w-[min(84vw,196px)] rounded-[26px] border border-white/72 bg-[#eef2f7]/96 text-slate-800 shadow-[6px_6px_18px_rgba(148,163,184,0.3),-6px_-6px_18px_rgba(255,255,255,0.84)] backdrop-blur-xl ${className}`}
+      className={`w-[min(84vw,196px)] rounded-[26px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
       variants={PANEL_V}
       initial="hidden"
       animate="visible"

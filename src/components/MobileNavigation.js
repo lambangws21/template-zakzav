@@ -33,6 +33,27 @@ const NAV_STYLES = `
     box-shadow: inset 1.5px 1.5px 4px rgba(165,180,203,0.48), inset -1.5px -1.5px 4px #fff;
     border: 1px solid rgba(255,255,255,0.38);
   }
+
+  [data-theme="dark"] .mnav-tray {
+    background: #1a2438;
+    box-shadow: inset 1px 1px 3px rgba(0,5,20,0.55), inset -1px -1px 3px rgba(50,75,130,0.18);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  [data-theme="dark"] .mnav-btn {
+    background: #1e2840;
+    box-shadow: 2px 2px 5px rgba(0,5,20,0.60), -2px -2px 5px rgba(50,75,130,0.20);
+    border: 1px solid rgba(255,255,255,0.09);
+    color: #94a3b8;
+  }
+  [data-theme="dark"] .mnav-btn:active {
+    box-shadow: inset 1px 1px 3px rgba(0,5,20,0.55);
+    color: #c8d5e8;
+  }
+  [data-theme="dark"] .mnav-pressed {
+    background: #131c2e;
+    box-shadow: inset 2px 2px 5px rgba(0,5,20,0.60), inset -2px -2px 5px rgba(50,75,130,0.16);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
 `;
 
 function Btn({ active, icon: Icon, label, children, className = "", color = "", ...rest }) {
@@ -75,7 +96,7 @@ export default function MobileNavigation({
     <div className={`w-full ${className}`}>
       <style>{NAV_STYLES}</style>
 
-      <div className="flex w-full flex-col gap-1 rounded-[20px] border border-slate-200/55 bg-[#eef2f7]/93 p-1 shadow-[2px_2px_6px_rgba(148,163,184,0.18),-2px_-2px_6px_rgba(255,255,255,0.76)] backdrop-blur-xl">
+      <div className="flex w-full flex-col gap-1.5 rounded-[22px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-1.5 shadow-[var(--soft-shadow-surface)] backdrop-blur-xl">
 
         {/* Row 1 — tabs */}
         <div

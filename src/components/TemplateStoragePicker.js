@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
   Image as ImageIcon,
@@ -9,15 +9,13 @@ import {
   Trash2,
 } from "lucide-react";
 import DriveImageWithFallback from "./DriveImageWithFallback";
-
-const SOFT_SURFACE_CLASS =
-  "rounded-[24px] border border-white/78 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] shadow-[10px_10px_22px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.34)]";
-const SOFT_RAISED_CLASS =
-  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#fbfdff_0%,#ecf1f6_100%)] shadow-[6px_6px_14px_rgba(71,85,105,0.18),-2px_-2px_8px_rgba(255,255,255,0.28)]";
-const SOFT_INSET_CLASS =
-  "rounded-[18px] border border-white/82 bg-[linear-gradient(180deg,#eef2f7_0%,#f9fbfd_100%)] shadow-[inset_6px_6px_12px_rgba(71,85,105,0.12),inset_-3px_-3px_8px_rgba(255,255,255,0.26)]";
-const SOFT_PRIMARY_BUTTON_CLASS =
-  "rounded-[18px] border border-[#d8fff1] bg-[linear-gradient(180deg,#ddfff2_0%,#c5f3e6_100%)] shadow-[8px_8px_18px_rgba(16,185,129,0.12),-2px_-2px_6px_rgba(255,255,255,0.24)]";
+import {
+  SOFT_SURFACE_CLASS,
+  SOFT_RAISED_CLASS,
+  SOFT_INSET_CLASS,
+  SOFT_PRIMARY_BUTTON_CLASS,
+  PANEL_VARIANTS,
+} from "@/lib/uiTokens";
 
 export default function TemplateStoragePicker({
   templates,
@@ -35,6 +33,10 @@ export default function TemplateStoragePicker({
   return (
     <motion.div
       layout
+      variants={PANEL_VARIANTS}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       className={`flex flex-col gap-2 p-3 ${SOFT_SURFACE_CLASS}`}
     >
       <div className="flex items-center gap-1.5">
