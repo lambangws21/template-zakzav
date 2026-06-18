@@ -4969,6 +4969,11 @@ export default function XrayCalibrationWorkspace({
   const [simpleDesktopEditFotoOpen, setSimpleDesktopEditFotoOpen] = useState(false);
   const [simpleStepPopoverOpen, setSimpleStepPopoverOpen] = useState(false);
   const simpleStepPopoverRef = useRef(null);
+  const [mobileObjPanelPos, setMobileObjPanelPos] = useState(null);
+  const mobileObjPanelDragRef = useRef(null);
+  const [layerBarDragPos, setLayerBarDragPos] = useState(null);
+  const layerBarDragRef = useRef(null);
+  useEffect(() => { setLayerBarDragPos(null); }, [selectedCutLayerId]);
   useEffect(() => {
     if (!simpleStepPopoverOpen) return;
     const handler = (e) => {
@@ -4981,6 +4986,7 @@ export default function XrayCalibrationWorkspace({
   }, [simpleStepPopoverOpen]);
   const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
     useState(false);
+  useEffect(() => { if (!mobileObjectSettingsOpen) setMobileObjPanelPos(null); }, [mobileObjectSettingsOpen]);
   const [simpleColorPanelOpen, setSimpleColorPanelOpen] = useState(false);
   const [whatsNewModalOpen, setWhatsNewModalOpen] = useState(false);
   const [googleDriveUploadModalOpen, setGoogleDriveUploadModalOpen] =
@@ -22350,8 +22356,8 @@ export default function XrayCalibrationWorkspace({
               className={
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
-                    ? "pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(92vw,360px)] overflow-y-auto rounded-[28px] border border-white/80 bg-[#eef2f7]/96 p-3 text-slate-900 shadow-[8px_8px_22px_rgba(148,163,184,0.28),-8px_-8px_22px_rgba(255,255,255,0.84),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-xl"
-                    : "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-white/80 bg-[#eef2f7] p-5 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.74)]"
+                    ? "pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(92vw,360px)] overflow-y-auto rounded-[28px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] backdrop-blur-xl"
+                    : "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-5 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
                       toolConfigModal === "layerLayout"
@@ -22844,11 +22850,11 @@ export default function XrayCalibrationWorkspace({
                         ].map((control) => (
                           <label
                             key={control.key}
-                            className="block rounded-2xl border border-white/60 bg-white/35 px-3 py-2"
+                            className="block rounded-2xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-2"
                           >
-                            <span className="flex items-center justify-between gap-3 text-[10px] font-black text-slate-600">
+                            <span className="flex items-center justify-between gap-3 text-[10px] font-black text-[var(--soft-text)]">
                               <span>{control.label}</span>
-                              <span className="font-mono text-slate-900">
+                              <span className="font-mono text-[var(--soft-text-hi)]">
                                 {control.valueText}
                               </span>
                             </span>
@@ -22862,7 +22868,7 @@ export default function XrayCalibrationWorkspace({
                               onChange={(event) =>
                                 control.onChange(Number(event.target.value))
                               }
-                              className="mt-2 h-2 w-full cursor-pointer accent-cyan-700 disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-2 h-2 w-full cursor-pointer accent-cyan-400 disabled:cursor-not-allowed disabled:opacity-45"
                             />
                           </label>
                         ))}
@@ -22879,20 +22885,20 @@ export default function XrayCalibrationWorkspace({
                   ) : (
                     <>
                       <div
-                        className="rounded-[22px] border border-white/75 bg-[#eef2f7] px-4 py-3 text-sm text-slate-800 shadow-[inset_4px_4px_9px_rgba(148,163,184,0.24),inset_-4px_-4px_9px_rgba(255,255,255,0.82)]"
+                        className="rounded-[18px] border border-[var(--soft-border)] [background:var(--soft-inset-bg)] px-4 py-3 text-sm shadow-[var(--soft-shadow-inset)]"
                         style={{
-                          color: selectedLayerPalette?.text || "#334155",
+                          color: selectedLayerPalette?.text || "var(--soft-text-hi)",
                         }}
                       >
-                        <div className="mb-1 text-[10px] font-extrabold tracking-widest text-cyan-800 uppercase">
+                        <div className="mb-1 text-[10px] font-extrabold tracking-widest text-cyan-400 uppercase">
                           Active Target
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="min-w-0 truncate font-black">
+                          <span className="min-w-0 truncate font-black text-[var(--soft-text-hi)]">
                             {selectedCutLayer.name ||
                               getLayerDefaultName(selectedCutLayer)}
                           </span>
-                          <span className="shrink-0 rounded-full border border-white/75 bg-white/45 px-2.5 py-1 font-mono text-[10px] text-slate-600">
+                          <span className="shrink-0 rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2.5 py-1 font-mono text-[10px] text-[var(--soft-text)]">
                             {selectedCutLayerIndex + 1}/{cutLayers.length} | W{" "}
                             {formatTemplateLayerRealSize(
                               selectedLayerMetrics.widthMm,
@@ -22910,49 +22916,32 @@ export default function XrayCalibrationWorkspace({
                         ) : null}
                       </div>
                       <div
-                        className={`grid gap-1.5 rounded-full border border-white/70 bg-[#eef2f7] p-1.5 shadow-[inset_5px_5px_12px_rgba(148,163,184,0.22),inset_-5px_-5px_12px_rgba(255,255,255,0.86)] ${
+                        className={`grid gap-1 rounded-full border border-[var(--soft-border)] [background:var(--soft-inset-bg)] p-1 shadow-[var(--soft-shadow-inset)] ${
                           hasLayerContentControls ? "grid-cols-3" : "grid-cols-2"
                         }`}
                       >
-                        <button
-                          type="button"
-                          onClick={() => setLayerSettingsTab("transform")}
-                          className={`rounded-full px-2 py-2.5 text-xs font-bold transition ${
-                            layerSettingsTab === "transform"
-                              ? "bg-[linear-gradient(180deg,#6d9bc2_0%,#426e95_100%)] text-white shadow-[inset_2px_2px_5px_rgba(15,23,42,0.18),4px_4px_10px_rgba(66,110,149,0.22)]"
-                              : "text-cyan-900/80"
-                          }`}
-                        >
-                          Transform
-                        </button>
-                        {hasLayerContentControls ? (
+                        {[
+                          { key: "transform", label: "Transform" },
+                          ...(hasLayerContentControls ? [{ key: "content", label: "Content" }] : []),
+                          { key: "view", label: "View" },
+                        ].map(({ key, label }) => (
                           <button
+                            key={key}
                             type="button"
-                            onClick={() => setLayerSettingsTab("content")}
-                            className={`rounded-full px-2 py-2.5 text-xs font-bold transition ${
-                              layerSettingsTab === "content"
-                                ? "bg-[linear-gradient(180deg,#6d9bc2_0%,#426e95_100%)] text-white shadow-[inset_2px_2px_5px_rgba(15,23,42,0.18),4px_4px_10px_rgba(66,110,149,0.22)]"
-                                : "text-cyan-900/80"
+                            onClick={() => setLayerSettingsTab(key)}
+                            className={`rounded-full px-2 py-2 text-xs font-bold transition ${
+                              layerSettingsTab === key
+                                ? "bg-cyan-500/15 border border-cyan-500/40 text-cyan-400 shadow-[inset_0_1px_3px_rgba(6,182,212,0.18)]"
+                                : "border border-transparent text-[var(--soft-text)] opacity-60 hover:opacity-90"
                             }`}
                           >
-                            Content
+                            {label}
                           </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setLayerSettingsTab("view")}
-                          className={`rounded-full px-2 py-2.5 text-xs font-bold transition ${
-                            layerSettingsTab === "view"
-                              ? "bg-[linear-gradient(180deg,#6d9bc2_0%,#426e95_100%)] text-white shadow-[inset_2px_2px_5px_rgba(15,23,42,0.18),4px_4px_10px_rgba(66,110,149,0.22)]"
-                              : "text-cyan-900/80"
-                          }`}
-                        >
-                          View
-                        </button>
+                        ))}
                       </div>
 
-                      <div className="rounded-[22px] border border-white/70 bg-[#eef2f7] p-3 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
-                        <div className="mb-2 text-[10px] font-extrabold tracking-widest text-slate-500 uppercase">
+                      <div className="rounded-[18px] border border-[var(--soft-border)] [background:var(--soft-inset-bg)] p-3 shadow-[var(--soft-shadow-inset)]">
+                        <div className="mb-2 text-[10px] font-extrabold tracking-widest text-[var(--soft-text)] opacity-60 uppercase">
                           Aksi & Susunan Layer
                         </div>
                         <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
@@ -32640,12 +32629,33 @@ export default function XrayCalibrationWorkspace({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -8, scale: 0.98 }}
                   transition={PANEL_SPRING}
-                  className="absolute z-30"
-                  style={{
-                    left: selectedLayerToolbarAnchor.centerX,
-                    top: selectedLayerToolbarAnchor.topY,
-                    transform: "translateX(-50%)",
+                  className="absolute z-30 select-none"
+                  style={layerBarDragPos
+                    ? { left: layerBarDragPos.x, top: layerBarDragPos.y, transform: "none", cursor: "grab" }
+                    : { left: selectedLayerToolbarAnchor.centerX, top: selectedLayerToolbarAnchor.topY, transform: "translateX(-50%)", cursor: "grab" }
+                  }
+                  onPointerDown={(e) => {
+                    if (e.target.closest("button")) return;
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    const canvasRect = containerRef.current?.getBoundingClientRect() ?? null;
+                    const elRect = e.currentTarget.getBoundingClientRect();
+                    layerBarDragRef.current = {
+                      offsetX: e.clientX - elRect.left,
+                      offsetY: e.clientY - elRect.top,
+                      canvasRect,
+                    };
                   }}
+                  onPointerMove={(e) => {
+                    if (!layerBarDragRef.current) return;
+                    const { offsetX, offsetY, canvasRect } = layerBarDragRef.current;
+                    if (!canvasRect) return;
+                    const newX = Math.max(4, Math.min(canvasRect.width - 60, e.clientX - canvasRect.left - offsetX));
+                    const newY = Math.max(4, Math.min(canvasRect.height - 30, e.clientY - canvasRect.top - offsetY));
+                    setLayerBarDragPos({ x: newX, y: newY });
+                  }}
+                  onPointerUp={() => { layerBarDragRef.current = null; }}
+                  onPointerCancel={() => { layerBarDragRef.current = null; }}
                 >
                   {isMobileViewport ? (
                     <div className="max-w-[calc(100vw-20px)]">
@@ -34094,15 +34104,51 @@ export default function XrayCalibrationWorkspace({
                   exit={{ opacity: 0, y: 14, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
                   data-mobj=""
-                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+150px)] z-40 mx-auto max-h-[min(22vh,220px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] p-2 backdrop-blur-md"
+                  className="pointer-events-auto absolute z-40 max-h-[min(22vh,220px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] p-2 backdrop-blur-md"
                   style={{
                     background: isDark ? "rgba(15,23,42,0.92)" : "rgba(235,240,247,0.94)",
                     border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(255,255,255,0.45)",
                     boxShadow: isDark ? "0 4px 24px rgba(0,5,20,0.60),0 1px 4px rgba(55,80,140,0.16)" : "2px 2px 8px rgba(148,163,184,0.20)",
                     color: isDark ? "#c8d5e8" : "#1e293b",
+                    ...(mobileObjPanelPos
+                      ? { left: mobileObjPanelPos.x, top: mobileObjPanelPos.y, transform: "none" }
+                      : { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 150px)", transform: "translateX(-50%)" }),
                   }}
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
+                    {/* Drag handle */}
+                    <div
+                      className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+                      style={{ background: isDark ? "rgba(255,255,255,0.07)" : "rgba(148,163,184,0.15)", touchAction: "none" }}
+                      title="Seret untuk pindahkan"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        const canvasRect = containerRef.current?.getBoundingClientRect() ?? null;
+                        const panelEl = e.currentTarget.closest("[data-mobj]");
+                        const panelRect = panelEl?.getBoundingClientRect();
+                        mobileObjPanelDragRef.current = {
+                          offsetX: panelRect ? e.clientX - panelRect.left : 0,
+                          offsetY: panelRect ? e.clientY - panelRect.top : 0,
+                          canvasRect,
+                        };
+                      }}
+                      onPointerMove={(e) => {
+                        if (!mobileObjPanelDragRef.current) return;
+                        const { offsetX, offsetY, canvasRect } = mobileObjPanelDragRef.current;
+                        if (!canvasRect) return;
+                        const newX = Math.max(4, Math.min(canvasRect.width - 60, e.clientX - canvasRect.left - offsetX));
+                        const newY = Math.max(4, Math.min(canvasRect.height - 60, e.clientY - canvasRect.top - offsetY));
+                        setMobileObjPanelPos({ x: newX, y: newY });
+                      }}
+                      onPointerUp={() => { mobileObjPanelDragRef.current = null; }}
+                      onPointerCancel={() => { mobileObjPanelDragRef.current = null; }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" opacity="0.55">
+                        <circle cx="3" cy="3" r="1"/><circle cx="7" cy="3" r="1"/>
+                        <circle cx="3" cy="7" r="1"/><circle cx="7" cy="7" r="1"/>
+                      </svg>
+                    </div>
                     <div className="min-w-0">
                       <div className="truncate text-[10px] font-black">
                         {mobileObjectSheetTitle}

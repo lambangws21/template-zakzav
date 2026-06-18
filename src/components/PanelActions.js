@@ -20,9 +20,8 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
-// ─── icon + color maps ────────────────────────────────────────────────────────
+// ─── icon map ─────────────────────────────────────────────────────────────────
 
-// Cup Assessment SVG icon component
 function CupIcon({ className }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -51,37 +50,48 @@ const TOOL_ICON_MAP = {
   cupAssessment: CupIcon,
 };
 
-// active bg + text + glow
+// ─── accent system — glassmorphism ────────────────────────────────────────────
+// bg / border / text / inner-glow / header-bg
+
 const TOOL_ACCENT = {
-  draw:         { bg: "bg-blue-500",    text: "text-white", glow: "shadow-[0_0_12px_rgba(59,130,246,0.55)]" },
-  pan:          { bg: "bg-cyan-500",    text: "text-white", glow: "shadow-[0_0_12px_rgba(6,182,212,0.55)]" },
-  cut:          { bg: "bg-rose-500",    text: "text-white", glow: "shadow-[0_0_12px_rgba(244,63,94,0.55)]" },
-  freeLine:     { bg: "bg-emerald-500", text: "text-white", glow: "shadow-[0_0_12px_rgba(16,185,129,0.55)]" },
-  freeLinePoint:{ bg: "bg-indigo-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(99,102,241,0.55)]" },
-  angle:        { bg: "bg-amber-500",   text: "text-white", glow: "shadow-[0_0_12px_rgba(245,158,11,0.55)]" },
-  circle:       { bg: "bg-violet-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(139,92,246,0.55)]" },
-  hkaAuto:      { bg: "bg-purple-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(168,85,247,0.55)]" },
-  guideBuilder: { bg: "bg-teal-500",    text: "text-white", glow: "shadow-[0_0_12px_rgba(20,184,166,0.55)]" },
-  annotation:    { bg: "bg-orange-500",  text: "text-white", glow: "shadow-[0_0_12px_rgba(249,115,22,0.55)]" },
-  imageProcess:  { bg: "bg-sky-600",     text: "text-white", glow: "shadow-[0_0_12px_rgba(2,132,199,0.55)]" },
-  cupAssessment: { bg: "bg-amber-500",   text: "text-white", glow: "shadow-[0_0_12px_rgba(245,158,11,0.55)]" },
+  draw:         { bg: "bg-blue-500/10",    border: "border-blue-500/45",    text: "text-blue-400",    inner: "shadow-[inset_0_1px_4px_rgba(59,130,246,0.22)]",   headerBg: "bg-blue-500/20" },
+  pan:          { bg: "bg-cyan-500/10",    border: "border-cyan-500/45",    text: "text-cyan-400",    inner: "shadow-[inset_0_1px_4px_rgba(6,182,212,0.22)]",    headerBg: "bg-cyan-500/20" },
+  cut:          { bg: "bg-rose-500/10",    border: "border-rose-500/45",    text: "text-rose-400",    inner: "shadow-[inset_0_1px_4px_rgba(244,63,94,0.22)]",    headerBg: "bg-rose-500/20" },
+  freeLine:     { bg: "bg-emerald-500/10", border: "border-emerald-500/45", text: "text-emerald-400", inner: "shadow-[inset_0_1px_4px_rgba(16,185,129,0.22)]",   headerBg: "bg-emerald-500/20" },
+  freeLinePoint:{ bg: "bg-indigo-500/10",  border: "border-indigo-500/45",  text: "text-indigo-400",  inner: "shadow-[inset_0_1px_4px_rgba(99,102,241,0.22)]",   headerBg: "bg-indigo-500/20" },
+  angle:        { bg: "bg-amber-500/10",   border: "border-amber-500/45",   text: "text-amber-400",   inner: "shadow-[inset_0_1px_4px_rgba(245,158,11,0.22)]",   headerBg: "bg-amber-500/20" },
+  circle:       { bg: "bg-violet-500/10",  border: "border-violet-500/45",  text: "text-violet-400",  inner: "shadow-[inset_0_1px_4px_rgba(139,92,246,0.22)]",   headerBg: "bg-violet-500/20" },
+  hka:          { bg: "bg-purple-500/10",  border: "border-purple-500/45",  text: "text-purple-400",  inner: "shadow-[inset_0_1px_4px_rgba(168,85,247,0.22)]",   headerBg: "bg-purple-500/20" },
+  hkaAuto:      { bg: "bg-purple-500/10",  border: "border-purple-500/45",  text: "text-purple-400",  inner: "shadow-[inset_0_1px_4px_rgba(168,85,247,0.22)]",   headerBg: "bg-purple-500/20" },
+  guideBuilder: { bg: "bg-teal-500/10",    border: "border-teal-500/45",    text: "text-teal-400",    inner: "shadow-[inset_0_1px_4px_rgba(20,184,166,0.22)]",   headerBg: "bg-teal-500/20" },
+  annotation:   { bg: "bg-orange-500/10",  border: "border-orange-500/45",  text: "text-orange-400",  inner: "shadow-[inset_0_1px_4px_rgba(249,115,22,0.22)]",   headerBg: "bg-orange-500/20" },
+  imageProcess: { bg: "bg-sky-500/10",     border: "border-sky-500/45",     text: "text-sky-400",     inner: "shadow-[inset_0_1px_4px_rgba(14,165,233,0.22)]",   headerBg: "bg-sky-500/20" },
+  cupAssessment:{ bg: "bg-amber-500/10",   border: "border-amber-500/45",   text: "text-amber-400",   inner: "shadow-[inset_0_1px_4px_rgba(245,158,11,0.22)]",   headerBg: "bg-amber-500/20" },
 };
 
 const IDLE_ICON_COLOR = {
-  draw: "text-blue-400", pan: "text-cyan-400", cut: "text-rose-400",
-  freeLine: "text-emerald-400", freeLinePoint: "text-indigo-400",
-  angle: "text-amber-400", circle: "text-violet-400", hkaAuto: "text-purple-400",
-  guideBuilder: "text-teal-400", annotation: "text-orange-400", imageProcess: "text-sky-500",
-  cupAssessment: "text-amber-400",
+  draw:         "text-blue-400",
+  pan:          "text-cyan-400",
+  cut:          "text-rose-400",
+  freeLine:     "text-emerald-400",
+  freeLinePoint:"text-indigo-400",
+  angle:        "text-amber-400",
+  circle:       "text-violet-400",
+  hka:          "text-purple-400",
+  hkaAuto:      "text-purple-400",
+  guideBuilder: "text-teal-400",
+  annotation:   "text-orange-400",
+  imageProcess: "text-sky-400",
+  cupAssessment:"text-amber-400",
 };
 
 // ─── grouping ─────────────────────────────────────────────────────────────────
 
 const GROUP_META = {
-  "Move":     { label: "Navigasi",   color: "text-cyan-500" },
-  "Drawing":  { label: "Pengukuran", color: "text-blue-500" },
-  "Planning": { label: "Perencanaan",color: "text-purple-500" },
-  "ZakVisor": { label: "ZakVisor",   color: "text-sky-600" },
+  "Move":     { label: "Navigasi",    color: "text-cyan-500/70" },
+  "Drawing":  { label: "Pengukuran",  color: "text-blue-500/70" },
+  "Planning": { label: "Perencanaan", color: "text-purple-500/70" },
+  "ZakVisor": { label: "ZakVisor",    color: "text-sky-500/70" },
 };
 
 function getToolGroupKey(item) {
@@ -160,12 +170,12 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
     <motion.button
       type="button"
       onClick={() => onSelect(item)}
-      className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl p-1.5 transition-all ${
+      className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl border p-1.5 transition-all duration-200 ${
         fullWidth ? "w-full flex-row gap-2 px-2.5 py-2 justify-start" : "aspect-square w-full"
       } ${
         isActive
-          ? `${accent.bg} ${accent.accent} ${accent.glow} ${accent.text}`
-          : "bg-white/60 border border-white/70 shadow-[2px_2px_5px_rgba(148,163,184,0.22),-1px_-1px_3px_rgba(255,255,255,0.9)] hover:bg-white/90"
+          ? `${accent.bg} ${accent.border} ${accent.inner} ${accent.text}`
+          : "border-[var(--soft-border)] bg-transparent hover:bg-white/6 hover:border-white/20"
       }`}
       aria-label={`${item.label}: ${item.desc}`}
       aria-pressed={isActive}
@@ -173,16 +183,14 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
       {...TAP}
       layout
     >
-      <span className={`flex shrink-0 items-center justify-center ${fullWidth ? "h-7 w-7 rounded-xl" : "h-7 w-7"} ${
-        isActive ? "" : `rounded-xl bg-slate-50/80 shadow-inner ${idleClr}`
-      }`}>
+      <span className={`flex shrink-0 items-center justify-center ${
+        fullWidth ? "h-7 w-7" : "h-7 w-7"
+      } ${isActive ? "" : idleClr}`}>
         <ToolIcon className={fullWidth ? "h-4 w-4" : "h-5 w-5"} />
       </span>
       <span className={`leading-none truncate ${
-        fullWidth
-          ? "text-[10px] font-bold"
-          : "text-[8px] font-black"
-      } ${isActive ? "" : "text-slate-600"}`}>
+        fullWidth ? "text-[10px] font-bold" : "text-[8px] font-black"
+      } ${isActive ? "" : "text-[var(--soft-text-lo,theme(colors.slate.500))]"}`}>
         {item.label}
       </span>
     </motion.button>
@@ -220,6 +228,8 @@ export default function PanelActions({
       : activeTool === item.key;
   };
 
+  const activeAccent = activeItem ? (TOOL_ACCENT[activeItem.key] || TOOL_ACCENT.draw) : null;
+
   return (
     <motion.div
       className={`w-[min(84vw,196px)] rounded-[16px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
@@ -229,7 +239,7 @@ export default function PanelActions({
       exit="exit"
     >
       {/* ── Header ─── */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200/40 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--soft-border)] px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <AnimatePresence mode="wait">
             {activeItem ? (
@@ -239,12 +249,12 @@ export default function PanelActions({
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.7, opacity: 0 }}
                 transition={{ type: "spring", damping: 20, stiffness: 300 }}
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${TOOL_ACCENT[activeItem.key]?.bg || "bg-slate-700"} ${TOOL_ACCENT[activeItem.key]?.glow || ""}`}
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border ${activeAccent?.border || "border-slate-500/30"} ${activeAccent?.headerBg || "bg-slate-500/15"} ${activeAccent?.inner || ""}`}
               >
-                {(() => { const I = getToolIcon(activeItem); return <I className="h-3.5 w-3.5 text-white" />; })()}
+                {(() => { const I = getToolIcon(activeItem); return <I className={`h-3.5 w-3.5 ${activeAccent?.text || "text-slate-400"}`} />; })()}
               </motion.div>
             ) : (
-              <motion.div key="idle" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-slate-200">
+              <motion.div key="idle" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-[var(--soft-border)] bg-transparent">
                 <Zap className="h-3.5 w-3.5 text-slate-400" />
               </motion.div>
             )}
@@ -257,56 +267,60 @@ export default function PanelActions({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 4 }}
                 transition={{ duration: 0.14 }}
-                className="truncate text-[10px] font-black text-slate-800"
+                className={`truncate text-[10px] font-black ${activeAccent?.text || "text-[var(--soft-text)]"}`}
               >
                 {activeItem?.label || "Pilih Tool"}
               </motion.p>
             </AnimatePresence>
-            <p className="text-[8px] text-slate-400 truncate">{activeItem?.desc || "tap tool di bawah"}</p>
+            <p className="truncate text-[8px] text-[var(--soft-text-lo,theme(colors.slate.500))]">
+              {activeItem?.desc || "tap tool di bawah"}
+            </p>
           </div>
         </div>
-        <motion.button
-          type="button"
-          onClick={onMinimize}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-400 text-white shadow-sm"
-          title="Minimize"
-          {...TAP}
-          whileHover={{ scale: 1.12 }}
-        >
-          <Minus className="h-3 w-3" />
-        </motion.button>
-      </div>
 
-      {/* ── Undo / Redo ─── */}
-      <motion.div className="flex items-center gap-2 border-b border-slate-200/40 px-2.5 py-1.5" variants={GROUP_V}>
-        <motion.button
-          type="button" onClick={onUndo} disabled={!canUndo}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/60 py-1.5 text-[9px] font-black text-slate-600 shadow-[2px_2px_4px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.9)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-          title="Undo (Ctrl+Z)" {...TAP}
-        >
-          <Undo2 className="h-3 w-3" /> Undo
-        </motion.button>
-        <motion.button
-          type="button" onClick={onRedo} disabled={!canRedo}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/60 py-1.5 text-[9px] font-black text-slate-600 shadow-[2px_2px_4px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.9)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-          title="Redo (Ctrl+Y)" {...TAP}
-        >
-          <Redo2 className="h-3 w-3" /> Redo
-        </motion.button>
-      </motion.div>
+        {/* Undo / Redo + Minimize — one compact row */}
+        <div className="flex shrink-0 items-center gap-1">
+          <div className="flex items-center rounded-lg border border-[var(--soft-border)] overflow-hidden">
+            <motion.button
+              type="button" onClick={onUndo} disabled={!canUndo}
+              className={`flex h-6 w-6 items-center justify-center transition-all duration-150 ${canUndo ? "hover:bg-white/10 text-[var(--soft-text)]" : "opacity-30 cursor-not-allowed text-slate-500"}`}
+              title="Undo (Ctrl+Z)" {...TAP}
+            >
+              <Undo2 className="h-3 w-3" />
+            </motion.button>
+            <div className="h-3.5 w-px bg-[var(--soft-border)]" />
+            <motion.button
+              type="button" onClick={onRedo} disabled={!canRedo}
+              className={`flex h-6 w-6 items-center justify-center transition-all duration-150 ${canRedo ? "hover:bg-white/10 text-[var(--soft-text)]" : "opacity-30 cursor-not-allowed text-slate-500"}`}
+              title="Redo (Ctrl+Y)" {...TAP}
+            >
+              <Redo2 className="h-3 w-3" />
+            </motion.button>
+          </div>
+          <motion.button
+            type="button"
+            onClick={onMinimize}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500/80 text-white hover:bg-rose-500 transition-colors"
+            title="Minimize"
+            {...TAP}
+            whileHover={{ scale: 1.12 }}
+          >
+            <Minus className="h-3 w-3" />
+          </motion.button>
+        </div>
+      </div>
 
       {/* ── Tool groups ─── */}
       <div className="space-y-2 px-2 py-2">
         {groups.map((group) => {
-          const meta = GROUP_META[group.key] || { label: group.key, color: "text-slate-400" };
-          const isSingle = group.items.length === 1;
+          const meta = GROUP_META[group.key] || { label: group.key, color: "text-slate-400/70" };
           return (
             <motion.div key={group.key} className="space-y-1" variants={GROUP_V}>
               <div className="flex items-center gap-1.5 px-0.5">
                 <span className={`text-[7px] font-black uppercase tracking-widest ${meta.color}`}>
                   {meta.label}
                 </span>
-                <div className="h-px flex-1 bg-slate-200/60" />
+                <div className="h-px flex-1 bg-[var(--soft-border)]" />
               </div>
               <div className="grid grid-cols-2 gap-1">
                 {group.items.map((item) => (

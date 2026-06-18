@@ -115,6 +115,8 @@ export default function LoginPage() {
   const [error, setError] = useState(null);
   const router = useRouter();
 
+  const isReady = email.trim() !== "" && password !== "";
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -210,10 +212,52 @@ export default function LoginPage() {
             )}
           </AnimatePresence>
 
-          <button type="submit" className="lp-btn-primary" disabled={loading} style={{ marginTop: "0.25rem" }}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-            {loading ? "Memproses..." : "Masuk"}
-          </button>
+          <motion.button
+            type="submit"
+            className="lp-btn-primary"
+            disabled={loading}
+            style={{ marginTop: "0.25rem" }}
+            animate={
+              loading
+                ? { scale: 1, opacity: 0.7 }
+                : isReady
+                  ? {
+                      scale: 1,
+                      opacity: 1,
+                      background: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)",
+                      color: "#ffffff",
+                      boxShadow: "0 0 18px rgba(14,165,233,0.45), 0 4px 14px rgba(14,165,233,0.25), inset 0 1px 0 rgba(255,255,255,0.15)",
+                      borderColor: "rgba(56,189,248,0.5)",
+                    }
+                  : {
+                      scale: 1,
+                      opacity: 0.55,
+                      background: "var(--soft-primary-bg)",
+                      color: "#0f172a",
+                      boxShadow: "var(--soft-shadow-primary)",
+                      borderColor: "var(--soft-primary-border)",
+                    }
+            }
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            whileHover={isReady && !loading ? { scale: 1.02, boxShadow: "0 0 28px rgba(14,165,233,0.55), 0 6px 18px rgba(14,165,233,0.3), inset 0 1px 0 rgba(255,255,255,0.2)" } : {}}
+            whileTap={isReady && !loading ? { scale: 0.97 } : {}}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              {loading ? (
+                <motion.span key="loading" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }} transition={{ duration: 0.15 }} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Memproses...
+                </motion.span>
+              ) : isReady ? (
+                <motion.span key="ready" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <LogIn className="h-4 w-4" /> Masuk
+                </motion.span>
+              ) : (
+                <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <LogIn className="h-4 w-4" /> Masuk
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
         </form>
       </motion.div>
     </main>
