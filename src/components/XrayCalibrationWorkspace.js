@@ -4967,6 +4967,18 @@ export default function XrayCalibrationWorkspace({
   const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
   const [simpleDesktopHkaOpen, setSimpleDesktopHkaOpen] = useState(false);
   const [simpleDesktopEditFotoOpen, setSimpleDesktopEditFotoOpen] = useState(false);
+  const [simpleStepPopoverOpen, setSimpleStepPopoverOpen] = useState(false);
+  const simpleStepPopoverRef = useRef(null);
+  useEffect(() => {
+    if (!simpleStepPopoverOpen) return;
+    const handler = (e) => {
+      if (simpleStepPopoverRef.current && !simpleStepPopoverRef.current.contains(e.target)) {
+        setSimpleStepPopoverOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handler, true);
+    return () => document.removeEventListener("pointerdown", handler, true);
+  }, [simpleStepPopoverOpen]);
   const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
     useState(false);
   const [simpleColorPanelOpen, setSimpleColorPanelOpen] = useState(false);
@@ -20751,18 +20763,21 @@ export default function XrayCalibrationWorkspace({
     {
       id: 1,
       label: "Upload",
+      hint: "Pilih gambar X-ray dari drive atau lokal",
       done: Boolean(image),
       onClick: () => mainUploadInputRef.current?.click(),
     },
     {
       id: 2,
       label: "Calib",
+      hint: "Tarik garis di ruler, input nilai aktual, simpan",
       done: hasCalibration,
       onClick: () => openSimpleCalibrationModal(),
     },
     {
       id: 3,
       label: "Ukur",
+      hint: "Aktifkan tool HKA, Angle, atau Line",
       done: measurementEntityCount > 0,
       onClick: () => {
         if (!hasCalibration) {
@@ -20777,6 +20792,7 @@ export default function XrayCalibrationWorkspace({
     {
       id: 4,
       label: "Export",
+      hint: "Simpan PDF laporan, PNG, atau JPEG",
       done: hasCalibration && measurementEntityCount > 0,
       onClick: () => {
         if (!hasCalibration) {
@@ -20791,6 +20807,7 @@ export default function XrayCalibrationWorkspace({
     {
       id: 5,
       label: "Templating",
+      hint: "Panduan TKR · THA · Hemi — pilih & pasang implant",
       done: cutLayers.some((l) => l.autoScaleFromCalibration),
       onClick: () => openTemplatingWizard(),
     },
@@ -26071,49 +26088,85 @@ export default function XrayCalibrationWorkspace({
           <NavClock />
         </div>
         <div className="flex min-w-0 shrink items-center gap-3 overflow-hidden">
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-[0_0_10px_rgba(14,165,233,0.35)]" style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }}>
-              <svg width="13" height="13" viewBox="0 0 38 38" fill="none">
-                <rect x="8" y="17" width="22" height="4" rx="2" fill="white"/>
-                <circle cx="8" cy="19" r="6" fill="white" opacity="0.9"/>
-                <circle cx="30" cy="19" r="6" fill="white" opacity="0.9"/>
-              </svg>
-            </div>
-            <h1 className="whitespace-nowrap text-sm font-black tracking-tight text-slate-900">
-              My Counteinvas
-            </h1>
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-[0_0_10px_rgba(14,165,233,0.35)]"
+            style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }}
+            title="My Counteinvas"
+          >
+            <svg width="13" height="13" viewBox="0 0 38 38" fill="none">
+              <rect x="8" y="17" width="22" height="4" rx="2" fill="white"/>
+              <circle cx="8" cy="19" r="6" fill="white" opacity="0.9"/>
+              <circle cx="30" cy="19" r="6" fill="white" opacity="0.9"/>
+            </svg>
           </div>
-          <div className="h-5 w-px shrink-0 bg-slate-200/80" />
 
           {isSimpleUiMode ? (
-            <div className="flex items-center gap-0.5 overflow-x-auto rounded-full border border-white/75 bg-[#eef2f7] p-0.5 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]">
-              {simpleWorkflowSteps.map((step) => {
-                const active = workflowStep === step.id;
-                return (
-                  <button
-                    key={step.id}
-                    type="button"
-                    onClick={step.onClick}
-                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full transition ${
-                      active
-                        ? "bg-slate-900 px-2.5 text-[10px] font-extrabold text-white shadow-[2px_2px_6px_rgba(15,23,42,0.22),-2px_-2px_6px_rgba(255,255,255,0.9)]"
-                        : step.done
-                          ? "bg-emerald-500 px-1.5 text-white shadow-[2px_2px_6px_rgba(16,185,129,0.22),-2px_-2px_6px_rgba(255,255,255,0.86)]"
-                          : "px-1.5 text-slate-500 hover:bg-white/60 hover:text-slate-900"
-                    }`}
-                    title={`${step.id}. ${step.label}`}
-                  >
+            <div className="relative" ref={simpleStepPopoverRef}>
+              <button
+                type="button"
+                onClick={() => setSimpleStepPopoverOpen((p) => !p)}
+                className={`${simpleStepPopoverOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-2 rounded-full px-2.5 py-1 transition`}
+                title="Lihat semua langkah"
+              >
+                {/* mini progress dots */}
+                <div className="flex items-center gap-0.5">
+                  {simpleWorkflowSteps.map((step) => (
                     <span
-                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black ${
-                        active ? "bg-white/20 text-white" : step.done ? "bg-white/20 text-white" : "bg-white/70 text-slate-500"
+                      key={step.id}
+                      className={`rounded-full transition-all ${
+                        step.id === workflowStep
+                          ? "h-2 w-4 bg-slate-800"
+                          : step.done
+                            ? "h-2 w-2 bg-emerald-500"
+                            : "h-2 w-2 bg-slate-300"
                       }`}
-                    >
-                      {step.done && !active ? "✓" : step.id}
-                    </span>
-                    {active && <span className="text-[10px] font-extrabold">{step.label}</span>}
-                  </button>
-                );
-              })}
+                    />
+                  ))}
+                </div>
+                <span className="text-[10px] font-extrabold text-slate-700">
+                  {simpleWorkflowSteps.find((s) => s.id === workflowStep)?.label ?? `Step ${workflowStep}`}
+                </span>
+              </button>
+              <AnimatePresence>
+                {simpleStepPopoverOpen && (
+                  <motion.div
+                    key="step-popover"
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                    className="absolute left-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,240px)] overflow-hidden rounded-[18px] border border-white/80 bg-[#eef2f7] py-1.5 shadow-[0_12px_28px_rgba(15,23,42,0.14),-4px_-4px_10px_rgba(255,255,255,0.88)]"
+                  >
+                    {simpleWorkflowSteps.map((step) => {
+                      const isActive = step.id === workflowStep;
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          onClick={() => { step.onClick(); setSimpleStepPopoverOpen(false); }}
+                          className={`flex w-full items-start gap-2.5 px-3 py-2 text-left transition ${
+                            isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white/60"
+                          }`}
+                        >
+                          <span className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${
+                            isActive ? "bg-white/20 text-white" : step.done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500"
+                          }`}>
+                            {step.done && !isActive ? "✓" : step.id}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[11px] font-bold">{step.label}</span>
+                            {step.hint && (
+                              <span className={`block text-[9px] font-medium leading-tight ${isActive ? "text-white/70" : "text-slate-400"}`}>
+                                {step.hint}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           ) : null}
         </div>
@@ -26756,7 +26809,9 @@ export default function XrayCalibrationWorkspace({
                 className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
                 title="HKA · FTA · JLA — Pengukuran Mekanis"
               >
-                <span className="text-[10px] font-black text-cyan-700">HKA</span>
+                <svg className="h-3.5 w-3.5 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M8 2 L8 14 M3 6 L8 2 L13 6 M3 10 L8 14 L13 10"/>
+                </svg>
                 {hkaSets.length > 0 && (
                   <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-600 px-1 text-[9px] font-black text-white">
                     {hkaSets.length}
@@ -26857,7 +26912,6 @@ export default function XrayCalibrationWorkspace({
                 title="Edit XFo — Kontras, Kecerahan, Rotasi, Inversi, Crop"
               >
                 <Icon name="preset" className="h-3.5 w-3.5 shrink-0 text-slate-600" />
-                <span className="text-slate-700">Edit XFo</span>
                 {(invertImage || cropRect || contrast !== 100 || level !== 100 || flipX || flipY) && (
                   <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black text-white">!</span>
                 )}
@@ -26953,14 +27007,13 @@ export default function XrayCalibrationWorkspace({
           {isSimpleUiMode ? (
             <button type="button"
               onClick={() => { setSimpleDesktopManagerOpen(false); setSimpleDesktopHkaOpen(false); setSimpleDesktopEditFotoOpen(false); openTemplatingWizard(); }}
-              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
-              title="Mulai Templating — panduan TKR · THA · Hemi"
+              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950 ${!image ? "opacity-50" : ""}`}
+              title={!image ? "Upload X-ray terlebih dahulu" : "Mulai Templating — panduan TKR · THA · Hemi"}
             >
-              <svg className="h-3.5 w-3.5 shrink-0 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <svg className="h-3.5 w-3.5 shrink-0 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M5 2h6l.8 2.5H4.2L5 2z"/><rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/>
                 <path d="M5 6 L4.5 14 M11 6 L11.5 14"/><path d="M5 9.5 Q8 8.5 11 9.5"/>
               </svg>
-              <span className="font-black text-cyan-700">Templating</span>
             </button>
           ) : null}
 
@@ -26970,20 +27023,17 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => setSimpleDesktopManagerOpen((p) => !p)}
-                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
-                title="Layer · Line · Implant Manager"
+                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950 ${!image && cutLayers.length === 0 ? "opacity-50" : ""}`}
+                title={!image ? "Upload X-ray terlebih dahulu" : "Layer · Line · Implant Manager"}
               >
-                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="1" y="1" width="6" height="6" rx="1.5" />
                   <rect x="9" y="1" width="6" height="6" rx="1.5" />
                   <rect x="1" y="9" width="6" height="6" rx="1.5" />
                   <rect x="9" y="9" width="6" height="6" rx="1.5" />
                 </svg>
-                <span className={simpleDesktopManagerOpen ? "text-cyan-800 font-black" : "text-slate-700"}>
-                  Properties
-                </span>
                 {(cutLayers.length > 0 || lines.filter(l => l.id !== calibrationLineId).length > 0) && (
-                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-600 px-1 text-[9px] font-black text-white">
+                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-violet-600 px-1 text-[9px] font-black text-white">
                     {cutLayers.length + lines.filter(l => l.id !== calibrationLineId).length}
                   </span>
                 )}
@@ -33235,15 +33285,30 @@ export default function XrayCalibrationWorkspace({
                 </div>
               ) : null}
               <AnimatePresence>
-                {isSimpleUiMode && isMobileViewport && simpleMobilePanel ? (
+                {isSimpleUiMode && isMobileViewport && simpleMobilePanel && (
+                  <motion.div
+                    key="mobile-sheet-backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="fixed inset-0 z-[38] bg-black/20 lg:hidden"
+                    onClick={() => setSimpleMobilePanel(null)}
+                  />
+                )}
+                {isSimpleUiMode && isMobileViewport && simpleMobilePanel && (
                   <motion.div
                     key={`simple-mobile-panel-${simpleMobilePanel}`}
-                    initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 16, scale: 0.98 }}
-                    transition={MOBILE_PANEL_TRANSITION}
-                      className="absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+172px)] z-40 lg:hidden"
+                    initial={{ y: "100%" }}
+                    animate={{ y: 0 }}
+                    exit={{ y: "100%" }}
+                    transition={{ type: "spring", damping: 32, stiffness: 380 }}
+                    className="fixed inset-x-0 bottom-0 z-40 flex max-h-[80vh] flex-col overflow-hidden rounded-t-[28px] border border-white/75 bg-[#eef2f7]/98 shadow-[0_-8px_32px_rgba(148,163,184,0.22)] backdrop-blur-xl lg:hidden"
                   >
+                    <div className="flex shrink-0 items-center justify-center pt-2.5 pb-1.5">
+                      <div className="h-1 w-10 rounded-full bg-slate-300/80" />
+                    </div>
+                    <div className="overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 168px)" }}>
                       {simpleMobilePanel === "upload" ? (
                         <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                           <div className="mb-2.5 flex items-center justify-between">
@@ -33281,7 +33346,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : simpleMobilePanel === "tools" ? (
                       <PanelActions
-                          className="mx-auto max-h-[min(52vh,460px)] overflow-y-auto backdrop-blur-xl"
+                          className="mx-auto"
                         tools={simpleToolMenuItems}
                         activeTool={tool}
                         activeFreeLineMode={freeLineMode}
@@ -33309,8 +33374,8 @@ export default function XrayCalibrationWorkspace({
                       />
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
-                        className="mx-auto w-[min(94vw,400px)]"
-                        style={{ maxHeight: "min(72vh,580px)" }}
+                        className="w-full"
+                        style={{}}
                         activeTab={
                           simpleMobilePanel === "implant"
                             ? "implant"
@@ -33633,8 +33698,9 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       </div>
                     )}
+                    </div>
                     </motion.div>
-                  ) : null}
+                  )}
                 </AnimatePresence>
               {isSimpleUiMode && !image && !workflowOverlayDismissed ? (
                 <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
@@ -35035,6 +35101,20 @@ export default function XrayCalibrationWorkspace({
                   <Maximize2 className="h-4 w-4" strokeWidth={2} />
                 </motion.button>
               </div>
+              {/* ── Canvas skeleton — pulsing when no image loaded ── */}
+              {!image && (
+                <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+                  <div className="absolute inset-0 bg-[#e8edf4]" />
+                  <div
+                    className="absolute inset-0 -translate-x-full"
+                    style={{
+                      background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)",
+                      animation: "canvas-shimmer 2s ease-in-out infinite",
+                    }}
+                  />
+                  <style>{`@keyframes canvas-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }`}</style>
+                </div>
+              )}
               <canvas
                 ref={imageCanvasRef}
                 aria-hidden="true"

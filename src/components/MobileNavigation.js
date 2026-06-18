@@ -1,15 +1,22 @@
 "use client";
 
 import {
+  CloudUpload,
+  Crosshair,
+  Download,
   Hand,
+  Layers,
   Lock,
   LockOpen,
   Maximize2,
   MousePointer2,
   Move,
+  Redo2,
   RotateCcw,
   RotateCw,
+  Ruler,
   Scaling,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -56,6 +63,22 @@ const NAV_STYLES = `
   }
 `;
 
+const TAB_ICONS = {
+  upload:      CloudUpload,
+  calibration: Crosshair,
+  measure:     Ruler,
+  manager:     Layers,
+  export:      Download,
+};
+
+const TAB_ACTIVE_COLORS = {
+  upload:      "text-cyan-600",
+  calibration: "text-amber-600",
+  measure:     "text-blue-600",
+  manager:     "text-violet-600",
+  export:      "text-emerald-600",
+};
+
 function Btn({ active, icon: Icon, label, children, className = "", color = "", ...rest }) {
   return (
     <button
@@ -88,6 +111,10 @@ export default function MobileNavigation({
   onResetZoom,
   onFit,
   onUnlock,
+  onUndo,
+  onRedo,
+  canUndo = true,
+  canRedo = true,
 }) {
   const tabCols = tabs.length || 1;
   const isEditing = canvasMode === "edit";
@@ -98,24 +125,31 @@ export default function MobileNavigation({
 
       <div className="flex w-full flex-col gap-1.5 rounded-[22px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-1.5 shadow-[var(--soft-shadow-surface)] backdrop-blur-xl">
 
-        {/* Row 1 — tabs */}
+        {/* Row 1 — tabs with icons */}
         <div
-          className="mnav-tray grid gap-0.5 rounded-full p-1"
+          className="mnav-tray grid gap-0.5 rounded-2xl p-1"
           style={{ gridTemplateColumns: `repeat(${tabCols}, minmax(0, 1fr))` }}
         >
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={tab.onClick}
-              className={`inline-flex h-7 min-w-0 items-center justify-center rounded-full px-1 text-[9px] font-bold transition-all ${
-                tab.active ? "mnav-pressed text-slate-900" : "text-slate-500"
-              }`}
-              aria-label={tab.label}
-            >
-              <span className="truncate">{tab.label}</span>
-            </button>
-          ))}
+          {tabs.map((tab) => {
+            const Icon = TAB_ICONS[tab.id];
+            const activeColor = TAB_ACTIVE_COLORS[tab.id] || "text-slate-700";
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={tab.onClick}
+                className={`inline-flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 transition-all ${
+                  tab.active
+                    ? `mnav-pressed ${activeColor}`
+                    : "text-slate-400"
+                }`}
+                aria-label={tab.label}
+              >
+                {Icon && <Icon className="h-4 w-4 shrink-0" />}
+                <span className="truncate text-[8px] font-black tracking-wide">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Row 2 — canvas controls */}
@@ -126,7 +160,7 @@ export default function MobileNavigation({
             <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className="h-8 w-8" />
           </div>
 
-          {/* Edit-mode transform controls — only visible when editing */}
+          {/* Edit-mode transform controls */}
           <AnimatePresence initial={false}>
             {isEditing && (
               <motion.div
@@ -136,12 +170,18 @@ export default function MobileNavigation({
                 transition={{ duration: 0.18 }}
                 className="mnav-tray flex shrink-0 overflow-hidden gap-0.5 rounded-full p-1"
               >
-                {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]] ).map(([mode, Icon, lbl]) => (
+                {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]]).map(([mode, Icon, lbl]) => (
                   <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className="h-8 w-8" />
                 ))}
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Undo / Redo */}
+          <div className="mnav-tray flex shrink-0 gap-0.5 rounded-full p-1">
+            <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`h-8 w-8 transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
+            <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`h-8 w-8 transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
+          </div>
 
           {/* Zoom controls */}
           <div className="mnav-tray flex min-w-0 flex-1 gap-0.5 rounded-full p-1">

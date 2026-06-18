@@ -101,6 +101,9 @@ export function buildStemVisualMapping(selection) {
   const current = getStemMetrics(item, headNeck);
   const baseline = getStemMetrics(baselineItem, BASELINE_SELECTION.headNeck);
 
+  if (current.neckLengthMm == null || baseline.neckLengthMm == null) return null;
+  if (current.stemOffsetMm == null || baseline.stemOffsetMm == null) return null;
+
   const stemLengthDeltaMm = current.stemLengthMm - baseline.stemLengthMm;
   const stemSizeDeltaMm = current.stemSizeMm - baseline.stemSizeMm;
   const neckLengthDeltaMm = current.neckLengthMm - baseline.neckLengthMm;
