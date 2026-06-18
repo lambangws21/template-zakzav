@@ -147,6 +147,24 @@ function getProcType(procedure) {
   return null;
 }
 
+function parseImplantLabel(implantLabel, procType) {
+  if (!implantLabel || !procType) return {};
+  const cfg = PREOP_COMPONENTS[procType];
+  if (!cfg) return {};
+  const allComps = [cfg.primary, ...cfg.extras];
+  const result = {};
+  implantLabel.split("·").map(s => s.trim()).filter(Boolean).forEach(part => {
+    const colonIdx = part.indexOf(":");
+    if (colonIdx === -1) return;
+    const labelPart = part.slice(0, colonIdx).trim();
+    const valPart = part.slice(colonIdx + 1).trim();
+    const numStr = valPart.replace(/\s*(mm|size)$/i, "").trim();
+    const comp = allComps.find(c => c.label.toLowerCase() === labelPart.toLowerCase());
+    if (comp && numStr !== "") result[comp.key] = numStr;
+  });
+  return result;
+}
+
 function buildStructuredLabel(procType, preOpSizes) {
   const cfg = PREOP_COMPONENTS[procType];
   if (!cfg) return "";
@@ -831,17 +849,17 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
   const [notes, setNotes] = useState(caseData?.notes || "");
   const [preOpSizes, setPreOpSizes] = useState({});
 
-  // Reset state when caseData changes
+  // Restore all fields (including pre-filled sizes) when caseData changes
   useEffect(() => {
     if (!caseData) return;
     setPatientName(caseData.patientName || "");
-    setProcedure(caseData.procedure || "Total Knee Arthroplasty (TKA)");
+    const proc = caseData.procedure || "Total Knee Arthroplasty (TKA)";
+    setProcedure(proc);
     setNotes(caseData.notes || "");
-    setPreOpSizes({});
+    const procType = getProcType(proc);
+    const parsed = parseImplantLabel(caseData.implantLabel, procType);
+    setPreOpSizes(parsed);
   }, [caseData?.id]);
-
-  // Reset sizes when procedure changes
-  useEffect(() => { setPreOpSizes({}); }, [procedure]);
 
   const procType = getProcType(procedure);
   const compConfig = procType ? PREOP_COMPONENTS[procType] : null;
@@ -936,7 +954,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Prosedur</span>
                   <select
                     value={procedure}
-                    onChange={(e) => setProcedure(e.target.value)}
+                    onChange={(e) => { setProcedure(e.target.value); setPreOpSizes({}); }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                   >
                     <option>Total Knee Arthroplasty (TKA)</option>
@@ -976,11 +994,6 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                       </label>
                     ))}
                   </div>
-                  {caseData.implantLabel && (
-                    <p className="text-[8px] text-slate-400 mt-1">
-                      Saat ini: <span className="text-slate-600 font-semibold">{caseData.implantLabel}</span>
-                    </p>
-                  )}
                 </div>
               ) : (
                 <label className="flex flex-col gap-1">

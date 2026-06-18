@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, BarChart2, Lock, Eye, EyeOff, Loader2,
   FileDown, CheckCircle2, AlertCircle, TrendingUp,
-  RefreshCw,
+  RefreshCw, ChevronDown, ChevronUp, Activity,
 } from "lucide-react";
 
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
@@ -33,231 +33,521 @@ async function fetchAllCases() {
   return Array.isArray(json.remote.items) ? json.remote.items : [];
 }
 
+// ─── Data parsing ──────────────────────────────────────────────────────────────
+
+// Parse "Head: 40 mm · Stem: 4 · Cup: 54 mm" → { head: 40, stem: 4, cup: 54 }
+function parseComponents(label) {
+  if (!label) return {};
+  const result = {};
+  label.split("·").map(s => s.trim()).filter(Boolean).forEach(part => {
+    const colonIdx = part.indexOf(":");
+    if (colonIdx === -1) return;
+    const key = part.slice(0, colonIdx).trim().toLowerCase().replace(/[\s/]+/g, "_");
+    const valStr = part.slice(colonIdx + 1).trim();
+    const num = parseFloat(valStr);
+    if (!isNaN(num)) result[key] = num;
+  });
+  return result;
+}
+
+function labelKey(key) {
+  const MAP = {
+    cup: "Cup", head: "Head", stem: "Stem", acetabulum: "Native Acetabulum",
+    bipolar_head: "Bipolar Head", femur: "Femur", tibia: "Tibia",
+    patella: "Patella", insert: "Insert",
+  };
+  return MAP[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ─── Stats computation ─────────────────────────────────────────────────────────
 
 function computeStats(cases) {
-  const withData = cases.filter(
-    (c) => c.preOpSizeNum != null && c.actualSizeNum != null,
-  );
-  if (withData.length === 0) return null;
-  const exact = withData.filter((c) => Math.abs(c.actualSizeNum - c.preOpSizeNum) < 0.25).length;
-  const within1 = withData.filter((c) => Math.abs(c.actualSizeNum - c.preOpSizeNum) <= 1.25).length;
-  const diffs = withData.map((c) => c.actualSizeNum - c.preOpSizeNum);
-  const meanDev = diffs.reduce((s, d) => s + Math.abs(d), 0) / diffs.length;
-  const tooLarge = diffs.filter((d) => d > 0.25).length;
-  const tooSmall = diffs.filter((d) => d < -0.25).length;
+  const withData = cases.filter(c => c.preOpSizeNum != null && c.actualSizeNum != null);
+  if (!withData.length) return null;
+  const diffs = withData.map(c => c.actualSizeNum - c.preOpSizeNum);
+  const exact = diffs.filter(d => Math.abs(d) < 0.25).length;
+  const within1 = diffs.filter(d => Math.abs(d) <= 1.25).length;
   return {
     n: withData.length,
     exactPct: (exact / withData.length) * 100,
     within1Pct: (within1 / withData.length) * 100,
-    meanDev,
-    tooLarge,
-    tooSmall,
+    meanDev: diffs.reduce((s, d) => s + Math.abs(d), 0) / diffs.length,
+    tooLarge: diffs.filter(d => d > 0.25).length,
+    tooSmall: diffs.filter(d => d < -0.25).length,
   };
 }
 
 function groupByProcedure(cases) {
   const map = {};
-  cases
-    .filter((c) => c.preOpSizeNum != null && c.actualSizeNum != null)
-    .forEach((c) => {
-      const key = (c.procedure || "Lainnya").split("(")[0].trim().slice(0, 20);
-      if (!map[key]) map[key] = [];
-      map[key].push(c);
+  cases.filter(c => c.preOpSizeNum != null && c.actualSizeNum != null).forEach(c => {
+    const key = (c.procedure || "Lainnya").split("(")[0].trim().slice(0, 22);
+    if (!map[key]) map[key] = [];
+    map[key].push(c);
+  });
+  return Object.entries(map).map(([procedure, items]) => {
+    const exact = items.filter(c => Math.abs(c.actualSizeNum - c.preOpSizeNum) < 0.25).length;
+    const within1 = items.filter(c => Math.abs(c.actualSizeNum - c.preOpSizeNum) <= 1.25).length;
+    return { procedure, n: items.length, exactPct: (exact / items.length) * 100, within1Pct: (within1 / items.length) * 100 };
+  }).sort((a, b) => b.n - a.n);
+}
+
+function computeComponentStats(cases) {
+  const map = {};
+  cases.forEach(c => {
+    if (!c.implantLabel || !c.actualImplantLabel) return;
+    const pre = parseComponents(c.implantLabel);
+    const act = parseComponents(c.actualImplantLabel);
+    Object.keys(pre).forEach(key => {
+      if (act[key] == null) return;
+      if (!map[key]) map[key] = { n: 0, exact: 0, within1: 0, sumAbsDiff: 0, over: 0, under: 0 };
+      const diff = act[key] - pre[key];
+      map[key].n++;
+      if (Math.abs(diff) < 0.25) map[key].exact++;
+      if (Math.abs(diff) <= 1.25) map[key].within1++;
+      map[key].sumAbsDiff += Math.abs(diff);
+      if (diff > 0.25) map[key].over++;
+      if (diff < -0.25) map[key].under++;
     });
+  });
   return Object.entries(map)
-    .map(([procedure, items]) => {
-      const exact = items.filter((c) => Math.abs(c.actualSizeNum - c.preOpSizeNum) < 0.25).length;
-      const within1 = items.filter((c) => Math.abs(c.actualSizeNum - c.preOpSizeNum) <= 1.25).length;
-      return {
-        procedure,
-        n: items.length,
-        exactPct: (exact / items.length) * 100,
-        within1Pct: (within1 / items.length) * 100,
-      };
-    })
+    .filter(([, v]) => v.n >= 1)
+    .map(([key, v]) => ({
+      key,
+      label: labelKey(key),
+      n: v.n,
+      exactPct: (v.exact / v.n) * 100,
+      within1Pct: (v.within1 / v.n) * 100,
+      meanDev: v.sumAbsDiff / v.n,
+      over: v.over,
+      under: v.under,
+    }))
     .sort((a, b) => b.n - a.n);
 }
 
-// ─── SVG Bar Chart ────────────────────────────────────────────────────────────
+// ─── Small helpers ────────────────────────────────────────────────────────────
 
-function ProcedureChart({ groups }) {
-  if (!groups.length) return null;
-  const ROW_H = 36;
-  const LABEL_W = 88;
-  const BAR_MAX = 140;
-  const height = groups.length * ROW_H + 28;
+function AccBadge({ pct }) {
+  const cls = pct >= 85 ? "bg-emerald-500/15 text-emerald-400" :
+              pct >= 65 ? "bg-amber-500/15 text-amber-400" :
+                          "bg-red-500/15 text-red-400";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tabular-nums ${cls}`}>
+      {pct.toFixed(0)}%
+    </span>
+  );
+}
+
+function DiffBadge({ diff }) {
+  if (diff == null) return <span className="text-[var(--soft-text)] opacity-40">—</span>;
+  const cls = Math.abs(diff) < 0.25 ? "bg-emerald-500/15 text-emerald-400" :
+              Math.abs(diff) <= 1.25 ? "bg-amber-500/15 text-amber-400" :
+                                        "bg-red-500/15 text-red-400";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tabular-nums ${cls}`}>
+      {diff === 0 ? "✓ Exact" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`}
+    </span>
+  );
+}
+
+// ─── Summary tab ───────────────────────────────────────────────────────────────
+
+function SummaryTab({ cases }) {
+  const stats = computeStats(cases);
+  const byProcedure = groupByProcedure(cases);
+  const byComponent = computeComponentStats(cases);
+  const withPostOp = cases.filter(c => c.actualSizeNum != null);
 
   return (
-    <svg
-      width="100%"
-      height={height}
-      viewBox={`0 0 ${LABEL_W + BAR_MAX + 60} ${height}`}
-      style={{ overflow: "visible" }}
-    >
-      {groups.map((g, i) => {
-        const y = i * ROW_H + 4;
-        const bwExact = (g.exactPct / 100) * BAR_MAX;
-        const bwExtra = ((g.within1Pct - g.exactPct) / 100) * BAR_MAX;
-        return (
-          <g key={g.procedure}>
-            <text x={LABEL_W - 5} y={y + 14} textAnchor="end" fontSize={8.5} fill="#64748b">
-              {g.procedure}
-            </text>
-            <rect x={LABEL_W} y={y + 2} width={Math.max(bwExact, 2)} height={16} rx={3} fill="#22c55e" />
-            {bwExtra > 0 && (
-              <rect x={LABEL_W + bwExact} y={y + 2} width={bwExtra} height={16} rx={3} fill="#86efac" />
-            )}
-            <text x={LABEL_W + bwExact + bwExtra + 5} y={y + 14} fontSize={8.5} fill="#1e293b">
-              {g.exactPct.toFixed(0)}%
-              <tspan fill="#64748b" fontSize={7.5}> ({g.n})</tspan>
-            </text>
-          </g>
-        );
-      })}
-      {/* Legend */}
-      <rect x={LABEL_W} y={height - 14} width={9} height={9} rx={2} fill="#22c55e" />
-      <text x={LABEL_W + 12} y={height - 6} fontSize={7.5} fill="#64748b">Exact</text>
-      <rect x={LABEL_W + 48} y={height - 14} width={9} height={9} rx={2} fill="#86efac" />
-      <text x={LABEL_W + 60} y={height - 6} fontSize={7.5} fill="#64748b">Within ±1</text>
-    </svg>
+    <div className="space-y-4 px-4 py-4">
+
+      {/* Overall stats */}
+      {stats ? (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "Exact match", value: `${stats.exactPct.toFixed(1)}%`, cls: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+              { label: "Within ±1", value: `${stats.within1Pct.toFixed(1)}%`, cls: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/20" },
+              { label: "Mean Δ", value: stats.meanDev.toFixed(2), cls: "[color:var(--soft-text)]", bg: "bg-[var(--soft-inset-bg)] border-[var(--soft-border)]" },
+            ].map(s => (
+              <div key={s.label} className={`rounded-2xl border px-2 py-3 text-center ${s.bg}`}>
+                <p className={`text-base font-black leading-none tabular-nums ${s.cls}`}>{s.value}</p>
+                <p className="mt-1.5 text-[8px] font-bold [color:var(--soft-text)] opacity-60">{s.label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5 text-center">
+              <p className="text-base font-black text-amber-400 tabular-nums">{stats.tooLarge}</p>
+              <p className="text-[8px] font-bold text-amber-500">Over-estimated</p>
+              <p className="text-[7px] [color:var(--soft-text)] opacity-50">actual lebih besar</p>
+            </div>
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/8 px-3 py-2.5 text-center">
+              <p className="text-base font-black text-rose-400 tabular-nums">{stats.tooSmall}</p>
+              <p className="text-[8px] font-bold text-rose-500">Under-estimated</p>
+              <p className="text-[7px] [color:var(--soft-text)] opacity-50">actual lebih kecil</p>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-[var(--soft-border)] px-4 py-8 text-center">
+          <TrendingUp className="mx-auto mb-2 h-8 w-8 [color:var(--soft-text)] opacity-20" />
+          <p className="text-xs font-black [color:var(--soft-text)] opacity-50">Belum ada data akurasi</p>
+          <p className="mt-1 text-[9px] [color:var(--soft-text)] opacity-40">
+            Input data post-op pada kasus pasien untuk melihat statistik
+          </p>
+        </div>
+      )}
+
+      {/* Per-component accuracy */}
+      {byComponent.length > 0 && (
+        <div>
+          <p className="mb-2 text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">
+            Akurasi per Komponen
+          </p>
+          <div className="rounded-2xl border border-[var(--soft-border)] overflow-hidden">
+            {byComponent.map((comp, i) => (
+              <div
+                key={comp.key}
+                className={`flex items-center gap-3 px-3 py-2.5 ${i > 0 ? "border-t border-[var(--soft-border)]" : ""}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black [color:var(--soft-text)]">{comp.label}</span>
+                    <span className="text-[8px] [color:var(--soft-text)] opacity-40">n={comp.n}</span>
+                  </div>
+                  {/* Mini bar */}
+                  <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-[var(--soft-inset-bg)]">
+                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${comp.exactPct}%` }} />
+                    <div className="h-full bg-emerald-500/30" style={{ width: `${comp.within1Pct - comp.exactPct}%` }} />
+                  </div>
+                </div>
+                <div className="shrink-0 text-right space-y-0.5">
+                  <AccBadge pct={comp.exactPct} />
+                  <p className="text-[7px] [color:var(--soft-text)] opacity-40">Δ̄ {comp.meanDev.toFixed(1)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[7px] [color:var(--soft-text)] opacity-40">
+            Bar = exact (gelap) + within ±1 (terang)
+          </p>
+        </div>
+      )}
+
+      {/* Per-procedure */}
+      {byProcedure.length > 0 && (
+        <div>
+          <p className="mb-2 text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">
+            Akurasi per Prosedur
+          </p>
+          <div className="rounded-2xl border border-[var(--soft-border)] overflow-hidden">
+            {byProcedure.map((g, i) => (
+              <div
+                key={g.procedure}
+                className={`flex items-center gap-3 px-3 py-2.5 ${i > 0 ? "border-t border-[var(--soft-border)]" : ""}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[10px] font-bold [color:var(--soft-text)]">{g.procedure}</span>
+                    <span className="text-[8px] [color:var(--soft-text)] opacity-40">n={g.n}</span>
+                  </div>
+                  <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-[var(--soft-inset-bg)]">
+                    <div className="h-full rounded-full bg-sky-500" style={{ width: `${g.exactPct}%` }} />
+                    <div className="h-full bg-sky-500/30" style={{ width: `${g.within1Pct - g.exactPct}%` }} />
+                  </div>
+                </div>
+                <AccBadge pct={g.exactPct} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {withPostOp.length === 0 && (
+        <p className="text-center text-[9px] [color:var(--soft-text)] opacity-40">
+          {cases.length} kasus tersimpan — belum ada data post-op
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Cases tab ────────────────────────────────────────────────────────────────
+
+function CaseCard({ c }) {
+  const [expanded, setExpanded] = useState(false);
+  const pre = parseComponents(c.implantLabel);
+  const act = parseComponents(c.actualImplantLabel);
+  const preKeys = Object.keys(pre);
+  const sharedKeys = preKeys.filter(k => act[k] != null);
+  const hasPostOp = Boolean(c.actualImplantLabel || c.actualSizeNum != null);
+  const hasPreOpDetail = preKeys.length > 0;
+  const canExpand = hasPreOpDetail;
+
+  const primaryDiff = c.preOpSizeNum != null && c.actualSizeNum != null
+    ? c.actualSizeNum - c.preOpSizeNum : null;
+
+  return (
+    <div className="rounded-2xl border border-[var(--soft-border)] overflow-hidden">
+      {/* Header row */}
+      <button
+        type="button"
+        onClick={() => canExpand && setExpanded(v => !v)}
+        className={`flex w-full items-center gap-2.5 px-3.5 py-3 text-left transition-colors ${canExpand ? "hover:bg-[var(--soft-inset-bg)]" : ""}`}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-black [color:var(--soft-text)]">{c.patientName || "—"}</p>
+          <p className="truncate text-[9px] [color:var(--soft-text)] opacity-50">
+            {(c.procedure || "—").split("(")[0].trim()}
+            {c.operationDate ? ` · ${c.operationDate}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {hasPostOp
+            ? <DiffBadge diff={primaryDiff} />
+            : <span className="rounded-full bg-slate-500/10 px-2 py-0.5 text-[8px] font-bold [color:var(--soft-text)] opacity-40">Pre-Op</span>
+          }
+          {canExpand && (
+            expanded
+              ? <ChevronUp className="h-3.5 w-3.5 [color:var(--soft-text)] opacity-40" />
+              : <ChevronDown className="h-3.5 w-3.5 [color:var(--soft-text)] opacity-40" />
+          )}
+        </div>
+      </button>
+
+      {/* Expanded detail */}
+      <AnimatePresence initial={false}>
+        {expanded && canExpand && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-[var(--soft-border)]">
+              {/* Column headers */}
+              <div className="flex items-center gap-2 bg-[var(--soft-inset-bg)] px-3.5 py-1.5">
+                <span className="w-[110px] shrink-0 text-[8px] font-black uppercase tracking-wider [color:var(--soft-text)] opacity-40">Komponen</span>
+                <span className="flex-1 text-[8px] font-black uppercase tracking-wider text-sky-400 opacity-70">Pre-Op</span>
+                {hasPostOp && (
+                  <>
+                    <span className="text-[8px] opacity-0">→</span>
+                    <span className="flex-1 text-[8px] font-black uppercase tracking-wider text-emerald-400 opacity-70">Actual</span>
+                    <span className="w-10 text-right text-[8px] font-black uppercase tracking-wider [color:var(--soft-text)] opacity-40">Δ</span>
+                  </>
+                )}
+              </div>
+
+              <div className="divide-y divide-[var(--soft-border)]">
+                {preKeys.map(key => {
+                  const actVal = act[key];
+                  const diff = actVal != null ? actVal - pre[key] : null;
+                  const diffCls = diff == null ? "" :
+                                  Math.abs(diff) < 0.25 ? "text-emerald-400" :
+                                  Math.abs(diff) <= 1.25 ? "text-amber-400" : "text-red-400";
+                  return (
+                    <div key={key} className="flex items-center gap-2 px-3.5 py-2">
+                      <span className="w-[110px] shrink-0 text-[9px] [color:var(--soft-text)] opacity-60">{labelKey(key)}</span>
+                      <span className="flex-1 text-[10px] font-bold text-sky-400 tabular-nums">{pre[key]}</span>
+                      {hasPostOp && (
+                        <>
+                          <span className="text-[9px] [color:var(--soft-text)] opacity-25">→</span>
+                          {actVal != null ? (
+                            <span className={`flex-1 text-[10px] font-black tabular-nums ${diffCls}`}>{actVal}</span>
+                          ) : (
+                            <span className="flex-1 text-[9px] [color:var(--soft-text)] opacity-30">—</span>
+                          )}
+                          <div className="w-10 text-right">
+                            {diff == null ? null : diff === 0
+                              ? <CheckCircle2 className="ml-auto h-3 w-3 text-emerald-400" />
+                              : <span className={`text-[8px] tabular-nums ${diffCls}`}>{diff > 0 ? "+" : ""}{diff.toFixed(1)}</span>
+                            }
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Fallback: raw label string if no structured keys */}
+                {preKeys.length === 0 && c.implantLabel && (
+                  <div className="px-3.5 py-2.5 space-y-1">
+                    <div className="flex items-start gap-2">
+                      <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-sky-400 opacity-70 w-14">Pre-Op</span>
+                      <span className="text-[9px] [color:var(--soft-text)]">{c.implantLabel}</span>
+                    </div>
+                    {c.actualImplantLabel && (
+                      <div className="flex items-start gap-2">
+                        <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-emerald-400 opacity-70 w-14">Actual</span>
+                        <span className="text-[9px] [color:var(--soft-text)]">{c.actualImplantLabel}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function CasesTab({ cases }) {
+  const sorted = [...cases].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+  const withPostOp = sorted.filter(c => c.actualSizeNum != null || c.actualImplantLabel);
+  const preOpOnly = sorted.filter(c => c.actualSizeNum == null && !c.actualImplantLabel && c.implantLabel);
+  const noData = sorted.filter(c => !c.actualSizeNum && !c.actualImplantLabel && !c.implantLabel);
+
+  return (
+    <div className="space-y-5 px-4 py-4">
+      {/* Kasus dengan post-op */}
+      {withPostOp.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">
+            ✅ {withPostOp.length} kasus lengkap (pre + post-op)
+          </p>
+          {withPostOp.map(c => <CaseCard key={c.id} c={c} />)}
+        </div>
+      )}
+
+      {/* Kasus pre-op saja */}
+      {preOpOnly.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">
+            📋 {preOpOnly.length} kasus pre-op (belum ada data post-op)
+          </p>
+          {preOpOnly.map(c => <CaseCard key={c.id} c={c} />)}
+        </div>
+      )}
+
+      {/* Kasus tanpa data */}
+      {noData.length > 0 && (
+        <div className="rounded-2xl border border-dashed border-[var(--soft-border)] px-4 py-3">
+          <p className="text-[9px] [color:var(--soft-text)] opacity-50">
+            {noData.length} kasus tanpa data rencana komponen
+          </p>
+        </div>
+      )}
+
+      {sorted.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-[var(--soft-border)] px-4 py-8 text-center">
+          <Activity className="mx-auto mb-2 h-8 w-8 [color:var(--soft-text)] opacity-20" />
+          <p className="text-xs font-black [color:var(--soft-text)] opacity-50">Belum ada kasus</p>
+        </div>
+      )}
+    </div>
   );
 }
 
 // ─── PDF Export ────────────────────────────────────────────────────────────────
 
-async function exportPdf(cases, stats, byProcedure) {
+async function exportPdf(cases, stats, byProcedure, byComponent) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210;
   const NAVY = [15, 23, 42];
-  const GREEN = [22, 163, 74];
   const now = new Date().toLocaleDateString("id-ID", { year: "numeric", month: "long", day: "numeric" });
 
-  // ── Cover header
   doc.setFillColor(...NAVY);
   doc.rect(0, 0, W, 38, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16); doc.setFont("helvetica", "bold");
   doc.text("Analisis Akurasi Templating Ortopedi", 15, 17);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9); doc.setFont("helvetica", "normal");
   doc.text(`Dicetak: ${now}`, 15, 26);
-  doc.text(`Total kasus dengan data lengkap: ${stats?.n ?? 0}`, 15, 32);
+  doc.text(`Total kasus data lengkap: ${stats?.n ?? 0}`, 15, 32);
 
-  // ── Summary stats box
   let cur = 48;
-  doc.setFillColor(240, 253, 244);
-  doc.roundedRect(15, cur, W - 30, 36, 4, 4, "F");
-  doc.setTextColor(...NAVY);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-  doc.text("Ringkasan Statistik Akurasi", 22, cur + 10);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
   if (stats) {
+    doc.setFillColor(240, 253, 244);
+    doc.roundedRect(15, cur, W - 30, 28, 4, 4, "F");
+    doc.setTextColor(...NAVY); doc.setFontSize(10); doc.setFont("helvetica", "bold");
+    doc.text("Ringkasan Statistik", 22, cur + 10);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9);
     doc.text(`Exact match: ${stats.exactPct.toFixed(1)}%`, 22, cur + 20);
-    doc.text(`Within ±1 size: ${stats.within1Pct.toFixed(1)}%`, 22, cur + 27);
-    doc.text(`Rata-rata deviasi: ${stats.meanDev.toFixed(2)} size`, 90, cur + 20);
-    doc.text(`Over-estimated: ${stats.tooLarge} kasus`, 90, cur + 27);
-    doc.text(`Under-estimated: ${stats.tooSmall} kasus`, 90, cur + 34);
-  } else {
-    doc.text("Belum ada data akurasi lengkap.", 22, cur + 20);
+    doc.text(`Within ±1: ${stats.within1Pct.toFixed(1)}%`, 70, cur + 20);
+    doc.text(`Rata-rata deviasi: ${stats.meanDev.toFixed(2)} size`, 120, cur + 20);
+    cur += 38;
   }
-  cur += 46;
 
-  // ── Per procedure bar chart (drawn with rects)
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...NAVY);
-  doc.text("Akurasi per Prosedur", 15, cur);
-  cur += 7;
-  const BAR_MAX_MM = 80;
-  byProcedure.forEach((g) => {
-    const bwExact = (g.exactPct / 100) * BAR_MAX_MM;
-    const bwExtra = ((g.within1Pct - g.exactPct) / 100) * BAR_MAX_MM;
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(80, 80, 80);
-    doc.text(g.procedure.slice(0, 22), 15, cur + 4.5);
-    doc.setFillColor(...GREEN);
-    doc.roundedRect(70, cur, Math.max(bwExact, 0.5), 6, 1, 1, "F");
-    if (bwExtra > 0) {
+  // Per component
+  if (byComponent.length > 0) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    doc.text("Akurasi per Komponen", 15, cur); cur += 7;
+    byComponent.forEach(comp => {
+      doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+      doc.text(`${comp.label} (n=${comp.n})`, 15, cur + 4);
+      doc.setFillColor(22, 163, 74);
+      doc.roundedRect(80, cur, (comp.exactPct / 100) * 70, 5, 1, 1, "F");
       doc.setFillColor(134, 239, 172);
-      doc.roundedRect(70 + bwExact, cur, bwExtra, 6, 1, 1, "F");
-    }
-    doc.setTextColor(...NAVY);
-    doc.setFontSize(7.5);
-    doc.text(`${g.exactPct.toFixed(0)}% (n=${g.n})`, 70 + bwExact + bwExtra + 2, cur + 4.5);
-    cur += 10;
-    if (cur > 260) { doc.addPage(); cur = 20; }
+      doc.roundedRect(80 + (comp.exactPct / 100) * 70, cur, ((comp.within1Pct - comp.exactPct) / 100) * 70, 5, 1, 1, "F");
+      doc.setTextColor(...NAVY); doc.setFontSize(7.5);
+      doc.text(`${comp.exactPct.toFixed(0)}% exact · Δ̄ ${comp.meanDev.toFixed(2)}`, 155, cur + 4);
+      cur += 8;
+      if (cur > 265) { doc.addPage(); cur = 20; }
+    });
+    cur += 4;
+  }
+
+  // Per procedure
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+  doc.text("Akurasi per Prosedur", 15, cur); cur += 7;
+  byProcedure.forEach(g => {
+    doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+    doc.text(g.procedure.slice(0, 22), 15, cur + 4);
+    doc.setFillColor(14, 165, 233);
+    doc.roundedRect(80, cur, (g.exactPct / 100) * 70, 5, 1, 1, "F");
+    doc.setTextColor(...NAVY); doc.setFontSize(7.5);
+    doc.text(`${g.exactPct.toFixed(0)}% (n=${g.n})`, 155, cur + 4);
+    cur += 8;
+    if (cur > 265) { doc.addPage(); cur = 20; }
   });
   cur += 4;
 
-  // ── Case table
+  // Case table
   if (cur > 240) { doc.addPage(); cur = 20; }
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...NAVY);
-  doc.text("Data Kasus", 15, cur);
-  cur += 6;
-
-  const COL = [15, 50, 90, 125, 155, 175];
-  const HDRS = ["Pasien", "Prosedur", "Pre-Op (label)", "Actual", "Δ Size", "Tgl Op"];
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+  doc.text("Data Kasus", 15, cur); cur += 6;
+  const COL = [15, 52, 92, 125, 158, 178];
+  const HDRS = ["Pasien", "Prosedur", "Pre-Op", "Actual", "Δ", "Tgl Op"];
   doc.setFillColor(...NAVY);
   doc.rect(15, cur, W - 30, 7, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255); doc.setFontSize(7.5);
   HDRS.forEach((h, i) => doc.text(h, COL[i] + 1, cur + 5));
   cur += 7;
 
-  const withData = cases.filter((c) => c.actualSizeNum != null);
+  const withData = cases.filter(c => c.actualSizeNum != null || c.actualImplantLabel);
   withData.forEach((c, idx) => {
     if (cur > 270) { doc.addPage(); cur = 20; }
     doc.setFillColor(idx % 2 === 0 ? 248 : 255, 250, 252);
     doc.rect(15, cur, W - 30, 7, "F");
-    doc.setTextColor(30, 30, 30);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    const diff = c.preOpSizeNum != null && c.actualSizeNum != null
-      ? (c.actualSizeNum - c.preOpSizeNum).toFixed(1)
-      : "—";
-    const diffNum = parseFloat(diff);
-    if (!isNaN(diffNum)) {
-      doc.setTextColor(diffNum === 0 ? 22 : diffNum > 0 ? 200 : 220, diffNum === 0 ? 163 : 50, diffNum === 0 ? 74 : 50);
-    }
-    const row = [
+    const diff = c.preOpSizeNum != null && c.actualSizeNum != null ? c.actualSizeNum - c.preOpSizeNum : null;
+    const diffStr = diff == null ? "—" : (diff === 0 ? "0" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`);
+    doc.setTextColor(30, 30, 30); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+    [
       (c.patientName || "—").slice(0, 14),
-      (c.procedure || "—").slice(0, 16),
-      (c.implantLabel || "—").slice(0, 18),
-      (c.actualImplantLabel || `Size ${c.actualSizeNum}`).slice(0, 16),
-      isNaN(diffNum) ? "—" : (diffNum > 0 ? `+${diff}` : diff),
+      (c.procedure || "—").split("(")[0].trim().slice(0, 16),
+      (c.implantLabel || String(c.preOpSizeNum ?? "—")).slice(0, 18),
+      (c.actualImplantLabel || String(c.actualSizeNum ?? "—")).slice(0, 16),
+      diffStr,
       c.operationDate || "—",
-    ];
-    row.forEach((val, i) => doc.text(String(val), COL[i] + 1, cur + 5));
+    ].forEach((val, i) => doc.text(val, COL[i] + 1, cur + 5));
     cur += 7;
   });
 
-  if (withData.length === 0) {
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(8);
-    doc.text("Belum ada kasus dengan data post-op lengkap.", 15, cur + 5);
-  }
-
-  // ── Footer on each page
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
     doc.setFillColor(...NAVY);
     doc.rect(0, 287, W, 10, "F");
-    doc.setTextColor(150, 150, 180);
-    doc.setFontSize(7);
-    doc.text("Analisis Akurasi Templating Ortopedi — Zakzav Templating App", 15, 293);
+    doc.setTextColor(150, 150, 180); doc.setFontSize(7);
+    doc.text("Analisis Akurasi Templating Ortopedi — Zakzav", 15, 293);
     doc.text(`Hal ${p} / ${totalPages}`, W - 25, 293);
   }
 
-  doc.save(`analisis-akurasi-templating-${Date.now()}.pdf`);
+  doc.save(`analisis-akurasi-${Date.now()}.pdf`);
 }
 
 // ─── PIN Gate ─────────────────────────────────────────────────────────────────
@@ -271,8 +561,7 @@ function PinGate({ onAuth }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!pin.trim()) return;
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
       const ok = await verifyPin(pin.trim());
       if (ok) {
@@ -290,13 +579,13 @@ function PinGate({ onAuth }) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col items-center gap-5 px-6 py-10 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-100">
-        <Lock className="h-7 w-7 text-slate-500" />
+      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[var(--soft-inset-bg)]">
+        <Lock className="h-7 w-7 [color:var(--soft-text)] opacity-60" />
       </div>
       <div>
-        <p className="text-sm font-black text-slate-800">Area Admin</p>
-        <p className="mt-1 text-[10px] text-slate-500">
-          Analitik akurasi templating hanya dapat diakses oleh admin
+        <p className="text-sm font-black [color:var(--soft-text)]">Area Admin</p>
+        <p className="mt-1 text-[10px] [color:var(--soft-text)] opacity-50">
+          Analitik akurasi hanya dapat diakses oleh admin
         </p>
       </div>
       <div className="relative w-full max-w-[240px]">
@@ -304,29 +593,22 @@ function PinGate({ onAuth }) {
           type={showPin ? "text" : "password"}
           value={pin}
           onChange={(e) => setPin(e.target.value)}
-          placeholder="Masukkan kode akses"
+          placeholder="Kode akses"
           autoFocus
-          className="w-full rounded-2xl border border-slate-200 bg-white/80 py-2.5 pl-4 pr-10 text-center text-sm text-slate-800 tracking-widest outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+          className="w-full rounded-2xl border border-[var(--soft-border)] bg-[var(--soft-inset-bg)] py-2.5 pl-4 pr-10 text-center text-sm [color:var(--soft-text)] tracking-widest outline-none transition focus:ring-2 focus:ring-cyan-500/25"
         />
-        <button
-          type="button"
-          tabIndex={-1}
-          onClick={() => setShowPin((v) => !v)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-        >
+        <button type="button" tabIndex={-1} onClick={() => setShowPin(v => !v)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 [color:var(--soft-text)] opacity-50">
           {showPin ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
         </button>
       </div>
       {error && (
-        <div className="flex items-center gap-1.5 text-[10px] text-red-600">
+        <div className="flex items-center gap-1.5 text-[10px] text-red-400">
           <AlertCircle className="h-3 w-3" /> {error}
         </div>
       )}
-      <button
-        type="submit"
-        disabled={loading || !pin.trim()}
-        className="flex items-center gap-2 rounded-2xl bg-slate-800 px-8 py-2.5 text-xs font-black text-white disabled:opacity-50"
-      >
+      <button type="submit" disabled={loading || !pin.trim()}
+        className="flex items-center gap-2 rounded-2xl bg-[var(--soft-inset-bg)] border border-[var(--soft-border)] px-8 py-2.5 text-xs font-black [color:var(--soft-text)] disabled:opacity-50">
         {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Masuk
       </button>
@@ -334,20 +616,18 @@ function PinGate({ onAuth }) {
   );
 }
 
-// ─── Analytics Dashboard ──────────────────────────────────────────────────────
+// ─── Dashboard ─────────────────────────────────────────────────────────────────
 
 function Dashboard({ onClose }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+  const [tab, setTab] = useState("summary");
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const items = await fetchAllCases();
-      setCases(items);
-    } catch {}
+    try { setCases(await fetchAllCases()); } catch {}
     setLoading(false);
   }, []);
 
@@ -355,164 +635,82 @@ function Dashboard({ onClose }) {
 
   const stats = computeStats(cases);
   const byProcedure = groupByProcedure(cases);
-  const withPostOp = cases.filter((c) => c.actualSizeNum != null);
-  const withoutPostOp = cases.filter((c) => c.actualSizeNum == null);
+  const byComponent = computeComponentStats(cases);
+  const withPostOp = cases.filter(c => c.actualSizeNum != null || c.actualImplantLabel);
 
   const handleExport = async () => {
-    if (!stats && withPostOp.length === 0) return;
     setExporting(true);
     try {
-      await exportPdf(cases, stats, byProcedure);
+      await exportPdf(cases, stats, byProcedure, byComponent);
       setExportDone(true);
       setTimeout(() => setExportDone(false), 3000);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setExporting(false);
-    }
+    } catch (err) { console.error(err); }
+    finally { setExporting(false); }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16 text-slate-400">
+      <div className="flex flex-col items-center gap-3 py-16 [color:var(--soft-text)] opacity-40">
         <Loader2 className="h-8 w-8 animate-spin" />
-        <span className="text-xs">Memuat data dari Google Sheets...</span>
+        <span className="text-xs">Memuat data...</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5 px-5 py-5">
+    <div>
       {/* Action bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-            {cases.length} total kasus · {withPostOp.length} data lengkap
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={load}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
-            title="Refresh"
-          >
+      <div className="flex items-center justify-between border-b border-[var(--soft-border)] px-4 py-2.5">
+        <p className="text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">
+          {cases.length} kasus · {withPostOp.length} lengkap
+        </p>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={load}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--soft-inset-bg)] [color:var(--soft-text)] hover:opacity-80"
+            title="Refresh">
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={handleExport}
+          <button type="button" onClick={handleExport}
             disabled={exporting || withPostOp.length === 0}
-            className="flex h-8 items-center gap-1.5 rounded-full bg-slate-800 px-3 text-[10px] font-black text-white disabled:opacity-40"
-          >
+            className="flex h-7 items-center gap-1.5 rounded-full bg-[var(--soft-inset-bg)] border border-[var(--soft-border)] px-3 text-[9px] font-black [color:var(--soft-text)] disabled:opacity-40">
             {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> :
-             exportDone ? <CheckCircle2 className="h-3 w-3 text-green-400" /> :
+             exportDone ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> :
              <FileDown className="h-3 w-3" />}
-            {exportDone ? "Tersimpan!" : "Export PDF"}
+            {exportDone ? "Tersimpan!" : "PDF"}
           </button>
         </div>
       </div>
 
-      {/* Summary stats */}
-      {stats ? (
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: "Exact match", value: `${stats.exactPct.toFixed(1)}%`, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
-            { label: "Within ±1", value: `${stats.within1Pct.toFixed(1)}%`, color: "text-blue-600", bg: "bg-blue-50 border-blue-200" },
-            { label: "Mean Δ size", value: stats.meanDev.toFixed(2), color: "text-slate-700", bg: "bg-white border-slate-200" },
-          ].map((s) => (
-            <div key={s.label} className={`rounded-2xl border px-3 py-3 text-center ${s.bg}`}>
-              <p className={`text-lg font-black leading-none ${s.color}`}>{s.value}</p>
-              <p className="mt-1 text-[8px] font-bold text-slate-500">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center">
-          <TrendingUp className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-          <p className="text-xs font-black text-slate-400">Belum ada data akurasi</p>
-          <p className="mt-1 text-[9px] text-slate-400">
-            Input data post-op (ukuran actual) pada kasus pasien untuk melihat statistik
-          </p>
-        </div>
-      )}
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-[var(--soft-border)] px-4 pt-2 pb-0">
+        {[
+          { id: "summary", label: "Ringkasan" },
+          { id: "cases", label: `Kasus (${withPostOp.length})` },
+        ].map(t => (
+          <button key={t.id} type="button" onClick={() => setTab(t.id)}
+            className={`rounded-t-xl px-3 py-2 text-[10px] font-black transition-colors ${
+              tab === t.id
+                ? "border border-b-0 border-[var(--soft-border)] bg-[var(--soft-raised-bg)] [color:var(--soft-text)]"
+                : "[color:var(--soft-text)] opacity-50 hover:opacity-80"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {/* Over/under */}
-      {stats && (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-center">
-            <p className="text-base font-black text-amber-700">{stats.tooLarge}</p>
-            <p className="text-[8px] text-amber-600">Over-estimated</p>
-            <p className="text-[7px] text-amber-500">actual lebih besar</p>
-          </div>
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-center">
-            <p className="text-base font-black text-rose-700">{stats.tooSmall}</p>
-            <p className="text-[8px] text-rose-600">Under-estimated</p>
-            <p className="text-[7px] text-rose-500">actual lebih kecil</p>
-          </div>
-        </div>
-      )}
-
-      {/* Bar chart */}
-      {byProcedure.length > 0 && (
-        <div>
-          <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">
-            Akurasi per Prosedur
-          </p>
-          <ProcedureChart groups={byProcedure} />
-        </div>
-      )}
-
-      {/* Cases table */}
-      {withPostOp.length > 0 && (
-        <div>
-          <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-slate-400">
-            Detail Kasus ({withPostOp.length} data lengkap)
-          </p>
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[480px] text-[10px]">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  {["Pasien", "Prosedur", "Pre-Op", "Actual", "Δ", "Tgl Op"].map((h) => (
-                    <th key={h} className="px-2.5 py-2 text-left text-[8px] font-black">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {withPostOp.map((c, i) => {
-                  const diff = c.preOpSizeNum != null && c.actualSizeNum != null
-                    ? c.actualSizeNum - c.preOpSizeNum
-                    : null;
-                  const diffLabel = diff == null ? "—" : diff === 0 ? "✅ 0" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`;
-                  const diffColor = diff == null ? "" : diff === 0 ? "text-emerald-600 font-black" : Math.abs(diff) <= 1 ? "text-amber-600" : "text-red-600";
-                  return (
-                    <tr key={c.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                      <td className="px-2.5 py-2 font-bold">{(c.patientName || "—").slice(0, 14)}</td>
-                      <td className="px-2.5 py-2 text-slate-600">{(c.procedure || "—").split("(")[0].trim().slice(0, 16)}</td>
-                      <td className="px-2.5 py-2 text-slate-600">{c.preOpSizeNum != null ? c.preOpSizeNum : (c.implantLabel || "—").slice(0, 12)}</td>
-                      <td className="px-2.5 py-2">{c.actualSizeNum ?? (c.actualImplantLabel || "—").slice(0, 12)}</td>
-                      <td className={`px-2.5 py-2 ${diffColor}`}>{diffLabel}</td>
-                      <td className="px-2.5 py-2 text-slate-500">{c.operationDate || "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Pending post-op */}
-      {withoutPostOp.length > 0 && (
-        <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50/50 px-4 py-3">
-          <p className="text-[9px] font-black text-amber-700">
-            {withoutPostOp.length} kasus belum ada data post-op
-          </p>
-          <p className="mt-0.5 text-[8px] text-amber-600">
-            Input data post-op pada masing-masing kasus untuk melengkapi analitik
-          </p>
-        </div>
-      )}
+      {/* Tab content */}
+      <AnimatePresence mode="wait">
+        {tab === "summary" ? (
+          <motion.div key="summary" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <SummaryTab cases={cases} />
+          </motion.div>
+        ) : (
+          <motion.div key="cases" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <CasesTab cases={cases} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -525,9 +723,7 @@ export default function TemplatingAnalytics({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen) {
       try {
-        const stored = sessionStorage.getItem(SESSION_KEY);
-        if (stored === "1") setAuthenticated(true);
-        else setAuthenticated(false);
+        setAuthenticated(sessionStorage.getItem(SESSION_KEY) === "1");
       } catch {
         setAuthenticated(false);
       }
@@ -545,19 +741,24 @@ export default function TemplatingAnalytics({ isOpen, onClose }) {
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/40 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/50 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="max-h-[94dvh] w-full max-w-[min(100%,620px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f1f5f9] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
+            className="max-h-[94dvh] w-full max-w-[min(100%,600px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.96, opacity: 0 }}
             transition={{ type: "spring", damping: 26, stiffness: 300 }}
           >
+            {/* Drag pill mobile */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="h-1 w-10 rounded-full bg-[var(--soft-border)]" />
+            </div>
+
             {/* Header */}
             <div className="flex items-center gap-3 bg-[#0f172a] px-5 py-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-600">
@@ -565,32 +766,26 @@ export default function TemplatingAnalytics({ isOpen, onClose }) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-black text-white">Analisis Akurasi Templating</p>
-                <p className="text-[10px] text-slate-400">
-                  {authenticated ? "Admin — data akurasi pre-op vs post-op" : "Diperlukan kode akses admin"}
+                <p className="text-[9px] text-slate-400">
+                  {authenticated ? "Pre-op vs Post-op · per komponen" : "Diperlukan kode akses admin"}
                 </p>
               </div>
               {authenticated && (
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex h-7 items-center gap-1 rounded-full bg-white/10 px-2.5 text-[9px] font-bold text-slate-300 hover:bg-white/20"
-                >
+                <button type="button" onClick={handleLogout}
+                  className="flex h-7 items-center gap-1 rounded-full bg-white/10 px-2.5 text-[9px] font-bold text-slate-300 hover:bg-white/20">
                   <Lock className="h-3 w-3" /> Keluar
                 </button>
               )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/20"
-              >
+              <button type="button" onClick={onClose}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/20">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="max-h-[calc(94dvh-76px)] overflow-y-auto">
+            <div className="max-h-[calc(94dvh-90px)] overflow-y-auto">
               <AnimatePresence mode="wait">
                 {authenticated ? (
-                  <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <motion.div key="dash" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                     <Dashboard onClose={onClose} />
                   </motion.div>
                 ) : (
