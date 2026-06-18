@@ -106,6 +106,7 @@ const PREOP_COMPONENTS = {
     extras: [
       { key: "tibial",  label: "Tibial",    unit: "size", hint: "1–8" },
       { key: "insert",  label: "Insert PE", unit: "mm",   hint: "9–14" },
+      { key: "stem",    label: "Stem",      unit: "size", hint: "—",   optional: true },
       { key: "patella", label: "Patella",   unit: "mm",   hint: "—",   optional: true },
     ],
   },
@@ -119,7 +120,7 @@ const PREOP_COMPONENTS = {
   hemi: {
     primary: { key: "head", label: "Bipolar Head", unit: "mm",   hint: "36–48" },
     extras: [
-      { key: "acetabulum", label: "Native Acetabulum", unit: "mm", hint: "44–66" },
+      { key: "acetabulum", label: "Native Head", unit: "mm", hint: "44–66" },
       { key: "stem",       label: "Stem",              unit: "size", hint: "1–8" },
     ],
   },
@@ -127,6 +128,7 @@ const PREOP_COMPONENTS = {
     primary: { key: "femoral", label: "Femoral UKA", unit: "size", hint: "A/B/C" },
     extras: [
       { key: "tibial", label: "Tibial UKA", unit: "size", hint: "A/B/C" },
+      { key: "stem",   label: "Stem",       unit: "size", hint: "—",     optional: true },
     ],
   },
   revision: {
@@ -203,6 +205,20 @@ async function apiCreateCase(data) {
   const json = await res.json();
   if (!json?.ok || !json?.remote?.ok) {
     throw new Error(json?.remote?.error || json?.error || "Gagal menyimpan ke cloud.");
+  }
+  return json.remote;
+}
+
+async function apiUpdateCase(id, data) {
+  if (!APPS_SCRIPT_URL) throw new Error("Apps Script URL tidak dikonfigurasi.");
+  const res = await fetch("/api/google-sheet-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "update_patient_case", id, data }),
+  });
+  const json = await res.json();
+  if (!json?.ok || !json?.remote?.ok) {
+    throw new Error(json?.remote?.error || json?.error || "Gagal update data di cloud.");
   }
   return json.remote;
 }
@@ -782,9 +798,9 @@ function SaveForm({ currentSession, onSave, onCancel }) {
                   {comp.optional && <span className="ml-0.5 italic text-slate-400"> *</span>}
                 </span>
                 <input
-                  type="number"
-                  step="0.5"
-                  min="0"
+                  type={comp.unit === "size" ? "text" : "number"}
+                  step={comp.unit === "size" ? undefined : "0.5"}
+                  min={comp.unit === "size" ? undefined : "0"}
                   value={preOpSizes[comp.key] ?? ""}
                   onChange={(e) => setSize(comp.key, e.target.value)}
                   placeholder={comp.hint}
@@ -878,7 +894,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
       patientName: patientName.trim(),
       procedure,
       notes: notes.trim(),
-      implantLabel: structuredLabel || caseData?.implantLabel || "",
+      implantLabel: structuredLabel || preOpSizes.__free__ || caseData?.implantLabel || "",
       preOpSizeNum,
     });
   };
@@ -983,9 +999,9 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                           {comp.optional && <span className="ml-0.5 italic text-slate-400"> *</span>}
                         </span>
                         <input
-                          type="number"
-                          step="0.5"
-                          min="0"
+                          type={comp.unit === "size" ? "text" : "number"}
+                          step={comp.unit === "size" ? undefined : "0.5"}
+                          min={comp.unit === "size" ? undefined : "0"}
                           value={preOpSizes[comp.key] ?? ""}
                           onChange={(e) => setSize(comp.key, e.target.value)}
                           placeholder={comp.hint}
@@ -1390,6 +1406,7 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
 
 export default function PatientCaseManager({ isOpen, onClose, currentSession, onLoadAsLayer }) {
   const [cases, setCases] = useState([]);
+  const lastLocalEditRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncOk, setSyncOk] = useState(false);
@@ -1414,6 +1431,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
     const cached = loadCases();
     if (cached.length > 0) setCases(cached);
     if (!hasCloud) return;
+    // Skip cloud fetch for 60s after a local edit to avoid overwriting unsaved changes
+    if (Date.now() - lastLocalEditRef.current < 60_000) return;
 
     setLoading(true);
     apiListCases()
@@ -1545,15 +1564,29 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   );
 
   const handleUpdate = useCallback(
-    (id, updatedFields) => {
+    async (id, updatedFields) => {
+      // Update local state immediately (optimistic)
       const updated = cases.map((c) =>
         c.id === id ? { ...c, ...updatedFields } : c
       );
       setCases(updated);
       saveCases(updated);
       setEditingCaseId(null);
+      lastLocalEditRef.current = Date.now();
+
+      // Sync to cloud if configured
+      if (hasCloud) {
+        try {
+          await apiUpdateCase(id, updatedFields);
+          setSyncOk(true);
+          setTimeout(() => setSyncOk(false), 2500);
+        } catch (err) {
+          setCloudError(`Gagal update cloud: ${err.message}`);
+          setTimeout(() => setCloudError(""), 4000);
+        }
+      }
     },
-    [cases],
+    [cases, hasCloud],
   );
 
   const selectedCase = cases.find((c) => c.id === selectedCaseId);

@@ -52,7 +52,7 @@ function parseComponents(label) {
 
 function labelKey(key) {
   const MAP = {
-    cup: "Cup", head: "Head", stem: "Stem", acetabulum: "Native Acetabulum",
+    cup: "Cup", head: "Head", stem: "Stem", acetabulum: "Native Head",
     bipolar_head: "Bipolar Head", femur: "Femur", tibia: "Tibia",
     patella: "Patella", insert: "Insert",
   };

@@ -2183,6 +2183,11 @@ function updatePatientCase_(payload) {
   var data = (payload && payload.data && typeof payload.data === "object") ? payload.data : (payload || {});
   var now = isoNow_();
 
+  // Pre-op fields (editable from EditCaseModal)
+  if (data.patientName !== undefined) row[2] = String(data.patientName || "");
+  if (data.procedure !== undefined) row[3] = String(data.procedure || "");
+  if (data.notes !== undefined) row[4] = String(data.notes || "");
+  if (data.implantLabel !== undefined) row[9] = String(data.implantLabel || "");
   if (data.preOpSizeNum !== undefined && data.preOpSizeNum !== null && data.preOpSizeNum !== "") {
     row[13] = Number(data.preOpSizeNum);
   }

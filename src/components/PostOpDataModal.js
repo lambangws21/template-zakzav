@@ -47,7 +47,8 @@ const PROC_CONFIG = {
     extras: [
       { key: "tibial",  label: "Tibial Component", unit: "size", hint: "Ukuran 1–8" },
       { key: "insert",  label: "Insert PE",         unit: "mm",   hint: "9 / 10 / 12 / 14 mm" },
-      { key: "patella", label: "Patella (opsional)", unit: "mm",   hint: "—", optional: true },
+      { key: "stem",    label: "Stem",              unit: "size", hint: "—", optional: true },
+      { key: "patella", label: "Patella (opsional)", unit: "mm",  hint: "—", optional: true },
     ],
     hkaNote: "Koreksi varus/valgus post-TKA",
   },
@@ -79,6 +80,7 @@ const PROC_CONFIG = {
     primary: { key: "femoral", label: "Femoral UKA", unit: "size", hint: "1 = A, 2 = B, 3 = C, 4 = D" },
     extras: [
       { key: "tibial", label: "Tibial UKA", unit: "size", hint: "1 = A, 2 = B, 3 = C" },
+      { key: "stem",   label: "Stem",       unit: "size", hint: "—", optional: true },
     ],
     hkaNote: "Koreksi kompartemen medial/lateral",
   },
@@ -126,13 +128,13 @@ function SizeField({ label, unit, hint, value, onChange, isPreOp, colorKey, opti
     <label className="flex flex-col gap-0.5">
       <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-500">
         <Ruler className={`h-2.5 w-2.5 ${isPreOp ? "text-blue-400" : "text-emerald-500"}`} />
-        {label} {unit && <span className="font-normal normal-case text-slate-400">({unit})</span>}
+        {label} {unit && unit !== "size" && <span className="font-normal normal-case text-slate-400">({unit})</span>}
         {optional && <span className="font-normal normal-case italic text-slate-400">– opsional</span>}
       </span>
       <input
-        type="number"
-        step="0.5"
-        min="0"
+        type={unit === "size" ? "text" : "number"}
+        step={unit === "size" ? undefined : "0.5"}
+        min={unit === "size" ? undefined : "0"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={hint}
