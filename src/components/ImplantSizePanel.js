@@ -7,6 +7,20 @@ import {
   X, Zap, TrendingUp, AlertTriangle, CheckCircle2, Info,
   BookOpen, TableProperties, ChevronDown, ChevronUp,
 } from "lucide-react";
+import {
+  ZIMMER_HEAD_NECK_OPTIONS,
+  ZIMMER_NECK_VARIANTS,
+  ZIMMER_OFFSET_TYPES,
+  getZimmerStemSizes,
+  recommendZimmerStem,
+} from "@/lib/digitalTemplating/zimmerMlTaper";
+import ZimmerMlTaperSVGDiagram from "@/components/ZimmerMlTaperSVGDiagram";
+import { getImplantLibraryItemsByType } from "@/lib/digitalTemplating/implantLibrary";
+
+// Sementara hanya tampilkan data Zimmer M/L Taper (brand/implant lain disembunyikan dulu).
+const SHOW_ONLY_ZIMMER = false;
+// Filter hanya brand Zimmer Biomet.
+const SHOW_ONLY_ZIMMER_BRAND = true;
 
 // ─── Real Implant Brand Database ─────────────────────────────────────────────
 // Data dimensi berdasarkan spesifikasi teknis resmi masing-masing brand.
@@ -380,15 +394,29 @@ function getRulerLines(lines, mmPerPixel) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+const glassInput = {
+  background: "rgba(255,255,255,0.07)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  backdropFilter: "blur(8px)",
+  color: "#e2e8f0",
+  outline: "none",
+  colorScheme: "dark",
+};
+const glassCard = {
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  backdropFilter: "blur(10px)",
+};
+
 function BrandChip({ brand, active, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[10px] font-black transition active:scale-95"
+      className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[10px] font-black transition active:scale-95"
       style={active
-        ? { backgroundColor: brand.color, color: "#fff", borderColor: brand.color }
-        : { backgroundColor: brand.lightColor, color: brand.color, borderColor: brand.color + "44" }
+        ? { background: brand.color, color: "#fff", border: `1px solid ${brand.color}` }
+        : { ...glassCard, color: brand.color }
       }
     >
       {brand.name}
@@ -405,7 +433,8 @@ function MeasureInput({ label, hint, lines, selectedId, onSelectId, manualVal, o
         <select
           value={selectedId}
           onChange={(e) => { onSelectId(e.target.value); if (e.target.value) onManualVal(""); }}
-          className="w-full rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          className="w-full rounded-xl px-2.5 py-1.5 text-xs"
+          style={glassInput}
         >
           <option value="">— Pilih garis pengukuran —</option>
           {lines.map((l) => (
@@ -419,7 +448,8 @@ function MeasureInput({ label, hint, lines, selectedId, onSelectId, manualVal, o
           value={manualVal}
           onChange={(e) => { onManualVal(e.target.value); onSelectId(""); }}
           placeholder="Input manual (mm)"
-          className="flex-1 rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          className="flex-1 rounded-xl px-2.5 py-1.5 text-xs"
+          style={glassInput}
         />
         <span className="text-[10px] font-bold text-slate-400 shrink-0">mm</span>
       </div>
@@ -428,23 +458,51 @@ function MeasureInput({ label, hint, lines, selectedId, onSelectId, manualVal, o
 }
 
 function SizeResultRow({ label, size, apMl, color, lightColor, isMatch }) {
+  const detailPoints = typeof apMl === "string"
+    ? apMl.split(" · ").map((item) => item.trim()).filter(Boolean)
+    : [];
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }}
-      className="flex items-center gap-3 rounded-2xl border px-3 py-2.5"
-      style={{ borderColor: isMatch ? color : "#e2e8f0", backgroundColor: isMatch ? lightColor : "rgba(255,255,255,0.7)" }}
+      className="flex items-start gap-3 rounded-2xl px-3 py-2.5"
+      style={isMatch
+        ? { background: `${color}18`, border: `1px solid ${color}40`, backdropFilter: "blur(8px)" }
+        : glassCard
+      }
     >
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0"
-        style={{ backgroundColor: color }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0 mt-0.5"
+        style={{ background: color, boxShadow: `0 2px 8px ${color}40` }}>
         {size}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[9px] font-black uppercase tracking-widest" style={{ color }}>{label}</p>
-        <p className="text-xs text-slate-600 font-semibold">{apMl}</p>
+        {detailPoints.length > 1 ? (
+          <ul className="mt-1 grid gap-0.5 text-xs text-slate-300 font-semibold leading-snug sm:grid-cols-2">
+            {detailPoints.map((point, index) => (
+              <li key={`${point}-${index}`} className="flex gap-1.5">
+                <span className="mt-[0.45em] h-1 w-1 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-slate-300 font-semibold">{apMl}</p>
+        )}
       </div>
-      {isMatch && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color }} />}
+      {isMatch && <CheckCircle2 className="h-4 w-4 shrink-0 mt-2" style={{ color }} />}
     </motion.div>
   );
+}
+
+function fmtMm(value) {
+  return Number.isFinite(value) ? `${value} mm` : "—";
+}
+
+function zimmerVariantLabel(value) {
+  if (value === "extended") return "Extended Offset";
+  if (value === "reduced") return "Reduced Neck";
+  return "Standard / Normal";
 }
 
 // ─── Reference Table ──────────────────────────────────────────────────────────
@@ -559,6 +617,10 @@ function HipCupRefTable({ brand }) {
 }
 
 function HipStemRefTable({ brand }) {
+  if (brand.id === "zimmer_ml_taper") {
+    return <ZimmerMlTaperRefTable brand={brand} />;
+  }
+
   const hasProxML = brand.sizes.some((s) => s.proxML != null);
   const hasCement = brand.sizes.some((s) => s.cementMantle != null);
   return (
@@ -571,7 +633,7 @@ function HipStemRefTable({ brand }) {
         >
           {brand.cemented ? "Cemented" : "Cementless"}
         </span>
-        <span className="text-[9px] text-slate-400">{brand.maker}</span>
+        <span className="text-[9px] font-semibold text-slate-600 dark:text-slate-200">{brand.maker}</span>
       </div>
       <div className="rounded-2xl border border-slate-200 overflow-hidden">
         <table className="w-full text-xs">
@@ -604,13 +666,129 @@ function HipStemRefTable({ brand }) {
   );
 }
 
+function ZimmerMlTaperRefTable({ brand }) {
+  const [offsetType, setOffsetType] = useState("standard");
+  const [neckVariant, setNeckVariant] = useState("normal");
+  const [headNeck, setHeadNeck] = useState("+0");
+  const sizes = useMemo(() => getZimmerStemSizes(offsetType, neckVariant), [offsetType, neckVariant]);
+
+  return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+        {[
+          ["fixation", "Cementless"],
+          ["offset", zimmerVariantLabel(offsetType)],
+          ["neck", zimmerVariantLabel(neckVariant)],
+        ].map(([key, label]) => (
+          <span
+            key={key}
+            className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: brand.lightColor, color: brand.color }}
+          >
+            {label}
+          </span>
+        ))}
+        <span className="text-[9px] text-slate-400">{brand.maker}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200">Offset</p>
+          <div className="flex gap-1.5">
+            {ZIMMER_OFFSET_TYPES.map((t) => (
+              <button key={t} type="button" onClick={() => setOffsetType(t)}
+                className={`flex-1 rounded-xl border py-1.5 text-[10px] font-black capitalize transition hover:-translate-y-0.5 active:scale-[0.97] ${
+                  offsetType === t
+                    ? ""
+                    : "border-slate-300 bg-white text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-100"
+                }`}
+                style={offsetType === t ? { backgroundColor: brand.color, color: "#fff", borderColor: brand.color, boxShadow: "0 8px 18px rgba(13,148,136,0.18)" } : undefined}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200">Neck</p>
+          <div className="flex gap-1.5">
+            {ZIMMER_NECK_VARIANTS.map((t) => (
+              <button key={t} type="button" onClick={() => setNeckVariant(t)}
+                className={`flex-1 rounded-xl border py-1.5 text-[10px] font-black capitalize transition hover:-translate-y-0.5 active:scale-[0.97] ${
+                  neckVariant === t
+                    ? ""
+                    : "border-slate-300 bg-white text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-100"
+                }`}
+                style={neckVariant === t ? { backgroundColor: brand.color, color: "#fff", borderColor: brand.color, boxShadow: "0 8px 18px rgba(13,148,136,0.18)" } : undefined}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <select
+        value={headNeck}
+        onChange={(e) => setHeadNeck(e.target.value)}
+        className="w-full rounded-xl px-2.5 py-1.5 text-xs" style={glassInput}
+      >
+        {ZIMMER_HEAD_NECK_OPTIONS.map((o) => (
+          <option key={o} value={o}>Head/Neck {o} mm</option>
+        ))}
+      </select>
+
+      <div className="rounded-2xl border border-slate-300 overflow-hidden bg-white shadow-sm dark:border-slate-600 dark:bg-slate-900/80">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-100" style={{ backgroundColor: brand.lightColor }}>
+              <th className="px-3 py-2 text-left">Stem</th>
+              <th className="px-3 py-2 text-right">Length</th>
+              <th className="px-3 py-2 text-right">Neck</th>
+              <th className="px-3 py-2 text-right">Offset</th>
+              <th className="px-3 py-2 text-right">Catalog</th>
+            </tr>
+          </thead>
+          <motion.tbody key={`${offsetType}-${neckVariant}-${headNeck}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ staggerChildren: 0.025 }}>
+            {sizes.map((s, i) => (
+              <motion.tr
+                key={`${s.offsetType}-${s.neckVariant}-${s.productNo}-${s.stemSizeMm}`}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={i % 2 === 0 ? "bg-white dark:bg-slate-900/80" : "bg-slate-100/80 dark:bg-slate-800/80"}
+              >
+                <td className="px-3 py-2 font-black" style={{ color: brand.color }}>{fmtMm(s.stemSizeMm)}</td>
+                <td className="px-3 py-2 text-right font-semibold text-slate-800 dark:text-slate-100">{fmtMm(s.stemLengthMm)}</td>
+                <td className="px-3 py-2 text-right font-semibold text-slate-800 dark:text-slate-100">{fmtMm(s.neckLengthMm[headNeck])}</td>
+                <td className="px-3 py-2 text-right font-semibold text-slate-800 dark:text-slate-100">{fmtMm(s.stemOffsetMm[headNeck])}</td>
+                <td className="px-3 py-2 text-right">
+                  <span className="block text-[10px] font-black text-slate-700 dark:text-slate-100">{s.productNo}</span>
+                  {s.haTcpProductNo && <span className="block text-[9px] font-semibold text-slate-500 dark:text-slate-300">HA/TCP {s.haTcpProductNo}</span>}
+                </td>
+              </motion.tr>
+            ))}
+          </motion.tbody>
+        </table>
+      </div>
+      <div className="flex items-start gap-2 rounded-2xl border border-slate-300 bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-900/70">
+        <Info className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-200 mt-0.5" />
+        <p className="text-[10px] font-medium leading-relaxed text-slate-600 dark:text-slate-200">
+          Tabel mengikuti data JSON lengkap: size dipilih dari kombinasi offset dan neck variant, sedangkan kolom Neck/Offset berubah sesuai pilihan head-neck {headNeck}. Reduced Neck tersedia sampai size 12.5 pada dataset ini.
+        </p>
+      </div>
+      {brand.note && (
+        <p className="text-[9px] font-medium text-slate-500 dark:text-slate-300 italic border-t border-slate-200 dark:border-slate-600 pt-2">{brand.note}</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Knee Estimation Panel ────────────────────────────────────────────────────
 
-function KneeEstimation({ brand, rulerLines, calibrated }) {
+function KneeEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
   const [femApLineId, setFemApLineId] = useState("");
   const [femApManual, setFemApManual] = useState("");
   const [tibMlLineId, setTibMlLineId] = useState("");
   const [tibMlManual, setTibMlManual] = useState("");
+  const [showPopup, setShowPopup] = useState(false);
 
   const femApMm = useMemo(() => {
     if (femApLineId) return rulerLines.find((l) => l.id === femApLineId)?.mm ?? null;
@@ -626,96 +804,163 @@ function KneeEstimation({ brand, rulerLines, calibrated }) {
 
   const femRec = useMemo(() => femApMm ? findKneeFemoral(brand, femApMm) : null, [brand, femApMm]);
   const tibRec = useMemo(() => tibMlMm ? findKneeTibial(brand, tibMlMm) : null, [brand, tibMlMm]);
-
-  // Overhang / notching warning
   const notchRisk = femRec && femApMm && femRec.ap < femApMm - 3;
+  const sizeMatch = femRec && tibRec && femRec.size === tibRec.size;
+
+  const kneeItems = useMemo(() => getImplantLibraryItemsByType("knee"), []);
+
+  function addToCanvas(subtype) {
+    if (!onSelectImplant) return;
+    const item = kneeItems.find((i) => i.id.includes(subtype === "femoral" ? "fem" : "tib")) ?? kneeItems[0];
+    if (item) onSelectImplant({ type: "knee", id: item.id });
+  }
 
   return (
-    <div className="space-y-4">
-      <MeasureInput
-        label="Femoral AP — Distal Femur"
-        hint="Lateral view: dari anterior cortex ke posterior condyle. Pilih ukuran komponen ≤ nilai ini."
-        lines={rulerLines} selectedId={femApLineId} onSelectId={setFemApLineId}
-        manualVal={femApManual} onManualVal={setFemApManual} calibrated={calibrated}
-      />
-      <MeasureInput
-        label="Tibial ML — Plateau Width"
-        hint="AP view: lebar mediolateral tibial plateau. Ukuran tibial komponen tidak boleh overhang."
-        lines={rulerLines} selectedId={tibMlLineId} onSelectId={setTibMlLineId}
-        manualVal={tibMlManual} onManualVal={setTibMlManual} calibrated={calibrated}
-      />
+    <div className="space-y-3">
+      {/* Steps */}
+      <div className="flex gap-1.5">
+        {[["1", "Femoral AP", !!femApMm], ["2", "Tibial ML", !!tibMlMm]].map(([n, label, done]) => (
+          <div key={n} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 flex-1" style={done ? { background: `${brand.color}18`, border: `1px solid ${brand.color}35` } : glassCard}>
+            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 text-white" style={{ background: done ? brand.color : "#cbd5e1" }}>{done ? "✓" : n}</div>
+            <span className="text-[9px] font-black" style={{ color: done ? brand.color : "#94a3b8" }}>{label}</span>
+          </div>
+        ))}
+      </div>
 
+      {/* Femoral input */}
+      <div className="rounded-2xl overflow-hidden" style={glassCard}>
+        <div className="px-3 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.40)", background: "rgba(255,255,255,0.18)" }}>
+          <p className="text-[8px] font-black uppercase tracking-widest" style={{ color: brand.color }}>Step 1 — Femoral AP</p>
+          <p className="text-[8px] text-slate-400 mt-0.5">Lateral view: anterior cortex → posterior condyle.</p>
+        </div>
+        <div className="px-3 py-3">
+          <MeasureInput label="" hint="" lines={rulerLines} selectedId={femApLineId} onSelectId={setFemApLineId} manualVal={femApManual} onManualVal={setFemApManual} calibrated={calibrated} />
+        </div>
+      </div>
+
+      {/* Tibial input */}
+      <div className="rounded-2xl overflow-hidden" style={glassCard}>
+        <div className="px-3 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.40)", background: "rgba(255,255,255,0.18)" }}>
+          <p className="text-[8px] font-black uppercase tracking-widest" style={{ color: brand.color }}>Step 2 — Tibial ML</p>
+          <p className="text-[8px] text-slate-400 mt-0.5">AP view: lebar mediolateral tibial plateau.</p>
+        </div>
+        <div className="px-3 py-3">
+          <MeasureInput label="" hint="" lines={rulerLines} selectedId={tibMlLineId} onSelectId={setTibMlLineId} manualVal={tibMlManual} onManualVal={setTibMlManual} calibrated={calibrated} />
+        </div>
+      </div>
+
+      {/* CTA popup */}
       <AnimatePresence>
-        {(femRec || tibRec) && (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="space-y-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Rekomendasi Ukuran</p>
+        {(femApMm || tibMlMm) && (
+          <motion.button initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            type="button" onClick={() => setShowPopup(true)}
+            className="w-full rounded-xl py-2.5 text-xs font-black transition hover:scale-[1.01] active:scale-[0.98]"
+            style={{ background: `${brand.color}cc`, color: "#fff", border: `1px solid ${brand.color}50`, boxShadow: `0 2px 10px ${brand.color}30` }}>
+            Lihat Rekomendasi TKA →
+          </motion.button>
+        )}
+      </AnimatePresence>
 
-            {femRec && (
-              <SizeResultRow
-                label={`Femoral Component — ${brand.name}`}
-                size={`F${femRec.size}`}
-                apMl={`AP ${femRec.ap} mm · ML ${femRec.ml} mm · Distal H ${femRec.distalH} mm`}
-                color={brand.color} lightColor={brand.lightColor} isMatch
-              />
-            )}
-            {tibRec && (
-              <SizeResultRow
-                label={`Tibial Component — ${brand.name}`}
-                size={`T${tibRec.size}`}
-                apMl={`ML ${tibRec.ml} mm · AP ${tibRec.ap} mm`}
-                color={brand.color} lightColor={brand.lightColor} isMatch
-              />
-            )}
-
-            {/* Size match check */}
-            {femRec && tibRec && (
-              <div className={`flex items-start gap-2 rounded-2xl border px-3 py-2 ${
-                femRec.size === tibRec.size
-                  ? "border-green-200 bg-green-50"
-                  : "border-amber-200 bg-amber-50"
-              }`}>
-                {femRec.size === tibRec.size
-                  ? <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 mt-0.5" />
-                  : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
-                }
+      {/* Popup */}
+      <AnimatePresence>
+        {showPopup && (
+          <motion.div key="tka-popup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.28)", backdropFilter: "blur(8px)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowPopup(false); }}>
+            <motion.div initial={{ y: 24, scale: 0.95, opacity: 0 }} animate={{ y: 0, scale: 1, opacity: 1 }} exit={{ y: 16, scale: 0.96, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 340 }}
+              className="w-full max-w-[420px] rounded-[20px] overflow-hidden"
+              style={{ background: "rgba(10,18,40,0.94)", backdropFilter: "blur(24px) saturate(180%)", border: "1px solid rgba(255,255,255,0.14)", boxShadow: "0 8px 40px rgba(0,0,0,0.55)" }}>
+              {/* header */}
+              <div className="flex items-center justify-between px-5 py-3.5" style={{ background: `${brand.color}12`, borderBottom: "1px solid rgba(255,255,255,0.35)" }}>
                 <div>
-                  <p className={`text-[10px] font-black ${femRec.size === tibRec.size ? "text-green-800" : "text-amber-800"}`}>
-                    {femRec.size === tibRec.size
-                      ? `Size match: Femoral ${femRec.size} = Tibial ${tibRec.size}`
-                      : `Size mismatch: Femoral ${femRec.size} ≠ Tibial ${tibRec.size}`
-                    }
-                  </p>
-                  <p className={`text-[9px] mt-0.5 ${femRec.size === tibRec.size ? "text-green-600" : "text-amber-600"}`}>
-                    {femRec.size === tibRec.size
-                      ? "Femoral dan tibial size konsisten — lanjutkan ke trial."
-                      : "Cek ulang pengukuran atau pertimbangkan mismatch femoral-tibial sesuai anatomy."
-                    }
-                  </p>
+                  <p className="text-sm font-black text-slate-100">Rekomendasi TKA</p>
+                  <p className="text-[9px]" style={{ color: brand.color }}>{brand.name} · {brand.maker}</p>
                 </div>
+                <button type="button" onClick={() => setShowPopup(false)} className="flex h-7 w-7 items-center justify-center rounded-full" style={{ background: "rgba(0,0,0,0.07)", border: "1px solid rgba(0,0,0,0.08)" }}>
+                  <X className="h-3.5 w-3.5 text-slate-500" />
+                </button>
               </div>
-            )}
+              <div className="px-5 py-4 space-y-3">
+                {/* input summary */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[["Femoral AP", femApMm ? `${femApMm} mm` : "—"], ["Tibial ML", tibMlMm ? `${tibMlMm} mm` : "—"]].map(([l, v]) => (
+                    <div key={l} className="rounded-xl px-3 py-2 text-center" style={glassCard}>
+                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{l}</p>
+                      <p className="text-sm font-black text-slate-100">{v}</p>
+                    </div>
+                  ))}
+                </div>
 
-            {notchRisk && (
-              <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
-                <p className="text-[9px] text-amber-700">
-                  Perbedaan AP femur vs komponen {'>'} 3mm — risiko overhang posterior. Pertimbangkan 1 size lebih besar atau cek templating.
-                </p>
-              </div>
-            )}
+                {femRec && (
+                  <SizeResultRow label={`Femoral — ${brand.name}`} size={`F${femRec.size}`}
+                    apMl={`AP ${femRec.ap} mm · ML ${femRec.ml} mm · Distal H ${femRec.distalH} mm`}
+                    color={brand.color} lightColor={brand.lightColor} isMatch />
+                )}
+                {tibRec && (
+                  <SizeResultRow label={`Tibial — ${brand.name}`} size={`T${tibRec.size}`}
+                    apMl={`ML ${tibRec.ml} mm · AP ${tibRec.ap} mm`}
+                    color={brand.color} lightColor={brand.lightColor} isMatch />
+                )}
 
-            {/* Poly options */}
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1.5">Poly Insert Options</p>
-              <div className="flex flex-wrap gap-1.5">
-                {brand.poly.map((p) => (
-                  <span key={p} className="rounded-lg px-2 py-1 text-[10px] font-black text-white" style={{ backgroundColor: brand.color }}>
-                    {p} mm
-                  </span>
-                ))}
+                {/* match badge */}
+                {femRec && tibRec && (
+                  <div className="flex items-center gap-2 rounded-xl px-3 py-2"
+                    style={sizeMatch
+                      ? { background: "rgba(22,163,74,0.10)", border: "1px solid rgba(22,163,74,0.25)" }
+                      : { background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.28)" }}>
+                    {sizeMatch ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                    <p className={`text-[10px] font-black ${sizeMatch ? "text-green-700" : "text-amber-700"}`}>
+                      {sizeMatch ? `Size match F${femRec.size} = T${tibRec.size}` : `Mismatch: F${femRec.size} ≠ T${tibRec.size}`}
+                    </p>
+                  </div>
+                )}
+
+                {notchRisk && (
+                  <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.28)" }}>
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    <p className="text-[9px] text-amber-700">Risiko overhang posterior {'>'} 3mm — cek templating.</p>
+                  </div>
+                )}
+
+                {/* Poly */}
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Poly Insert Options</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {brand.poly.map((p) => (
+                      <span key={p} className="rounded-lg px-2 py-1 text-[10px] font-black text-white" style={{ background: brand.color }}>{p} mm</span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Add to canvas buttons */}
+                {onSelectImplant && (femRec || tibRec) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {femRec && (
+                      <button type="button" onClick={() => { addToCanvas("femoral"); setShowPopup(false); }}
+                        className="rounded-xl py-2 text-[10px] font-black transition hover:scale-[1.02] active:scale-[0.97]"
+                        style={{ background: `${brand.color}cc`, color: "#fff", border: `1px solid ${brand.color}50` }}>
+                        + Femoral ke Canvas
+                      </button>
+                    )}
+                    {tibRec && (
+                      <button type="button" onClick={() => { addToCanvas("tibial"); setShowPopup(false); }}
+                        className="rounded-xl py-2 text-[10px] font-black transition hover:scale-[1.02] active:scale-[0.97]"
+                        style={{ background: `${brand.color}cc`, color: "#fff", border: `1px solid ${brand.color}50` }}>
+                        + Tibial ke Canvas
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <button type="button" onClick={() => setShowPopup(false)}
+                  className="w-full rounded-xl py-2.5 text-xs font-black transition active:scale-[0.98]"
+                  style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                  Tutup
+                </button>
               </div>
-            </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -725,10 +970,11 @@ function KneeEstimation({ brand, rulerLines, calibrated }) {
 
 // ─── Hip Cup Estimation ───────────────────────────────────────────────────────
 
-function HipCupEstimation({ brand, rulerLines, calibrated }) {
+function HipCupEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
   const [lineId, setLineId] = useState("");
   const [manual, setManual] = useState("");
-  const [showOrientation, setShowOrientation] = useState(false);
+  const [showOrientation, setShowOrientation] = useState(false);   // default minimized
+  const [showPopup, setShowPopup] = useState(false);
 
   const activeMm = useMemo(() => {
     if (lineId) return rulerLines.find((l) => l.id === lineId)?.mm ?? null;
@@ -740,52 +986,113 @@ function HipCupEstimation({ brand, rulerLines, calibrated }) {
   const alt1 = rec ? brand.sizes.find((s) => s === rec - 2) ?? null : null;
   const alt2 = rec ? brand.sizes.find((s) => s === rec + 2) ?? null : null;
 
+  const cupItems = useMemo(() => getImplantLibraryItemsByType("cup"), []);
+
+  function addCupToCanvas() {
+    if (!onSelectImplant) return;
+    const item = cupItems[0];
+    if (item) onSelectImplant({ type: "cup", id: item.id });
+  }
+
   return (
-    <div className="space-y-4">
-      <MeasureInput
-        label="Diameter Acetabulum"
-        hint="Ukur diameter lingkaran acetabulum terluar pada AP pelvis."
-        lines={rulerLines} selectedId={lineId} onSelectId={setLineId}
-        manualVal={manual} onManualVal={setManual} calibrated={calibrated}
-      />
+    <div className="space-y-3">
+      {/* Measurement card */}
+      <div className="rounded-2xl overflow-hidden" style={glassCard}>
+        <div className="px-3 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.40)", background: "rgba(255,255,255,0.18)" }}>
+          <p className="text-[8px] font-black uppercase tracking-widest" style={{ color: brand.color }}>Diameter Acetabulum</p>
+          <p className="text-[8px] text-slate-400 mt-0.5">Ukur diameter lingkaran acetabulum terluar pada AP pelvis.</p>
+        </div>
+        <div className="px-3 py-3">
+          <MeasureInput label="" hint="" lines={rulerLines} selectedId={lineId} onSelectId={setLineId} manualVal={manual} onManualVal={setManual} calibrated={calibrated} />
+        </div>
+      </div>
+
+      {/* CTA */}
       <AnimatePresence>
-        {rec && (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
-            <SizeResultRow label={`Cup Direkomendasikan — ${brand.name}`} size={`${rec}mm`}
-              apMl={`OD ${rec}mm · Target reaming ${rec - 2}–${rec - 1}mm`}
-              color={brand.color} lightColor={brand.lightColor} isMatch />
-            {alt1 && <SizeResultRow label="Alternatif lebih kecil" size={`${alt1}mm`}
-              apMl={`Jika bone coverage kurang / cup kedalaman dangkal`}
-              color="#94a3b8" lightColor="#f8fafc" isMatch={false} />}
-            {alt2 && <SizeResultRow label="Alternatif lebih besar" size={`${alt2}mm`}
-              apMl={`Jika acetabulum lebih dalam / teknik line-to-line`}
-              color="#94a3b8" lightColor="#f8fafc" isMatch={false} />}
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1.5">Liner Options</p>
-              <div className="flex flex-wrap gap-1.5">
-                {brand.liner.map((l) => (
-                  <span key={l} className="rounded-lg px-2 py-1 text-[10px] font-black text-white" style={{ backgroundColor: brand.color }}>
-                    {l}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </motion.div>
+        {activeMm && (
+          <motion.button initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            type="button" onClick={() => setShowPopup(true)}
+            className="w-full rounded-xl py-2.5 text-xs font-black transition hover:scale-[1.01] active:scale-[0.98]"
+            style={{ background: `${brand.color}cc`, color: "#fff", border: `1px solid ${brand.color}50`, boxShadow: `0 2px 10px ${brand.color}30` }}>
+            Lihat Rekomendasi Cup →
+          </motion.button>
         )}
       </AnimatePresence>
 
-      {/* Cup Orientation toggle */}
-      <button
-        type="button"
-        onClick={() => setShowOrientation((v) => !v)}
-        className="w-full rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-left text-[10px] font-black text-sky-700 transition hover:bg-sky-100 active:scale-[0.98]"
-      >
+      {/* Cup Orientation toggle — default minimized */}
+      <button type="button" onClick={() => setShowOrientation((v) => !v)}
+        className="w-full rounded-xl px-3 py-2.5 text-left text-[10px] font-black transition hover:scale-[1.01] active:scale-[0.98]"
+        style={{ background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.30)", color: "#38bdf8" }}>
         {showOrientation ? "▲" : "▼"} Cup Orientation — Anteinclination & Safe Zone
       </button>
       <AnimatePresence>
         {showOrientation && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
             <CupOrientationCard />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Popup */}
+      <AnimatePresence>
+        {showPopup && (
+          <motion.div key="cup-popup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.28)", backdropFilter: "blur(8px)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowPopup(false); }}>
+            <motion.div initial={{ y: 24, scale: 0.95, opacity: 0 }} animate={{ y: 0, scale: 1, opacity: 1 }} exit={{ y: 16, scale: 0.96, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 340 }}
+              className="w-full max-w-[400px] rounded-[20px] overflow-hidden"
+              style={{ background: "rgba(10,18,40,0.94)", backdropFilter: "blur(24px) saturate(180%)", border: "1px solid rgba(255,255,255,0.14)", boxShadow: "0 8px 40px rgba(0,0,0,0.55)" }}>
+              <div className="flex items-center justify-between px-5 py-3.5" style={{ background: `${brand.color}12`, borderBottom: "1px solid rgba(255,255,255,0.35)" }}>
+                <div>
+                  <p className="text-sm font-black text-slate-100">Rekomendasi Cup THA</p>
+                  <p className="text-[9px]" style={{ color: brand.color }}>{brand.name} · {brand.maker}</p>
+                </div>
+                <button type="button" onClick={() => setShowPopup(false)} className="flex h-7 w-7 items-center justify-center rounded-full" style={{ background: "rgba(0,0,0,0.07)", border: "1px solid rgba(0,0,0,0.08)" }}>
+                  <X className="h-3.5 w-3.5 text-slate-500" />
+                </button>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                <div className="rounded-xl px-3 py-2 text-center" style={glassCard}>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Diameter Terukur</p>
+                  <p className="text-lg font-black text-slate-100">{activeMm} mm</p>
+                </div>
+
+                {rec && (
+                  <SizeResultRow label={`Cup Direkomendasikan — ${brand.name}`} size={`${rec}mm`}
+                    apMl={`OD ${rec}mm · Target reaming ${rec - 2}–${rec - 1}mm`}
+                    color={brand.color} lightColor={brand.lightColor} isMatch />
+                )}
+                {alt1 && <SizeResultRow label="Alternatif lebih kecil" size={`${alt1}mm`}
+                  apMl="Jika bone coverage kurang / cup shallow" color="#94a3b8" lightColor="#f8fafc" isMatch={false} />}
+                {alt2 && <SizeResultRow label="Alternatif lebih besar" size={`${alt2}mm`}
+                  apMl="Jika acetabulum lebih dalam / line-to-line" color="#94a3b8" lightColor="#f8fafc" isMatch={false} />}
+
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Liner Options</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {brand.liner.map((l) => (
+                      <span key={l} className="rounded-lg px-2 py-1 text-[10px] font-black text-white" style={{ background: brand.color }}>{l}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {onSelectImplant && rec && (
+                  <button type="button" onClick={() => { addCupToCanvas(); setShowPopup(false); }}
+                    className="w-full rounded-xl py-2.5 text-xs font-black transition hover:scale-[1.01] active:scale-[0.98]"
+                    style={{ background: `${brand.color}cc`, color: "#fff", border: `1px solid ${brand.color}50` }}>
+                    + Tambah Cup ke Canvas
+                  </button>
+                )}
+
+                <button type="button" onClick={() => setShowPopup(false)}
+                  className="w-full rounded-xl py-2.5 text-xs font-black transition active:scale-[0.98]"
+                  style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                  Tutup
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -994,7 +1301,11 @@ function CupOrientationCard() {
 
 // ─── Hip Stem Estimation ──────────────────────────────────────────────────────
 
-function HipStemEstimation({ brand, rulerLines, calibrated }) {
+function HipStemEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
+  if (brand.id === "zimmer_ml_taper") {
+    return <ZimmerMlTaperEstimation brand={brand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />;
+  }
+
   const [lineId, setLineId] = useState("");
   const [manual, setManual] = useState("");
 
@@ -1035,27 +1346,349 @@ function HipStemEstimation({ brand, rulerLines, calibrated }) {
   );
 }
 
+// ─── Zimmer M/L Taper — estimasi berbasis dataset JSON resmi ─────────────────
+
+function ZimmerMlTaperEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
+  const [lineId, setLineId] = useState("");
+  const [manual, setManual] = useState("");
+  const [apManual, setApManual] = useState("");          // AP canal diameter (opsional)
+  const [offsetType, setOffsetType] = useState("standard");
+  const [neckVariant, setNeckVariant] = useState("normal");
+  const [headNeck, setHeadNeck] = useState("+0");
+  const [showRecPopup, setShowRecPopup] = useState(false);
+
+  const activeMm = useMemo(() => {
+    if (lineId) return rulerLines.find((l) => l.id === lineId)?.mm ?? null;
+    const p = parseFloat(manual);
+    return Number.isFinite(p) && p > 0 ? p : null;
+  }, [lineId, manual, rulerLines]);
+
+  const apMm = useMemo(() => {
+    const p = parseFloat(apManual);
+    return Number.isFinite(p) && p > 0 ? p : null;
+  }, [apManual]);
+
+  const rec = useMemo(
+    () => (activeMm ? recommendZimmerStem(activeMm, offsetType, neckVariant) : null),
+    [activeMm, offsetType, neckVariant]
+  );
+  const activeSizes = useMemo(() => getZimmerStemSizes(offsetType, neckVariant), [offsetType, neckVariant]);
+  const fitPercent = rec ? Math.min(100, Math.round((rec.item.stemSizeMm / activeMm) * 100)) : null;
+
+  return (
+    <div className="space-y-4">
+      {/* Canal ML */}
+      <MeasureInput
+        label="Lebar Canal Femur — ML"
+        hint="AP/Lateral femur: lebar medullary canal di titik isthmus (penyempitan terkecil). Digunakan untuk matching stem size."
+        lines={rulerLines} selectedId={lineId} onSelectId={setLineId}
+        manualVal={manual} onManualVal={setManual} calibrated={calibrated}
+      />
+
+      {/* Canal AP — opsional, untuk konteks planning */}
+      <div className="space-y-1.5">
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Diameter Canal — AP <span className="font-normal text-slate-400 normal-case">(opsional)</span></p>
+        <p className="text-[9px] text-slate-400">Lateral femur: kedalaman canal anteroposterior di isthmus. Digunakan sebagai konteks planning tambahan.</p>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            value={apManual}
+            onChange={(e) => setApManual(e.target.value)}
+            placeholder="Input AP diameter (mm)"
+            className="flex-1 rounded-xl px-2.5 py-1.5 text-xs"
+            style={glassInput}
+          />
+          <span className="text-[10px] font-bold text-slate-400 shrink-0">mm</span>
+        </div>
+        {apMm && activeMm && (
+          <p className="text-[9px] text-teal-600 font-semibold">
+            ML {activeMm} mm · AP {apMm} mm → rasio AP/ML: {(apMm / activeMm).toFixed(2)}
+          </p>
+        )}
+      </div>
+
+      {/* Tombol popup rekomendasi */}
+      {(activeMm || apMm) && (
+        <motion.button
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+          type="button"
+          onClick={() => setShowRecPopup(true)}
+          className="w-full rounded-xl py-2.5 text-xs font-black transition hover:scale-[1.01] active:scale-[0.98]"
+          style={{ background: "rgba(13,148,136,0.85)", color: "#fff", border: "1px solid rgba(13,148,136,0.4)", boxShadow: "0 2px 10px rgba(13,148,136,0.20)" }}
+        >
+          Lihat Rekomendasi Implant →
+        </motion.button>
+      )}
+
+      {/* Popup rekomendasi */}
+      <AnimatePresence>
+        {showRecPopup && (
+          <motion.div
+            key="rec-popup"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.30)", backdropFilter: "blur(8px)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowRecPopup(false); }}
+          >
+            <motion.div
+              initial={{ y: 24, scale: 0.95, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              exit={{ y: 16, scale: 0.96, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 340 }}
+              className="w-full max-w-[420px] rounded-[20px] overflow-hidden"
+              style={{ background: "rgba(10,18,40,0.94)", backdropFilter: "blur(24px) saturate(180%)", border: "1px solid rgba(255,255,255,0.14)", boxShadow: "0 8px 40px rgba(0,0,0,0.55)" }}
+            >
+              {/* popup header */}
+              <div className="flex items-center justify-between px-5 py-3.5"
+                style={{ background: "rgba(13,148,136,0.10)", borderBottom: "1px solid rgba(255,255,255,0.35)" }}>
+                <div>
+                  <p className="text-sm font-black text-slate-100">Rekomendasi Implant</p>
+                  <p className="text-[9px] text-teal-400">Zimmer M/L Taper · {zimmerVariantLabel(offsetType)} · {zimmerVariantLabel(neckVariant)}</p>
+                </div>
+                <button type="button" onClick={() => setShowRecPopup(false)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full transition hover:scale-105 active:scale-95"
+                  style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)" }}>
+                  <X className="h-3.5 w-3.5 text-slate-300" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                {/* Canal summary */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ["Canal ML", activeMm ? `${activeMm} mm` : "—"],
+                    ["Canal AP", apMm ? `${apMm} mm` : "—"],
+                  ].map(([l, v]) => (
+                    <div key={l} className="rounded-xl px-3 py-2 text-center" style={glassCard}>
+                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{l}</p>
+                      <p className="text-sm font-black text-slate-100">{v}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {rec ? (
+                  <>
+                    <SizeResultRow
+                      label={`Stem Direkomendasikan — ${brand.name}`}
+                      size={rec.item.stemSizeMm}
+                      apMl={[
+                        `Canal: ${fmtMm(activeMm)} · Stem: ${fmtMm(rec.item.stemSizeMm)}`,
+                        `${zimmerVariantLabel(offsetType)} · ${zimmerVariantLabel(neckVariant)}`,
+                        `Length: ${fmtMm(rec.item.stemLengthMm)}`,
+                        `Neck (${headNeck}): ${fmtMm(rec.item.neckLengthMm[headNeck])}`,
+                        `Offset (${headNeck}): ${fmtMm(rec.item.stemOffsetMm[headNeck])}`,
+                        `Product No: ${rec.item.productNo}`,
+                        apMm ? `AP/ML Ratio: ${(apMm / activeMm).toFixed(2)}` : null,
+                      ].filter(Boolean).join(" · ")}
+                      color={brand.color} lightColor={brand.lightColor} isMatch
+                    />
+                    {rec.nextUp && (
+                      <p className="text-[9px] text-slate-400">
+                        Alternatif: ↑ {fmtMm(rec.nextUp.stemSizeMm)} ({rec.nextUp.productNo})
+                        {rec.previous ? ` · ↓ ${fmtMm(rec.previous.stemSizeMm)} (${rec.previous.productNo})` : ""}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-xl p-3 text-center" style={glassCard}>
+                    <p className="text-xs text-slate-500">Masukkan ukuran canal ML untuk melihat rekomendasi stem.</p>
+                  </div>
+                )}
+
+                {onSelectImplant && rec && (
+                  <button type="button" onClick={() => {
+                    const stemItems = getImplantLibraryItemsByType("stem");
+                    const match = stemItems.find((i) => Number(i.size) === rec.item.stemSizeMm) ?? stemItems[0];
+                    if (match) onSelectImplant({ type: "stem", id: match.id });
+                    setShowRecPopup(false);
+                  }}
+                    className="w-full rounded-xl py-2.5 text-xs font-black transition hover:scale-[1.01] active:scale-[0.98]"
+                    style={{ background: "rgba(13,148,136,0.80)", color: "#fff", border: "1px solid rgba(13,148,136,0.40)" }}>
+                    + Tambah Stem ke Canvas
+                  </button>
+                )}
+                <button type="button" onClick={() => setShowRecPopup(false)}
+                  className="w-full rounded-xl py-2.5 text-xs font-black transition active:scale-[0.98]"
+                  style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                  Tutup
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="space-y-1.5">
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Tipe Offset</p>
+        <div className="flex gap-1.5">
+          {ZIMMER_OFFSET_TYPES.map((t) => (
+            <button key={t} type="button" onClick={() => setOffsetType(t)}
+              className={`flex-1 rounded-xl border py-1.5 text-[10px] font-black capitalize transition hover:-translate-y-0.5 active:scale-[0.97] ${
+                offsetType === t
+                  ? ""
+                  : "border-slate-300 bg-white text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-100"
+              }`}
+              style={offsetType === t ? { backgroundColor: brand.color, color: "#fff", borderColor: brand.color, boxShadow: "0 8px 18px rgba(13,148,136,0.18)" } : undefined}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Neck Variant</p>
+        <div className="flex gap-1.5">
+          {ZIMMER_NECK_VARIANTS.map((t) => (
+            <button key={t} type="button" onClick={() => setNeckVariant(t)}
+              className={`flex-1 rounded-xl border py-1.5 text-[10px] font-black capitalize transition hover:-translate-y-0.5 active:scale-[0.97] ${
+                neckVariant === t
+                  ? ""
+                  : "border-slate-300 bg-white text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-100"
+              }`}
+              style={neckVariant === t ? { backgroundColor: brand.color, color: "#fff", borderColor: brand.color, boxShadow: "0 8px 18px rgba(13,148,136,0.18)" } : undefined}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Head/Neck Offset</p>
+        <select
+          value={headNeck}
+          onChange={(e) => setHeadNeck(e.target.value)}
+          className="w-full rounded-xl px-2.5 py-1.5 text-xs"
+          style={glassInput}
+        >
+          {ZIMMER_HEAD_NECK_OPTIONS.map((o) => (
+            <option key={o} value={o}>{o} mm</option>
+          ))}
+        </select>
+      </div>
+
+      <AnimatePresence>
+        {rec && (
+          <motion.div key={`${rec.item.productNo}-${headNeck}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
+            <SizeResultRow
+              label={`Stem Direkomendasikan — ${brand.name}`}
+              size={rec.item.stemSizeMm}
+              apMl={[
+                `Canal: ${fmtMm(activeMm)} · Stem: ${fmtMm(rec.item.stemSizeMm)}`,
+                `${zimmerVariantLabel(offsetType)} · ${zimmerVariantLabel(neckVariant)}`,
+                `Length: ${fmtMm(rec.item.stemLengthMm)}`,
+                `Neck ${headNeck}: ${fmtMm(rec.item.neckLengthMm[headNeck])}`,
+                `Offset ${headNeck}: ${fmtMm(rec.item.stemOffsetMm[headNeck])}`,
+                `Product No: ${rec.item.productNo}`,
+              ].filter(Boolean).join(" · ")}
+              color={brand.color} lightColor={brand.lightColor} isMatch
+            />
+
+            <ZimmerMlTaperSVGDiagram
+              selection={{
+                stemSizeMm: rec.item.stemSizeMm,
+                offsetType,
+                neckVariant,
+                headNeck,
+              }}
+            />
+
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ["Canal", fmtMm(activeMm)],
+                ["Clearance", fmtMm(rec.clearanceMm)],
+                ["Fit", `${fitPercent}%`],
+              ].map(([label, value]) => (
+                <motion.div
+                  key={label}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl px-3 py-2 text-center"
+                  style={glassCard}
+                >
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                  <p className="text-xs font-black text-slate-200">{value}</p>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl p-3" style={glassCard}>
+              <div className="flex items-start gap-2">
+                <Info className="h-3.5 w-3.5 shrink-0 text-slate-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-slate-200">Cara prediksi size</p>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Sistem memilih stem terbesar yang masih tidak melebihi lebar canal terukur. Pada kombinasi {zimmerVariantLabel(offsetType).toLowerCase()} dan {zimmerVariantLabel(neckVariant).toLowerCase()}, size tersedia adalah {activeSizes.map((s) => s.stemSizeMm).join(", ")} mm.
+                    {rec.nextUp ? ` Next size up ${rec.nextUp.stemSizeMm} mm akan melewati margin jika canal tidak cukup.` : " Ini adalah size terbesar yang tersedia pada varian ini."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {rec.undersized && (
+              <div className="flex items-start gap-2 rounded-2xl p-3"
+                style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.28)" }}>
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500 mt-0.5" />
+                <p className="text-[10px] text-amber-700">
+                  Canal lebih kecil dari stem terkecil ({rec.sizes[0].stemSizeMm} mm) yang tersedia di dataset ini. Pertimbangkan stem lain atau verifikasi ulang pengukuran.
+                </p>
+              </div>
+            )}
+            {rec.oversized && (
+              <div className="flex items-start gap-2 rounded-2xl p-3"
+                style={{ background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.28)" }}>
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500 mt-0.5" />
+                <p className="text-[10px] text-amber-700">
+                  Canal lebih besar dari stem terbesar ({rec.item.stemSizeMm} mm) yang tersedia di dataset ini. Pertimbangkan stem lain.
+                </p>
+              </div>
+            )}
+            {rec.nextUp && !rec.undersized && (
+              <p className="text-[9px] text-slate-400">
+                Alternatif lebih besar: {fmtMm(rec.nextUp.stemSizeMm)} (Product No: {rec.nextUp.productNo}). Alternatif lebih kecil: {rec.previous ? `${fmtMm(rec.previous.stemSizeMm)} (Product No: ${rec.previous.productNo})` : "tidak ada di bawah size ini"}.
+              </p>
+            )}
+
+            {brand.note && (
+              <p className="text-[9px] text-slate-400 italic border-t border-slate-100 pt-2">{brand.note}</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPixel = null }) {
-  const [procedure, setProcedure] = useState("knee");
+export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPixel = null, onSelectImplant }) {
+  const [procedure, setProcedure] = useState(SHOW_ONLY_ZIMMER ? "hip-stem" : "knee");
   const [activeTab, setActiveTab] = useState("estimasi"); // "estimasi" | "referensi"
-  const [kneeBrandId, setKneeBrandId] = useState("depuy_attune");
-  const [cupBrandId, setCupBrandId] = useState("depuy_pinnacle");
-  const [stemBrandId, setStemBrandId] = useState("depuy_corail");
+  const [kneeBrandId, setKneeBrandId] = useState("zimmer_nexgen");
+  const [cupBrandId, setCupBrandId] = useState("zimmer_continuum");
+  const [stemBrandId, setStemBrandId] = useState("zimmer_ml_taper");
 
   const rulerLines = useMemo(() => getRulerLines(lines, mmPerPixel), [lines, mmPerPixel]);
   const calibrated = mmPerPixel !== null;
 
+  const zimmerOnly = (b) => b.maker === "Zimmer Biomet";
+  const visibleKneeBrands = SHOW_ONLY_ZIMMER ? [] : SHOW_ONLY_ZIMMER_BRAND ? KNEE_BRANDS.filter(zimmerOnly) : KNEE_BRANDS;
+  const visibleCupBrands = SHOW_ONLY_ZIMMER ? [] : SHOW_ONLY_ZIMMER_BRAND ? CUP_BRANDS.filter(zimmerOnly) : CUP_BRANDS;
+  const visibleStemBrands = SHOW_ONLY_ZIMMER
+    ? STEM_BRANDS.filter((b) => b.id === "zimmer_ml_taper")
+    : SHOW_ONLY_ZIMMER_BRAND ? STEM_BRANDS.filter(zimmerOnly) : STEM_BRANDS;
+
   const kneeBrand = KNEE_BRANDS.find((b) => b.id === kneeBrandId) ?? KNEE_BRANDS[0];
   const cupBrand = CUP_BRANDS.find((b) => b.id === cupBrandId) ?? CUP_BRANDS[0];
-  const stemBrand = STEM_BRANDS.find((b) => b.id === stemBrandId) ?? STEM_BRANDS[0];
+  const stemBrand = visibleStemBrands.find((b) => b.id === stemBrandId) ?? visibleStemBrands[0] ?? STEM_BRANDS[0];
 
-  const PROCEDURES = [
+  const ALL_PROCEDURES = [
     { key: "knee",     label: "Knee TKA",  color: "#7c3aed" },
     { key: "hip-cup",  label: "Hip Cup",   color: "#0369a1" },
     { key: "hip-stem", label: "Hip Stem",  color: "#0d9488" },
   ];
+  const PROCEDURES = SHOW_ONLY_ZIMMER ? ALL_PROCEDURES.filter((p) => p.key === "hip-stem") : ALL_PROCEDURES;
 
   if (typeof document === "undefined") return null;
 
@@ -1063,44 +1696,59 @@ export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPix
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/40 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[200] flex items-end justify-center bg-black/25 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-md sm:items-center sm:p-6"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="max-h-[94dvh] w-full max-w-[min(100%,560px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f1f5f9] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px] flex flex-col"
+            className="max-h-[94dvh] w-full max-w-[min(100%,560px)] overflow-hidden rounded-t-[24px] rounded-b-[24px] sm:rounded-[24px] flex flex-col"
+            style={{
+              background: "rgba(10,18,40,0.90)",
+              backdropFilter: "blur(24px) saturate(180%)",
+              WebkitBackdropFilter: "blur(24px) saturate(180%)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.50), 0 1px 3px rgba(0,0,0,0.30)",
+            }}
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.96, opacity: 0 }}
-            transition={{ type: "spring", damping: 26, stiffness: 300 }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
           >
             {/* Header */}
-            <div className="flex items-center gap-3 border-b border-teal-900/20 bg-[#0f2d2a] px-5 py-4 shrink-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-teal-600">
-                <Zap className="h-4.5 w-4.5 text-white" />
+            <div className="flex items-center gap-3 px-5 py-4 shrink-0"
+              style={{
+                background: "rgba(13,148,136,0.22)",
+                borderBottom: "1px solid rgba(255,255,255,0.10)",
+                backdropFilter: "blur(8px)",
+              }}>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl"
+                style={{ background: "rgba(13,148,136,0.80)", boxShadow: "0 2px 8px rgba(13,148,136,0.25)" }}>
+                <Zap className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-black text-white">Estimator Ukuran Implan</p>
-                <p className="text-[10px] text-teal-300">4 brand · Data dimensi aktual dari surgical guide resmi</p>
+                <p className="text-sm font-black text-slate-100">Estimator Ukuran Implan</p>
+                <p className="text-[10px] text-teal-400">Zimmer Biomet · Data dimensi dari surgical guide resmi</p>
               </div>
               <button type="button" onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-teal-200 hover:bg-white/20">
-                <X className="h-4 w-4" />
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:scale-105 active:scale-95"
+                style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)" }}>
+                <X className="h-4 w-4 text-slate-300" />
               </button>
             </div>
 
             {/* Tab bar */}
-            <div className="flex border-b border-slate-200/70 bg-white/60 px-4 pt-3 gap-1 shrink-0">
+            <div className="flex px-4 pt-3 gap-1 shrink-0"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)" }}>
               {[
                 { id: "estimasi", label: "Estimasi", icon: Zap },
                 { id: "referensi", label: "Referensi Ukuran", icon: TableProperties },
               ].map(({ id, label, icon: Icon }) => (
                 <button key={id} type="button" onClick={() => setActiveTab(id)}
-                  className={`flex items-center gap-1.5 rounded-t-xl px-4 py-2 text-[11px] font-black transition ${
-                    activeTab === id
-                      ? "bg-[#f1f5f9] text-slate-800 border-b-2 border-teal-500"
-                      : "text-slate-400 hover:text-slate-600"
-                  }`}>
+                  className="flex items-center gap-1.5 rounded-t-xl px-4 py-2 text-[11px] font-black transition"
+                  style={activeTab === id
+                    ? { background: "rgba(255,255,255,0.10)", color: "#2dd4bf", borderBottom: "2px solid #2dd4bf" }
+                    : { color: "#64748b" }
+                  }>
                   <Icon className="h-3.5 w-3.5" />
                   {label}
                 </button>
@@ -1108,54 +1756,59 @@ export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPix
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="space-y-5 px-5 py-5">
+            <div className="flex-1 overflow-y-auto" style={{ background: "rgba(255,255,255,0.02)" }}>
+              <div className="space-y-4 px-5 py-5">
 
                 {/* Calibration warning */}
                 {!calibrated && activeTab === "estimasi" && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                    className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                    className="flex items-start gap-2.5 rounded-2xl p-3"
+                    style={{ background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.28)" }}>
                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
                     <div>
                       <p className="text-xs font-black text-amber-800">Kalibrasi belum aktif</p>
-                      <p className="text-[10px] text-amber-600">Kalibrasi X-ray dulu untuk pilih dari garis. Atau input nilai mm manual.</p>
+                      <p className="text-[10px] text-amber-700">Kalibrasi X-ray dulu untuk pilih dari garis. Atau input nilai mm manual.</p>
                     </div>
                   </motion.div>
                 )}
 
                 {/* Procedure selector */}
-                <div className="space-y-2">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Tipe Prosedur</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {PROCEDURES.map((p) => (
-                      <button key={p.key} type="button"
-                        onClick={() => setProcedure(p.key)}
-                        className="min-h-10 rounded-2xl border text-[10px] font-black transition active:scale-[0.97]"
-                        style={procedure === p.key
-                          ? { backgroundColor: p.color, color: "#fff", borderColor: p.color }
-                          : { borderColor: "#e2e8f0", backgroundColor: "rgba(255,255,255,0.6)", color: "#94a3b8" }
-                        }>
-                        {p.label}
-                      </button>
-                    ))}
+                {PROCEDURES.length > 1 && (
+                  <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipe Prosedur</p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {PROCEDURES.map((p) => (
+                        <button key={p.key} type="button"
+                          onClick={() => setProcedure(p.key)}
+                          className="min-h-10 rounded-2xl border text-[10px] font-black transition active:scale-[0.97]"
+                          style={procedure === p.key
+                            ? { backgroundColor: p.color, color: "#fff", borderColor: p.color }
+                            : { borderColor: "rgba(255,255,255,0.15)", backgroundColor: "rgba(255,255,255,0.06)", color: "#64748b" }
+                          }>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Brand selector */}
-                <div className="space-y-2">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Brand Implan</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {procedure === "knee" && KNEE_BRANDS.map((b) => (
-                      <BrandChip key={b.id} brand={b} active={kneeBrandId === b.id} onClick={() => setKneeBrandId(b.id)} />
-                    ))}
-                    {procedure === "hip-cup" && CUP_BRANDS.map((b) => (
-                      <BrandChip key={b.id} brand={b} active={cupBrandId === b.id} onClick={() => setCupBrandId(b.id)} />
-                    ))}
-                    {procedure === "hip-stem" && STEM_BRANDS.map((b) => (
-                      <BrandChip key={b.id} brand={b} active={stemBrandId === b.id} onClick={() => setStemBrandId(b.id)} />
-                    ))}
+                {(visibleKneeBrands.length + visibleCupBrands.length + visibleStemBrands.length) > 1 && (
+                  <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Brand Implan</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {procedure === "knee" && visibleKneeBrands.map((b) => (
+                        <BrandChip key={b.id} brand={b} active={kneeBrandId === b.id} onClick={() => setKneeBrandId(b.id)} />
+                      ))}
+                      {procedure === "hip-cup" && visibleCupBrands.map((b) => (
+                        <BrandChip key={b.id} brand={b} active={cupBrandId === b.id} onClick={() => setCupBrandId(b.id)} />
+                      ))}
+                      {procedure === "hip-stem" && visibleStemBrands.map((b) => (
+                        <BrandChip key={b.id} brand={b} active={stemBrandId === b.id} onClick={() => setStemBrandId(b.id)} />
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Content by tab */}
                 <AnimatePresence mode="wait">
@@ -1165,9 +1818,9 @@ export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPix
 
                     {activeTab === "estimasi" ? (
                       <>
-                        {procedure === "knee" && <KneeEstimation brand={kneeBrand} rulerLines={rulerLines} calibrated={calibrated} />}
-                        {procedure === "hip-cup" && <HipCupEstimation brand={cupBrand} rulerLines={rulerLines} calibrated={calibrated} />}
-                        {procedure === "hip-stem" && <HipStemEstimation brand={stemBrand} rulerLines={rulerLines} calibrated={calibrated} />}
+                        {procedure === "knee" && <KneeEstimation brand={kneeBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />}
+                        {procedure === "hip-cup" && <HipCupEstimation brand={cupBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />}
+                        {procedure === "hip-stem" && <HipStemEstimation brand={stemBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />}
                       </>
                     ) : (
                       <>
@@ -1180,7 +1833,8 @@ export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPix
                 </AnimatePresence>
 
                 {/* Disclaimer */}
-                <div className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white/50 p-3">
+                <div className="flex items-start gap-2 rounded-2xl p-3"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)" }}>
                   <Info className="h-3.5 w-3.5 shrink-0 text-slate-400 mt-0.5" />
                   <p className="text-[9px] text-slate-500">
                     Data dimensi bersumber dari surgical technique guide resmi masing-masing brand. Verifikasi akhir wajib dilakukan oleh dokter bedah berdasarkan templating langsung, X-ray terkalibrasi, dan penilaian klinis intraoperatif.
@@ -1190,9 +1844,11 @@ export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPix
             </div>
 
             {/* Footer */}
-            <div className="border-t border-slate-200/60 bg-[#f1f5f9] px-5 py-4 shrink-0">
+            <div className="px-5 py-4 shrink-0"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)" }}>
               <button type="button" onClick={onClose}
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3 text-xs font-black text-slate-600 transition active:scale-[0.98]">
+                className="w-full rounded-2xl py-3 text-xs font-black text-slate-300 transition hover:text-slate-100 active:scale-[0.98]"
+                style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}>
                 Tutup
               </button>
             </div>

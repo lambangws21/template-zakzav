@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 260" role="img" aria-labelledby="title desc">
+  <title id="title">Zimmer M/L Taper basic SVG stem</title>
+  <desc id="desc">Basic parametric SVG stem built from the supplied brochure image. The stem body and neck are separated into groups so they can be animated from JavaScript.</desc>
+  <defs>
+    <style>
+      .outline{stroke:#111;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}
+      .fill{fill:#d9d9d9}
+      .guide{stroke:#7b7b7b;stroke-width:1.8;stroke-dasharray:8 6;fill:none;opacity:.85}
+      .hidden-anchor{fill:#00b7c2;opacity:0}
+    </style>
+  </defs>
+
+  <!-- Optional centerline guide -->
+  <line id="centerline" class="guide" x1="18" y1="144" x2="612" y2="144" />
+
+  <!-- Entire stem wrapper -->
+  <g id="stem-root" transform="translate(0,0)">
+    <!-- BODY GROUP: scale body length / width here -->
+    <g id="stem-body-group" transform="translate(0,0)">
+      <path
+        id="stem-body"
+        class="fill outline"
+        d="M 34 143
+           C 34 132, 44 121, 60 120
+           L 258 112
+           L 258 176
+           L 335 180
+           L 377 171
+           L 377 115
+           C 377 115, 331 115, 290 115
+           L 60 125
+           C 44 126, 34 134, 34 143 Z" />
+    </g>
+
+    <!-- SHOULDER / NECK GROUP: translate and rotate this group to represent offset/neck changes -->
+    <g id="neck-group" transform="translate(365,113)">
+      <path
+        id="neck-shaft"
+        class="fill outline"
+        d="M 0 0
+           C 28 -6, 53 -19, 80 -47
+           L 122 -92
+           L 142 -73
+           L 101 -28
+           C 79 -4, 65 22, 58 54
+           L 32 84
+           C 24 50, 12 21, 0 0 Z" />
+      <path
+        id="head-neck-cap"
+        class="fill outline"
+        d="M 112 -97
+           L 144 -67
+           L 136 -58
+           L 104 -88 Z" />
+      <circle id="head-center" cx="124" cy="-79" r="5" fill="#111" />
+    </g>
+
+    <!-- small hidden anchors that JS can target if needed -->
+    <circle id="anchor-distal" class="hidden-anchor" cx="34" cy="143" r="4" />
+    <circle id="anchor-shoulder" class="hidden-anchor" cx="365" cy="113" r="4" />
+    <circle id="anchor-neck-base" class="hidden-anchor" cx="365" cy="113" r="4" />
+  </g>
+</svg>

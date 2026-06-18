@@ -24,6 +24,7 @@ import {
 } from "@/lib/uiTokens";
 import ThemeToggle from "@/components/ThemeToggle";
 import LogoutButton from "@/components/LogoutButton";
+import { useTheme } from "@/hooks/useTheme";
 import { ID, Query } from "appwrite";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -48,6 +49,7 @@ import {
   HandGrab,
   History,
   Layers,
+  Moon,
   MoveLeft,
   MoveRight,
   Lock,
@@ -59,7 +61,6 @@ import {
   MoveDown,
   MoveUp,
   Package,
-  Palette,
   PencilLine,
   Plus,
   RefreshCcw,
@@ -71,6 +72,7 @@ import {
   Scaling,
   Spline,
   LineSquiggle,
+  Sun,
   Target,
   Trash2,
   Undo2,
@@ -132,6 +134,23 @@ const STORY_STORAGE_KEY = "xray_workspace_story_v1";
 const IMAGE_IDB_NAME = "zakzav_workspace";
 const IMAGE_IDB_STORE = "last_image";
 const IMAGE_IDB_KEY = "main";
+
+// ─── Live clock for navbar ────────────────────────────────────────────────────
+function NavClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const timeStr = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const dateStr = now.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  return (
+    <div className="flex flex-col items-center leading-none select-none">
+      <span className="font-mono text-[13px] font-black tracking-tight text-slate-800">{timeStr}</span>
+      <span className="text-[9px] font-semibold tracking-wide text-slate-400">{dateStr}</span>
+    </div>
+  );
+}
 
 function openImageIDB() {
   return new Promise((resolve, reject) => {
@@ -4152,6 +4171,71 @@ function cupZoneStatus(abd, ant) {
   return { label: "⚠ Di Luar Safe Zone", color: "#dc2626", bg: "#fef2f2", border: "#fecaca" };
 }
 
+// Dial kecil untuk atur rotasi cup langsung — drag memutar, scroll untuk nudge halus
+function CupAngleDial({ angleDeg, onChange, size = 26 }) {
+  const knobRef = useRef(null);
+  const draggingRef = useRef(false);
+
+  const updateFromPointer = (e) => {
+    const rect = knobRef.current.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+    deg = ((deg % 360) + 360) % 360;
+    onChange(deg);
+  };
+
+  const handlePointerDown = (e) => {
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updateFromPointer(e);
+  };
+  const handlePointerMove = (e) => {
+    if (!draggingRef.current) return;
+    updateFromPointer(e);
+  };
+  const handlePointerUp = (e) => {
+    draggingRef.current = false;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+  };
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -1 : 1;
+    onChange(((angleDeg + delta) % 360 + 360) % 360);
+  };
+
+  const r = size / 2 - 3;
+  return (
+    <div
+      ref={knobRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onWheel={handleWheel}
+      title="Drag atau scroll untuk atur rotasi cup"
+      style={{
+        width: size, height: size, borderRadius: "50%",
+        background: "radial-gradient(circle at 35% 30%, #1e293b, #0f172a)",
+        border: "1.5px solid rgba(56,189,248,0.45)",
+        position: "relative", cursor: "grab", flexShrink: 0, touchAction: "none",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute", top: "50%", left: "50%",
+          width: 2, height: r,
+          background: "#38bdf8",
+          transformOrigin: "50% 100%",
+          transform: `translate(-50%,-100%) rotate(${angleDeg}deg)`,
+        }}
+      />
+      <div style={{ position: "absolute", top: "50%", left: "50%", width: 4, height: 4, borderRadius: "50%", background: "#7dd3fc", transform: "translate(-50%,-50%)" }} />
+    </div>
+  );
+}
+
 // Label with bg pill rendered in SVG
 function SvgLabel(React, x, y, text, color, anchor = "middle") {
   const pad = 5, h = 18, w = text.length * 6.5 + pad * 2;
@@ -4529,6 +4613,7 @@ export default function XrayCalibrationWorkspace({
   onOpenAdvancedUi,
 } = {}) {
   const isSimpleUiMode = Boolean(simpleUiMode);
+  const { isDark, toggle: toggleDarkMode } = useTheme();
   const containerRef = useRef(null);
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
@@ -4912,7 +4997,9 @@ export default function XrayCalibrationWorkspace({
   const canvasCupDragRef = useRef(null);
   // { handle: "center"|"top"|"side", startImgX, startImgY, startCup }
   const [canvasCupSide, setCanvasCupSide] = useState("right");
+  const [cupHandleCompact, setCupHandleCompact] = useState(false);
   const [cupInfoModalOpen, setCupInfoModalOpen] = useState(false);
+  const [cupInfoMinimized, setCupInfoMinimized] = useState(false);
   // { inclination, anteversion, side, zone, savedAt }
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
@@ -4976,8 +5063,13 @@ export default function XrayCalibrationWorkspace({
         angle: (40 * Math.PI) / 180,
       });
     }
-    if (!showCupAssessment) {
+    if (showCupAssessment) {
+      // Tampil minimized by default — user buka manual jika butuh detail.
+      setCupInfoModalOpen(true);
+      setCupInfoMinimized(true);
+    } else {
       canvasCupDragRef.current = null;
+      setCupInfoModalOpen(false);
     }
   }, [showCupAssessment, modelWidth, modelHeight]);
 
@@ -12912,14 +13004,14 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.setLineDash([]);
       overlayCtx.restore();
 
-      // handles
-      const handleR = 6;
+      // handles — depan (lebih terang) vs belakang (lebih gelap) agar mudah dibedakan
+      const handleR = cupHandleCompact ? 3.5 : 6;
       const handles = [
         { x: center.x, y: center.y, color: "#f8fafc" }, // center
-        { x: center.x - cosA * sa, y: center.y - sinA * sa, color: "#4ade80" }, // top
-        { x: center.x + cosA * sa, y: center.y + sinA * sa, color: "#4ade80" }, // bottom
-        { x: center.x + sinA * sb, y: center.y - cosA * sb, color: "#22d3ee" }, // right
-        { x: center.x - sinA * sb, y: center.y + cosA * sb, color: "#22d3ee" }, // left
+        { x: center.x - cosA * sa, y: center.y - sinA * sa, color: "#4ade80" }, // major — depan
+        { x: center.x + cosA * sa, y: center.y + sinA * sa, color: "#15803d" }, // major — belakang
+        { x: center.x + sinA * sb, y: center.y - cosA * sb, color: "#22d3ee" }, // minor — depan
+        { x: center.x - sinA * sb, y: center.y + cosA * sb, color: "#0e7490" }, // minor — belakang
       ];
       for (const h of handles) {
         overlayCtx.beginPath();
@@ -12927,7 +13019,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.fillStyle = h.color;
         overlayCtx.fill();
         overlayCtx.strokeStyle = "#0f172a";
-        overlayCtx.lineWidth = 1.5;
+        overlayCtx.lineWidth = cupHandleCompact ? 1 : 1.5;
         overlayCtx.stroke();
       }
 
@@ -13047,6 +13139,7 @@ export default function XrayCalibrationWorkspace({
     showCupAssessment,
     canvasCup,
     canvasCupSide,
+    cupHandleCompact,
   ]);
 
   useEffect(() => {
@@ -20831,11 +20924,12 @@ export default function XrayCalibrationWorkspace({
   ];
   return (
     <div
-      className={`flex w-screen max-w-none flex-col gap-0 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 lg:px-3 ${
+      className={`flex w-screen max-w-none flex-col gap-0 px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 lg:px-3 ${
         isSimpleUiMode
           ? "h-[100dvh] overflow-hidden sm:py-0"
           : "min-h-[100dvh] sm:py-2"
       }`}
+      style={{ background: "var(--soft-surface-bg)" }}
     >
       <ModalStarter
         open={showStartupCalibrationAlert}
@@ -24612,7 +24706,7 @@ export default function XrayCalibrationWorkspace({
               steps: ["Upload AP long-leg X-ray berdiri penuh (weight-bearing)", "Kalibrasi dengan penggaris/marker referensi", "Ukur HKA, LDFA, MPTA di canvas", "Tentukan sudut distal cut femur (valgus 5-7°)", "Tentukan tibial slope (0-7°)", "Pilih & pasang template implant knee"],
               landmarks: ["CFH — Center of Femoral Head", "CK — Center of Knee (notch)", "CA — Center of Ankle (talar dome)", "Kondilus femur medial & lateral", "Plateau tibia medial & lateral"],
               angles: [{ name: "HKA", normal: "0° ± 3°" }, { name: "LDFA", normal: "87° ± 3°" }, { name: "MPTA", normal: "87° ± 3°" }, { name: "JLCA", normal: "0° ± 2°" }],
-              icon: (<img src="/images/quick-panel/tka-icon.png" alt="TKR" className="h-full w-full object-contain" />),
+              icon: (<img src="/images/quick-panel/tka-icons.svg" alt="TKR" className="h-full w-full object-contain" />),
             },
             tha: {
               key: "tha", label: "THA", sub: "Total Hip Arthroplasty",
@@ -24622,7 +24716,7 @@ export default function XrayCalibrationWorkspace({
               steps: ["Upload AP pelvis X-ray (weight-bearing, pusat pada simfisis)", "Kalibrasi dengan kepala femur kontralateral atau penggaris", "Identifikasi teardrop bilateral & ilioischial line", "Ukur offset panggul & panjang kaki (LLD)", "Pilih stem femoral sesuai templating", "Pilih cup asetabular (abduction angle 40°, anteversion 15°)"],
               landmarks: ["Teardrop bilateral (basis acetabulum)", "Ilioischial line (kolom posterior)", "Batas acetabulum medial & lateral", "Titik lesser trochanter", "Sumbu femur distal"],
               angles: [{ name: "Cup Abduction", normal: "40° ± 10°" }, { name: "Cup Anteversion", normal: "15° ± 10°" }, { name: "Offset", normal: "Simetris" }, { name: "LLD", normal: "< 5 mm" }],
-              icon: (<img src="/images/quick-panel/hip-icon.png" alt="THA" className="h-full w-full object-contain" />),
+              icon: (<img src="/images/quick-panel/hip-icon.svg" alt="THA" className="h-full w-full object-contain" />),
             },
             hemi: {
               key: "hemi", label: "Hemi", sub: "Hemiarthroplasty",
@@ -24632,7 +24726,7 @@ export default function XrayCalibrationWorkspace({
               steps: ["Upload AP panggul atau AP proximal femur", "Kalibrasi menggunakan penggaris atau marker diketahui", "Ukur diameter kepala femur sisi kontralateral", "Pilih ukuran bipolar head yang sesuai", "Pilih stem femoral (ukuran kanal femur)", "Pasang template — verifikasi offset & panjang kaki"],
               landmarks: ["Teardrop ipsilateral", "Intertrochanteric line", "Diameter kepala femur kontralateral", "Kanalis medularis isthmus", "Lesser trochanter (referensi rotasi)"],
               angles: [{ name: "Neck-Shaft", normal: "130° ± 7°" }, { name: "Anteversion", normal: "10-15°" }, { name: "Head Diameter", normal: "Sesuai kontralateral" }, { name: "LLD", normal: "< 5 mm" }],
-              icon: (<img src="/images/quick-panel/hip-icon.png" alt="Hemi" className="h-full w-full object-contain opacity-80" />),
+              icon: (<img src="/images/quick-panel/hip-icon.svg" alt="Hemi" className="h-full w-full object-contain opacity-80" />),
             },
           };
 
@@ -24849,7 +24943,7 @@ export default function XrayCalibrationWorkspace({
                             className={`flex items-center gap-3.5 rounded-[20px] border px-4 py-3.5 text-left transition active:scale-[0.99] ${wizardProcedure === proc.key ? "border-2 shadow-[inset_2px_2px_6px_rgba(0,0,0,0.06)]" : "border-white/75 bg-[#eef2f7] shadow-[4px_4px_10px_rgba(148,163,184,0.22),-4px_-4px_10px_rgba(255,255,255,0.82)]"}`}
                             style={wizardProcedure === proc.key ? { borderColor: proc.color, background: proc.colorLight } : {}}
                           >
-                            <div className="h-12 w-12 shrink-0 rounded-[14px] border border-white/60 p-2 shadow-[2px_2px_6px_rgba(148,163,184,0.2)]" style={{ color: proc.color, background: proc.colorLight }}>{proc.icon}</div>
+                            <div className="h-16 w-16 shrink-0 rounded-[16px] border border-white/60 p-1.5 shadow-[2px_2px_6px_rgba(148,163,184,0.2)]" style={{ color: proc.color, background: proc.colorLight }}>{proc.icon}</div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline gap-2">
                                 <span className="text-sm font-black" style={{ color: proc.color }}>{proc.label}</span>
@@ -25972,6 +26066,10 @@ export default function XrayCalibrationWorkspace({
         } items-center justify-between gap-3 px-4 py-0`}
         style={{ height: 52, minHeight: 52 }}
       >
+        {/* ── Centered clock ── */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <NavClock />
+        </div>
         <div className="flex min-w-0 shrink items-center gap-3 overflow-hidden">
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-[0_0_10px_rgba(14,165,233,0.35)]" style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }}>
@@ -25996,25 +26094,23 @@ export default function XrayCalibrationWorkspace({
                     key={step.id}
                     type="button"
                     onClick={step.onClick}
-                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[10px] font-extrabold transition ${
+                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full transition ${
                       active
-                        ? "bg-slate-900 text-white shadow-[2px_2px_6px_rgba(15,23,42,0.22),-2px_-2px_6px_rgba(255,255,255,0.9)]"
+                        ? "bg-slate-900 px-2.5 text-[10px] font-extrabold text-white shadow-[2px_2px_6px_rgba(15,23,42,0.22),-2px_-2px_6px_rgba(255,255,255,0.9)]"
                         : step.done
-                          ? "bg-emerald-500 text-white shadow-[2px_2px_6px_rgba(16,185,129,0.22),-2px_-2px_6px_rgba(255,255,255,0.86)]"
-                          : "text-slate-500 hover:bg-white/60 hover:text-slate-900"
+                          ? "bg-emerald-500 px-1.5 text-white shadow-[2px_2px_6px_rgba(16,185,129,0.22),-2px_-2px_6px_rgba(255,255,255,0.86)]"
+                          : "px-1.5 text-slate-500 hover:bg-white/60 hover:text-slate-900"
                     }`}
                     title={`${step.id}. ${step.label}`}
                   >
                     <span
-                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${
-                        active || step.done
-                          ? "bg-white/20 text-white"
-                          : "bg-white/70 text-slate-500"
+                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black ${
+                        active ? "bg-white/20 text-white" : step.done ? "bg-white/20 text-white" : "bg-white/70 text-slate-500"
                       }`}
                     >
-                      {step.id}
+                      {step.done && !active ? "✓" : step.id}
                     </span>
-                    <span>{step.label}</span>
+                    {active && <span className="text-[10px] font-extrabold">{step.label}</span>}
                   </button>
                 );
               })}
@@ -26657,7 +26753,7 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => { setSimpleDesktopHkaOpen((p) => !p); setSimpleDesktopEditFotoOpen(false); setSimpleDesktopManagerOpen(false); }}
-                className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
+                className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
                 title="HKA · FTA · JLA — Pengukuran Mekanis"
               >
                 <span className="text-[10px] font-black text-cyan-700">HKA</span>
@@ -26757,11 +26853,11 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => { setSimpleDesktopEditFotoOpen((p) => !p); setSimpleDesktopHkaOpen(false); setSimpleDesktopManagerOpen(false); }}
-                className={`${simpleDesktopEditFotoOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
-                title="Edit Foto — Kontras, Kecerahan, Inversi, Crop"
+                className={`${simpleDesktopEditFotoOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
+                title="Edit XFo — Kontras, Kecerahan, Rotasi, Inversi, Crop"
               >
                 <Icon name="preset" className="h-3.5 w-3.5 shrink-0 text-slate-600" />
-                <span className="text-slate-700">Edit Foto</span>
+                <span className="text-slate-700">Edit XFo</span>
                 {(invertImage || cropRect || contrast !== 100 || level !== 100 || flipX || flipY) && (
                   <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black text-white">!</span>
                 )}
@@ -26774,37 +26870,38 @@ export default function XrayCalibrationWorkspace({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.97 }}
                     transition={{ type: "spring", damping: 22, stiffness: 300 }}
-                    className="absolute left-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,280px)] rounded-[22px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]"
+                    className="absolute left-0 top-[calc(100%+8px)] mb-1.5 z-[85] w-[min(92vw,280px)] rounded-[22px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]"
                   >
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-xs font-extrabold text-slate-900">Edit Foto</div>
+                      <div className="text-xs font-extrabold text-slate-900">Edit XFo</div>
                       <button type="button" onClick={() => setSimpleDesktopEditFotoOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.22)]"><X className="h-3 w-3" /></button>
                     </div>
                     {/* Compact sliders row */}
                     {[
-                      { label: "Kontras", value: contrast, min: 20, max: 300, onChange: (v) => setContrast(v), color: "#0ea5e9" },
-                      { label: "Cerah", value: level, min: 20, max: 220, onChange: (v) => setLevel(v), color: "#f59e0b" },
-                    ].map(({ label, value, min, max, onChange, color }) => (
-                      <div key={label} className="rounded-[14px] border border-white/60 bg-[#eef2f7] px-3 py-2 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]">
-                        <div className="mb-1.5 flex items-center justify-between">
+                      { label: "Kontras", value: contrast, min: 20, max: 300, unit: "%", btnStep: 5, onChange: (v) => setContrast(v), color: "#0ea5e9" },
+                      { label: "Cerah", value: level, min: 20, max: 220, unit: "%", btnStep: 5, onChange: (v) => setLevel(v), color: "#f59e0b" },
+                      { label: "Rotasi", value: rotation, min: -30, max: 30, unit: "°", btnStep: 1, onChange: (v) => setRotation(v), color: "#8b5cf6" },
+                    ].map(({ label, value, min, max, unit, btnStep, onChange, color }) => (
+                      <div key={label} className="rounded-[14px] mb-1.5 border border-white/60 bg-[#eef2f7] px-3 py-2 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]">
+                        <div className="mb-2 flex items-center justify-between">
                           <span className="text-[10px] font-black text-slate-600 uppercase tracking-wide">{label}</span>
-                          <span className="min-w-[36px] rounded-lg border border-white/60 bg-white/50 px-1.5 py-0.5 text-center text-[10px] font-black" style={{ color }}>{value}%</span>
+                          <span className="min-w-[36px] rounded-lg border border-white/60 bg-white/50 px-1.5 py-0.5 text-center text-[10px] font-black" style={{ color }}>{value}{unit}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => onChange(clamp(value - 5, min, max))}
+                          <button type="button" onClick={() => onChange(clamp(value - btnStep, min, max))}
                             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-[10px] font-black text-slate-600 shadow-[1px_1px_3px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.8)]">−</button>
                           <input type="range" min={min} max={max} step={1} value={value}
                             onChange={(e) => onChange(Number(e.target.value))}
                             className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full outline-none"
                             style={{ accentColor: color }}
                           />
-                          <button type="button" onClick={() => onChange(clamp(value + 5, min, max))}
+                          <button type="button" onClick={() => onChange(clamp(value + btnStep, min, max))}
                             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-[10px] font-black text-slate-600 shadow-[1px_1px_3px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.8)]">+</button>
                         </div>
                       </div>
                     ))}
                     {/* Quick toggles row */}
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                       <button type="button" onClick={() => setInvertImage((prev) => !prev)}
                         className={`flex items-center justify-center gap-1.5 rounded-[14px] border py-2.5 text-[10px] font-black transition ${
                           invertImage ? "border-slate-600 bg-slate-800 text-white" : "border-white/60 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_5px_rgba(148,163,184,0.2),-2px_-2px_5px_rgba(255,255,255,0.85)]"}`}>
@@ -26820,7 +26917,7 @@ export default function XrayCalibrationWorkspace({
                       </button>
                     </div>
                     {/* Rotate/Flip row */}
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className="grid grid-cols-4 gap-1 mb-2">
                       {[
                         { icon: "rotateLeft", label: "↺", title: "Putar -90°", fn: rotateLeft },
                         { icon: "rotateRight", label: "↻", title: "Putar +90°", fn: rotateRight },
@@ -26856,7 +26953,7 @@ export default function XrayCalibrationWorkspace({
           {isSimpleUiMode ? (
             <button type="button"
               onClick={() => { setSimpleDesktopManagerOpen(false); setSimpleDesktopHkaOpen(false); setSimpleDesktopEditFotoOpen(false); openTemplatingWizard(); }}
-              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
+              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
               title="Mulai Templating — panduan TKR · THA · Hemi"
             >
               <svg className="h-3.5 w-3.5 shrink-0 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
@@ -26873,7 +26970,7 @@ export default function XrayCalibrationWorkspace({
               <button
                 type="button"
                 onClick={() => setSimpleDesktopManagerOpen((p) => !p)}
-                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:text-slate-950`}
+                className={`${simpleDesktopManagerOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
                 title="Layer · Line · Implant Manager"
               >
                 <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -26883,7 +26980,7 @@ export default function XrayCalibrationWorkspace({
                   <rect x="9" y="9" width="6" height="6" rx="1.5" />
                 </svg>
                 <span className={simpleDesktopManagerOpen ? "text-cyan-800 font-black" : "text-slate-700"}>
-                  Manager
+                  Properties
                 </span>
                 {(cutLayers.length > 0 || lines.filter(l => l.id !== calibrationLineId).length > 0) && (
                   <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-600 px-1 text-[9px] font-black text-white">
@@ -26962,6 +27059,19 @@ export default function XrayCalibrationWorkspace({
                       )}
                       implantDisabled={!image || !modelWidth || !modelHeight}
                       implantInstruction={implantLibraryScaleInstruction}
+                      annotations={annotations}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onSelectAnnotation={(id) => { selectAnnotationFromCanvas(id, { openPanel: false }); }}
+                      onUpdateAnnotation={updateAnnotationById}
+                      onRemoveAnnotation={(id) => {
+                        setAnnotations((prev) => prev.filter((a) => a.id !== id));
+                        if (selectedAnnotationId === id) setSelectedAnnotationId(null);
+                        setNotice("Anotasi dihapus.");
+                      }}
+                      onActivateAnnotationTool={(mode) => {
+                        if (mode === "pan") { handleToolChange("pan"); } else { handleToolChange("annotation"); }
+                      }}
+                      defaultAnnotationColor={DEFAULT_ANNOTATION_COLOR}
                     />
                   </motion.div>
                 )}
@@ -26969,174 +27079,6 @@ export default function XrayCalibrationWorkspace({
             </div>
           ) : null}
 
-          {/* ── Ringkasan button (simple UI desktop) ── */}
-          {isSimpleUiMode ? (
-            <button
-              type="button"
-              onClick={() => setPreOpSummaryOpen(true)}
-              className={`${SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold text-slate-700 transition hover:text-slate-950`}
-              title="Ringkasan Pre-Op"
-            >
-              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                <rect x="2" y="1.5" width="12" height="13" rx="2"/>
-                <path d="M5 5.5h6M5 8h6M5 10.5h4"/>
-              </svg>
-              <span>Ringkasan</span>
-            </button>
-          ) : null}
-
-
-          {isSimpleUiMode ? (
-            <details className="group relative">
-              <summary
-                className={`${selectedAnnotation ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex cursor-pointer list-none items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold text-slate-700 transition hover:text-slate-950 [&::-webkit-details-marker]:hidden`}
-              >
-                <Icon name="annotation" className="h-3.5 w-3.5" />
-                {/* <span>Anotasi</span> */}
-                <span className="max-w-[96px] truncate text-[10px] font-bold text-orange-700">
-                  {selectedAnnotation
-                    ? selectedAnnotation.text || `#${selectedAnnotation.id}`
-                    : `${annotations.length} note`}
-                </span>
-              </summary>
-              <div className="absolute right-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,320px)] rounded-[24px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs font-extrabold text-slate-900">
-                      Anotasi Canvas
-                    </div>
-                    <div className="truncate text-[10px] font-semibold text-slate-500">
-                      Klik Note lalu tap canvas untuk membuat catatan.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleToolChange("annotation")}
-                    className={`${SOFT_RAISED_CLASS} h-8 rounded-full px-3 text-[10px] font-bold text-orange-700`}
-                  >
-                    + Note
-                  </button>
-                </div>
-                <select
-                  value={selectedAnnotationId ?? ""}
-                  onChange={(event) => {
-                    const nextId = Number(event.target.value);
-                    if (!Number.isFinite(nextId)) return;
-                    selectAnnotationFromCanvas(nextId, { openPanel: false });
-                  }}
-                  disabled={!annotations.length}
-                  className="mb-2 w-full rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">
-                    {annotations.length ? "Pilih anotasi" : "Belum ada anotasi"}
-                  </option>
-                  {annotations.map((annotation, index) => (
-                    <option key={annotation.id} value={annotation.id}>
-                      {annotation.text || `Anotasi #${annotation.id}`} |{" "}
-                      {index + 1}/{annotations.length}
-                    </option>
-                  ))}
-                </select>
-                {selectedAnnotation ? (
-                  <div className="space-y-2">
-                    <textarea
-                      value={selectedAnnotation.text}
-                      onChange={(event) =>
-                        updateAnnotationById(selectedAnnotation.id, {
-                          text: event.target.value,
-                        })
-                      }
-                      rows={2}
-                      className="w-full resize-none rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-xs font-semibold text-slate-700 outline-none shadow-[inset_3px_3px_7px_rgba(148,163,184,0.22),inset_-3px_-3px_7px_rgba(255,255,255,0.88)]"
-                      placeholder="Teks anotasi"
-                    />
-                    <label className="block rounded-2xl border border-white/75 bg-[#eef2f7] px-3 py-2 text-[10px] font-extrabold text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.18),-3px_-3px_8px_rgba(255,255,255,0.86)]">
-                      <span className="flex items-center justify-between">
-                        <span>Ukuran teks</span>
-                        <span>{selectedAnnotation.fontSize || 11}px</span>
-                      </span>
-                      <input
-                        type="range"
-                        min={8}
-                        max={22}
-                        step={1}
-                        value={selectedAnnotation.fontSize || 11}
-                        onChange={(event) =>
-                          updateAnnotationById(selectedAnnotation.id, {
-                            fontSize: Number(event.target.value),
-                          })
-                        }
-                        className="mt-2 w-full accent-orange-600"
-                      />
-                    </label>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {ANNOTATION_COLOR_OPTIONS.map((color) => (
-                        <ColorSwatchButton
-                          key={`annotation-color-${color}`}
-                          color={color}
-                          active={
-                            (selectedAnnotation.color ||
-                              DEFAULT_ANNOTATION_COLOR) === color
-                          }
-                          label={`Warna anotasi ${color}`}
-                          onClick={() =>
-                            updateAnnotationById(selectedAnnotation.id, {
-                              color,
-                            })
-                          }
-                        />
-                      ))}
-                      <label
-                        className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
-                        title="Warna custom anotasi"
-                      >
-                        <span
-                          className="h-4 w-4 rounded-full border border-dashed border-slate-400"
-                          style={{
-                            background:
-                              "conic-gradient(from 180deg, #f97316, #22c55e, #38bdf8, #a855f7, #f43f5e, #facc15, #f97316)",
-                          }}
-                        />
-                        <input
-                          type="color"
-                          value={
-                            selectedAnnotation.color ||
-                            DEFAULT_ANNOTATION_COLOR
-                          }
-                          onChange={(event) =>
-                            updateAnnotationById(selectedAnnotation.id, {
-                              color: event.target.value,
-                            })
-                          }
-                          className="absolute inset-0 cursor-pointer opacity-0"
-                        />
-                      </label>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToolChange("pan")}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-cyan-800`}
-                      >
-                        Move
-                      </button>
-                      <button
-                        type="button"
-                        onClick={removeSelectedAnnotation}
-                        className={`${SOFT_TEXT_BUTTON_CLASS} text-[10px] font-bold text-rose-600`}
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-white/75 bg-white/40 px-3 py-3 text-[11px] font-semibold text-slate-500 shadow-[inset_3px_3px_7px_rgba(148,163,184,0.18),inset_-3px_-3px_7px_rgba(255,255,255,0.86)]">
-                    Belum ada anotasi dipilih.
-                  </div>
-                )}
-              </div>
-            </details>
-          ) : null}
           {isSimpleUiMode && typeof onOpenAdvancedUi === "function" ? (
             <>
               <div className="h-5 w-px bg-slate-200/80" />
@@ -27410,9 +27352,7 @@ export default function XrayCalibrationWorkspace({
           </div>
 
           <div
-            className={`order-8 grid gap-2 ${
-              leftSidebarWidth <= 240 ? "grid-cols-1" : "grid-cols-2"
-            }`}
+            className="order-8 grid grid-cols-1 gap-2"
             style={{ order: 8 }}
           >
             <motion.div
@@ -27433,48 +27373,63 @@ export default function XrayCalibrationWorkspace({
                   <InfoTooltip text="Split mode untuk pre-op vs post-op atau kiri vs kanan. Upload gambar compare lalu aktifkan mode compare." />
                 ) : null}
               </div>
-              <div className="flex items-center justify-between gap-1.5">
-                <IconButton
-                  icon="upload"
-                  label="Upload Compare"
+              {/* Compare — layout kolom atas-bawah */}
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
                   onClick={() => compareUploadInputRef.current?.click()}
-                  className="h-8 w-8 shrink-0"
-                />
-                <IconButton
-                  icon="compare"
-                  label={compareMode ? "Keluar Compare" : "Toggle Compare Mode"}
-                  onClick={toggleCompareModePreservingWorkspace}
-                  active={compareMode}
-                  disabled={!compareImageSrc && !compareMode}
-                  className="h-8 w-8 shrink-0"
-                />
-                <IconButton
-                  icon="trash"
-                  label="Hapus Compare"
-                  onClick={() => {
-                    if (compareObjectUrlRef.current) {
-                      URL.revokeObjectURL(compareObjectUrlRef.current);
-                      compareObjectUrlRef.current = null;
-                    }
-                    compareImageFileRef.current = null;
-                    setCompareImageSrc(null);
-                    setCompareImage(null);
-                    setCompareImageName("");
-                    setCompareMode(false);
-                    setNotice("Gambar compare dihapus.");
+                  className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-xl py-2 text-[11px] font-semibold transition active:scale-[0.98]"
+                  style={{
+                    background: isDark ? "rgba(255,255,255,0.05)" : "rgba(241,245,249,1)",
+                    border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(203,213,225,0.80)",
+                    color: isDark ? "#cbd5e1" : "#475569",
+                    padding: isLeftSidebarCompact ? "8px" : "8px 12px",
                   }}
-                  tone="rose"
-                  disabled={!compareImageSrc}
-                  className="h-8 w-8 shrink-0"
-                />
+                >
+                  <Icon name="upload" className="h-3.5 w-3.5 shrink-0" />
+                  {!isLeftSidebarCompact && <span className="truncate">Upload Compare</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleCompareModePreservingWorkspace}
+                  disabled={!compareImageSrc && !compareMode}
+                  className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-xl py-2 text-[11px] font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{
+                    background: compareMode
+                      ? (isDark ? "rgba(14,165,233,0.20)" : "rgba(14,165,233,0.12)")
+                      : (isDark ? "rgba(255,255,255,0.05)" : "rgba(241,245,249,1)"),
+                    border: compareMode
+                      ? "1px solid rgba(14,165,233,0.40)"
+                      : (isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(203,213,225,0.80)"),
+                    color: compareMode ? "#38bdf8" : (isDark ? "#94a3b8" : "#475569"),
+                    padding: isLeftSidebarCompact ? "8px" : "8px 12px",
+                  }}
+                >
+                  <Icon name="compare" className="h-3.5 w-3.5 shrink-0" />
+                  {!isLeftSidebarCompact && (
+                    <span className="truncate">{compareMode ? "Keluar Compare" : "Aktifkan Compare"}</span>
+                  )}
+                </button>
+                {compareImageName && !isLeftSidebarCompact ? (
+                  <div className="flex min-w-0 items-center justify-between gap-1 overflow-hidden">
+                    <span className="truncate text-[10px]" style={{ color: isDark ? "#64748b" : "#94a3b8" }}>
+                      {compareImageName}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (compareObjectUrlRef.current) { URL.revokeObjectURL(compareObjectUrlRef.current); compareObjectUrlRef.current = null; }
+                        compareImageFileRef.current = null;
+                        setCompareImageSrc(null); setCompareImage(null); setCompareImageName(""); setCompareMode(false);
+                        setNotice("Gambar compare dihapus.");
+                      }}
+                      className="shrink-0 rounded-lg px-2 py-0.5 text-[10px] font-semibold text-rose-400 hover:text-rose-500"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ) : null}
               </div>
-              {!isLeftSidebarCompact ? (
-                <p className="text-[11px] text-slate-500">
-                  {compareImageName
-                    ? `Compare: ${compareImageName}`
-                    : "Belum compare."}
-                </p>
-              ) : null}
             </motion.div>
 
             <motion.div
@@ -27496,66 +27451,75 @@ export default function XrayCalibrationWorkspace({
                   <InfoTooltip text="PNG: snapshot cepat. PDF: buka report siap print/save PDF dengan tabel measurement." />
                 ) : null}
               </div>
-              {/* Baris 1: Export file lokal */}
-              <div className="flex items-center justify-between gap-1.5">
-                <IconButton
-                  icon="export"
-                  label="Export PNG 2x Sharp"
-                  onClick={exportReportPng}
-                  disabled={!hasCalibration}
-                  className="h-8 w-8 shrink-0"
-                />
-                <IconButton
-                  icon="export"
-                  label="Export JPEG Highest"
-                  onClick={exportReportJpeg}
-                  disabled={!hasCalibration}
-                  className="h-8 w-8 shrink-0"
-                />
-                <IconButton
-                  icon="save"
-                  label="Export PDF Sederhana"
-                  onClick={exportReportPdf}
-                  disabled={!hasCalibration}
-                  className="h-8 w-8 shrink-0"
-                />
+              {/* Export — layout kolom atas-bawah, responsif sidebar */}
+              {!hasCalibration ? (
+                <p className="rounded-xl px-2 py-1 text-[10px] font-semibold text-rose-400"
+                  style={{ background: isDark ? "rgba(220,38,38,0.10)" : "rgba(254,226,226,0.60)", border: "1px solid rgba(239,68,68,0.20)" }}>
+                  {isLeftSidebarCompact ? "Kalib!" : "Kalibrasi wajib sebelum export."}
+                </p>
+              ) : null}
+
+              {/* PNG / JPEG / PDF — 3 tombol rata lebar */}
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { label: "PNG", icon: "export", onClick: exportReportPng, title: "Export PNG 2×" },
+                  { label: "JPG", icon: "export", onClick: exportReportJpeg, title: "Export JPEG" },
+                  { label: "PDF", icon: "save", onClick: exportReportPdf, title: "Export PDF" },
+                ].map(({ label, icon, onClick, title }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={onClick}
+                    disabled={!hasCalibration}
+                    title={title}
+                    className="flex flex-col items-center gap-0.5 rounded-xl py-2 text-[10px] font-black transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{
+                      background: isDark ? "rgba(255,255,255,0.05)" : "rgba(241,245,249,1)",
+                      border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(203,213,225,0.80)",
+                      color: isDark ? "#94a3b8" : "#475569",
+                    }}
+                  >
+                    <Icon name={icon} className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                ))}
               </div>
 
-              {/* Laporan Pre-Op Profesional */}
+              {/* Laporan Pre-Op */}
               <button
                 type="button"
                 onClick={() => setPreOpReportModalOpen(true)}
                 disabled={!image}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3 py-2.5 text-xs font-black text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)] transition hover:shadow-[0_6px_20px_rgba(37,99,235,0.5)] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.98]"
+                className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3 py-2.5 text-xs font-black text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)] transition hover:shadow-[0_6px_20px_rgba(37,99,235,0.5)] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.98]"
               >
                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                {isLeftSidebarCompact ? null : "Buat Laporan Pre-Op"}
+                {!isLeftSidebarCompact && <span className="truncate">Laporan Pre-Op</span>}
               </button>
 
-              {/* Manajemen Kasus Pasien */}
+              {/* Kasus Pasien */}
               <button
                 type="button"
                 onClick={() => setPatientCaseManagerOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-black text-purple-700 transition hover:bg-purple-100 active:scale-[0.98]"
+                className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-black text-purple-700 transition hover:bg-purple-100 active:scale-[0.98]"
               >
                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                {isLeftSidebarCompact ? null : "Kasus Pasien"}
+                {!isLeftSidebarCompact && <span className="truncate">Kasus Pasien</span>}
               </button>
 
-              {/* Estimator Ukuran Implan */}
+              {/* Estimator Implan */}
               <button
                 type="button"
                 onClick={() => setImplantSizePanelOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-black text-teal-700 transition hover:bg-teal-100 active:scale-[0.98]"
+                className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-black text-teal-700 transition hover:bg-teal-100 active:scale-[0.98]"
               >
                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
-                {isLeftSidebarCompact ? null : "Estimator Ukuran Implan"}
+                {!isLeftSidebarCompact && <span className="truncate">Estimator Implan</span>}
               </button>
 
 
@@ -27704,7 +27668,7 @@ export default function XrayCalibrationWorkspace({
               <Icon name="preset" className="h-4 w-4 text-slate-600" />
               {!isLeftSidebarCompact ? (
                 <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
-                  Edit Foto
+                  Edit XFo
                 </span>
               ) : null}
               <InfoTooltip text="Contrast, kecerahan, invert, rotasi, flip, potong, dan reset." />
@@ -30021,6 +29985,35 @@ export default function XrayCalibrationWorkspace({
                 ) : null}
                 <InfoTooltip text="Preset line, TKA planning, circle, dan hapus/reset measurement." />
               </div>
+
+              {/* ── Calibration gate ─────────────────────────────── */}
+              {!hasCalibration && (
+                <div
+                  className="flex flex-col items-center gap-2 rounded-2xl px-3 py-4 text-center"
+                  style={{
+                    background: isDark ? "rgba(220,38,38,0.10)" : "rgba(254,226,226,0.80)",
+                    border: `1px solid ${isDark ? "rgba(239,68,68,0.30)" : "rgba(239,68,68,0.25)"}`,
+                  }}
+                >
+                  <svg className="h-5 w-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2}
+                      d="M12 15v2m0-8v4m-7.5 5h15l-7.5-13-7.5 13z" />
+                  </svg>
+                  <p className="text-[11px] font-black text-rose-500 leading-4">
+                    Kalibrasi wajib sebelum ukur
+                  </p>
+                  <p className="text-[10px] font-medium leading-4" style={{ color: isDark ? "#94a3b8" : "#64748b" }}>
+                    Buat garis referensi, isi nilai real, lalu klik Simpan Kalibrasi.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => focusCalibrationStep("Buka panel kalibrasi.")}
+                    className="mt-1 rounded-xl bg-rose-500 px-4 py-1.5 text-[10px] font-black text-white shadow-[0_2px_8px_rgba(239,68,68,0.30)] transition hover:bg-rose-600 active:scale-95"
+                  >
+                    Buka Kalibrasi
+                  </button>
+                </div>
+              )}
               {!isRightSidebarCompact ? (
                 <div className="flex items-center justify-between text-[11px] text-emerald-900">
                   <span>
@@ -32574,7 +32567,9 @@ export default function XrayCalibrationWorkspace({
           >
             <div
               ref={containerRef}
-              className={`relative w-full touch-none overflow-hidden overscroll-none bg-slate-950/95 sm:rounded-lg sm:border sm:border-slate-300 ${
+              className={`relative w-full touch-none overflow-hidden overscroll-none ${
+                isDark ? "bg-slate-950/95" : "bg-slate-800/90"
+              } sm:rounded-lg sm:border sm:border-slate-300 ${
                 isSimpleUiMode
                   ? "h-[100dvh] min-h-[100dvh] sm:h-[100dvh] sm:min-h-[100dvh] lg:h-[calc(100vh-156px)] lg:min-h-[420px]"
                   : "h-[calc(100dvh-108px)] min-h-[460px] sm:h-[70vh] sm:min-h-[420px] lg:h-[calc(100vh-156px)]"
@@ -33002,7 +32997,7 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 </motion.div>
               ) : null}
-              {isMobileViewport && selectedLine ? (
+              {isMobileViewport && !isSimpleUiMode && selectedLine ? (
                 <motion.div
                   initial={{ opacity: 0, y: -6, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -33390,6 +33385,21 @@ export default function XrayCalibrationWorkspace({
                         )}
                         implantDisabled={!image || !modelWidth || !modelHeight}
                         implantInstruction={implantLibraryScaleInstruction}
+                        annotations={annotations}
+                        selectedAnnotationId={selectedAnnotationId}
+                        onSelectAnnotation={(id) => selectAnnotationFromCanvas(id, { openPanel: false })}
+                        onUpdateAnnotation={updateAnnotationById}
+                        onRemoveAnnotation={(id) => {
+                          setAnnotations((prev) => prev.filter((a) => a.id !== id));
+                          if (selectedAnnotationId === id) setSelectedAnnotationId(null);
+                          setNotice("Anotasi dihapus.");
+                        }}
+                        onActivateAnnotationTool={(mode) => {
+                          setSimpleMobilePanel(null);
+                          setMobileCanvasMode("edit");
+                          handleToolChange(mode === "pan" ? "pan" : "annotation");
+                        }}
+                        defaultAnnotationColor={DEFAULT_ANNOTATION_COLOR}
                       />
                     ) : simpleMobilePanel === "export" ? (
                         <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
@@ -33591,9 +33601,9 @@ export default function XrayCalibrationWorkspace({
                             );
                           })}
                         </div>
-                        {/* Edit Foto compact row */}
+                        {/* Edit XFo compact row */}
                         <div className="mt-2">
-                          <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-400">Edit Foto</p>
+                          <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-400">Edit XFo</p>
                           <div className="grid grid-cols-4 gap-1">
                             <button type="button" onClick={() => setInvertImage((prev) => !prev)}
                               className={`min-h-9 rounded-xl border text-[9px] font-black transition ${invertImage ? "border-slate-600 bg-slate-800 text-white" : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[1px_1px_3px_rgba(148,163,184,0.2)]"}`}>
@@ -33659,55 +33669,85 @@ export default function XrayCalibrationWorkspace({
               ) : null}
 
               {isSimpleUiMode && isMobileViewport ? (
-                <div className="pointer-events-none absolute top-2 right-2 left-2 z-30 flex items-start justify-between gap-2">
-                  <div className="pointer-events-auto min-w-0 max-w-[58vw] rounded-[14px] border border-white/45 bg-[#eef2f7]/48 px-1.5 py-1 text-slate-800 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] backdrop-blur-sm">
-                    <div className="truncate text-[8px] font-black">
-                      {mobileModeStatusLabel}
-                    </div>
-                    <div className="mt-0.5 truncate text-[7px] font-semibold text-slate-500">
-                      {measurementWorkflowGuideItems.find((item) => item.active)
-                        ?.status || "Tap object lalu geser titik"}
-                    </div>
-                    <div className="mt-0.5 flex max-w-full gap-1 overflow-x-auto pb-0.5">
-                      {mobileWorkflowSteps.map((step) => (
-                        <button
-                          key={`mobile-wizard-${step.id}`}
-                          type="button"
-                          onClick={step.onClick}
-                          className={`min-h-6 shrink-0 rounded-full px-1 text-[7px] font-black ${
-                            mobileWorkflowStep === step.id
-                              ? "bg-slate-900/82 text-white"
-                              : step.done
-                                ? "bg-emerald-500/78 text-white"
-                                : "bg-white/35 text-slate-500"
-                          }`}
-                        >
-                          {step.id}. {step.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="pointer-events-auto flex shrink-0 gap-0.5 rounded-full border border-white/45 bg-[#eef2f7]/48 p-0.5 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] backdrop-blur-sm">
-                    <button
+                <div className="pointer-events-none absolute top-2 right-2 z-30 max-w-[calc(100vw-1rem)]">
+                  <div
+                    className="pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-full p-1"
+                    style={{
+                      background: isDark ? "rgba(15,23,42,0.88)" : "rgba(255,255,255,0.92)",
+                      border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1px solid rgba(148,163,184,0.30)",
+                      boxShadow: isDark
+                        ? "0 4px 16px rgba(0,0,0,0.55), 0 1px 4px rgba(0,0,0,0.35)"
+                        : "0 4px 12px rgba(148,163,184,0.28), 0 1px 3px rgba(148,163,184,0.18)",
+                      backdropFilter: "blur(12px)",
+                    }}
+                  >
+                    {[
+                      { label: "Undo", icon: <Undo2 className="h-3.5 w-3.5" />, onClick: undoHistory, disabled: historyState.undo < 1 },
+                      { label: "Redo", icon: <Redo2 className="h-3.5 w-3.5" />, onClick: redoHistory, disabled: historyState.redo < 1 },
+                    ].map(({ label, icon, onClick, disabled }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={onClick}
+                        disabled={disabled}
+                        aria-label={label}
+                        title={label}
+                        style={{
+                          background: isDark ? "rgba(255,255,255,0.10)" : "rgba(241,245,249,1)",
+                          border: isDark ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(203,213,225,0.8)",
+                          color: isDark ? "#e2e8f0" : "#334155",
+                          boxShadow: isDark
+                            ? "inset 0 1px 0 rgba(255,255,255,0.08)"
+                            : "0 1px 3px rgba(148,163,184,0.20)",
+                          opacity: disabled ? 0.35 : 1,
+                        }}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+                      >
+                        {icon}
+                      </button>
+                    ))}
+
+                    <motion.button
                       type="button"
-                      onClick={undoHistory}
-                      disabled={historyState.undo < 1}
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-[#eef2f7]/58 text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-35"
-                      aria-label="Undo"
-                      title="Undo"
+                      onClick={toggleDarkMode}
+                      whileTap={{ scale: 0.85 }}
+                      aria-label={isDark ? "Mode Terang" : "Mode Gelap"}
+                      title={isDark ? "Mode Terang" : "Mode Gelap"}
+                      style={{
+                        background: isDark ? "rgba(255,255,255,0.10)" : "rgba(241,245,249,1)",
+                        border: isDark ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(203,213,225,0.8)",
+                        color: isDark ? "#fbbf24" : "#64748b",
+                        boxShadow: isDark ? "inset 0 1px 0 rgba(255,255,255,0.08)" : "0 1px 3px rgba(148,163,184,0.20)",
+                      }}
+                      className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full transition"
                     >
-                      <Undo2 className="h-3 w-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={redoHistory}
-                      disabled={historyState.redo < 1}
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-[#eef2f7]/58 text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-35"
-                      aria-label="Redo"
-                      title="Redo"
-                    >
-                      <Redo2 className="h-3 w-3" />
-                    </button>
+                      <AnimatePresence mode="wait" initial={false}>
+                        {isDark ? (
+                          <motion.span
+                            key="sun"
+                            initial={{ rotate: -90, scale: 0.4, opacity: 0 }}
+                            animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                            exit={{ rotate: 90, scale: 0.4, opacity: 0 }}
+                            transition={{ duration: 0.25, ease: "easeOut" }}
+                            className="flex items-center justify-center"
+                          >
+                            <Sun className="h-3.5 w-3.5" />
+                          </motion.span>
+                        ) : (
+                          <motion.span
+                            key="moon"
+                            initial={{ rotate: 90, scale: 0.4, opacity: 0 }}
+                            animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                            exit={{ rotate: -90, scale: 0.4, opacity: 0 }}
+                            transition={{ duration: 0.25, ease: "easeOut" }}
+                            className="flex items-center justify-center"
+                          >
+                            <Moon className="h-3.5 w-3.5" />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </motion.button>
+
                     {hasMobileObjectSelection ? (
                       <button
                         type="button"
@@ -33715,35 +33755,130 @@ export default function XrayCalibrationWorkspace({
                           setSimpleMobilePanel(null);
                           setMobileObjectSettingsOpen((prev) => !prev);
                         }}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/50 text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] ${
-                          mobileObjectSettingsOpen
-                            ? "bg-slate-900/82 text-white"
-                            : "bg-[#eef2f7]/58"
-                        }`}
+                        style={{
+                          background: mobileObjectSettingsOpen
+                            ? (isDark ? "#0ea5e9" : "#0f172a")
+                            : (isDark ? "rgba(255,255,255,0.10)" : "rgba(241,245,249,1)"),
+                          border: isDark ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(203,213,225,0.8)",
+                          color: mobileObjectSettingsOpen ? "#fff" : (isDark ? "#e2e8f0" : "#334155"),
+                          boxShadow: isDark ? "inset 0 1px 0 rgba(255,255,255,0.08)" : "0 1px 3px rgba(148,163,184,0.20)",
+                        }}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition active:scale-95"
                         aria-label="Buka setting object"
                         title="Setting"
                       >
-                        <SlidersHorizontal className="h-3 w-3" />
+                        <SlidersHorizontal className="h-3.5 w-3.5" />
                       </button>
                     ) : null}
-                    {hasColorEditableSelection ? (
-                      <button
-                        type="button"
-                        onClick={openSimpleColorPanel}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/50 text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] ${
-                          simpleColorPanelOpen
-                            ? "bg-slate-900/82 text-white"
-                            : "bg-[#eef2f7]/58"
-                        }`}
-                        aria-label="Buka color panel"
-                        title="Color"
-                      >
-                        <Palette className="h-3 w-3" />
-                      </button>
-                    ) : null}
+
+                    <span
+                      aria-hidden="true"
+                      className="mx-0.5 h-5 w-px shrink-0"
+                      style={{ background: isDark ? "rgba(255,255,255,0.16)" : "rgba(148,163,184,0.35)" }}
+                    />
+
+                    <LogoutButton variant="compact" />
                   </div>
                 </div>
               ) : null}
+
+              {/* Cup Assessment — compact canvas-attached panel, di samping panel aksi */}
+              {showCupAssessment && canvasCup && (() => {
+                const rawDeg = ((canvasCup.angle * 180 / Math.PI) % 180 + 180) % 180;
+                const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
+                const ratio = canvasCup.a > 0 ? Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a)) : 0;
+                const anteversion = (Math.asin(ratio) * 180) / Math.PI;
+                const { label: zoneLabel, color: zoneColor, bg: zoneBg } = cupZoneStatus(inclination, anteversion);
+                const dialDeg = ((canvasCup.angle * 180) / Math.PI % 360 + 360) % 360;
+                const zoneIcon = zoneLabel.trim().charAt(0);
+                const zoneText = zoneLabel.trim().slice(1).trim();
+                return (
+                  <div
+                    className={`pointer-events-auto absolute z-30 flex flex-col rounded-[22px] border ${
+                      isMobileViewport ? "top-12 left-2 right-2 items-center" : "top-3 right-[15.5rem] items-start max-w-[min(64vw,560px)]"
+                    }`}
+                    style={{
+                      background: "rgba(15,23,42,0.92)",
+                      borderColor: "rgba(56,189,248,0.22)",
+                      padding: "10px 14px",
+                      gap: 8,
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    {/* row 1 — status */}
+                    <div className="flex flex-wrap items-center" style={{ gap: 12 }}>
+                      {/* zone badge */}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, padding: "4px 12px 4px 5px", borderRadius: 999, background: `${zoneColor}14`, color: zoneColor, border: `1.5px solid ${zoneColor}55`, boxShadow: `0 0 12px ${zoneColor}30`, whiteSpace: "nowrap" }}>
+                        <span style={{ width: 17, height: 17, borderRadius: "50%", background: `${zoneColor}26`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0 }}>{zoneIcon}</span>
+                        {zoneText}
+                      </span>
+                      {/* inclination / anteversion */}
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#94a3b8", whiteSpace: "nowrap" }}>INC <span style={{ fontSize: 16, fontWeight: 900, color: "#f97316", marginLeft: 1 }}>{inclination.toFixed(1)}°</span></span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#94a3b8", whiteSpace: "nowrap" }}>AV <span style={{ fontSize: 16, fontWeight: 900, color: "#22d3ee", marginLeft: 1 }}>{anteversion.toFixed(1)}°</span></span>
+                      {/* side toggle */}
+                      <div style={{ display: "flex", alignItems: "center", borderRadius: 999, padding: 3, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                        {[{ v: "left", label: "◁ Kiri", c: "#7dd3fc" }, { v: "right", label: "Kanan ▷", c: "#fdba74" }].map(({ v, label, c }) => (
+                          <button
+                            key={v}
+                            onClick={() => setCanvasCupSide(v)}
+                            style={{
+                              padding: "5px 12px", borderRadius: 999, fontSize: 10.5, fontWeight: 800, cursor: "pointer", border: "none",
+                              background: canvasCupSide === v ? "rgba(255,255,255,0.14)" : "transparent",
+                              color: canvasCupSide === v ? c : "#64748b",
+                              transition: "all 0.2s", whiteSpace: "nowrap",
+                            }}
+                          >{label}</button>
+                        ))}
+                      </div>
+                      {/* point size toggle */}
+                      <button
+                        onClick={() => setCupHandleCompact((v) => !v)}
+                        title={cupHandleCompact ? "Point normal" : "Point lebih kecil"}
+                        style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: cupHandleCompact ? "#2563eb" : "#3b82f6", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(59,130,246,0.45)" }}
+                      >
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff" }} />
+                      </button>
+                    </div>
+
+                    {/* row 2 — controls */}
+                    <div className="flex flex-wrap items-center" style={{ gap: 10 }}>
+                      {/* angle / rotation dial + slider */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "5px 11px", minWidth: 46, textAlign: "center" }}>{Math.round(dialDeg)}°</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={359}
+                          step={1}
+                          value={Math.round(dialDeg)}
+                          onChange={(e) => setCanvasCup((prev) => prev ? { ...prev, angle: (Number(e.target.value) * Math.PI) / 180 } : prev)}
+                          title="Geser untuk atur rotasi cup"
+                          style={{ width: 110, accentColor: "#38bdf8", cursor: "pointer", flexShrink: 0 }}
+                        />
+                        <CupAngleDial
+                          size={30}
+                          angleDeg={dialDeg}
+                          onChange={(deg) => setCanvasCup((prev) => prev ? { ...prev, angle: (deg * Math.PI) / 180 } : prev)}
+                        />
+                      </div>
+                      {/* save button */}
+                      <button
+                        onClick={() => {
+                          const data = { inclination, anteversion, side: canvasCupSide, zone: zoneLabel };
+                          setSavedCupAssessment({ ...data, savedAt: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) });
+                          setNotice(`Cup Assessment disimpan — INC ${inclination.toFixed(1)}°, AV ${anteversion.toFixed(1)}° (${canvasCupSide === "left" ? "Kiri" : "Kanan"})`);
+                        }}
+                        style={{ padding: "7px 18px", borderRadius: 999, border: "1px solid #16a34a", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", boxShadow: "0 2px 10px rgba(34,197,94,0.35)" }}
+                      >💾 Simpan</button>
+                      {/* info button */}
+                      <button onClick={() => { setCupInfoModalOpen(true); setCupInfoMinimized(false); }} title="Informasi Safe Zone" style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid rgba(56,189,248,0.4)", background: "rgba(56,189,248,0.12)", color: "#38bdf8", fontSize: 12, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>ℹ</button>
+                      {/* reset + close */}
+                      <button onClick={() => setCanvasCup(null)} style={{ padding: "4px 9px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Reset</button>
+                      <button onClick={() => { setShowCupAssessment(false); setCanvasCup(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 14, lineHeight: 1, padding: "0 3px" }}>✕</button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {isSimpleUiMode &&
               isMobileViewport &&
@@ -33892,7 +34027,14 @@ export default function XrayCalibrationWorkspace({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 14, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
-                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+150px)] z-40 mx-auto max-h-[min(22vh,220px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] border border-white/45 bg-[#eef2f7]/58 p-2 text-slate-800 shadow-[2px_2px_8px_rgba(148,163,184,0.2)] backdrop-blur-sm"
+                  data-mobj=""
+                  className="pointer-events-auto absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+150px)] z-40 mx-auto max-h-[min(22vh,220px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] p-2 backdrop-blur-md"
+                  style={{
+                    background: isDark ? "rgba(15,23,42,0.92)" : "rgba(235,240,247,0.94)",
+                    border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(255,255,255,0.45)",
+                    boxShadow: isDark ? "0 4px 24px rgba(0,5,20,0.60),0 1px 4px rgba(55,80,140,0.16)" : "2px 2px 8px rgba(148,163,184,0.20)",
+                    color: isDark ? "#c8d5e8" : "#1e293b",
+                  }}
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -34191,7 +34333,7 @@ export default function XrayCalibrationWorkspace({
                               flipX: !item.flipX,
                             }))
                           }
-                          className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Flip H
                         </button>
@@ -34203,7 +34345,7 @@ export default function XrayCalibrationWorkspace({
                               flipY: !item.flipY,
                             }))
                           }
-                          className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Flip V
                         </button>
@@ -34215,21 +34357,21 @@ export default function XrayCalibrationWorkspace({
                               lockScale: !item.lockScale,
                             }))
                           }
-                          className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           {selectedCutLayer.lockScale ? "Unlock S" : "Lock S"}
                         </button>
                         <button
                           type="button"
                           onClick={duplicateSelectedCutLayer}
-                          className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Copy
                         </button>
                         <button
                           type="button"
                           onClick={removeSelectedCutLayer}
-                          className="min-h-11 rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600 shadow-[2px_2px_6px_rgba(148,163,184,0.18),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600 shadow-[2px_2px_6px_rgba(148,163,184,0.18),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Delete
                         </button>
@@ -34373,21 +34515,21 @@ export default function XrayCalibrationWorkspace({
                         <button
                           type="button"
                           onClick={toggleSelectedLineLock}
-                          className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           {isSelectedLineLocked ? "Unlock" : "Lock"}
                         </button>
                         <button
                           type="button"
                           onClick={() => openSimpleCalibrationModal()}
-                          className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black text-cyan-800 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Calib
                         </button>
                         <button
                           type="button"
                           onClick={removeSelectedLine}
-                          className="min-h-11 rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600"
+                          className="min-h-8 rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600"
                         >
                           Delete
                         </button>
@@ -34439,7 +34581,7 @@ export default function XrayCalibrationWorkspace({
                       <button
                         type="button"
                         onClick={removeSelectedLine}
-                        className="min-h-11 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600"
+                        className="min-h-8 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600"
                       >
                         Delete Angle
                       </button>
@@ -34547,7 +34689,7 @@ export default function XrayCalibrationWorkspace({
                       <button
                         type="button"
                         onClick={removeSelectedLine}
-                        className="min-h-11 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600"
+                        className="min-h-8 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600"
                       >
                         Delete Circle
                       </button>
@@ -34639,7 +34781,7 @@ export default function XrayCalibrationWorkspace({
                       <button
                         type="button"
                         onClick={removeSelectedLine}
-                        className="min-h-11 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600"
+                        className="min-h-8 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600"
                       >
                         Delete HKA
                       </button>
@@ -34708,7 +34850,7 @@ export default function XrayCalibrationWorkspace({
                       <button
                         type="button"
                         onClick={removeSelectedAnnotation}
-                        className="min-h-11 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600"
+                        className="min-h-8 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600"
                       >
                         Delete Note
                       </button>
@@ -34734,7 +34876,7 @@ export default function XrayCalibrationWorkspace({
                           setSelectedPlanningGuideId(null);
                           setNotice("Guide terpilih dihapus.");
                         }}
-                        className="min-h-11 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[10px] font-black text-rose-600"
+                        className="min-h-8 w-full rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600"
                       >
                         Delete Guide
                       </button>
@@ -35114,7 +35256,9 @@ export default function XrayCalibrationWorkspace({
             {compareMode ? (
               <div
                 ref={compareContainerRef}
-                className="relative h-[34vh] min-h-[220px] w-full overflow-hidden bg-slate-950/95 sm:h-[68vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-170px)]"
+                className={`relative h-[34vh] min-h-[220px] w-full overflow-hidden ${
+                  isDark ? "bg-slate-950/95" : "bg-slate-800/90"
+                } sm:h-[68vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-170px)]`}
               >
                 <canvas ref={compareCanvasRef} className="absolute inset-0" />
                 <button
@@ -35233,51 +35377,6 @@ export default function XrayCalibrationWorkspace({
         }}
       />
 
-      {/* Cup Assessment — compact canvas-attached panel */}
-      {showCupAssessment && canvasCup && (() => {
-        const rawDeg = ((canvasCup.angle * 180 / Math.PI) % 180 + 180) % 180;
-        const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
-        const ratio = canvasCup.a > 0 ? Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a)) : 0;
-        const anteversion = (Math.asin(ratio) * 180) / Math.PI;
-        const { label: zoneLabel, color: zoneColor, bg: zoneBg } = cupZoneStatus(inclination, anteversion);
-        return (
-          <div style={{
-            position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
-            zIndex: 120, display: "flex", alignItems: "center", gap: 8,
-            background: "rgba(15,23,42,0.88)", backdropFilter: "blur(10px)",
-            border: "1.5px solid rgba(56,189,248,0.25)", borderRadius: 16,
-            padding: "7px 14px", boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
-            pointerEvents: "all",
-          }}>
-            {/* zone badge */}
-            <span style={{ fontSize: 10, fontWeight: 900, padding: "2px 8px", borderRadius: 8, background: zoneBg, color: zoneColor, border: `1px solid ${zoneColor}40` }}>{zoneLabel}</span>
-            {/* inclination */}
-            <span style={{ fontSize: 11, fontWeight: 800, color: "#f97316" }}>INC <span style={{ fontSize: 14, fontWeight: 900 }}>{inclination.toFixed(1)}°</span></span>
-            <span style={{ fontSize: 11, fontWeight: 800, color: "#22d3ee" }}>AV <span style={{ fontSize: 14, fontWeight: 900 }}>{anteversion.toFixed(1)}°</span></span>
-            {/* side toggle */}
-            <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,0.12)" }}>
-              {[{ v: "left", label: "◁ Kiri", c: "#0ea5e9" }, { v: "right", label: "Kanan ▷", c: "#f97316" }].map(({ v, label, c }) => (
-                <button key={v} onClick={() => setCanvasCupSide(v)} style={{ padding: "3px 10px", fontSize: 10, fontWeight: 800, cursor: "pointer", border: "none", background: canvasCupSide === v ? c : "transparent", color: canvasCupSide === v ? "#fff" : "#64748b", transition: "all 0.2s" }}>{label}</button>
-              ))}
-            </div>
-            {/* save button */}
-            <button
-              onClick={() => {
-                const data = { inclination, anteversion, side: canvasCupSide, zone: zoneLabel };
-                setSavedCupAssessment({ ...data, savedAt: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) });
-                setNotice(`Cup Assessment disimpan — INC ${inclination.toFixed(1)}°, AV ${anteversion.toFixed(1)}° (${canvasCupSide === "left" ? "Kiri" : "Kanan"})`);
-              }}
-              style={{ padding: "4px 12px", borderRadius: 9, border: "1px solid #16a34a", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
-            >💾 Simpan</button>
-            {/* info button */}
-            <button onClick={() => setCupInfoModalOpen(true)} title="Informasi Safe Zone" style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid rgba(56,189,248,0.4)", background: "rgba(56,189,248,0.12)", color: "#38bdf8", fontSize: 13, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>ℹ</button>
-            {/* reset + close */}
-            <button onClick={() => setCanvasCup(null)} style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Reset</button>
-            <button onClick={() => { setShowCupAssessment(false); setCanvasCup(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#475569", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>✕</button>
-          </div>
-        );
-      })()}
-
       {/* Cup Orientation Info Modal */}
       {cupInfoModalOpen && (() => {
         const rawDeg = canvasCup ? ((canvasCup.angle * 180 / Math.PI) % 180 + 180) % 180 : null;
@@ -35285,88 +35384,109 @@ export default function XrayCalibrationWorkspace({
         const ratio = canvasCup && canvasCup.a > 0 ? Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a)) : 0;
         const av = canvasCup ? (Math.asin(ratio) * 180) / Math.PI : null;
         const zone = inc != null ? cupZoneStatus(inc, av) : null;
+        if (cupInfoMinimized) {
+          return (
+            <button
+              onClick={() => setCupInfoMinimized(false)}
+              title="Buka Cup Orientation Guide"
+              style={{
+                position: "fixed", top: 84, right: 16, zIndex: 9999,
+                display: "flex", alignItems: "center", gap: 8,
+                background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.3)",
+                borderRadius: 16, padding: "8px 14px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.5)", cursor: "pointer",
+              }}
+            >
+              <span style={{ width: 24, height: 24, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#0369a1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>⊙</span>
+              <span style={{ fontSize: 11, fontWeight: 800, color: "#e2e8f0" }}>Cup Orientation Guide</span>
+            </button>
+          );
+        }
         return (
-          <div onClick={() => setCupInfoModalOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)", borderRadius: 20, width: "min(92vw,540px)", maxHeight: "90dvh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.7)" }}>
+          <div style={{ position: "fixed", top: 84, right: 16, maxHeight: "calc(100vh - 100px)", zIndex: 9999, width: "min(86vw,300px)", pointerEvents: "none" }}>
+            <div style={{ pointerEvents: "all", background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)", borderRadius: 16, maxHeight: "100%", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.6)" }}>
 
               {/* Header */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#0369a1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⊙</div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.04em" }}>Cup Orientation Guide</div>
-                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>Panduan posisi acetabular cup THA</div>
+              <div style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0f172a" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#0369a1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>⊙</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.03em" }}>Cup Orientation Guide</div>
+                    <div style={{ fontSize: 8.5, color: "#64748b", marginTop: 1 }}>Panduan posisi acetabular cup THA</div>
                   </div>
                 </div>
-                <button onClick={() => setCupInfoModalOpen(false)} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, width: 30, height: 30, cursor: "pointer", color: "#94a3b8", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                  <button onClick={() => setCupInfoMinimized(true)} title="Minimize" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 7, width: 22, height: 22, cursor: "pointer", color: "#94a3b8", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>–</button>
+                  <button onClick={() => setCupInfoModalOpen(false)} title="Tutup" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 7, width: 22, height: 22, cursor: "pointer", color: "#94a3b8", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                </div>
               </div>
 
-              <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
 
                 {/* Current reading */}
                 {inc != null && (
-                  <div style={{ background: zone.bg, border: `1.5px solid ${zone.border}`, borderRadius: 14, padding: "12px 16px" }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: zone.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Hasil Pengukuran Saat Ini</div>
-                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                      <div style={{ flex: 1, minWidth: 100, background: "rgba(255,255,255,0.7)", borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: "#78716c", textTransform: "uppercase", letterSpacing: "0.08em" }}>Inklinasi</div>
-                        <div style={{ fontSize: 26, fontWeight: 900, color: "#f97316", lineHeight: 1.1 }}>{inc.toFixed(1)}°</div>
-                        <div style={{ fontSize: 9, color: "#a8a29e" }}>Normal: 30–50°</div>
+                  <div style={{ background: zone.bg, border: `1.5px solid ${zone.border}`, borderRadius: 12, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 8.5, fontWeight: 800, color: zone.color, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Hasil Pengukuran Saat Ini</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 72, background: "rgba(255,255,255,0.7)", borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 700, color: "#78716c", textTransform: "uppercase", letterSpacing: "0.06em" }}>Inklinasi</div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: "#f97316", lineHeight: 1.1 }}>{inc.toFixed(1)}°</div>
+                        <div style={{ fontSize: 7.5, color: "#a8a29e" }}>Normal: 30–50°</div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 100, background: "rgba(255,255,255,0.7)", borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: "#78716c", textTransform: "uppercase", letterSpacing: "0.08em" }}>Anteversion</div>
-                        <div style={{ fontSize: 26, fontWeight: 900, color: "#0ea5e9", lineHeight: 1.1 }}>{av.toFixed(1)}°</div>
-                        <div style={{ fontSize: 9, color: "#a8a29e" }}>Normal: 5–25°</div>
+                      <div style={{ flex: 1, minWidth: 72, background: "rgba(255,255,255,0.7)", borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 700, color: "#78716c", textTransform: "uppercase", letterSpacing: "0.06em" }}>Anteversion</div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: "#0ea5e9", lineHeight: 1.1 }}>{av.toFixed(1)}°</div>
+                        <div style={{ fontSize: 7.5, color: "#a8a29e" }}>Normal: 5–25°</div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 100, background: zone.bg, border: `1px solid ${zone.border}`, borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: zone.color, textTransform: "uppercase", letterSpacing: "0.08em" }}>Status</div>
-                        <div style={{ fontSize: 13, fontWeight: 900, color: zone.color, marginTop: 4 }}>{zone.label}</div>
+                      <div style={{ flex: 1, minWidth: 72, background: zone.bg, border: `1px solid ${zone.border}`, borderRadius: 8, padding: "5px 8px", textAlign: "center" }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 700, color: zone.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>Status</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 900, color: zone.color, marginTop: 3 }}>{zone.label}</div>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* Safe Zone Chart */}
-                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Safe Zone Reference</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "9px 10px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Safe Zone Reference</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {/* Callanan optimal */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(22,163,74,0.12)", border: "1.5px solid rgba(22,163,74,0.3)" }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 9px", borderRadius: 10, background: "rgba(22,163,74,0.12)", border: "1.5px solid rgba(22,163,74,0.3)" }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "#4ade80" }}>Safe Zone Optimal (Callanan 2001)</div>
-                        <div style={{ fontSize: 10, color: "#86efac", marginTop: 2 }}>Inklinasi: 30–45°  ·  Anteversion: 10–25°</div>
+                        <div style={{ fontSize: 9.5, fontWeight: 800, color: "#4ade80" }}>Safe Zone Optimal (Callanan 2001)</div>
+                        <div style={{ fontSize: 8.5, color: "#86efac", marginTop: 1 }}>Inklinasi: 30–45°  ·  Anteversion: 10–25°</div>
                       </div>
                       {inc != null && inc >= 30 && inc <= 45 && av >= 10 && av <= 25 && (
-                        <span style={{ fontSize: 9, fontWeight: 800, color: "#16a34a", background: "#dcfce7", borderRadius: 6, padding: "2px 6px" }}>✓ Masuk</span>
+                        <span style={{ fontSize: 8, fontWeight: 800, color: "#16a34a", background: "#dcfce7", borderRadius: 5, padding: "1.5px 5px" }}>✓ Masuk</span>
                       )}
                     </div>
                     {/* Lewinnek */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(217,119,6,0.1)", border: "1.5px solid rgba(217,119,6,0.3)" }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#d97706", flexShrink: 0 }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 9px", borderRadius: 10, background: "rgba(217,119,6,0.1)", border: "1.5px solid rgba(217,119,6,0.3)" }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#d97706", flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "#fbbf24" }}>Safe Zone Lewinnek (1978)</div>
-                        <div style={{ fontSize: 10, color: "#fde68a", marginTop: 2 }}>Inklinasi: 30–50°  ·  Anteversion: 5–25°</div>
+                        <div style={{ fontSize: 9.5, fontWeight: 800, color: "#fbbf24" }}>Safe Zone Lewinnek (1978)</div>
+                        <div style={{ fontSize: 8.5, color: "#fde68a", marginTop: 1 }}>Inklinasi: 30–50°  ·  Anteversion: 5–25°</div>
                       </div>
                       {inc != null && inc >= 30 && inc <= 50 && av >= 5 && av <= 25 && !(inc >= 30 && inc <= 45 && av >= 10 && av <= 25) && (
-                        <span style={{ fontSize: 9, fontWeight: 800, color: "#d97706", background: "#fef3c7", borderRadius: 6, padding: "2px 6px" }}>~ Masuk</span>
+                        <span style={{ fontSize: 8, fontWeight: 800, color: "#d97706", background: "#fef3c7", borderRadius: 5, padding: "1.5px 5px" }}>~ Masuk</span>
                       )}
                     </div>
                     {/* Danger */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(220,38,38,0.08)", border: "1.5px solid rgba(220,38,38,0.2)" }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#dc2626", flexShrink: 0 }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 9px", borderRadius: 10, background: "rgba(220,38,38,0.08)", border: "1.5px solid rgba(220,38,38,0.2)" }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626", flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "#f87171" }}>Di Luar Safe Zone</div>
-                        <div style={{ fontSize: 10, color: "#fca5a5", marginTop: 2 }}>Risiko dislokasi, impingement, atau wear yang meningkat</div>
+                        <div style={{ fontSize: 9.5, fontWeight: 800, color: "#f87171" }}>Di Luar Safe Zone</div>
+                        <div style={{ fontSize: 8.5, color: "#fca5a5", marginTop: 1 }}>Risiko dislokasi, impingement, atau wear yang meningkat</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Diagram visual */}
-                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Diagram Safe Zone</div>
-                  <svg viewBox="0 0 300 220" style={{ width: "100%", maxWidth: 360, display: "block", margin: "0 auto" }}>
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "9px 10px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Diagram Safe Zone</div>
+                  <svg viewBox="0 0 300 220" style={{ width: "100%", maxWidth: 260, display: "block", margin: "0 auto" }}>
                     {/* grid */}
                     {[0,10,20,30,40,50,60,70].map(v => (
                       <line key={v} x1={20 + v * 3.5} y1={10} x2={20 + v * 3.5} y2={200} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>
@@ -35417,26 +35537,26 @@ export default function XrayCalibrationWorkspace({
                 </div>
 
                 {/* Definisi */}
-                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em" }}>Definisi</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.2)", borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: "#f97316", marginBottom: 4 }}>Inklinasi (Abduction)</div>
-                      <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5 }}>Sudut cup terhadap bidang horizontal pelvis. Diukur dari sumbu mayor elips pada radiografi AP.</div>
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "9px 10px", border: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>Definisi</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    <div style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.2)", borderRadius: 8, padding: "7px 9px" }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 900, color: "#f97316", marginBottom: 3 }}>Inklinasi (Abduction)</div>
+                      <div style={{ fontSize: 8.5, color: "#94a3b8", lineHeight: 1.4 }}>Sudut cup terhadap bidang horizontal pelvis. Diukur dari sumbu mayor elips pada radiografi AP.</div>
                     </div>
-                    <div style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 900, color: "#0ea5e9", marginBottom: 4 }}>Anteversion (Murray)</div>
-                      <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5 }}>Sudut rotasi cup ke depan. Dihitung dari rasio sumbu minor/mayor: arcsin(b/a).</div>
+                    <div style={{ background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 8, padding: "7px 9px" }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 900, color: "#0ea5e9", marginBottom: 3 }}>Anteversion (Murray)</div>
+                      <div style={{ fontSize: 8.5, color: "#94a3b8", lineHeight: 1.4 }}>Sudut rotasi cup ke depan. Dihitung dari rasio sumbu minor/mayor: arcsin(b/a).</div>
                     </div>
                   </div>
-                  <div style={{ fontSize: 10, color: "#475569", padding: "8px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 8, lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 8.5, color: "#475569", padding: "6px 9px", background: "rgba(255,255,255,0.03)", borderRadius: 7, lineHeight: 1.5 }}>
                     <span style={{ color: "#64748b", fontWeight: 700 }}>Formula:</span> Anteversion = arcsin(b/a)  ·  b = sumbu minor,  a = sumbu mayor (radiografik Murray 1993)
                   </div>
                 </div>
 
                 {/* Klinisi */}
-                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Pertimbangan Klinis</div>
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "9px 10px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>Pertimbangan Klinis</div>
                   {[
                     { icon: "⚠", color: "#f59e0b", title: "Inklinasi terlalu tinggi (>50°)", desc: "Meningkatkan risiko impingement superior dan edge loading polietilen." },
                     { icon: "⚠", color: "#f59e0b", title: "Inklinasi terlalu rendah (<30°)", desc: "Dapat menyebabkan impingement inferior dan keterbatasan range of motion." },
@@ -35444,18 +35564,18 @@ export default function XrayCalibrationWorkspace({
                     { icon: "⚠", color: "#ef4444", title: "Anteversion kurang (<5°)", desc: "Risiko dislokasi anterior, impingement anterior dalam ekstensi-rotasi eksternal." },
                     { icon: "✓", color: "#22c55e", title: "Combined anteversion", desc: "Pertimbangkan anteversion femoral stem + cup secara total (target: 25–50°)." },
                   ].map((item, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start" }}>
-                      <span style={{ color: item.color, fontSize: 13, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
+                    <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start" }}>
+                      <span style={{ color: item.color, fontSize: 11, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
                       <div>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: "#cbd5e1" }}>{item.title}</div>
-                        <div style={{ fontSize: 9, color: "#64748b", marginTop: 2, lineHeight: 1.5 }}>{item.desc}</div>
+                        <div style={{ fontSize: 8.5, fontWeight: 800, color: "#cbd5e1" }}>{item.title}</div>
+                        <div style={{ fontSize: 8, color: "#64748b", marginTop: 1, lineHeight: 1.4 }}>{item.desc}</div>
                       </div>
                     </div>
                   ))}
                 </div>
 
                 {/* Footer */}
-                <div style={{ fontSize: 9, color: "#334155", textAlign: "center", lineHeight: 1.6, padding: "0 4px" }}>
+                <div style={{ fontSize: 7.5, color: "#334155", textAlign: "center", lineHeight: 1.5, padding: "0 4px" }}>
                   Referensi: Lewinnek et al. 1978 · Callanan et al. 2011 · Murray 1993 · Widmer 2004<br/>
                   <span style={{ color: "#1e3a5f" }}>Alat bantu perencanaan — bukan pengganti penilaian klinis dokter.</span>
                 </div>
@@ -35473,7 +35593,9 @@ export default function XrayCalibrationWorkspace({
         lines={lines}
         mmPerPixel={mmPerPixel}
         implantLibraryItems={cutLayers.map((l) => l.implantLibraryItem).filter(Boolean)}
-        onSelectImplant={(id) => {
+        onSelectImplant={(item) => {
+          if (item?.type) setSelectedImplantType(item.type);
+          if (item?.id) setSelectedImplantLibraryId(item.id);
           setImplantSizePanelOpen(false);
         }}
       />

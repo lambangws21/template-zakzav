@@ -19,7 +19,6 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
 
 // ─── icon + color maps ────────────────────────────────────────────────────────
 
@@ -153,7 +152,6 @@ function Tooltip({ label, desc, visible }) {
 // ─── ToolBtn ──────────────────────────────────────────────────────────────────
 
 function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
-  const [hovered, setHovered] = useState(false);
   const ToolIcon = getToolIcon(item);
   const accent   = TOOL_ACCENT[item.key] || TOOL_ACCENT.draw;
   const idleClr  = IDLE_ICON_COLOR[item.key] || "text-slate-400";
@@ -162,10 +160,8 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
     <motion.button
       type="button"
       onClick={() => onSelect(item)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={`relative flex flex-col items-center justify-center gap-1 rounded-2xl p-2 transition-all ${
-        fullWidth ? "w-full flex-row gap-2.5 px-3 py-2.5 justify-start" : "aspect-square w-full"
+      className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl p-1.5 transition-all ${
+        fullWidth ? "w-full flex-row gap-2 px-2.5 py-2 justify-start" : "aspect-square w-full"
       } ${
         isActive
           ? `${accent.bg} ${accent.accent} ${accent.glow} ${accent.text}`
@@ -177,10 +173,10 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
       {...TAP}
       layout
     >
-      <span className={`flex shrink-0 items-center justify-center ${fullWidth ? "h-7 w-7 rounded-xl" : "h-6 w-6"} ${
+      <span className={`flex shrink-0 items-center justify-center ${fullWidth ? "h-7 w-7 rounded-xl" : "h-7 w-7"} ${
         isActive ? "" : `rounded-xl bg-slate-50/80 shadow-inner ${idleClr}`
       }`}>
-        <ToolIcon className={fullWidth ? "h-3.5 w-3.5" : "h-4 w-4"} />
+        <ToolIcon className={fullWidth ? "h-4 w-4" : "h-5 w-5"} />
       </span>
       <span className={`leading-none truncate ${
         fullWidth
@@ -189,7 +185,6 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
       } ${isActive ? "" : "text-slate-600"}`}>
         {item.label}
       </span>
-      {!fullWidth && <Tooltip label={item.label} desc={item.desc} visible={hovered} />}
     </motion.button>
   );
 }
@@ -227,14 +222,14 @@ export default function PanelActions({
 
   return (
     <motion.div
-      className={`w-[min(84vw,196px)] rounded-[26px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
+      className={`w-[min(84vw,196px)] rounded-[16px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
       variants={PANEL_V}
       initial="hidden"
       animate="visible"
       exit="exit"
     >
       {/* ── Header ─── */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200/40 px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200/40 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <AnimatePresence mode="wait">
             {activeItem ? (
@@ -283,7 +278,7 @@ export default function PanelActions({
       </div>
 
       {/* ── Undo / Redo ─── */}
-      <motion.div className="flex items-center gap-2 border-b border-slate-200/40 px-3.5 py-2" variants={GROUP_V}>
+      <motion.div className="flex items-center gap-2 border-b border-slate-200/40 px-2.5 py-1.5" variants={GROUP_V}>
         <motion.button
           type="button" onClick={onUndo} disabled={!canUndo}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/60 py-1.5 text-[9px] font-black text-slate-600 shadow-[2px_2px_4px_rgba(148,163,184,0.2),-1px_-1px_3px_rgba(255,255,255,0.9)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -301,37 +296,28 @@ export default function PanelActions({
       </motion.div>
 
       {/* ── Tool groups ─── */}
-      <div className="space-y-3 px-3 py-3">
+      <div className="space-y-2 px-2 py-2">
         {groups.map((group) => {
           const meta = GROUP_META[group.key] || { label: group.key, color: "text-slate-400" };
           const isSingle = group.items.length === 1;
           return (
-            <motion.div key={group.key} className="space-y-1.5" variants={GROUP_V}>
+            <motion.div key={group.key} className="space-y-1" variants={GROUP_V}>
               <div className="flex items-center gap-1.5 px-0.5">
                 <span className={`text-[7px] font-black uppercase tracking-widest ${meta.color}`}>
                   {meta.label}
                 </span>
                 <div className="h-px flex-1 bg-slate-200/60" />
               </div>
-              {isSingle ? (
-                <ToolBtn
-                  item={group.items[0]}
-                  isActive={isItemActive(group.items[0])}
-                  onSelect={(item) => onSelectTool?.(item)}
-                  fullWidth
-                />
-              ) : (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {group.items.map((item) => (
-                    <ToolBtn
-                      key={item.key}
-                      item={item}
-                      isActive={isItemActive(item)}
-                      onSelect={(item) => onSelectTool?.(item)}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="grid grid-cols-2 gap-1">
+                {group.items.map((item) => (
+                  <ToolBtn
+                    key={item.key}
+                    item={item}
+                    isActive={isItemActive(item)}
+                    onSelect={(item) => onSelectTool?.(item)}
+                  />
+                ))}
+              </div>
             </motion.div>
           );
         })}

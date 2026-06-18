@@ -44,12 +44,12 @@
   --soft-inset-bg:   linear-gradient(180deg,#eef2f7 0%,#f9fbfd 100%);
   --soft-float-bg:   linear-gradient(180deg,rgba(244,247,251,0.92) 0%,rgba(229,236,244,0.9) 100%);
 
-  --soft-shadow-surface: 10px 10px 22px rgba(71,85,105,0.18),-2px -2px 8px rgba(255,255,255,0.34);
-  --soft-shadow-raised:  6px 6px 14px rgba(71,85,105,0.18),-2px -2px 8px rgba(255,255,255,0.28);
-  --soft-shadow-pressed: inset 6px 6px 12px rgba(71,85,105,0.14),inset -3px -3px 8px rgba(255,255,255,0.3);
-  --soft-shadow-inset:   inset 6px 6px 12px rgba(71,85,105,0.12),inset -3px -3px 8px rgba(255,255,255,0.26);
-  --soft-shadow-float:   0 12px 28px rgba(15,23,42,0.3),0 1px 4px rgba(255,255,255,0.08);
-  --soft-shadow-primary: 8px 8px 18px rgba(16,185,129,0.12),-2px -2px 6px rgba(255,255,255,0.24);
+  --soft-shadow-surface: 4px 4px 10px rgba(71,85,105,0.14),-2px -2px 6px rgba(255,255,255,0.30);
+  --soft-shadow-raised:  3px 3px 7px rgba(71,85,105,0.14),-2px -2px 5px rgba(255,255,255,0.26);
+  --soft-shadow-pressed: inset 3px 3px 6px rgba(71,85,105,0.12),inset -2px -2px 5px rgba(255,255,255,0.28);
+  --soft-shadow-inset:   inset 3px 3px 6px rgba(71,85,105,0.10),inset -2px -2px 5px rgba(255,255,255,0.24);
+  --soft-shadow-float:   0 6px 16px rgba(15,23,42,0.20),0 1px 3px rgba(255,255,255,0.06);
+  --soft-shadow-primary: 3px 3px 8px rgba(16,185,129,0.10),-2px -2px 5px rgba(255,255,255,0.22);
 
   --soft-primary-bg:     linear-gradient(180deg,#ddfff2 0%,#c5f3e6 100%);
   --soft-primary-border: #d8fff1;
@@ -77,12 +77,12 @@
   --soft-inset-bg:   linear-gradient(180deg,#101928 0%,#141d2e 100%);
   --soft-float-bg:   linear-gradient(180deg,rgba(26,36,56,0.96) 0%,rgba(16,25,40,0.94) 100%);
 
-  --soft-shadow-surface: 8px 8px 20px rgba(0,5,20,0.70), -3px -3px 10px rgba(55,80,140,0.28);
-  --soft-shadow-raised:  5px 5px 12px rgba(0,5,20,0.65), -3px -3px 8px  rgba(55,80,140,0.24);
-  --soft-shadow-pressed: inset 5px 5px 12px rgba(0,5,20,0.60), inset -2px -2px 6px rgba(55,80,140,0.20);
-  --soft-shadow-inset:   inset 5px 5px 12px rgba(0,5,20,0.55), inset -2px -2px 6px rgba(55,80,140,0.18);
-  --soft-shadow-float:   0 16px 40px rgba(0,5,20,0.70), 0 2px 6px rgba(55,80,140,0.20);
-  --soft-shadow-primary: 8px 8px 18px rgba(16,185,129,0.08),-2px -2px 6px rgba(40,65,100,0.16);
+  --soft-shadow-surface: 4px 4px 10px rgba(0,5,20,0.60), -2px -2px 6px rgba(55,80,140,0.22);
+  --soft-shadow-raised:  3px 3px 7px rgba(0,5,20,0.55), -2px -2px 5px rgba(55,80,140,0.18);
+  --soft-shadow-pressed: inset 3px 3px 7px rgba(0,5,20,0.55), inset -1px -1px 4px rgba(55,80,140,0.16);
+  --soft-shadow-inset:   inset 3px 3px 7px rgba(0,5,20,0.50), inset -1px -1px 4px rgba(55,80,140,0.14);
+  --soft-shadow-float:   0 8px 24px rgba(0,5,20,0.60), 0 1px 4px rgba(55,80,140,0.16);
+  --soft-shadow-primary: 3px 3px 8px rgba(16,185,129,0.07),-2px -2px 5px rgba(40,65,100,0.14);
 
   --soft-primary-bg:     linear-gradient(180deg,#0d4a35 0%,#083526 100%);
   --soft-primary-border: #0d6e50;
@@ -91,11 +91,19 @@
   --soft-text-hi: #f0f6ff;
 }
 
+/* ─── Smooth color transition app-wide saat ganti dark/light mode ─────────── */
+*,
+*::before,
+*::after {
+  transition: background-color 280ms ease, border-color 280ms ease,
+    color 280ms ease, box-shadow 280ms ease, fill 280ms ease, stroke 280ms ease;
+}
+
 /* ─── Body background responds to theme ───────────────────────────────────── */
 body {
   background-color: var(--color-body-bg);
   color: var(--color-text-base);
-  transition: background-color 200ms ease, color 200ms ease;
+  transition: background-color 280ms ease, color 280ms ease;
 }
 
 /* ─── Text color overrides for dark mode ──────────────────────────────────── */
@@ -351,3 +359,37 @@ summary::-webkit-details-marker { display: none }
   z-index: -1;
   background-position-x: center;
 }
+
+/* ── Mobile object-settings panel — dark mode ───────────────────────────── */
+[data-theme="dark"] [data-mobj] button {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: rgba(255,255,255,0.14) !important;
+  color: #c8d5e8 !important;
+  box-shadow: none !important;
+}
+[data-theme="dark"] [data-mobj] .bg-rose-50 {
+  background: rgba(239,68,68,0.12) !important;
+}
+[data-theme="dark"] [data-mobj] .border-rose-200 {
+  border-color: rgba(239,68,68,0.30) !important;
+  color: #f87171 !important;
+}
+[data-theme="dark"] [data-mobj] input:not([type="range"]):not([type="color"]),
+[data-theme="dark"] [data-mobj] textarea {
+  background: rgba(10,18,35,0.75) !important;
+  border-color: rgba(255,255,255,0.14) !important;
+  color: #c8d5e8 !important;
+  box-shadow: none !important;
+}
+[data-theme="dark"] [data-mobj] label {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  color: #c8d5e8 !important;
+}
+[data-theme="dark"] [data-mobj] .text-cyan-800 { color: #38bdf8 !important; }
+[data-theme="dark"] [data-mobj] .text-rose-600 { color: #f87171 !important; }
+[data-theme="dark"] [data-mobj] .text-slate-800 { color: #e2e8f0 !important; }
+[data-theme="dark"] [data-mobj] .text-slate-700 { color: #b0c4db !important; }
+[data-theme="dark"] [data-mobj] .text-slate-600 { color: #8ba3be !important; }
+[data-theme="dark"] [data-mobj] .text-slate-500,
+[data-theme="dark"] [data-mobj] .text-slate-400 { color: #64748b !important; }

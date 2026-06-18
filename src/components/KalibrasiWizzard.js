@@ -98,13 +98,34 @@ export default function CalibrationWizard({
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
     >
       <style dangerouslySetInnerHTML={{ __html: `
-        .calib-neu-flat { background: #eef2f7; box-shadow: 3px 3px 8px #cbd5e1, -3px -3px 8px #ffffff; }
-        .calib-neu-pressed { background: #eef2f7; box-shadow: inset 2px 2px 5px #cbd5e1, inset -2px -2px 5px #ffffff; }
-        .calib-neu-card { background: #eef2f7; box-shadow: 8px 8px 16px rgba(148,163,184,0.55), -8px -8px 16px rgba(255,255,255,0.86); border: 1px solid rgba(255,255,255,0.8); }
-        .calib-neu-button { background: #eef2f7; box-shadow: 2px 2px 5px #cbd5e1, -2px -2px 5px #ffffff; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.68); }
-        .calib-neu-button:active { box-shadow: inset 2px 2px 4px #cbd5e1, inset -2px -2px 4px #ffffff; transform: translateY(1px); }
-        .calib-neu-input { background: #edf1f6; box-shadow: inset 2px 2px 4px #c4cfdc, inset -2px -2px 4px #ffffff; border: 1px solid white; }
-        .calib-active-blue { background: #3b82f6; color: white !important; box-shadow: inset 2px 2px 4px rgba(0,0,0,0.2); }
+        /* ── Light mode ── */
+        .calib-neu-flat    { background: #eef2f7; box-shadow: 2px 2px 5px #cbd5e1, -2px -2px 5px #ffffff; }
+        .calib-neu-pressed { background: #eef2f7; box-shadow: inset 2px 2px 4px #cbd5e1, inset -2px -2px 4px #ffffff; }
+        .calib-neu-card    { background: #eef2f7; box-shadow: 4px 4px 10px rgba(148,163,184,0.40), -4px -4px 10px rgba(255,255,255,0.80); border: 1px solid rgba(255,255,255,0.8); }
+        .calib-neu-button  { background: #eef2f7; box-shadow: 2px 2px 4px #cbd5e1, -2px -2px 4px #ffffff; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.68); }
+        .calib-neu-button:active { box-shadow: inset 1px 1px 3px #cbd5e1, inset -1px -1px 3px #ffffff; transform: translateY(1px); }
+        .calib-neu-input   { background: #edf1f6; box-shadow: inset 2px 2px 4px #c4cfdc, inset -2px -2px 4px #ffffff; border: 1px solid white; }
+        .calib-active-blue { background: #3b82f6; color: white !important; box-shadow: inset 1px 1px 3px rgba(0,0,0,0.2); }
+
+        /* ── Dark mode ── */
+        [data-theme="dark"] .calib-neu-card    { background: #1a2438; box-shadow: 4px 4px 12px rgba(0,5,20,0.65), -2px -2px 6px rgba(50,75,130,0.18); border: 1px solid rgba(255,255,255,0.09); color: #c8d5e8; }
+        [data-theme="dark"] .calib-neu-flat    { background: #1e2840; box-shadow: 2px 2px 5px rgba(0,5,20,0.50), -1px -1px 4px rgba(50,75,130,0.16); }
+        [data-theme="dark"] .calib-neu-pressed { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,0.55), inset -1px -1px 3px rgba(50,75,130,0.14); }
+        [data-theme="dark"] .calib-neu-button  { background: #1e2840; box-shadow: 2px 2px 4px rgba(0,5,20,0.50), -1px -1px 3px rgba(50,75,130,0.16); border: 1px solid rgba(255,255,255,0.09); color: #94a3b8; }
+        [data-theme="dark"] .calib-neu-button:active { box-shadow: inset 1px 1px 3px rgba(0,5,20,0.55); color: #c8d5e8; }
+        [data-theme="dark"] .calib-neu-input   { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,0.55), inset -1px -1px 3px rgba(50,75,130,0.12); border: 1px solid rgba(255,255,255,0.08); color: #c8d5e8; }
+        [data-theme="dark"] .calib-active-blue { background: #2563eb; color: white !important; }
+
+        /* ── Text color overrides for dark ── */
+        [data-theme="dark"] .calib-neu-card h1,
+        [data-theme="dark"] .calib-neu-card .text-slate-800 { color: #c8d5e8 !important; }
+        [data-theme="dark"] .calib-neu-card .text-slate-700 { color: #94a3b8 !important; }
+        [data-theme="dark"] .calib-neu-card .text-slate-600 { color: #7f96b2 !important; }
+        [data-theme="dark"] .calib-neu-card .text-slate-500 { color: #64748b !important; }
+        [data-theme="dark"] .calib-neu-card .text-slate-400 { color: #4e6280 !important; }
+        [data-theme="dark"] .calib-neu-card .bg-slate-200  { background: #1e2840 !important; }
+        [data-theme="dark"] .calib-neu-card .bg-blue-50    { background: rgba(37,99,235,0.12) !important; }
+        [data-theme="dark"] .calib-neu-card .border-white\/60 { border-color: rgba(255,255,255,0.09) !important; }
       ` }} />
 
       <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[32px] p-5 text-slate-800 calib-neu-card sm:p-6">

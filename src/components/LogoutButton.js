@@ -40,6 +40,37 @@ export default function LogoutButton({ collapsed = false, variant = "sidebar" })
     );
   }
 
+  if (variant === "compact") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          title="Logout"
+          style={{
+            background: isDark ? "rgba(248,113,113,0.12)" : "rgba(239,68,68,0.08)",
+            border: isDark ? "1px solid rgba(248,113,113,0.22)" : "1px solid rgba(239,68,68,0.18)",
+            color: "#f87171",
+            boxShadow: isDark ? "inset 0 1px 0 rgba(255,255,255,0.06)" : "0 1px 3px rgba(239,68,68,0.12)",
+          }}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
+
+        <AnimatePresence>
+          {confirming && (
+            <ConfirmDialog
+              isDark={isDark}
+              onConfirm={handleConfirm}
+              onCancel={() => setConfirming(false)}
+            />
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
   // sidebar variant
   return (
     <>

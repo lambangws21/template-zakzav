@@ -206,7 +206,7 @@ export default function QuickPanel({
     <>
     <motion.div
       {...PANEL_ENTER}
-      className={`w-[min(84vw,300px)] shrink-0 overflow-hidden rounded-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
+      className={`w-[min(84vw,300px)] shrink-0 overflow-hidden rounded-[15px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
     >
       {/* ── Header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-200/50 px-4 py-3">
@@ -294,40 +294,37 @@ export default function QuickPanel({
         </div>
 
         {/* ── Tombol utama ─────────────────── */}
-        <motion.div
-          variants={STAGGER_LIST}
-          initial="initial"
-          animate="animate"
-          className="grid grid-cols-2 gap-2"
-        >
-          {[
-            { label: "Kalibrasi", icon: Scaling, iconCls: "text-emerald-500", action: onCalibration },
-            { label: "Layer Kosong", icon: Layers, iconCls: "text-indigo-500", action: onCreateLayer, disabled: !canCreateLayer },
-            { label: "Panduan", icon: Compass, active: activeToolKey === "guideBuilder", action: onGuide },
-            { label: "Move", icon: Move, active: activeToolKey === "move", action: onMove },
-            { label: "TKA", imageSrc: "/images/quick-panel/tka-icon.png", action: onOpenTka },
-            { label: "HIP", imageSrc: "/images/quick-panel/hip-icon.png", action: onOpenHip },
-            { label: "Undo", icon: History, iconCls: "text-slate-500", action: onHistory, disabled: !canHistory },
-            { label: "Reset", icon: RotateCcw, danger: true, action: onReset },
-          ].map((item) => (
-            <motion.div key={item.label} variants={STAGGER_ITEM}>
-              <Btn
-                icon={item.icon}
-                iconCls={item.iconCls}
-                active={item.active}
-                danger={item.danger}
-                disabled={item.disabled}
-                onClick={item.action}
-                className="w-full py-2.5"
-              >
-                {item.imageSrc ? (
-                  <img src={item.imageSrc} alt={item.label} className="h-5 w-5 rounded-lg object-cover" />
-                ) : null}
-                {item.label}
-              </Btn>
-            </motion.div>
-          ))}
-        </motion.div>
+        <div className="space-y-2">
+          {/* SETUP */}
+          <p className="px-0.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">Setup</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Btn icon={Scaling} iconCls="text-emerald-500" onClick={onCalibration} className="py-2.5">Kalibrasi</Btn>
+            <Btn icon={Layers} iconCls="text-indigo-500" onClick={onCreateLayer} disabled={!canCreateLayer} className="py-2.5">Layer Kosong</Btn>
+          </div>
+          {/* TOOLS */}
+          <p className="px-0.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">Alat</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Btn icon={Compass} active={activeToolKey === "guideBuilder"} onClick={onGuide} className="py-2.5">Panduan</Btn>
+            <Btn icon={Move} active={activeToolKey === "move"} onClick={onMove} className="py-2.5">Move</Btn>
+          </div>
+          {/* PLANNING */}
+          <p className="px-0.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">Planning</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Btn onClick={onOpenTka} className="py-2.5">
+              <img src="/images/quick-panel/tka-icons.svg" alt="TKA" className="h-4 w-4 shrink-0 object-contain" />
+              TKA
+            </Btn>
+            <Btn onClick={onOpenHip} className="py-2.5">
+              <img src="/images/quick-panel/hip-icon.svg" alt="HIP" className="h-4 w-4 shrink-0 object-contain" />
+              HIP
+            </Btn>
+          </div>
+          {/* RIWAYAT */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <Btn icon={History} iconCls="text-slate-500" onClick={onHistory} disabled={!canHistory} className="py-2.5">Undo</Btn>
+            <Btn icon={RotateCcw} danger onClick={onReset} className="py-2.5">Reset</Btn>
+          </div>
+        </div>
 
         {/* ── Actions (expandable) ─────────── */}
         <div className="space-y-1.5">

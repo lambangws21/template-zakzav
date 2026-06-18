@@ -1,0 +1,1230 @@
+{
+  "system": "Zimmer M/L Taper Hip Prosthesis",
+  "unit": "mm",
+  "headNeckOptions": [
+    "-3.5",
+    "+0",
+    "+3.5",
+    "+7",
+    "+10.5"
+  ],
+  "fields": {
+    "stemSizeMm": "A",
+    "stemLengthMm": "B",
+    "neckLengthMm": "C for standard offset / E for extended offset",
+    "stemOffsetMm": "D for standard offset / F for extended offset"
+  },
+  "variants": {
+    "offsetType": [
+      "standard",
+      "extended"
+    ],
+    "neckVariant": [
+      "normal",
+      "reduced"
+    ]
+  },
+  "notes": [
+    "Reduced pada tabel ini berarti Reduced Neck Length, bukan reduced offset.",
+    "Extended Offset pada Zimmer M/L Taper menambah lateral translation/offset sekitar 5 mm dibanding standard pada konteks templating.",
+    "Reduced Neck Length specific rows tersedia untuk size 4 sampai 12.5. Size 13.5 ke atas pada brosur reduced diberi tanda Original Zimmer M/L Taper Hip Prosthesis / Not Reduced Neck Length, sehingga diwakili oleh varian normal.",
+    "Beberapa row size 4 memiliki product number dan dimensi yang sama antara tabel original dan tabel reduced; data dibiarkan terpisah agar pilihan UI tetap bisa menampilkan konteks source table.",
+    "Gunakan data ini untuk education/templating app. Untuk keputusan klinis final, cocokkan ulang dengan katalog/IFU resmi dan keputusan dokter operator."
+  ],
+  "sources": [
+    {
+      "name": "Zimmer M/L Taper Hip Prosthesis Surgical Technique",
+      "documentCode": "97-7711-202-00",
+      "sourceTable": "Zimmer M/L Taper Hip Prosthesis Dimensions"
+    },
+    {
+      "name": "Zimmer M/L Taper Hip Prosthesis Reduced Neck Length Surgical Technique",
+      "documentCode": "97-7711-004-00 Rev. 1",
+      "sourceTable": "Zimmer M/L Taper Hip Prosthesis Reduced Neck Length"
+    }
+  ],
+  "items": [
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-004-10",
+      "haTcpProductNo": "65-7711-004-10",
+      "stemSizeMm": 4,
+      "stemLengthMm": 107,
+      "neckLengthMm": {
+        "-3.5": 28,
+        "+0": 32,
+        "+3.5": 35,
+        "+7": 39,
+        "+10.5": 42
+      },
+      "stemOffsetMm": {
+        "-3.5": 33,
+        "+0": 35,
+        "+3.5": 38,
+        "+7": 40,
+        "+10.5": 43
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": [
+        "Size 4 standard has the same product number and dimensions as the reduced-neck table row."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-005-00",
+      "haTcpProductNo": "65-7711-005-00",
+      "stemSizeMm": 5,
+      "stemLengthMm": 109,
+      "neckLengthMm": {
+        "-3.5": 33,
+        "+0": 37,
+        "+3.5": 40,
+        "+7": 44,
+        "+10.5": 47
+      },
+      "stemOffsetMm": {
+        "-3.5": 37,
+        "+0": 40,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 48
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-006-00",
+      "haTcpProductNo": "65-7711-006-00",
+      "stemSizeMm": 6,
+      "stemLengthMm": 111,
+      "neckLengthMm": {
+        "-3.5": 33,
+        "+0": 37,
+        "+3.5": 40,
+        "+7": 44,
+        "+10.5": 47
+      },
+      "stemOffsetMm": {
+        "-3.5": 38,
+        "+0": 40,
+        "+3.5": 43,
+        "+7": 46,
+        "+10.5": 48
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-007-00",
+      "haTcpProductNo": "65-7711-007-00",
+      "stemSizeMm": 7.5,
+      "stemLengthMm": 114,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 40,
+        "+0": 43,
+        "+3.5": 45,
+        "+7": 48,
+        "+10.5": 50
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-009-00",
+      "haTcpProductNo": "65-7711-009-00",
+      "stemSizeMm": 9,
+      "stemLengthMm": 117,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 41,
+        "+0": 43,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 51
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-010-00",
+      "haTcpProductNo": "65-7711-010-00",
+      "stemSizeMm": 10,
+      "stemLengthMm": 119,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 41,
+        "+0": 44,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-011-00",
+      "haTcpProductNo": "65-7711-011-00",
+      "stemSizeMm": 11,
+      "stemLengthMm": 121,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 42,
+        "+0": 44,
+        "+3.5": 47,
+        "+7": 50,
+        "+10.5": 52
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-012-00",
+      "haTcpProductNo": "65-7711-012-00",
+      "stemSizeMm": 12.5,
+      "stemLengthMm": 124,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 42,
+        "+0": 45,
+        "+3.5": 48,
+        "+7": 50,
+        "+10.5": 53
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-013-00",
+      "haTcpProductNo": "65-7711-013-00",
+      "stemSizeMm": 13.5,
+      "stemLengthMm": 126,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 43,
+        "+0": 46,
+        "+3.5": 48,
+        "+7": 51,
+        "+10.5": 53
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-015-00",
+      "haTcpProductNo": "65-7711-015-00",
+      "stemSizeMm": 15,
+      "stemLengthMm": 129,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 44,
+        "+0": 46,
+        "+3.5": 49,
+        "+7": 52,
+        "+10.5": 54
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-016-00",
+      "haTcpProductNo": "65-7711-016-00",
+      "stemSizeMm": 16.25,
+      "stemLengthMm": 132,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 39,
+        "+3.5": 42,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 44,
+        "+0": 47,
+        "+3.5": 49,
+        "+7": 52,
+        "+10.5": 54
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-017-00",
+      "haTcpProductNo": "65-7711-017-00",
+      "stemSizeMm": 17.5,
+      "stemLengthMm": 134,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 45,
+        "+0": 48,
+        "+3.5": 50,
+        "+7": 53,
+        "+10.5": 55
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-020-00",
+      "haTcpProductNo": "65-7711-020-00",
+      "stemSizeMm": 20,
+      "stemLengthMm": 139,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 45,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 46,
+        "+0": 49,
+        "+3.5": 51,
+        "+7": 54,
+        "+10.5": 57
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-022-00",
+      "haTcpProductNo": "65-7711-022-00",
+      "stemSizeMm": 22.5,
+      "stemLengthMm": 144,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 42,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 47,
+        "+0": 50,
+        "+3.5": 53,
+        "+7": 55,
+        "+10.5": 58
+      },
+      "sourceTable": "original_dimensions_standard_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-004-40",
+      "haTcpProductNo": "65-7711-004-40",
+      "stemSizeMm": 4,
+      "stemLengthMm": 107,
+      "neckLengthMm": {
+        "-3.5": 32,
+        "+0": 35,
+        "+3.5": 39,
+        "+7": 42,
+        "+10.5": 46
+      },
+      "stemOffsetMm": {
+        "-3.5": 38,
+        "+0": 40,
+        "+3.5": 43,
+        "+7": 45,
+        "+10.5": 48
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": [
+        "Size 4 extended has the same product number and dimensions as the reduced-neck extended table row."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-005-20",
+      "haTcpProductNo": "65-7711-005-20",
+      "stemSizeMm": 5,
+      "stemLengthMm": 109,
+      "neckLengthMm": {
+        "-3.5": 37,
+        "+0": 40,
+        "+3.5": 44,
+        "+7": 47,
+        "+10.5": 51
+      },
+      "stemOffsetMm": {
+        "-3.5": 42,
+        "+0": 45,
+        "+3.5": 47,
+        "+7": 50,
+        "+10.5": 53
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-006-20",
+      "haTcpProductNo": "65-7711-006-20",
+      "stemSizeMm": 6,
+      "stemLengthMm": 111,
+      "neckLengthMm": {
+        "-3.5": 37,
+        "+0": 40,
+        "+3.5": 44,
+        "+7": 47,
+        "+10.5": 51
+      },
+      "stemOffsetMm": {
+        "-3.5": 43,
+        "+0": 45,
+        "+3.5": 48,
+        "+7": 51,
+        "+10.5": 53
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-007-20",
+      "haTcpProductNo": "65-7711-007-20",
+      "stemSizeMm": 7.5,
+      "stemLengthMm": 114,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 45,
+        "+0": 48,
+        "+3.5": 50,
+        "+7": 53,
+        "+10.5": 55
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-009-20",
+      "haTcpProductNo": "65-7711-009-20",
+      "stemSizeMm": 9,
+      "stemLengthMm": 117,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 46,
+        "+0": 48,
+        "+3.5": 51,
+        "+7": 54,
+        "+10.5": 56
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-010-20",
+      "haTcpProductNo": "65-7711-010-20",
+      "stemSizeMm": 10,
+      "stemLengthMm": 119,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 46,
+        "+0": 49,
+        "+3.5": 51,
+        "+7": 54,
+        "+10.5": 57
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-011-20",
+      "haTcpProductNo": "65-7711-011-20",
+      "stemSizeMm": 11,
+      "stemLengthMm": 121,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 53
+      },
+      "stemOffsetMm": {
+        "-3.5": 47,
+        "+0": 49,
+        "+3.5": 52,
+        "+7": 55,
+        "+10.5": 57
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-012-20",
+      "haTcpProductNo": "65-7711-012-20",
+      "stemSizeMm": 12.5,
+      "stemLengthMm": 124,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 47,
+        "+0": 50,
+        "+3.5": 53,
+        "+7": 55,
+        "+10.5": 58
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-013-20",
+      "haTcpProductNo": "65-7711-013-20",
+      "stemSizeMm": 13.5,
+      "stemLengthMm": 126,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 48,
+        "+0": 51,
+        "+3.5": 53,
+        "+7": 56,
+        "+10.5": 58
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-015-20",
+      "haTcpProductNo": "65-7711-015-20",
+      "stemSizeMm": 15,
+      "stemLengthMm": 129,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 53
+      },
+      "stemOffsetMm": {
+        "-3.5": 49,
+        "+0": 51,
+        "+3.5": 54,
+        "+7": 57,
+        "+10.5": 59
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-016-20",
+      "haTcpProductNo": "65-7711-016-20",
+      "stemSizeMm": 16.25,
+      "stemLengthMm": 132,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 53
+      },
+      "stemOffsetMm": {
+        "-3.5": 49,
+        "+0": 52,
+        "+3.5": 54,
+        "+7": 57,
+        "+10.5": 59
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-017-20",
+      "haTcpProductNo": "65-7711-017-20",
+      "stemSizeMm": 17.5,
+      "stemLengthMm": 134,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 50,
+        "+0": 53,
+        "+3.5": 55,
+        "+7": 58,
+        "+10.5": 60
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-020-20",
+      "haTcpProductNo": "65-7711-020-20",
+      "stemSizeMm": 20,
+      "stemLengthMm": 139,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 52
+      },
+      "stemOffsetMm": {
+        "-3.5": 51,
+        "+0": 54,
+        "+3.5": 56,
+        "+7": 59,
+        "+10.5": 62
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "normal",
+      "isReducedNeckLength": false,
+      "productNo": "00-7711-022-20",
+      "haTcpProductNo": "65-7711-022-20",
+      "stemSizeMm": 22.5,
+      "stemLengthMm": 144,
+      "neckLengthMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 46,
+        "+7": 49,
+        "+10.5": 53
+      },
+      "stemOffsetMm": {
+        "-3.5": 52,
+        "+0": 55,
+        "+3.5": 58,
+        "+7": 60,
+        "+10.5": 63
+      },
+      "sourceTable": "original_dimensions_extended_offset",
+      "notes": []
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-004-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 4,
+      "stemLengthMm": 107,
+      "neckLengthMm": {
+        "-3.5": 28,
+        "+0": 32,
+        "+3.5": 35,
+        "+7": 39,
+        "+10.5": 42
+      },
+      "stemOffsetMm": {
+        "-3.5": 33,
+        "+0": 35,
+        "+3.5": 38,
+        "+7": 40,
+        "+10.5": 43
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table.",
+        "This row duplicates the original size 4 standard product number/dimensions."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-005-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 5,
+      "stemLengthMm": 109,
+      "neckLengthMm": {
+        "-3.5": 28,
+        "+0": 32,
+        "+3.5": 35,
+        "+7": 39,
+        "+10.5": 42
+      },
+      "stemOffsetMm": {
+        "-3.5": 34,
+        "+0": 36,
+        "+3.5": 38,
+        "+7": 41,
+        "+10.5": 43
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-006-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 6,
+      "stemLengthMm": 111,
+      "neckLengthMm": {
+        "-3.5": 28,
+        "+0": 32,
+        "+3.5": 35,
+        "+7": 39,
+        "+10.5": 42
+      },
+      "stemOffsetMm": {
+        "-3.5": 34,
+        "+0": 36,
+        "+3.5": 39,
+        "+7": 41,
+        "+10.5": 44
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-007-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 7.5,
+      "stemLengthMm": 114,
+      "neckLengthMm": {
+        "-3.5": 28,
+        "+0": 32,
+        "+3.5": 35,
+        "+7": 39,
+        "+10.5": 42
+      },
+      "stemOffsetMm": {
+        "-3.5": 35,
+        "+0": 37,
+        "+3.5": 40,
+        "+7": 42,
+        "+10.5": 45
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-009-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 9,
+      "stemLengthMm": 117,
+      "neckLengthMm": {
+        "-3.5": 28,
+        "+0": 32,
+        "+3.5": 35,
+        "+7": 39,
+        "+10.5": 42
+      },
+      "stemOffsetMm": {
+        "-3.5": 35,
+        "+0": 38,
+        "+3.5": 40,
+        "+7": 43,
+        "+10.5": 45
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-010-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 10,
+      "stemLengthMm": 119,
+      "neckLengthMm": {
+        "-3.5": 31,
+        "+0": 35,
+        "+3.5": 38,
+        "+7": 42,
+        "+10.5": 45
+      },
+      "stemOffsetMm": {
+        "-3.5": 39,
+        "+0": 41,
+        "+3.5": 44,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-011-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 11,
+      "stemLengthMm": 121,
+      "neckLengthMm": {
+        "-3.5": 31,
+        "+0": 35,
+        "+3.5": 38,
+        "+7": 42,
+        "+10.5": 45
+      },
+      "stemOffsetMm": {
+        "-3.5": 39,
+        "+0": 42,
+        "+3.5": 44,
+        "+7": 47,
+        "+10.5": 49
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "standard",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-012-10",
+      "haTcpProductNo": null,
+      "stemSizeMm": 12.5,
+      "stemLengthMm": 124,
+      "neckLengthMm": {
+        "-3.5": 31,
+        "+0": 35,
+        "+3.5": 38,
+        "+7": 42,
+        "+10.5": 45
+      },
+      "stemOffsetMm": {
+        "-3.5": 40,
+        "+0": 42,
+        "+3.5": 45,
+        "+7": 47,
+        "+10.5": 50
+      },
+      "sourceTable": "reduced_neck_length_standard_offset",
+      "notes": [
+        "Reduced Neck Length specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-004-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 4,
+      "stemLengthMm": 107,
+      "neckLengthMm": {
+        "-3.5": 32,
+        "+0": 35,
+        "+3.5": 39,
+        "+7": 42,
+        "+10.5": 46
+      },
+      "stemOffsetMm": {
+        "-3.5": 38,
+        "+0": 40,
+        "+3.5": 43,
+        "+7": 45,
+        "+10.5": 48
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table.",
+        "This row duplicates the original size 4 extended product number/dimensions."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-005-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 5,
+      "stemLengthMm": 109,
+      "neckLengthMm": {
+        "-3.5": 32,
+        "+0": 35,
+        "+3.5": 39,
+        "+7": 42,
+        "+10.5": 46
+      },
+      "stemOffsetMm": {
+        "-3.5": 39,
+        "+0": 41,
+        "+3.5": 43,
+        "+7": 46,
+        "+10.5": 48
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-006-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 6,
+      "stemLengthMm": 111,
+      "neckLengthMm": {
+        "-3.5": 32,
+        "+0": 35,
+        "+3.5": 39,
+        "+7": 42,
+        "+10.5": 46
+      },
+      "stemOffsetMm": {
+        "-3.5": 39,
+        "+0": 41,
+        "+3.5": 44,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-007-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 7.5,
+      "stemLengthMm": 114,
+      "neckLengthMm": {
+        "-3.5": 32,
+        "+0": 35,
+        "+3.5": 39,
+        "+7": 42,
+        "+10.5": 46
+      },
+      "stemOffsetMm": {
+        "-3.5": 40,
+        "+0": 42,
+        "+3.5": 45,
+        "+7": 47,
+        "+10.5": 50
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-009-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 9,
+      "stemLengthMm": 117,
+      "neckLengthMm": {
+        "-3.5": 32,
+        "+0": 35,
+        "+3.5": 39,
+        "+7": 42,
+        "+10.5": 46
+      },
+      "stemOffsetMm": {
+        "-3.5": 41,
+        "+0": 43,
+        "+3.5": 45,
+        "+7": 48,
+        "+10.5": 50
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-010-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 10,
+      "stemLengthMm": 119,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 39,
+        "+3.5": 42,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 44,
+        "+0": 46,
+        "+3.5": 49,
+        "+7": 51,
+        "+10.5": 54
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-011-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 11,
+      "stemLengthMm": 121,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 39,
+        "+3.5": 42,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 44,
+        "+0": 47,
+        "+3.5": 49,
+        "+7": 52,
+        "+10.5": 54
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    },
+    {
+      "system": "Zimmer M/L Taper Hip Prosthesis",
+      "offsetType": "extended",
+      "neckVariant": "reduced",
+      "isReducedNeckLength": true,
+      "productNo": "00-7711-012-40",
+      "haTcpProductNo": null,
+      "stemSizeMm": 12.5,
+      "stemLengthMm": 124,
+      "neckLengthMm": {
+        "-3.5": 35,
+        "+0": 39,
+        "+3.5": 42,
+        "+7": 46,
+        "+10.5": 49
+      },
+      "stemOffsetMm": {
+        "-3.5": 45,
+        "+0": 47,
+        "+3.5": 50,
+        "+7": 52,
+        "+10.5": 55
+      },
+      "sourceTable": "reduced_neck_length_extended_offset",
+      "notes": [
+        "Reduced Neck Length + Extended Offset specific row. HA/TCP product number was not shown in the extracted reduced-neck table."
+      ]
+    }
+  ]
+}
