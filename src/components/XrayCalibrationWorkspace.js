@@ -20914,7 +20914,7 @@ export default function XrayCalibrationWorkspace({
     },
     {
       id: "manager",
-      label: "Manager",
+      label: "Properti",
       onClick: () => {
         if (isSimpleUiMode) {
           setSimpleMobilePanel((prev) => (prev === "manager" ? null : "manager"));

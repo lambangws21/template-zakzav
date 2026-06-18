@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   X, ClipboardCheck, Save, Loader2, CheckCircle2,
   Ruler, Calendar, FileText, ArrowRight, Lock, Pencil,
-  Camera, ImagePlus, Trash2, ZoomIn,
+  Camera, ImagePlus, Trash2, ZoomIn, Minus,
 } from "lucide-react";
 
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
@@ -148,7 +148,7 @@ function SizeField({ label, unit, hint, value, onChange, isPreOp, colorKey, opti
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved }) {
+export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCase, onSaved }) {
   const procType = useMemo(() => detectProcedure(patientCase?.procedure), [patientCase?.procedure]);
   const config = PROC_CONFIG[procType] || PROC_CONFIG.general;
   const cls = COLOR_MAP[config.color] || COLOR_MAP.slate;
@@ -378,6 +378,13 @@ export default function PostOpDataModal({ isOpen, onClose, patientCase, onSaved 
                 </div>
                 <p className="truncate text-[10px] text-slate-400">{patientCase.patientName}</p>
               </div>
+              {onMinimize && (
+                <button type="button" onClick={onMinimize}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/20"
+                  title="Minimize">
+                  <Minus className="h-4 w-4" />
+                </button>
+              )}
               <button type="button" onClick={onClose}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/20">
                 <X className="h-4 w-4" />

@@ -15,6 +15,8 @@ import {
   Download,
   Clock,
   ChevronRight,
+  ChevronUp,
+  Minus,
   AlertCircle,
   Cloud,
   CloudOff,
@@ -117,7 +119,8 @@ const PREOP_COMPONENTS = {
   hemi: {
     primary: { key: "head", label: "Bipolar Head", unit: "mm",   hint: "36–48" },
     extras: [
-      { key: "stem", label: "Stem", unit: "size", hint: "1–8" },
+      { key: "acetabulum", label: "Native Acetabulum", unit: "mm", hint: "44–66" },
+      { key: "stem",       label: "Stem",              unit: "size", hint: "1–8" },
     ],
   },
   uka: {
@@ -383,7 +386,7 @@ function ImagePreviewLightbox({ src: initialSrc, patientName, onClose, onReplace
         transition={{ type: "spring", damping: 22, stiffness: 280 }}
         onClick={(e) => e.stopPropagation()}
         className="relative flex flex-col overflow-hidden rounded-2xl shadow-2xl"
-        style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)", width: "min(92vw,820px)", maxHeight: "92dvh" }}
+        style={{ background: "#0f172a", border: "1.5px solid rgba(56,189,248,0.2)", width: "min(96vw,1200px)", maxHeight: "99dvh" }}
       >
         {/* ── Header ── */}
         <div className="flex items-center justify-between gap-2 px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
@@ -420,7 +423,7 @@ function ImagePreviewLightbox({ src: initialSrc, patientName, onClose, onReplace
             style={{
               display: "block",
               maxWidth: "100%",
-              maxHeight: "72dvh",
+              maxHeight: "90dvh",
               width: "100%",
               objectFit: "contain",
               transform: `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`,
@@ -820,144 +823,553 @@ function SaveForm({ currentSession, onSave, onCancel }) {
   );
 }
 
-// ─── Edit Case Form ────────────────────────────────────────────────────────────
+// ─── Edit Case Modal ───────────────────────────────────────────────────────────
 
-function EditCaseForm({ caseData, onSave, onCancel }) {
-  const [patientName, setPatientName] = useState(caseData.patientName || "");
-  const [procedure, setProcedure] = useState(caseData.procedure || "Total Knee Arthroplasty (TKA)");
-  const [notes, setNotes] = useState(caseData.notes || "");
-  const [implantLabel, setImplantLabel] = useState(caseData.implantLabel || "");
-  const [preOpSizeNum, setPreOpSizeNum] = useState(
-    caseData.preOpSizeNum != null ? String(caseData.preOpSizeNum) : ""
-  );
+function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
+  const [patientName, setPatientName] = useState(caseData?.patientName || "");
+  const [procedure, setProcedure] = useState(caseData?.procedure || "Total Knee Arthroplasty (TKA)");
+  const [notes, setNotes] = useState(caseData?.notes || "");
+  const [preOpSizes, setPreOpSizes] = useState({});
+
+  // Reset state when caseData changes
+  useEffect(() => {
+    if (!caseData) return;
+    setPatientName(caseData.patientName || "");
+    setProcedure(caseData.procedure || "Total Knee Arthroplasty (TKA)");
+    setNotes(caseData.notes || "");
+    setPreOpSizes({});
+  }, [caseData?.id]);
+
+  // Reset sizes when procedure changes
+  useEffect(() => { setPreOpSizes({}); }, [procedure]);
+
+  const procType = getProcType(procedure);
+  const compConfig = procType ? PREOP_COMPONENTS[procType] : null;
+  const allCompFields = compConfig ? [compConfig.primary, ...compConfig.extras] : [];
+  const setSize = (key, val) => setPreOpSizes((prev) => ({ ...prev, [key]: val }));
+
+  const handleSubmit = () => {
+    const structuredLabel = buildStructuredLabel(procType, preOpSizes);
+    const primaryKey = compConfig?.primary?.key;
+    const primaryVal = primaryKey ? preOpSizes[primaryKey] : null;
+    const preOpSizeNum =
+      primaryVal !== undefined && primaryVal !== "" && !isNaN(Number(primaryVal))
+        ? Number(primaryVal)
+        : null;
+    onSave({
+      patientName: patientName.trim(),
+      procedure,
+      notes: notes.trim(),
+      implantLabel: structuredLabel || caseData?.implantLabel || "",
+      preOpSizeNum,
+    });
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60 shadow-sm"
-    >
-      {/* header */}
-      <div className="flex items-center justify-between bg-amber-600 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <Pencil className="h-3.5 w-3.5 text-amber-100" />
-          <p className="text-xs font-black text-white">Edit Data Kasus</p>
-        </div>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-amber-100 hover:bg-white/20"
+    <AnimatePresence>
+      {isOpen && caseData && (
+        <motion.div
+          className="fixed inset-0 z-[300] flex items-end justify-center bg-slate-950/50 p-0 pb-0 backdrop-blur-sm sm:items-center sm:p-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-
-      <div className="space-y-3 px-4 py-4">
-        {/* Row 1: Nama + Prosedur */}
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Nama Pasien</span>
-            <input
-              type="text"
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              placeholder="Nama pasien"
-              autoFocus
-              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Prosedur</span>
-            <select
-              value={procedure}
-              onChange={(e) => setProcedure(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-            >
-              <option>Total Knee Arthroplasty (TKA)</option>
-              <option>Total Hip Arthroplasty (THA)</option>
-              <option>Unicompartmental Knee Arthroplasty (UKA)</option>
-              <option>Revision Knee Arthroplasty</option>
-              <option>Hemiarthroplasty Hip</option>
-              <option>Osteotomy</option>
-              <option>Lainnya</option>
-            </select>
-          </label>
-        </div>
-
-        {/* Komponen implant (teks bebas) */}
-        <label className="flex flex-col gap-0.5">
-          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
-            Komponen Rencana Pre-Op
-          </span>
-          <input
-            type="text"
-            value={implantLabel}
-            onChange={(e) => setImplantLabel(e.target.value)}
-            placeholder='mis. "Femoral: 4 · Tibial: 3 · Insert PE: 10 mm"'
-            className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-          />
-          <span className="text-[8px] text-slate-400">Pisahkan komponen dengan " · "</span>
-        </label>
-
-        {/* Ukuran primer + Catatan */}
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Ukuran Primer</span>
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={preOpSizeNum}
-              onChange={(e) => setPreOpSizeNum(e.target.value)}
-              placeholder="mis. 4"
-              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Catatan</span>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Catatan singkat"
-              className="w-full rounded-xl border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-            />
-          </label>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex gap-2 pt-0.5">
-          <button
-            type="button"
-            onClick={() =>
-              onSave({
-                patientName: patientName.trim(),
-                procedure,
-                notes: notes.trim(),
-                implantLabel: implantLabel.trim(),
-                preOpSizeNum:
-                  preOpSizeNum !== "" && !isNaN(Number(preOpSizeNum))
-                    ? Number(preOpSizeNum)
-                    : null,
-              })
-            }
-            disabled={!patientName.trim()}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-amber-600 py-2.5 text-xs font-black text-white shadow-[0_3px_10px_rgba(217,119,6,0.3)] disabled:opacity-40"
+          <motion.div
+            className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-white/60 bg-[#f8f7ff] shadow-[0_-8px_40px_rgba(0,0,0,0.22)] sm:max-w-[480px] sm:rounded-[24px] sm:shadow-[0_24px_60px_rgba(0,0,0,0.32)]"
+            initial={{ y: 60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 40, opacity: 0 }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
           >
-            <Save className="h-3.5 w-3.5" />
-            Simpan Perubahan
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-500"
-          >
-            Batal
-          </button>
-        </div>
-      </div>
-    </motion.div>
+            {/* Drag pill — mobile only */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="h-1 w-10 rounded-full bg-slate-300" />
+            </div>
+            {/* Header */}
+            <div className="flex items-center justify-between bg-amber-600 px-4 py-3 sm:px-5 sm:py-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/15">
+                  <Pencil className="h-3.5 w-3.5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-white">Edit Data Kasus</p>
+                  <p className="text-[9px] text-amber-100 opacity-80 truncate max-w-[240px]">{caseData.patientName || "—"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {onMinimize && (
+                  <button
+                    type="button"
+                    onClick={onMinimize}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-amber-100 transition hover:bg-white/20"
+                    title="Minimize"
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-amber-100 transition hover:bg-white/20"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] sm:space-y-3.5 sm:p-5 sm:pb-5">
+              {/* Row: Nama + Prosedur */}
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Nama Pasien</span>
+                  <input
+                    type="text"
+                    value={patientName}
+                    onChange={(e) => setPatientName(e.target.value)}
+                    placeholder="Nama pasien"
+                    autoFocus
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Prosedur</span>
+                  <select
+                    value={procedure}
+                    onChange={(e) => setProcedure(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                  >
+                    <option>Total Knee Arthroplasty (TKA)</option>
+                    <option>Total Hip Arthroplasty (THA)</option>
+                    <option>Unicompartmental Knee Arthroplasty (UKA)</option>
+                    <option>Revision Knee Arthroplasty</option>
+                    <option>Hemiarthroplasty Hip</option>
+                    <option>Osteotomy</option>
+                    <option>Lainnya</option>
+                  </select>
+                </label>
+              </div>
+
+              {/* Rencana ukuran komponen per-prosedur */}
+              {compConfig ? (
+                <div className="space-y-1.5 rounded-xl border border-amber-200 bg-white/70 p-3">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-600">
+                    Rencana Ukuran — {compConfig.primary.label}
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {allCompFields.map((comp) => (
+                      <label key={comp.key} className="flex flex-col gap-0.5">
+                        <span className="text-[8px] text-slate-500">
+                          {comp.label}
+                          {comp.unit !== "size" && <span className="text-slate-400"> ({comp.unit})</span>}
+                          {comp.optional && <span className="ml-0.5 italic text-slate-400"> *</span>}
+                        </span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={preOpSizes[comp.key] ?? ""}
+                          onChange={(e) => setSize(comp.key, e.target.value)}
+                          placeholder={comp.hint}
+                          className="w-full rounded-lg border border-amber-100 bg-white px-2 py-1 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-1 focus:ring-amber-100"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  {caseData.implantLabel && (
+                    <p className="text-[8px] text-slate-400 mt-1">
+                      Saat ini: <span className="text-slate-600 font-semibold">{caseData.implantLabel}</span>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <label className="flex flex-col gap-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Komponen Rencana Pre-Op</span>
+                  <input
+                    type="text"
+                    value={preOpSizes.__free__ ?? caseData?.implantLabel ?? ""}
+                    onChange={(e) => setSize("__free__", e.target.value)}
+                    placeholder='mis. "Komponen A · Komponen B"'
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                  />
+                </label>
+              )}
+
+              {/* Catatan */}
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Catatan</span>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Catatan singkat (opsional)"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                />
+              </label>
+
+              {/* Buttons */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!patientName.trim()}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-amber-600 py-2.5 text-xs font-black text-white shadow-[0_3px_10px_rgba(217,119,6,0.3)] transition disabled:opacity-40 hover:bg-amber-500"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Simpan Perubahan
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-500 transition hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─── Case Detail Modal ─────────────────────────────────────────────────────────
+
+function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onLightbox }) {
+  const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
+  useEffect(() => { setPostOpPhotoIdx(0); }, [caseData?.id]);
+
+  if (!caseData) return null;
+
+  const preComponents = caseData.implantLabel
+    ? caseData.implantLabel.split(" · ").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const hkaList = caseData.hkaSummary || [];
+  const hasPostOp = Boolean(caseData.actualImplantLabel || caseData.actualSizeNum != null);
+  const diff = caseData.preOpSizeNum != null && caseData.actualSizeNum != null
+    ? caseData.actualSizeNum - caseData.preOpSizeNum : null;
+  const accuracyLabel = diff === null ? null
+    : diff === 0 ? { text: "Exact match", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
+    : Math.abs(diff) <= 1 ? { text: `Selisih ${diff > 0 ? "+" : ""}${diff} size`, cls: "bg-amber-50 text-amber-700 border-amber-200" }
+    : { text: `Selisih besar ${diff > 0 ? "+" : ""}${diff}`, cls: "bg-red-50 text-red-700 border-red-200" };
+
+  const preOpSrc = (caseData.snapshot || caseData.snapshotUrl)
+    ? snapshotSrc(caseData.snapshot || caseData.snapshotUrl)
+    : null;
+  const postPhotos = caseData.postOpPhotos || [];
+  const hasBoth = preOpSrc && postPhotos.length > 0;
+  const curPostIdx = Math.min(postOpPhotoIdx, Math.max(0, postPhotos.length - 1));
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        key="case-detail-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 z-[9990] flex items-end justify-center sm:items-center sm:p-6"
+        style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}
+      >
+        <motion.div
+          initial={{ y: 60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 40, opacity: 0 }}
+          transition={{ type: "spring", damping: 26, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full overflow-hidden rounded-t-[24px] shadow-2xl sm:max-w-[520px] sm:rounded-[24px] border border-[var(--soft-border)]"
+          style={{ maxHeight: "94dvh", overflowY: "auto", background: "var(--soft-raised-bg)" }}
+        >
+          {/* Drag pill — mobile only */}
+          <div className="flex justify-center pt-3 pb-1 sm:hidden">
+            <div className="h-1 w-10 rounded-full bg-white/20" />
+          </div>
+
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3 bg-[#1e1033] px-4 py-3 shrink-0">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-black text-white">{caseData.patientName}</p>
+              <p className="truncate text-[10px] text-purple-300">{caseData.procedure}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {hasPostOp && (
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[8px] font-black text-emerald-300">
+                  POST-OP ✓
+                </span>
+              )}
+              <button type="button" onClick={onMinimize}
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-purple-300 hover:bg-white/20"
+                title="Minimize">
+                <Minus className="h-3 w-3" />
+              </button>
+              <button type="button" onClick={onClose}
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-purple-300 hover:bg-white/20"
+                title="Tutup">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="divide-y divide-[var(--soft-border)]">
+            {/* Photo comparison */}
+            {(preOpSrc || postPhotos.length > 0) && (
+              <div style={{ background: "#0a0f1c" }}>
+                {hasBoth ? (
+                  <div className="grid grid-cols-2 divide-x divide-white/10" style={{ height: 200 }}>
+                    {/* Kiri: Pre-Op */}
+                    <div className="relative overflow-hidden">
+                      <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
+                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
+                      <div className="absolute left-1.5 top-1.5 rounded-full bg-sky-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
+                        📷 Pre-Op
+                      </div>
+                      <button type="button"
+                        onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)}
+                        className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 text-[7px] font-black text-white hover:bg-black/70">
+                        <Maximize2 className="h-2.5 w-2.5" /> Besar
+                      </button>
+                    </div>
+                    {/* Kanan: Post-Op */}
+                    <div className="relative overflow-hidden">
+                      <img src={snapshotSrc(postPhotos[curPostIdx])} alt={`Post-Op ${curPostIdx + 1}`} className="h-full w-full object-cover" />
+                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
+                      <div className="absolute left-1.5 top-1.5 rounded-full bg-emerald-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
+                        📸 Post-Op
+                      </div>
+                      {postPhotos.length > 1 && (
+                        <div className="absolute bottom-1.5 left-0 right-0 flex items-center justify-center gap-1.5">
+                          <button type="button"
+                            onClick={() => setPostOpPhotoIdx(i => (i - 1 + postPhotos.length) % postPhotos.length)}
+                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
+                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M5 1L2 4l3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                          </button>
+                          <span className="rounded-full bg-black/50 px-2 py-0.5 text-[7px] font-black text-white">
+                            {curPostIdx + 1}/{postPhotos.length}
+                          </span>
+                          <button type="button"
+                            onClick={() => setPostOpPhotoIdx(i => (i + 1) % postPhotos.length)}
+                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
+                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M3 1l3 3-3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                          </button>
+                        </div>
+                      )}
+                      <button type="button"
+                        onClick={() => onLightbox(snapshotSrc(postPhotos[curPostIdx]), caseData.patientName, null)}
+                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
+                        <ZoomIn className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                ) : preOpSrc ? (
+                  <div className="relative overflow-hidden" style={{ height: 180 }}>
+                    <div className="absolute left-2 top-2 z-10 rounded-full bg-sky-500/80 px-2 py-0.5 text-[8px] font-black text-white">
+                      📷 X-Ray Pre-Op
+                    </div>
+                    <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
+                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
+                    <button type="button"
+                      onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)}
+                      className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-sky-500/85 px-3 py-1.5 text-[9px] font-black text-white">
+                      <Maximize2 className="h-3 w-3" /> Perbesar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-3 pb-3 pt-2">
+                    <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-400">
+                      📸 Foto Post-Op ({postPhotos.length})
+                    </p>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {postPhotos.map((src, idx) => (
+                        <button key={idx} type="button"
+                          onClick={() => onLightbox(snapshotSrc(src), caseData.patientName, null)}
+                          className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-slate-800">
+                          <img src={snapshotSrc(src)} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Date + notes */}
+            <div className="flex items-start gap-3 px-4 py-2.5">
+              <div className="min-w-0 space-y-1 w-full">
+                <div className="flex items-center gap-1.5 text-[9px] [color:var(--soft-text)] opacity-70">
+                  <Calendar className="h-3 w-3 shrink-0" />
+                  <span>Templating: {formatDate(caseData.savedAt)}</span>
+                </div>
+                {caseData.notes && (
+                  <p className="text-[10px] italic [color:var(--soft-text)] opacity-60">"{caseData.notes}"</p>
+                )}
+                <div className="flex flex-wrap gap-1">
+                  {caseData.measurementCount > 0 && (
+                    <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[8px] font-black text-blue-400">
+                      {caseData.measurementCount} ukur
+                    </span>
+                  )}
+                  {caseData.templateCount > 0 && (
+                    <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-black text-purple-400">
+                      {caseData.templateCount} tmpl
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Cup Assessment */}
+            {caseData.cupAssessment && (
+              <div className="px-4 py-2.5 space-y-1.5 bg-amber-500/5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">⊙ Cup Assessment</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-black text-amber-400">
+                    INC {parseFloat(caseData.cupAssessment.inclination).toFixed(1)}°
+                  </span>
+                  <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[9px] font-black text-sky-400">
+                    AV {parseFloat(caseData.cupAssessment.anteversion).toFixed(1)}°
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${caseData.cupAssessment.side === "left" ? "bg-sky-500/15 text-sky-400" : "bg-orange-500/15 text-orange-400"}`}>
+                    {caseData.cupAssessment.side === "left" ? "◁ Kiri" : "Kanan ▷"}
+                  </span>
+                  {caseData.cupAssessment.zone && (
+                    <span className="rounded-full bg-[var(--soft-inset-bg)] px-2 py-0.5 text-[9px] font-bold [color:var(--soft-text)]">
+                      {caseData.cupAssessment.zone}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Pre-Op plan */}
+            <div className="px-4 py-2.5 space-y-1.5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-blue-400">Rencana Pre-Op</p>
+              {preComponents.length > 0 ? (
+                <div className="space-y-1">
+                  {preComponents.map((part, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+                      <span className="text-[10px] [color:var(--soft-text)]">{part}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] italic [color:var(--soft-text)] opacity-40">Belum ada komponen tersimpan</p>
+              )}
+              {caseData.preOpSizeNum != null && (
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <span className="text-[9px] [color:var(--soft-text)] opacity-60">Ukuran primer:</span>
+                  <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[9px] font-black text-blue-400">
+                    {caseData.preOpSizeNum}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* HKA pre-op */}
+            {hkaList.length > 0 && (
+              <div className="px-4 py-2.5 space-y-1.5">
+                <p className="text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">HKA Pre-Op</p>
+                <div className="flex flex-wrap gap-1">
+                  {hkaList.map((h, i) => (
+                    <span key={i} className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
+                      h.direction === "varus" ? "bg-red-500/15 text-red-400" : "bg-green-500/15 text-green-400"
+                    }`}>
+                      {h.absoluteDeviation?.toFixed?.(1) ?? h.absoluteDeviation}° {h.direction}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Post-op data */}
+            {hasPostOp ? (
+              <div className="px-4 py-2.5 space-y-1.5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Data Post-Op</p>
+                {caseData.operationDate && (
+                  <div className="flex items-center gap-1.5 text-[9px] [color:var(--soft-text)] opacity-60">
+                    <Calendar className="h-3 w-3 shrink-0" />
+                    Operasi: {caseData.operationDate}
+                  </div>
+                )}
+                {caseData.actualImplantLabel && (
+                  <div className="space-y-0.5">
+                    {caseData.actualImplantLabel.split(" · ").map((part, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
+                        <span className="text-[10px] [color:var(--soft-text)]">{part.trim()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {accuracyLabel && (
+                  <div className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[9px] font-black ${accuracyLabel.cls}`}>
+                    {accuracyLabel.text}
+                    <span className="font-normal opacity-70">
+                      (pre: {caseData.preOpSizeNum} → actual: {caseData.actualSizeNum})
+                    </span>
+                  </div>
+                )}
+                {caseData.postOpHka != null && (
+                  <p className="text-[9px] [color:var(--soft-text)] opacity-60">HKA post-op: <strong>{caseData.postOpHka}°</strong></p>
+                )}
+                {caseData.postOpNotes && (
+                  <p className="text-[10px] italic [color:var(--soft-text)] opacity-60">"{caseData.postOpNotes}"</p>
+                )}
+              </div>
+            ) : (
+              <div className="px-4 py-2 text-[10px] italic [color:var(--soft-text)] opacity-40">
+                Belum ada data post-op
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="border-t border-[var(--soft-border)] px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)] space-y-2">
+              <button
+                type="button"
+                onClick={() => onEdit(caseData.id)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100"
+              >
+                <Pencil className="h-3 w-3" />
+                Edit Data Kasus
+              </button>
+              <button
+                type="button"
+                onClick={() => onPostOp(caseData)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-[10px] font-black text-white"
+              >
+                <ClipboardCheck className="h-3 w-3" />
+                {hasPostOp ? "Edit Data Post-Op" : "Input Data Post-Op"}
+              </button>
+              {onLoadAsLayer && (caseData.snapshot || caseData.snapshotUrl) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = snapshotSrc(caseData.snapshot || caseData.snapshotUrl);
+                    const name = `${caseData.patientName || "Kasus"} — ${caseData.procedure || ""}`.trim().replace(/—\s*$/, "");
+                    onLoadAsLayer(url, name);
+                    onClose();
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 py-2 text-[10px] font-black text-purple-700 hover:bg-purple-100"
+                >
+                  <Layers className="h-3 w-3" />
+                  Buka sebagai Layer Perbandingan
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { onPreOpReport(caseData); onClose(); }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 py-2 text-[10px] font-black text-blue-700"
+              >
+                <FileText className="h-3 w-3" />
+                Laporan Pre-Op (PDF)
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
   );
 }
 
@@ -972,14 +1384,16 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [search, setSearch] = useState("");
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [selectedCaseId, setSelectedCaseId] = useState(null);
+  const [caseDetailMinimized, setCaseDetailMinimized] = useState(false);
   const [editingCaseId, setEditingCaseId] = useState(null);
+  const [editCaseMinimized, setEditCaseMinimized] = useState(false);
+  const [postOpMinimized, setPostOpMinimized] = useState(false);
   const [postOpCase, setPostOpCase] = useState(null);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [preOpReportCase, setPreOpReportCase] = useState(null);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [lightboxName, setLightboxName] = useState(null);
   const [lightboxCaseId, setLightboxCaseId] = useState(null);
-  const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
@@ -1130,9 +1544,29 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   );
 
   const selectedCase = cases.find((c) => c.id === selectedCaseId);
+  const editCaseData = cases.find((c) => c.id === editingCaseId) ?? null;
 
-  // Reset post-op photo index when case changes
-  useEffect(() => { setPostOpPhotoIdx(0); }, [selectedCaseId]);
+  useEffect(() => { setCaseDetailMinimized(false); }, [selectedCaseId]);
+  useEffect(() => { setEditCaseMinimized(false); }, [editingCaseId]);
+  useEffect(() => { setPostOpMinimized(false); }, [postOpCase?.id]);
+
+  const handleRefresh = useCallback(() => {
+    if (!hasCloud || loading) return;
+    setLoading(true);
+    setCloudError("");
+    apiListCases()
+      .then((items) => {
+        if (items) {
+          const mapped = items.map(mapCloudCase);
+          setCases(mapped);
+          saveCases(mapped);
+          setSyncOk(true);
+          setTimeout(() => setSyncOk(false), 2500);
+        }
+      })
+      .catch(() => setCloudError("Gagal memuat data dari cloud."))
+      .finally(() => setLoading(false));
+  }, [hasCloud, loading]);
 
   if (typeof document === "undefined") return null;
 
@@ -1186,6 +1620,17 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
               >
                 <BarChart2 className="h-3.5 w-3.5" />
               </button>
+              {hasCloud && (
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-purple-200 hover:bg-white/20 disabled:opacity-50"
+                  title="Refresh data dari cloud"
+                >
+                  <RotateCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => { setShowSaveForm(true); setCloudError(""); }}
@@ -1246,336 +1691,58 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                   />
                 </div>
 
-                {/* Edit Case Form */}
+                {/* Edit Case — handled as modal, rendered via portal below */}
+
+                {/* Minimized restore chips */}
                 <AnimatePresence>
-                  {editingCaseId && (() => {
-                    const editCase = cases.find((c) => c.id === editingCaseId);
-                    if (!editCase) return null;
-                    return (
-                      <EditCaseForm
-                        key={`edit-${editingCaseId}`}
-                        caseData={editCase}
-                        onSave={(fields) => handleUpdate(editingCaseId, fields)}
-                        onCancel={() => setEditingCaseId(null)}
-                      />
-                    );
-                  })()}
+                  {selectedCase && caseDetailMinimized && !editingCaseId && (
+                    <motion.button
+                      key="restore-detail"
+                      type="button"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      onClick={() => setCaseDetailMinimized(false)}
+                      className="flex w-full items-center gap-2 rounded-2xl border border-purple-200 bg-purple-50 px-3 py-2 text-[10px] font-black text-purple-700 hover:bg-purple-100"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Detail: {selectedCase.patientName}</span>
+                      <X className="ml-auto h-3 w-3 shrink-0 opacity-50" onClick={(e) => { e.stopPropagation(); setSelectedCaseId(null); setCaseDetailMinimized(false); }} />
+                    </motion.button>
+                  )}
+                  {editingCaseId && editCaseMinimized && (
+                    <motion.button
+                      key="restore-edit"
+                      type="button"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      onClick={() => setEditCaseMinimized(false)}
+                      className="flex w-full items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Edit: {editCaseData?.patientName}</span>
+                      <X className="ml-auto h-3 w-3 shrink-0 opacity-50" onClick={(e) => { e.stopPropagation(); setEditingCaseId(null); setEditCaseMinimized(false); }} />
+                    </motion.button>
+                  )}
+                  {postOpCase && postOpMinimized && (
+                    <motion.button
+                      key="restore-postop"
+                      type="button"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      onClick={() => setPostOpMinimized(false)}
+                      className="flex w-full items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Post-Op: {postOpCase.patientName}</span>
+                      <X className="ml-auto h-3 w-3 shrink-0 opacity-50" onClick={(e) => { e.stopPropagation(); setPostOpCase(null); setPostOpMinimized(false); }} />
+                    </motion.button>
+                  )}
                 </AnimatePresence>
 
-                {/* Selected case — Pre-Op Report */}
-                <AnimatePresence>
-                  {selectedCase && !editingCaseId && (() => {
-                    const preComponents = selectedCase.implantLabel
-                      ? selectedCase.implantLabel.split(" · ").map((s) => s.trim()).filter(Boolean)
-                      : [];
-                    const hkaList = selectedCase.hkaSummary || [];
-                    const hasPostOp = Boolean(selectedCase.actualImplantLabel || selectedCase.actualSizeNum != null);
-                    const diff = selectedCase.preOpSizeNum != null && selectedCase.actualSizeNum != null
-                      ? selectedCase.actualSizeNum - selectedCase.preOpSizeNum : null;
-                    const accuracyLabel = diff === null ? null
-                      : diff === 0 ? { text: "Exact match", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-                      : Math.abs(diff) <= 1 ? { text: `Selisih ${diff > 0 ? "+" : ""}${diff} size`, cls: "bg-amber-50 text-amber-700 border-amber-200" }
-                      : { text: `Selisih besar ${diff > 0 ? "+" : ""}${diff}`, cls: "bg-red-50 text-red-700 border-red-200" };
-
-                    return (
-                      <motion.div
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="overflow-hidden rounded-2xl border border-purple-200 bg-white shadow-sm"
-                      >
-                        {/* Report header */}
-                        <div className="flex items-start justify-between gap-3 bg-[#1e1033] px-4 py-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-white">{selectedCase.patientName}</p>
-                            <p className="truncate text-[10px] text-purple-300">{selectedCase.procedure}</p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            {hasPostOp && (
-                              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[8px] font-black text-emerald-300">
-                                POST-OP ✓
-                              </span>
-                            )}
-                            <button type="button" onClick={() => setSelectedCaseId(null)}
-                              className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-purple-300 hover:bg-white/20">
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="divide-y divide-slate-100">
-                          {/* Photo comparison: Pre-Op kiri | Post-Op kanan */}
-                          {(() => {
-                            const preOpSrc = (selectedCase.snapshot || selectedCase.snapshotUrl)
-                              ? snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl)
-                              : null;
-                            const postPhotos = selectedCase.postOpPhotos || [];
-                            if (!preOpSrc && postPhotos.length === 0) return null;
-
-                            const hasBoth = preOpSrc && postPhotos.length > 0;
-                            const curPostIdx = Math.min(postOpPhotoIdx, postPhotos.length - 1);
-
-                            return (
-                              <div style={{ background: "#0a0f1c" }}>
-                                {hasBoth ? (
-                                  /* ── Side-by-side comparison ── */
-                                  <div className="grid grid-cols-2 divide-x divide-white/10" style={{ height: 180 }}>
-                                    {/* Kiri: Pre-Op */}
-                                    <div className="relative overflow-hidden">
-                                      <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
-                                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
-                                      <div className="absolute left-1.5 top-1.5 rounded-full bg-sky-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
-                                        📷 Pre-Op
-                                      </div>
-                                      <button type="button"
-                                        onClick={() => { setLightboxSrc(preOpSrc); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
-                                        className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 text-[7px] font-black text-white hover:bg-black/70">
-                                        <Maximize2 className="h-2.5 w-2.5" /> Besar
-                                      </button>
-                                    </div>
-                                    {/* Kanan: Post-Op */}
-                                    <div className="relative overflow-hidden">
-                                      <img src={snapshotSrc(postPhotos[curPostIdx])} alt={`Post-Op ${curPostIdx + 1}`} className="h-full w-full object-cover" />
-                                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
-                                      <div className="absolute left-1.5 top-1.5 rounded-full bg-emerald-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
-                                        📸 Post-Op
-                                      </div>
-                                      {/* Photo counter + nav */}
-                                      {postPhotos.length > 1 && (
-                                        <div className="absolute bottom-1.5 left-0 right-0 flex items-center justify-center gap-1.5">
-                                          <button type="button"
-                                            onClick={() => setPostOpPhotoIdx(i => (i - 1 + postPhotos.length) % postPhotos.length)}
-                                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
-                                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M5 1L2 4l3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
-                                          </button>
-                                          <span className="rounded-full bg-black/50 px-2 py-0.5 text-[7px] font-black text-white">
-                                            {curPostIdx + 1}/{postPhotos.length}
-                                          </span>
-                                          <button type="button"
-                                            onClick={() => setPostOpPhotoIdx(i => (i + 1) % postPhotos.length)}
-                                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
-                                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M3 1l3 3-3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
-                                          </button>
-                                        </div>
-                                      )}
-                                      <button type="button"
-                                        onClick={() => { setLightboxSrc(snapshotSrc(postPhotos[curPostIdx])); setLightboxName(selectedCase.patientName); }}
-                                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
-                                        <ZoomIn className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : preOpSrc ? (
-                                  /* ── Hanya Pre-Op ── */
-                                  <div className="relative overflow-hidden" style={{ height: 160 }}>
-                                    <div className="absolute left-2 top-2 z-10 rounded-full bg-sky-500/80 px-2 py-0.5 text-[8px] font-black text-white">
-                                      📷 X-Ray Pre-Op
-                                    </div>
-                                    <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
-                                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
-                                    <button type="button"
-                                      onClick={() => { setLightboxSrc(preOpSrc); setLightboxName(selectedCase.patientName); setLightboxCaseId(selectedCase.id); }}
-                                      className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-sky-500/85 px-3 py-1.5 text-[9px] font-black text-white">
-                                      <Maximize2 className="h-3 w-3" /> Perbesar
-                                    </button>
-                                  </div>
-                                ) : (
-                                  /* ── Hanya Post-Op ── */
-                                  <div className="px-3 pb-3 pt-2">
-                                    <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-400">
-                                      📸 Foto Post-Op ({postPhotos.length})
-                                    </p>
-                                    <div className="grid grid-cols-4 gap-1.5">
-                                      {postPhotos.map((src, idx) => (
-                                        <button key={idx} type="button"
-                                          onClick={() => { setLightboxSrc(snapshotSrc(src)); setLightboxName(selectedCase.patientName); }}
-                                          className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-slate-800">
-                                          <img src={snapshotSrc(src)} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-
-                          {/* date + notes */}
-                          <div className="flex items-start gap-3 px-4 py-2.5">
-                            <div className="min-w-0 space-y-1 w-full">
-                              <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
-                                <Calendar className="h-3 w-3 shrink-0" />
-                                <span>Templating: {formatDate(selectedCase.savedAt)}</span>
-                              </div>
-                              {selectedCase.notes && (
-                                <p className="text-[10px] italic text-slate-500">"{selectedCase.notes}"</p>
-                              )}
-                              <div className="flex flex-wrap gap-1">
-                                {selectedCase.measurementCount > 0 && (
-                                  <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[8px] font-black text-blue-700">
-                                    {selectedCase.measurementCount} ukur
-                                  </span>
-                                )}
-                                {selectedCase.templateCount > 0 && (
-                                  <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[8px] font-black text-purple-700">
-                                    {selectedCase.templateCount} tmpl
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Cup Assessment */}
-                          {selectedCase.cupAssessment && (
-                            <div className="px-4 py-2.5 space-y-1.5 border-t border-amber-100 bg-amber-50/50">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">⊙ Cup Assessment</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-800">
-                                  INC {parseFloat(selectedCase.cupAssessment.inclination).toFixed(1)}°
-                                </span>
-                                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-black text-sky-800">
-                                  AV {parseFloat(selectedCase.cupAssessment.anteversion).toFixed(1)}°
-                                </span>
-                                <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${selectedCase.cupAssessment.side === "left" ? "bg-sky-100 text-sky-700" : "bg-orange-100 text-orange-700"}`}>
-                                  {selectedCase.cupAssessment.side === "left" ? "◁ Kiri" : "Kanan ▷"}
-                                </span>
-                                {selectedCase.cupAssessment.zone && (
-                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600">
-                                    {selectedCase.cupAssessment.zone}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pre-Op plan */}
-                          <div className="px-4 py-2.5 space-y-1.5">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-blue-600">Rencana Pre-Op</p>
-                            {preComponents.length > 0 ? (
-                              <div className="space-y-1">
-                                {preComponents.map((part, i) => (
-                                  <div key={i} className="flex items-center gap-2">
-                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
-                                    <span className="text-[10px] text-slate-700">{part}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-[10px] italic text-slate-400">Belum ada komponen tersimpan</p>
-                            )}
-                            {selectedCase.preOpSizeNum != null && (
-                              <div className="flex items-center gap-1.5 pt-0.5">
-                                <span className="text-[9px] text-slate-400">Ukuran primer:</span>
-                                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-black text-blue-700">
-                                  {selectedCase.preOpSizeNum}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* HKA pre-op */}
-                          {hkaList.length > 0 && (
-                            <div className="px-4 py-2.5 space-y-1.5">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">HKA Pre-Op</p>
-                              <div className="flex flex-wrap gap-1">
-                                {hkaList.map((h, i) => (
-                                  <span key={i} className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
-                                    h.direction === "varus" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-                                  }`}>
-                                    {h.absoluteDeviation?.toFixed?.(1) ?? h.absoluteDeviation}° {h.direction}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Post-op data */}
-                          {hasPostOp ? (
-                            <div className="px-4 py-2.5 space-y-1.5">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Data Post-Op</p>
-                              {selectedCase.operationDate && (
-                                <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
-                                  <Calendar className="h-3 w-3 shrink-0" />
-                                  Operasi: {selectedCase.operationDate}
-                                </div>
-                              )}
-                              {selectedCase.actualImplantLabel && (
-                                <div className="space-y-0.5">
-                                  {selectedCase.actualImplantLabel.split(" · ").map((part, i) => (
-                                    <div key={i} className="flex items-center gap-2">
-                                      <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
-                                      <span className="text-[10px] text-slate-700">{part.trim()}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {accuracyLabel && (
-                                <div className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[9px] font-black ${accuracyLabel.cls}`}>
-                                  {accuracyLabel.text}
-                                  <span className="font-normal opacity-70">
-                                    (pre: {selectedCase.preOpSizeNum} → actual: {selectedCase.actualSizeNum})
-                                  </span>
-                                </div>
-                              )}
-                              {selectedCase.postOpHka != null && (
-                                <p className="text-[9px] text-slate-500">HKA post-op: <strong>{selectedCase.postOpHka}°</strong></p>
-                              )}
-                              {selectedCase.postOpNotes && (
-                                <p className="text-[10px] italic text-slate-500">"{selectedCase.postOpNotes}"</p>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="px-4 py-2 text-[10px] italic text-slate-400">
-                              Belum ada data post-op
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="border-t border-slate-100 px-4 py-3 space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => setEditingCaseId(selectedCase.id)}
-                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100"
-                          >
-                            <Pencil className="h-3 w-3" />
-                            Edit Data Kasus
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPostOpCase(selectedCase)}
-                            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-[10px] font-black text-white"
-                          >
-                            <ClipboardCheck className="h-3 w-3" />
-                            {hasPostOp ? "Edit Data Post-Op" : "Input Data Post-Op"}
-                          </button>
-                          {onLoadAsLayer && (selectedCase.snapshot || selectedCase.snapshotUrl) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const url = snapshotSrc(selectedCase.snapshot || selectedCase.snapshotUrl);
-                                const name = `${selectedCase.patientName || "Kasus"} — ${selectedCase.procedure || ""}`.trim().replace(/—\s*$/, "");
-                                onLoadAsLayer(url, name);
-                              }}
-                              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 py-2 text-[10px] font-black text-purple-700 hover:bg-purple-100"
-                            >
-                              <Layers className="h-3 w-3" />
-                              Buka sebagai Layer Perbandingan
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setPreOpReportCase(selectedCase)}
-                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 py-2 text-[10px] font-black text-blue-700"
-                          >
-                            <FileText className="h-3 w-3" />
-                            Laporan Pre-Op (PDF)
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })()}
-                </AnimatePresence>
+                {/* Selected case — handled as modal portal below */}
 
                 {/* Cases list */}
                 {loading && cases.length === 0 ? (
@@ -1650,9 +1817,41 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   return (
     <>
       {createPortal(content, document.body)}
+      {/* ── Edit Case Modal — portal terpisah ── */}
+      {createPortal(
+        <EditCaseModal
+          isOpen={Boolean(editingCaseId) && !editCaseMinimized}
+          caseData={editCaseData}
+          onSave={(fields) => handleUpdate(editingCaseId, fields)}
+          onClose={() => { setEditingCaseId(null); setEditCaseMinimized(false); }}
+          onMinimize={() => setEditCaseMinimized(true)}
+        />,
+        document.body
+      )}
+      {/* ── Case Detail Modal — portal terpisah ── */}
+      {createPortal(
+        <CaseDetailModal
+          caseData={
+            selectedCase &&
+            !caseDetailMinimized &&
+            !(editingCaseId && !editCaseMinimized) &&
+            !(postOpCase && !postOpMinimized)
+              ? selectedCase : null
+          }
+          onClose={() => { setSelectedCaseId(null); setCaseDetailMinimized(false); }}
+          onMinimize={() => setCaseDetailMinimized(true)}
+          onEdit={(id) => { setEditingCaseId(id); }}
+          onPostOp={(c) => { setPostOpCase(c); }}
+          onLoadAsLayer={onLoadAsLayer}
+          onPreOpReport={(c) => setPreOpReportCase(c)}
+          onLightbox={(src, name, caseId) => { setLightboxSrc(src); setLightboxName(name); setLightboxCaseId(caseId ?? null); }}
+        />,
+        document.body
+      )}
       <PostOpDataModal
-        isOpen={Boolean(postOpCase)}
-        onClose={() => setPostOpCase(null)}
+        isOpen={Boolean(postOpCase) && !postOpMinimized}
+        onClose={() => { setPostOpCase(null); setPostOpMinimized(false); }}
+        onMinimize={() => setPostOpMinimized(true)}
         patientCase={postOpCase}
         onSaved={(id, updatedData) => {
           setPostOpCase(null);
