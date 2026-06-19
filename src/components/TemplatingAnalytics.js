@@ -889,26 +889,21 @@ function Dashboard({ onClose, initialCases }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases }) {
-  const hasLocalCases = Array.isArray(propCases) && propCases.length > 0;
-
-  // Jika ada kasus lokal → langsung authenticated; jika tidak → cek session PIN
+  // Selalu cek sessionStorage — tidak ada bypass, PIN wajib
   const getAuth = () => {
-    if (hasLocalCases) return true;
     try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch { return false; }
   };
 
   const [authenticated, setAuthenticated] = useState(() => getAuth());
 
-  // Re-evaluate saat isOpen berubah atau kasus lokal berubah
   useEffect(() => {
     if (isOpen) setAuthenticated(getAuth());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, hasLocalCases]);
+  }, [isOpen]);
 
   const handleLogout = () => {
     try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-    // Jika masih ada kasus lokal, tetap authenticated
-    if (!hasLocalCases) setAuthenticated(false);
+    setAuthenticated(false);
   };
 
   if (typeof document === "undefined") return null;
@@ -946,7 +941,7 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
                   {authenticated ? "Pre-op vs Post-op · per komponen" : "Diperlukan kode akses admin"}
                 </p>
               </div>
-              {authenticated && !hasLocalCases && (
+              {authenticated && (
                 <button type="button" onClick={handleLogout}
                   className="flex h-7 items-center gap-1 rounded-full bg-white/10 px-2.5 text-[9px] font-bold text-slate-300 hover:bg-white/20">
                   <Lock className="h-3 w-3" /> Keluar

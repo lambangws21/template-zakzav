@@ -1937,7 +1937,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
 
                 {/* Analitik */}
                 {(() => {
-                  const isUnlocked = cases.length > 0 || (() => { try { return sessionStorage.getItem("zakzav_analytics_auth_v1") === "1"; } catch { return false; } })();
+                  const isUnlocked = (() => { try { return sessionStorage.getItem("zakzav_analytics_auth_v1") === "1"; } catch { return false; } })();
                   return (
                     <button
                       type="button"
