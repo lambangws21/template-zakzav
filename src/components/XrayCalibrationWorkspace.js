@@ -11325,12 +11325,26 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.restore();
 
       const label = getLineLabelText(line);
-      const midX =
-        (start.x + end.x) / 2 +
-        (line.labelOffsetX ?? DEFAULT_LINE_LABEL_OFFSET_X);
-      const midY =
-        (start.y + end.y) / 2 +
-        (line.labelOffsetY ?? DEFAULT_LINE_LABEL_OFFSET_Y);
+      const lineMidX = (start.x + end.x) / 2;
+      const lineMidY = (start.y + end.y) / 2;
+      const midX = lineMidX + (line.labelOffsetX ?? DEFAULT_LINE_LABEL_OFFSET_X);
+      const midY = lineMidY + (line.labelOffsetY ?? DEFAULT_LINE_LABEL_OFFSET_Y);
+
+      const offsetX = line.labelOffsetX ?? DEFAULT_LINE_LABEL_OFFSET_X;
+      const offsetY = line.labelOffsetY ?? DEFAULT_LINE_LABEL_OFFSET_Y;
+      if (Math.abs(offsetX) > 2 || Math.abs(offsetY) > 2) {
+        overlayCtx.save();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(lineMidX, lineMidY);
+        overlayCtx.lineTo(midX, midY);
+        overlayCtx.setLineDash([3, 4]);
+        overlayCtx.lineWidth = 1;
+        overlayCtx.strokeStyle = opts.color;
+        overlayCtx.globalAlpha = 0.45;
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
+
       drawTag(overlayCtx, midX, midY, label, opts.color, {
         bgOpacity: Math.max(
           0.2,
