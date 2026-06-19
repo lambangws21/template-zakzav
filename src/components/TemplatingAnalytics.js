@@ -890,26 +890,25 @@ function Dashboard({ onClose, initialCases }) {
 
 export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases }) {
   const hasLocalCases = Array.isArray(propCases) && propCases.length > 0;
-  const [authenticated, setAuthenticated] = useState(false);
 
+  // Jika ada kasus lokal → langsung authenticated; jika tidak → cek session PIN
+  const getAuth = () => {
+    if (hasLocalCases) return true;
+    try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch { return false; }
+  };
+
+  const [authenticated, setAuthenticated] = useState(() => getAuth());
+
+  // Re-evaluate saat isOpen berubah atau kasus lokal berubah
   useEffect(() => {
-    if (isOpen) {
-      if (hasLocalCases) {
-        // Langsung buka tanpa PIN jika kasus lokal tersedia
-        setAuthenticated(true);
-        return;
-      }
-      try {
-        setAuthenticated(sessionStorage.getItem(SESSION_KEY) === "1");
-      } catch {
-        setAuthenticated(false);
-      }
-    }
+    if (isOpen) setAuthenticated(getAuth());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, hasLocalCases]);
 
   const handleLogout = () => {
     try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-    setAuthenticated(false);
+    // Jika masih ada kasus lokal, tetap authenticated
+    if (!hasLocalCases) setAuthenticated(false);
   };
 
   if (typeof document === "undefined") return null;
@@ -918,7 +917,7 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/50 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[9997] flex items-end justify-center bg-slate-950/50 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -947,7 +946,7 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
                   {authenticated ? "Pre-op vs Post-op · per komponen" : "Diperlukan kode akses admin"}
                 </p>
               </div>
-              {authenticated && (
+              {authenticated && !hasLocalCases && (
                 <button type="button" onClick={handleLogout}
                   className="flex h-7 items-center gap-1 rounded-full bg-white/10 px-2.5 text-[9px] font-bold text-slate-300 hover:bg-white/20">
                   <Lock className="h-3 w-3" /> Keluar

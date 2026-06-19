@@ -5009,6 +5009,7 @@ export default function XrayCalibrationWorkspace({
   const [preOpReportModalOpen, setPreOpReportModalOpen] = useState(false);
   const [patientCaseManagerOpen, setPatientCaseManagerOpen] = useState(false);
   const [wsAnalyticsOpen, setWsAnalyticsOpen] = useState(false);
+  const [wsAnalyticsCases, setWsAnalyticsCases] = useState([]);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
@@ -27145,7 +27146,7 @@ export default function XrayCalibrationWorkspace({
             </>
           ) : null}
           <ThemeToggle className="hidden sm:block ml-1" />
-          <UserProfileBadge className="ml-1" onAnalytics={() => setWsAnalyticsOpen(true)} />
+          <UserProfileBadge className="ml-1" onAnalytics={() => { try { const c = JSON.parse(localStorage.getItem("zakzav_patient_cases_v1") || "[]"); setWsAnalyticsCases(c); } catch {} setWsAnalyticsOpen(true); }} />
           {!isSimpleUiMode ? (
             <IconButton
               icon={mobileControlsOpen ? "close" : "menu"}
@@ -33856,7 +33857,7 @@ export default function XrayCalibrationWorkspace({
                       style={{ background: isDark ? "rgba(255,255,255,0.16)" : "rgba(148,163,184,0.35)" }}
                     />
 
-                    <UserProfileBadge onAnalytics={() => setWsAnalyticsOpen(true)} />
+                    <UserProfileBadge onAnalytics={() => { try { const c = JSON.parse(localStorage.getItem("zakzav_patient_cases_v1") || "[]"); setWsAnalyticsCases(c); } catch {} setWsAnalyticsOpen(true); }} />
                   </div>
                 </div>
               ) : null}
@@ -35509,6 +35510,7 @@ export default function XrayCalibrationWorkspace({
       <TemplatingAnalytics
         isOpen={wsAnalyticsOpen}
         onClose={() => setWsAnalyticsOpen(false)}
+        cases={wsAnalyticsCases}
       />
 
       {/* Cup Orientation Info Modal */}
