@@ -757,7 +757,7 @@ function PinGate({ onAuth }) {
         </div>
       )}
       <button type="submit" disabled={loading || !pin.trim()}
-        className="flex items-center gap-2 rounded-2xl bg-[var(--soft-inset-bg)] border border-[var(--soft-border)] px-8 py-2.5 text-xs font-black [color:var(--soft-text)] disabled:opacity-50">
+        className="flex items-center gap-2 rounded-2xl bg-violet-600 px-8 py-2.5 text-xs font-black text-white shadow-lg shadow-violet-500/20 transition hover:bg-violet-500 disabled:opacity-50">
         {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Masuk
       </button>
@@ -937,24 +937,27 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
             </div>
 
             {/* Header */}
-            <div className="flex items-center gap-3 bg-[#0f172a] px-5 py-4">
+            <div className="flex items-center gap-3 border-b px-5 py-4"
+              style={{ background: "var(--soft-inset-bg)", borderColor: "var(--soft-border)" }}>
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-600">
                 <BarChart2 className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-black text-white">Analisis Akurasi Templating</p>
-                <p className="text-[9px] text-slate-400">
+                <p className="text-sm font-black" style={{ color: "var(--soft-text-hi)" }}>Analisis Akurasi Templating</p>
+                <p className="text-[9px] opacity-50" style={{ color: "var(--soft-text)" }}>
                   {authenticated ? "Pre-op vs Post-op · per komponen" : "Diperlukan kode akses admin"}
                 </p>
               </div>
               {authenticated && (
                 <button type="button" onClick={handleLogout}
-                  className="flex h-7 items-center gap-1 rounded-full bg-white/10 px-2.5 text-[9px] font-bold text-slate-300 hover:bg-white/20">
+                  className="flex h-7 items-center gap-1 rounded-full border px-2.5 text-[9px] font-bold transition hover:opacity-80"
+                  style={{ borderColor: "var(--soft-border)", background: "var(--soft-pressed-bg)", color: "var(--soft-text)" }}>
                   <Lock className="h-3 w-3" /> Keluar
                 </button>
               )}
               <button type="button" onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/20">
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition hover:opacity-80"
+                style={{ borderColor: "var(--soft-border)", background: "var(--soft-pressed-bg)", color: "var(--soft-text)" }}>
                 <X className="h-4 w-4" />
               </button>
             </div>
