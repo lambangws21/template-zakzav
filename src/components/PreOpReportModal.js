@@ -617,10 +617,38 @@ export default function PreOpReportModal({
     setDone(false);
     try {
       let canvasDataUrl = null;
+
+      // 1. Try live canvas snapshot (from workspace)
       if (getCanvasSnapshot) {
         const canvas = getCanvasSnapshot("laporan pre-op", { exportScale: 1.5 });
         if (canvas) {
-          try { canvasDataUrl = canvas.toDataURL("image/jpeg", 0.9); } catch { canvasDataUrl = null; }
+          try { canvasDataUrl = canvas.toDataURL("image/jpeg", 0.9); } catch {}
+        }
+      }
+
+      // 2. Fallback: use saved snapshot from prefillCase
+      if (!canvasDataUrl && prefillCase) {
+        const snap = prefillCase.snapshot;
+        const snapUrl = prefillCase.snapshotUrl;
+        if (snap?.startsWith("data:")) {
+          canvasDataUrl = snap;
+        } else {
+          const src = snapUrl || (snap && !snap.startsWith("data:") ? snap : null);
+          if (src) {
+            const proxyUrl = src.startsWith("http")
+              ? `/api/google-drive-image?src=${encodeURIComponent(src)}`
+              : src;
+            try {
+              const r = await fetch(proxyUrl);
+              const blob = await r.blob();
+              canvasDataUrl = await new Promise((res) => {
+                const fr = new FileReader();
+                fr.onload = () => res(fr.result);
+                fr.onerror = () => res(null);
+                fr.readAsDataURL(blob);
+              });
+            } catch {}
+          }
         }
       }
 
@@ -651,7 +679,7 @@ export default function PreOpReportModal({
     } finally {
       setGenerating(false);
     }
-  }, [patientInfo, measurementRows, templateInventoryRows, hkaSummary, selectedImplantLibraryItem, imageName, getCanvasSnapshot]);
+  }, [patientInfo, measurementRows, templateInventoryRows, hkaSummary, selectedImplantLibraryItem, imageName, getCanvasSnapshot, prefillCase]);
 
   if (typeof document === "undefined") return null;
 

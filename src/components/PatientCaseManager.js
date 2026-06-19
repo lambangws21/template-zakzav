@@ -13,6 +13,7 @@ import {
   Layers,
   Search,
   Download,
+  Upload,
   Clock,
   ChevronRight,
   ChevronUp,
@@ -1276,9 +1277,40 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
 
 function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox }) {
   const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
+  const [exportingXray, setExportingXray] = useState(false);
   useEffect(() => { setPostOpPhotoIdx(0); }, [caseData?.id]);
 
   if (!caseData) return null;
+
+  async function handleExportXray() {
+    setExportingXray(true);
+    try {
+      const snap = caseData.snapshot;
+      const snapUrl = caseData.snapshotUrl;
+      let href, ext = "jpg";
+      if (snap?.startsWith("data:")) {
+        href = snap;
+        ext = snap.startsWith("data:image/png") ? "png" : "jpg";
+      } else {
+        const src = snapUrl || snap;
+        const proxyUrl = src?.startsWith("http")
+          ? `/api/google-drive-image?src=${encodeURIComponent(src)}`
+          : src;
+        if (!proxyUrl) return;
+        const r = await fetch(proxyUrl);
+        const blob = await r.blob();
+        href = URL.createObjectURL(blob);
+        ext = blob.type.includes("png") ? "png" : "jpg";
+      }
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `${(caseData.patientName || "xray").replace(/[^a-zA-Z0-9]/g, "-")}-xray.${ext}`;
+      a.click();
+      if (!snap?.startsWith("data:")) setTimeout(() => URL.revokeObjectURL(href), 1500);
+    } catch {} finally {
+      setExportingXray(false);
+    }
+  }
 
   const preComponents = caseData.implantLabel
     ? caseData.implantLabel.split(" · ").map((s) => s.trim()).filter(Boolean)
@@ -1594,6 +1626,19 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                   Buka sebagai Layer Perbandingan
                 </button>
               )}
+              {(caseData.snapshot || caseData.snapshotUrl) && (
+                <button
+                  type="button"
+                  onClick={handleExportXray}
+                  disabled={exportingXray}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 py-2 text-[10px] font-black text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                >
+                  {exportingXray
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <ImageIcon className="h-3 w-3" />}
+                  Ekspor X-Ray (Gambar)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => { onPreOpReport(caseData); onClose(); }}
@@ -1657,6 +1702,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [compareCases, setCompareCases] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [fullReportCase, setFullReportCase] = useState(null);
+  const [importMsg, setImportMsg] = useState(""); // "ok:N" | "err:msg" | ""
+  const backupInputRef = useRef(null);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
@@ -1838,6 +1885,40 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
     [cases, hasCloud],
   );
 
+  function handleExportBackup() {
+    const slim = cases.map(({ snapshot, ...rest }) => rest);
+    const payload = { version: 1, exportedAt: new Date().toISOString(), cases: slim };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `zakzav-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1200);
+  }
+
+  async function handleImportBackup(file) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const incoming = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.cases)
+        ? parsed.cases
+        : null;
+      if (!incoming) throw new Error("Format file tidak valid.");
+      const existingIds = new Set(cases.map((c) => c.id));
+      const newCases = incoming.filter((c) => c?.id && !existingIds.has(c.id));
+      const merged = [...newCases, ...cases].slice(0, 200);
+      setCases(merged);
+      saveCases(merged);
+      setImportMsg(`ok:${newCases.length}`);
+    } catch (e) {
+      setImportMsg(`err:${e.message || "Gagal membaca file"}`);
+    }
+    setTimeout(() => setImportMsg(""), 4000);
+  }
+
   const selectedCase = cases.find((c) => c.id === selectedCaseId);
   const editCaseData = cases.find((c) => c.id === editingCaseId) ?? null;
 
@@ -1925,11 +2006,38 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       onClick={handleRefresh}
                       disabled={loading}
                       className="flex h-7 w-7 items-center justify-center rounded-full bg-white/8 text-purple-200 hover:bg-white/15 disabled:opacity-40 transition"
-                      title="Refresh"
+                      title="Refresh dari cloud"
                     >
                       <RotateCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleExportBackup}
+                    disabled={cases.length === 0}
+                    title="Backup semua kasus ke file JSON"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white/8 text-purple-200 hover:bg-white/15 disabled:opacity-30 transition"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => backupInputRef.current?.click()}
+                    title="Restore kasus dari file JSON"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white/8 text-purple-200 hover:bg-white/15 transition"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                  </button>
+                  <input
+                    ref={backupInputRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) { handleImportBackup(f); e.target.value = ""; }
+                    }}
+                  />
                 </div>
 
                 {/* Separator */}
@@ -1995,6 +2103,38 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                     >
                       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
                       <p className="text-[10px] text-amber-700">{cloudError}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Backup import status */}
+                <AnimatePresence>
+                  {importMsg && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`flex items-center gap-2 rounded-2xl border px-3 py-2.5 ${
+                        importMsg.startsWith("ok:")
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-red-200 bg-red-50"
+                      }`}
+                    >
+                      {importMsg.startsWith("ok:") ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                          <p className="text-[10px] text-emerald-700">
+                            {importMsg.split(":")[1] === "0"
+                              ? "Semua kasus sudah ada, tidak ada data baru."
+                              : `${importMsg.split(":")[1]} kasus berhasil diimpor.`}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                          <p className="text-[10px] text-red-700">{importMsg.split(":").slice(1).join(":")}</p>
+                        </>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
