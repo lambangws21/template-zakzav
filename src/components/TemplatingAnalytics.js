@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useTheme } from "@/hooks/useTheme";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -702,6 +703,7 @@ async function exportPdf(cases, stats, byProcedure, byComponent) {
 // ─── PIN Gate ─────────────────────────────────────────────────────────────────
 
 function PinGate({ onAuth }) {
+  const { isDark } = useTheme();
   const [pin, setPin] = useState("");
   const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -726,14 +728,20 @@ function PinGate({ onAuth }) {
     }
   };
 
+  const textHi   = isDark ? "#f0f6ff" : "#0f172a";
+  const textMd   = isDark ? "#c8d5e8" : "#334155";
+  const bg       = isDark ? "#101928" : "#eef2f7";
+  const border   = isDark ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.1)";
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col items-center gap-5 px-6 py-10 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[var(--soft-inset-bg)]">
-        <Lock className="h-7 w-7 [color:var(--soft-text)] opacity-60" />
+      <div className="flex h-16 w-16 items-center justify-center rounded-3xl"
+        style={{ background: bg }}>
+        <Lock className="h-7 w-7 opacity-50" style={{ color: textMd }} />
       </div>
       <div>
-        <p className="text-sm font-black [color:var(--soft-text)]">Area Admin</p>
-        <p className="mt-1 text-[10px] [color:var(--soft-text)] opacity-50">
+        <p className="text-sm font-black" style={{ color: textHi }}>Area Admin</p>
+        <p className="mt-1 text-[10px] opacity-50" style={{ color: textMd }}>
           Analitik akurasi hanya dapat diakses oleh admin
         </p>
       </div>
@@ -744,10 +752,12 @@ function PinGate({ onAuth }) {
           onChange={(e) => setPin(e.target.value)}
           placeholder="Kode akses"
           autoFocus
-          className="w-full rounded-2xl border border-[var(--soft-border)] bg-[var(--soft-inset-bg)] py-2.5 pl-4 pr-10 text-center text-sm [color:var(--soft-text)] tracking-widest outline-none transition focus:ring-2 focus:ring-cyan-500/25"
+          className="w-full rounded-2xl py-2.5 pl-4 pr-10 text-center text-sm tracking-widest outline-none transition focus:ring-2 focus:ring-violet-500/30"
+          style={{ background: bg, border: `1px solid ${border}`, color: textHi }}
         />
         <button type="button" tabIndex={-1} onClick={() => setShowPin(v => !v)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 [color:var(--soft-text)] opacity-50">
+          className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50"
+          style={{ color: textMd }}>
           {showPin ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
         </button>
       </div>
@@ -889,6 +899,8 @@ function Dashboard({ onClose, initialCases }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases }) {
+  const { isDark } = useTheme();
+
   // Selalu cek sessionStorage — tidak ada bypass, PIN wajib
   const getAuth = () => {
     try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch { return false; }
@@ -925,7 +937,11 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="max-h-[94dvh] w-full max-w-[min(100%,600px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
+            className="max-h-[94dvh] w-full max-w-[min(100%,600px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
+            style={{
+              background: isDark ? "#1e2840" : "#ffffff",
+              border: `1px solid ${isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.08)"}`,
+            }}
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.96, opacity: 0 }}
@@ -933,31 +949,43 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
           >
             {/* Drag pill mobile */}
             <div className="flex justify-center pt-3 pb-1 sm:hidden">
-              <div className="h-1 w-10 rounded-full bg-[var(--soft-border)]" />
+              <div className="h-1 w-10 rounded-full"
+                style={{ background: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)" }} />
             </div>
 
             {/* Header */}
             <div className="flex items-center gap-3 border-b px-5 py-4"
-              style={{ background: "var(--soft-inset-bg)", borderColor: "var(--soft-border)" }}>
+              style={{
+                background: isDark ? "#141d2e" : "#f1f5f9",
+                borderColor: isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.08)",
+              }}>
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-600">
                 <BarChart2 className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-black" style={{ color: "var(--soft-text-hi)" }}>Analisis Akurasi Templating</p>
-                <p className="text-[9px] opacity-50" style={{ color: "var(--soft-text)" }}>
+                <p className="text-sm font-black" style={{ color: isDark ? "#f0f6ff" : "#0f172a" }}>Analisis Akurasi Templating</p>
+                <p className="text-[9px] opacity-50" style={{ color: isDark ? "#c8d5e8" : "#334155" }}>
                   {authenticated ? "Pre-op vs Post-op · per komponen" : "Diperlukan kode akses admin"}
                 </p>
               </div>
               {authenticated && (
                 <button type="button" onClick={handleLogout}
                   className="flex h-7 items-center gap-1 rounded-full border px-2.5 text-[9px] font-bold transition hover:opacity-80"
-                  style={{ borderColor: "var(--soft-border)", background: "var(--soft-pressed-bg)", color: "var(--soft-text)" }}>
+                  style={{
+                    borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+                    background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+                    color: isDark ? "#c8d5e8" : "#334155",
+                  }}>
                   <Lock className="h-3 w-3" /> Keluar
                 </button>
               )}
               <button type="button" onClick={onClose}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition hover:opacity-80"
-                style={{ borderColor: "var(--soft-border)", background: "var(--soft-pressed-bg)", color: "var(--soft-text)" }}>
+                style={{
+                  borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+                  background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+                  color: isDark ? "#c8d5e8" : "#334155",
+                }}>
                 <X className="h-4 w-4" />
               </button>
             </div>
