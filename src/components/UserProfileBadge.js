@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LogOut, User, Shield, ChevronDown } from "lucide-react";
+import { LogOut, Shield, ChevronDown, BarChart2 } from "lucide-react";
 import { logOut } from "@/lib/authServices";
 import { useAuth } from "@/context/AuthContext";
 
@@ -62,7 +62,6 @@ function ConfirmLogout({ user, onConfirm, onCancel }) {
               <LogOut className="h-10 w-10" style={{ color: "#d94f4f", strokeWidth: 1.4 }} />
             </div>
 
-            {/* <p className="text-[11px] font-medium" style={{ color: "#8899bb" }}>Konfirmasi Keluar</p> */}
             <p className="mt-1 text-[22px] font-black leading-tight text-white">Keluar dari akun?</p>
             <p className="mt-2 text-[11px] leading-relaxed" style={{ color: "#6b7d9e" }}>
               Sesi kerja Anda akan berakhir. Anda perlu login kembali untuk mengakses workspace Anda.
@@ -90,7 +89,7 @@ function ConfirmLogout({ user, onConfirm, onCancel }) {
 
 // ─── Dropdown menu ────────────────────────────────────────────────────────────
 
-function ProfileDropdown({ user, anchorRef, onClose, onLogout }) {
+function ProfileDropdown({ user, anchorRef, onClose, onLogout, onAnalytics }) {
   const email   = user?.email || "—";
   const name    = user?.displayName || email.split("@")[0];
   const initial = email[0]?.toUpperCase() || "?";
@@ -143,7 +142,18 @@ function ProfileDropdown({ user, anchorRef, onClose, onLogout }) {
         </div>
 
         {/* Actions */}
-        <div className="p-2">
+        <div className="p-2 space-y-0.5">
+          {onAnalytics && (
+            <button
+              type="button"
+              onClick={() => { onAnalytics(); onClose(); }}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[11px] font-black transition hover:bg-violet-500/10"
+              style={{ color: "var(--soft-text-hi)" }}
+            >
+              <BarChart2 className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+              Analitik Kasus
+            </button>
+          )}
           <button
             type="button"
             onClick={onLogout}
@@ -161,7 +171,7 @@ function ProfileDropdown({ user, anchorRef, onClose, onLogout }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function UserProfileBadge({ className = "" }) {
+export default function UserProfileBadge({ className = "", onAnalytics }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -189,20 +199,25 @@ export default function UserProfileBadge({ className = "" }) {
         ref={ref}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-left transition hover:opacity-90 active:scale-95 ${className}`}
-        style={{
-          background: "var(--soft-inset-bg)",
-          border: "1px solid var(--soft-border)",
-        }}
+        className={`flex items-center gap-2 rounded-full p-1 transition active:scale-95 ${className}`}
+        style={{ background: "transparent", border: "none" }}
       >
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 text-[9px] font-black text-white shadow">
+        {/* Avatar — selalu tampil di semua ukuran */}
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white shadow-md"
+          style={{ background: "linear-gradient(135deg, #38bdf8, #4f46e5)", minWidth: "2rem" }}
+        >
           {initial}
-        </div>
-        <span className="max-w-[80px] truncate text-[9px] font-black" style={{ color: "var(--soft-text)" }}>
+        </span>
+
+        {/* Nama + chevron — hanya desktop */}
+        <span className="hidden sm:block max-w-[80px] truncate text-[9px] font-black" style={{ color: "var(--soft-text)" }}>
           {name}
         </span>
-        <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-          style={{ color: "var(--soft-text)", opacity: 0.5 }} />
+        <ChevronDown
+          className={`hidden sm:block h-3 w-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          style={{ color: "var(--soft-text)", opacity: 0.5 }}
+        />
       </button>
 
       {open && (
@@ -211,6 +226,7 @@ export default function UserProfileBadge({ className = "" }) {
           anchorRef={ref}
           onClose={() => setOpen(false)}
           onLogout={handleLogoutClick}
+          onAnalytics={onAnalytics}
         />
       )}
 

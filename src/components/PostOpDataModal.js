@@ -402,7 +402,20 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
             )}
 
             {/* Form */}
-            <div className="max-h-[68dvh] overflow-y-auto">
+            <div className="relative max-h-[68dvh] overflow-y-auto">
+              {/* Saving skeleton overlay */}
+              {saving && (
+                <div className="absolute inset-0 z-10 flex flex-col gap-3 bg-white/88 px-5 py-5 backdrop-blur-[2px]">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-emerald-500 shrink-0" />
+                    <span className="text-xs font-black text-slate-600">Menyimpan data post-op...</span>
+                  </div>
+                  <div className="h-28 animate-pulse rounded-2xl bg-slate-100" />
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-10 animate-pulse rounded-xl bg-slate-100" style={{ animationDelay: `${i * 80}ms` }} />
+                  ))}
+                </div>
+              )}
               <div className="space-y-4 px-5 py-4">
 
                 {done ? (

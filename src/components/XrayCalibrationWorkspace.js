@@ -27142,9 +27142,8 @@ export default function XrayCalibrationWorkspace({
               </button>
             </>
           ) : null}
+          <ThemeToggle className="hidden sm:block ml-1" />
           <UserProfileBadge className="ml-1" />
-          <ThemeToggle className="ml-1" />
-          <LogoutButton variant="header" />
           {!isSimpleUiMode ? (
             <IconButton
               icon={mobileControlsOpen ? "close" : "menu"}
@@ -33855,7 +33854,7 @@ export default function XrayCalibrationWorkspace({
                       style={{ background: isDark ? "rgba(255,255,255,0.16)" : "rgba(148,163,184,0.35)" }}
                     />
 
-                    <LogoutButton variant="compact" />
+                    <UserProfileBadge />
                   </div>
                 </div>
               ) : null}

@@ -45,6 +45,87 @@ import UserProfileBadge from "./UserProfileBadge";
 const STORAGE_KEY = "zakzav_patient_cases_v1";
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
 
+// ─── Delete Confirm Modal ──────────────────────────────────────────────────────
+
+function DeleteConfirmModal({ caseData, onConfirm, onCancel }) {
+  if (typeof document === "undefined" || !caseData) return null;
+  const name = caseData.patientName || "Tanpa Nama";
+  const proc = (caseData.procedure || "").split("(")[0].trim() || "—";
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        onClick={onCancel}
+        className="fixed inset-0 z-[99999] flex items-center justify-center p-6"
+        style={{ background: "rgba(4,6,18,0.82)", backdropFilter: "blur(10px)" }}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.88, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.88, y: 20 }}
+          transition={{ type: "spring", damping: 24, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-[300px]"
+        >
+          {/* Icon floating above */}
+          <div className="absolute -top-9 left-1/2 z-10 -translate-x-1/2">
+            <div
+              className="flex h-[72px] w-[72px] items-center justify-center rounded-full shadow-2xl"
+              style={{
+                background: "radial-gradient(circle at 35% 35%, #ef4444, #991b1b)",
+                boxShadow: "0 0 0 4px #1c1622, 0 8px 24px rgba(220,38,38,0.5)",
+              }}
+            >
+              <Trash2 className="h-7 w-7 text-white" strokeWidth={1.8} />
+            </div>
+          </div>
+
+          {/* Card */}
+          <div
+            className="overflow-hidden rounded-[28px] px-6 pb-6 pt-12 text-center"
+            style={{ background: "#1c1622", border: "1px solid rgba(255,255,255,0.07)" }}
+          >
+            {/* Patient name */}
+            <p className="text-[15px] font-black text-white leading-tight">{name}</p>
+            <p className="mt-0.5 text-[11px]" style={{ color: "#7c6e8a" }}>{proc}</p>
+
+            <div className="my-4 h-px" style={{ background: "rgba(255,255,255,0.07)" }} />
+
+            <p className="text-[22px] font-black leading-tight text-white">Hapus kasus ini?</p>
+            <p className="mt-2 text-[11px] leading-relaxed" style={{ color: "#7c6e8a" }}>
+              Data kasus, rencana templating, dan foto akan dihapus permanen dan tidak dapat dikembalikan.
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 rounded-2xl py-3 text-[13px] font-black text-white transition hover:brightness-110 active:scale-95"
+                style={{ background: "#0f0c14" }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="flex-1 rounded-2xl py-3 text-[13px] font-black text-white transition hover:brightness-110 active:scale-95"
+                style={{ background: "#dc2626", boxShadow: "0 4px 16px rgba(220,38,38,0.4)" }}
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
+  );
+}
+
 // ─── Local cache utils ─────────────────────────────────────────────────────────
 
 function loadCases() {
@@ -510,16 +591,64 @@ function ImagePreviewLightbox({ src: initialSrc, patientName, onClose, onReplace
   );
 }
 
+// ─── Case Card Skeleton ───────────────────────────────────────────────────────
+
+function CaseCardSkeleton() {
+  return (
+    <div className="flex gap-3 overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-3 animate-pulse"
+      style={{ background: "var(--soft-card-bg, #fff)" }}>
+      {/* Thumbnail */}
+      <div className="h-[72px] w-[72px] shrink-0 rounded-xl bg-slate-200" />
+      {/* Content */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+        <div className="h-3 w-2/5 rounded-full bg-slate-200" />
+        <div className="h-2.5 w-1/3 rounded-full bg-slate-200" />
+        <div className="flex gap-1.5">
+          <div className="h-5 w-20 rounded-full bg-slate-200" />
+          <div className="h-5 w-16 rounded-full bg-slate-200" />
+        </div>
+      </div>
+      {/* Right */}
+      <div className="flex flex-col items-end gap-2 py-1">
+        <div className="h-2.5 w-12 rounded-full bg-slate-200" />
+        <div className="h-5 w-14 rounded-full bg-slate-200" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Syncing Toast ────────────────────────────────────────────────────────────
+
+function SyncingToast({ syncing, text = "Menyimpan ke cloud..." }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <AnimatePresence>
+      {syncing && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 16 }}
+          transition={{ type: "spring", damping: 22, stiffness: 300 }}
+          className="fixed bottom-6 left-1/2 z-[99990] -translate-x-1/2"
+        >
+          <div className="flex items-center gap-2.5 rounded-full px-4 py-2.5 shadow-2xl"
+            style={{ background: "#1a0d2e", border: "1px solid rgba(168,85,247,0.3)" }}>
+            <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+            <span className="text-[11px] font-black text-purple-200">{text}</span>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+}
+
 // ─── Case Card ────────────────────────────────────────────────────────────────
 
 function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const timerRef = useRef(null);
   const hkaList = c.hkaSummary || [];
   const thumbnail = snapshotSrc(c.snapshot || c.snapshotUrl || null);
-
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   return (
     <>
@@ -654,35 +783,14 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
           {/* actions */}
           <div className="flex flex-col items-center justify-between py-2 pr-2">
             <ChevronRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600" />
-            <AnimatePresence mode="wait">
-              {confirmDelete ? (
-                <motion.button
-                  key="confirm"
-                  initial={{ scale: 0.8 }}
-                  animate={{ scale: 1 }}
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white"
-                  title="Konfirmasi hapus"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </motion.button>
-              ) : (
-                <motion.button
-                  key="idle"
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmDelete(true);
-                    timerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
-                  }}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-400 group-hover:opacity-100"
-                  title="Hapus kasus"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </motion.button>
-              )}
-            </AnimatePresence>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+              title="Hapus kasus"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
           </div>
         </div>
       </motion.div>
@@ -733,131 +841,209 @@ function SaveForm({ currentSession, onSave, onCancel }) {
     currentSession?.cupAssessment && `Cup INC ${parseFloat(currentSession.cupAssessment.inclination).toFixed(1)}° AV ${parseFloat(currentSession.cupAssessment.anteversion).toFixed(1)}°`,
   ].filter(Boolean);
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-2.5 rounded-2xl border border-blue-200 bg-blue-50 p-3.5"
-    >
-      <p className="text-[9px] font-black uppercase tracking-widest text-blue-600">Simpan Kasus Baru</p>
+  if (typeof document === "undefined") return null;
 
-      {/* Row 1: Nama + Prosedur */}
-      <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Nama Pasien</span>
-          <input
-            type="text"
-            value={patientName}
-            onChange={(e) => setPatientName(e.target.value)}
-            placeholder="Nama pasien"
-            autoFocus
-            className="w-full rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-          />
-        </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Prosedur</span>
-          <select
-            value={procedure}
-            onChange={(e) => setProcedure(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-          >
-            <option>Total Knee Arthroplasty (TKA)</option>
-            <option>Total Hip Arthroplasty (THA)</option>
-            <option>Unicompartmental Knee Arthroplasty (UKA)</option>
-            <option>Revision Knee Arthroplasty</option>
-            <option>Hemiarthroplasty Hip</option>
-            <option>Osteotomy</option>
-            <option>Lainnya</option>
-          </select>
-        </label>
-      </div>
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        onClick={onCancel}
+        className="fixed inset-0 z-[9994] flex items-end justify-center p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] sm:items-center sm:p-6"
+        style={{ background: "rgba(4,6,18,0.70)", backdropFilter: "blur(8px)" }}
+      >
+        <motion.div
+          initial={{ y: 40, opacity: 0, scale: 0.97 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: 30, opacity: 0, scale: 0.97 }}
+          transition={{ type: "spring", damping: 26, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-[480px] overflow-hidden rounded-[24px] shadow-2xl"
+          style={{ background: "var(--soft-raised-bg, #fff)", border: "1px solid var(--soft-border, #e2e8f0)" }}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 border-b px-5 py-4"
+            style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)" }}>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600">
+              <Download className="h-4 w-4 text-white" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-black" style={{ color: "var(--soft-text-hi)" }}>Simpan Kasus Baru</p>
+              {stats.length > 0 && (
+                <p className="text-[9px] opacity-50 truncate" style={{ color: "var(--soft-text)" }}>{stats.join(" · ")}</p>
+              )}
+            </div>
+            <button type="button" onClick={onCancel}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition hover:opacity-70"
+              style={{ background: "var(--soft-border)" }}>
+              <X className="h-3.5 w-3.5" style={{ color: "var(--soft-text)" }} />
+            </button>
+          </div>
 
-      {/* Canvas implant chips */}
-      {allLabels.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 mr-1">
-            <Layers className="h-2.5 w-2.5" />
-          </span>
-          {allLabels.map((label, i) => (
-            <span key={i} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[9px] text-slate-600">
-              <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
-              {label}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Rencana ukuran komponen per-prosedur */}
-      {compConfig && (
-        <div className="space-y-1.5 rounded-xl border border-blue-200 bg-white/70 p-2.5">
-          <span className="text-[9px] font-black uppercase tracking-widest text-blue-500">
-            Rencana Ukuran — {compConfig.primary.label}
-          </span>
-          <div className="grid grid-cols-2 gap-1.5">
-            {allCompFields.map((comp) => (
-              <label key={comp.key} className="flex flex-col gap-0.5">
-                <span className="text-[8px] text-slate-500">
-                  {comp.label}
-                  {comp.unit !== "size" && <span className="text-slate-400"> ({comp.unit})</span>}
-                  {comp.optional && <span className="ml-0.5 italic text-slate-400"> *</span>}
-                </span>
+          {/* Body */}
+          <div className="space-y-3 px-5 py-4">
+            {/* Nama + Prosedur */}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "var(--soft-text)" }}>Nama Pasien</span>
                 <input
-                  type={comp.unit === "size" ? "text" : "number"}
-                  step={comp.unit === "size" ? undefined : "0.5"}
-                  min={comp.unit === "size" ? undefined : "0"}
-                  value={preOpSizes[comp.key] ?? ""}
-                  onChange={(e) => setSize(comp.key, e.target.value)}
-                  placeholder={comp.hint}
-                  className="w-full rounded-lg border border-blue-100 bg-white px-2 py-1 text-xs text-slate-800 outline-none transition focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                  type="text"
+                  value={patientName}
+                  onChange={(e) => setPatientName(e.target.value)}
+                  placeholder="Nama pasien"
+                  autoFocus
+                  className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none transition focus:ring-2"
+                  style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
                 />
               </label>
-            ))}
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "var(--soft-text)" }}>Prosedur</span>
+                <select
+                  value={procedure}
+                  onChange={(e) => setProcedure(e.target.value)}
+                  className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none transition focus:ring-2"
+                  style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
+                >
+                  <option>Total Knee Arthroplasty (TKA)</option>
+                  <option>Total Hip Arthroplasty (THA)</option>
+                  <option>Unicompartmental Knee Arthroplasty (UKA)</option>
+                  <option>Revision Knee Arthroplasty</option>
+                  <option>Hemiarthroplasty Hip</option>
+                  <option>Osteotomy</option>
+                  <option>Lainnya</option>
+                </select>
+              </label>
+            </div>
+
+            {/* Canvas implant chips */}
+            {allLabels.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest mr-1" style={{ color: "var(--soft-text)" }}>
+                  <Layers className="h-2.5 w-2.5" />
+                </span>
+                {allLabels.map((label, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px]"
+                    style={{ borderColor: "var(--soft-border)", color: "var(--soft-text-hi)", background: "var(--soft-inset-bg)" }}>
+                    <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Ukuran komponen */}
+            {compConfig && (
+              <div className="space-y-1.5 rounded-xl border p-3"
+                style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)" }}>
+                <span className="text-[9px] font-black uppercase tracking-widest text-blue-500">
+                  Rencana Ukuran — {compConfig.primary.label}
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {allCompFields.map((comp) => (
+                    <label key={comp.key} className="flex flex-col gap-0.5">
+                      <span className="text-[8px]" style={{ color: "var(--soft-text)" }}>
+                        {comp.label}
+                        {comp.unit !== "size" && <span className="opacity-50"> ({comp.unit})</span>}
+                        {comp.optional && <span className="ml-0.5 italic opacity-40"> *</span>}
+                      </span>
+                      <input
+                        type={comp.unit === "size" ? "text" : "number"}
+                        step={comp.unit === "size" ? undefined : "0.5"}
+                        min={comp.unit === "size" ? undefined : "0"}
+                        value={preOpSizes[comp.key] ?? ""}
+                        onChange={(e) => setSize(comp.key, e.target.value)}
+                        placeholder={comp.hint}
+                        className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none transition"
+                        style={{ borderColor: "var(--soft-border)", background: "var(--soft-raised-bg)", color: "var(--soft-text-hi)" }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Hasil Pengukuran */}
+            {((currentSession?.hkaSummary || []).length > 0 || currentSession?.cupAssessment) && (
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--soft-border)" }}>
+                <div className="flex items-center gap-1.5 px-3 py-2" style={{ background: "var(--soft-inset-bg)", borderBottom: "1px solid var(--soft-border)" }}>
+                  <Activity className="h-3 w-3 text-violet-500 shrink-0" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-violet-500">Hasil Pengukuran</span>
+                </div>
+                <div className="divide-y" style={{ divideColor: "var(--soft-border)" }}>
+                  {(currentSession.hkaSummary || []).map((m, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0 text-[8px] font-black uppercase"
+                          style={{ color: "var(--soft-text)", opacity: 0.5 }}>
+                          {m.side === "left" ? "Kiri" : "Kanan"}
+                        </span>
+                        <span className="text-[9px] truncate" style={{ color: "var(--soft-text)" }}>{m.modeLabel || "HKA"}</span>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black ${
+                        m.absoluteDeviation !== null && m.absoluteDeviation < 3
+                          ? "bg-emerald-100 text-emerald-700"
+                          : m.absoluteDeviation !== null && m.absoluteDeviation <= 5
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-red-100 text-red-700"
+                      }`}>
+                        {m.absoluteDeviation !== null ? `${m.absoluteDeviation.toFixed(1)}°` : "—"}
+                        {m.direction && m.absoluteDeviation !== null ? ` ${m.direction === "varus" ? "Varus" : "Valgus"}` : ""}
+                      </span>
+                    </div>
+                  ))}
+                  {currentSession?.cupAssessment && (
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-[9px]" style={{ color: "var(--soft-text)" }}>Cup Inclination / Anteversion</span>
+                      <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-black text-sky-700">
+                        {parseFloat(currentSession.cupAssessment.inclination).toFixed(1)}° / {parseFloat(currentSession.cupAssessment.anteversion).toFixed(1)}°
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Catatan */}
+            <label className="flex flex-col gap-1">
+              <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "var(--soft-text)" }}>Catatan</span>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Catatan singkat (opsional)"
+                className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none transition"
+                style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
+              />
+            </label>
           </div>
-        </div>
-      )}
 
-      {/* Catatan (1 baris) */}
-      <label className="flex flex-col gap-0.5">
-        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Catatan</span>
-        <input
-          type="text"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Catatan singkat (opsional)"
-          className="w-full rounded-xl border border-slate-200 bg-white/80 px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-        />
-      </label>
-
-      {/* Stats inline */}
-      {stats.length > 0 && (
-        <p className="text-[9px] text-slate-400">{stats.join(" · ")}</p>
-      )}
-
-      {/* Buttons */}
-      <div className="flex gap-2 pt-0.5">
-        <button
-          type="button"
-          onClick={() => onSave({
-            patientName: patientName.trim(),
-            procedure,
-            notes: notes.trim(),
-            preOpSizes,
-          })}
-          disabled={!patientName.trim()}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-blue-600 py-2.5 text-xs font-black text-white shadow-[0_3px_10px_rgba(37,99,235,0.35)] disabled:opacity-40"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Simpan
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-500"
-        >
-          Batal
-        </button>
-      </div>
-    </motion.div>
+          {/* Footer buttons */}
+          <div className="flex gap-2.5 border-t px-5 py-4"
+            style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)" }}>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-2xl border px-5 py-2.5 text-xs font-black transition hover:opacity-80"
+              style={{ borderColor: "var(--soft-border)", color: "var(--soft-text)", background: "var(--soft-raised-bg)" }}
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={() => onSave({ patientName: patientName.trim(), procedure, notes: notes.trim(), preOpSizes })}
+              disabled={!patientName.trim()}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-blue-600 py-2.5 text-xs font-black text-white shadow-lg shadow-blue-500/25 transition hover:bg-blue-500 disabled:opacity-40"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Simpan Kasus
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
   );
 }
 
@@ -868,6 +1054,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
   const [procedure, setProcedure] = useState(caseData?.procedure || "Total Knee Arthroplasty (TKA)");
   const [notes, setNotes] = useState(caseData?.notes || "");
   const [preOpSizes, setPreOpSizes] = useState({});
+  const [saving, setSaving] = useState(false);
 
   // Restore all fields (including pre-filled sizes) when caseData changes
   useEffect(() => {
@@ -886,7 +1073,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
   const allCompFields = compConfig ? [compConfig.primary, ...compConfig.extras] : [];
   const setSize = (key, val) => setPreOpSizes((prev) => ({ ...prev, [key]: val }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const structuredLabel = buildStructuredLabel(procType, preOpSizes);
     const primaryKey = compConfig?.primary?.key;
     const primaryVal = primaryKey ? preOpSizes[primaryKey] : null;
@@ -894,13 +1081,18 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
       primaryVal !== undefined && primaryVal !== "" && !isNaN(Number(primaryVal))
         ? Number(primaryVal)
         : null;
-    onSave({
-      patientName: patientName.trim(),
-      procedure,
-      notes: notes.trim(),
-      implantLabel: structuredLabel || preOpSizes.__free__ || caseData?.implantLabel || "",
-      preOpSizeNum,
-    });
+    setSaving(true);
+    try {
+      await onSave({
+        patientName: patientName.trim(),
+        procedure,
+        notes: notes.trim(),
+        implantLabel: structuredLabel || preOpSizes.__free__ || caseData?.implantLabel || "",
+        preOpSizeNum,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -956,7 +1148,19 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
               </div>
             </div>
 
-            <div className="space-y-3 p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] sm:space-y-3.5 sm:p-5 sm:pb-5">
+            <div className="relative space-y-3 p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] sm:space-y-3.5 sm:p-5 sm:pb-5">
+              {/* Saving skeleton overlay */}
+              {saving && (
+                <div className="absolute inset-0 z-10 flex flex-col gap-3 rounded-b-[24px] bg-[#f8f7ff]/90 px-4 py-5 backdrop-blur-[2px]">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-amber-500 shrink-0" />
+                    <span className="text-xs font-black text-slate-600">Menyimpan perubahan...</span>
+                  </div>
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-11 animate-pulse rounded-xl bg-amber-50" style={{ animationDelay: `${i * 80}ms` }} />
+                  ))}
+                </div>
+              )}
               {/* Row: Nama + Prosedur */}
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <label className="flex flex-col gap-1">
@@ -1045,11 +1249,11 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={!patientName.trim()}
+                  disabled={!patientName.trim() || saving}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-amber-600 py-2.5 text-xs font-black text-white shadow-[0_3px_10px_rgba(217,119,6,0.3)] transition disabled:opacity-40 hover:bg-amber-500"
                 >
-                  <Save className="h-3.5 w-3.5" />
-                  Simpan Perubahan
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {saving ? "Menyimpan..." : "Simpan Perubahan"}
                 </button>
                 <button
                   type="button"
@@ -1450,6 +1654,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [lightboxName, setLightboxName] = useState(null);
   const [lightboxCaseId, setLightboxCaseId] = useState(null);
   const [compareCases, setCompareCases] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [fullReportCase, setFullReportCase] = useState(null);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
@@ -1670,80 +1875,89 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="max-h-[94dvh] w-full max-w-[min(100%,580px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f1f5f9] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
+            className="max-h-[94dvh] w-full max-w-[min(100%,780px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f1f5f9] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.96, opacity: 0 }}
             transition={{ type: "spring", damping: 26, stiffness: 300 }}
           >
             {/* header */}
-            <div className="flex items-center gap-3 border-b border-purple-900/20 bg-[#1e1033] px-5 py-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-purple-600">
-                <FolderOpen className="h-4.5 w-4.5 text-white" />
+            <div className="flex items-center gap-2.5 border-b border-white/[0.06] bg-[#1a0d2e] px-4 py-3 shrink-0">
+              {/* Icon */}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-purple-600">
+                <FolderOpen className="h-4 w-4 text-white" />
               </div>
+
+              {/* Title + meta */}
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-black text-white">Kasus Pasien</p>
-                  {hasCloud ? (
-                    loading ? (
-                      <Loader2 className="h-3 w-3 animate-spin text-purple-300" />
-                    ) : syncOk ? (
-                      <CheckCircle2 className="h-3 w-3 text-green-400" />
-                    ) : (
-                      <Cloud className="h-3 w-3 text-purple-400" title="Tersinkron ke Google Sheets" />
-                    )
-                  ) : (
-                    <CloudOff className="h-3 w-3 text-purple-500" title="Penyimpanan lokal" />
-                  )}
-                  {syncing && <Loader2 className="h-3 w-3 animate-spin text-purple-300" />}
-                </div>
-                <p className="text-[10px] text-purple-300">
-                  {cases.length} kasus{hasCloud ? " · Google Sheets" : " · lokal"}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-black text-white leading-tight">Kasus Pasien</span>
                   {incompleteCases.length > 0 && (
-                    <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[8px] font-black text-white">
+                    <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[7px] font-black text-white leading-none">
                       {incompleteCases.length} pending
                     </span>
                   )}
-                </p>
+                </div>
+                <div className="mt-0.5 flex items-center gap-1 text-[9px] text-purple-300/70 leading-tight">
+                  <span>{cases.length} kasus</span>
+                  <span>·</span>
+                  <span>{hasCloud ? "Google Sheets" : "Lokal"}</span>
+                  {hasCloud && (
+                    loading || syncing
+                      ? <Loader2 className="h-2.5 w-2.5 animate-spin text-purple-300" />
+                      : syncOk
+                        ? <CheckCircle2 className="h-2.5 w-2.5 text-green-400" />
+                        : <Cloud className="h-2.5 w-2.5 text-purple-400" />
+                  )}
+                  {!hasCloud && <CloudOff className="h-2.5 w-2.5 text-purple-500/60" />}
+                </div>
               </div>
-              <UserProfileBadge />
-              <ThemeToggle />
-              <button
-                type="button"
-                onClick={() => setAnalyticsOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600/80 text-white hover:bg-violet-600"
-                title="Analisis Akurasi Templating (Admin)"
-              >
-                <BarChart2 className="h-3.5 w-3.5" />
-              </button>
-              {hasCloud && (
+
+              {/* Action group */}
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Utility — hidden on mobile */}
+                <div className="hidden sm:flex items-center gap-1">
+                  <ThemeToggle />
+                  {hasCloud && (
+                    <button
+                      type="button"
+                      onClick={handleRefresh}
+                      disabled={loading}
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white/8 text-purple-200 hover:bg-white/15 disabled:opacity-40 transition"
+                      title="Refresh"
+                    >
+                      <RotateCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Separator */}
+                <div className="hidden sm:block h-4 w-px mx-1 bg-purple-400/20" />
+
+                {/* Simpan — icon only on mobile, icon+text on desktop */}
                 <button
                   type="button"
-                  onClick={handleRefresh}
-                  disabled={loading}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-purple-200 hover:bg-white/20 disabled:opacity-50"
-                  title="Refresh data dari cloud"
+                  onClick={() => { setShowSaveForm(true); setCloudError(""); }}
+                  disabled={syncing}
+                  className="flex items-center gap-1 rounded-full bg-purple-600 px-2.5 py-1.5 text-white hover:bg-purple-500 disabled:opacity-50 transition"
+                  title="Simpan kasus"
                 >
-                  <RotateCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline text-[10px] font-black">Simpan</span>
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => { setShowSaveForm(true); setCloudError(""); }}
-                className="flex h-8 items-center gap-1.5 rounded-full bg-purple-600 px-3 text-[10px] font-black text-white hover:bg-purple-500"
-                title="Simpan kasus sekarang"
-                disabled={syncing}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Simpan
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-purple-200 hover:bg-white/20"
-              >
-                <X className="h-4 w-4" />
-              </button>
+
+                {/* Profile */}
+                <UserProfileBadge className="ml-0.5" onAnalytics={() => setAnalyticsOpen(true)} />
+
+                {/* Close */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/8 text-purple-200/70 hover:bg-white/15 hover:text-white transition"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
             <div className="max-h-[calc(94dvh-80px)] overflow-y-auto">
@@ -1761,17 +1975,6 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
                       <p className="text-[10px] text-amber-700">{cloudError}</p>
                     </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Save form */}
-                <AnimatePresence>
-                  {showSaveForm && (
-                    <SaveForm
-                      currentSession={currentSession}
-                      onSave={handleSave}
-                      onCancel={() => setShowSaveForm(false)}
-                    />
                   )}
                 </AnimatePresence>
 
@@ -1938,27 +2141,39 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      {filtered.length} kasus
-                    </p>
-                    <AnimatePresence>
-                      {filtered.map((c) => (
-                        <CaseCard
-                          key={c.id}
-                          c={c}
-                          onSelect={(c) => setSelectedCaseId(c.id === selectedCaseId ? null : c.id)}
-                          onDelete={handleDelete}
-                          selected={c.id === selectedCaseId}
-                          onUpdateSnapshot={(id, dataUrl) => {
-                            setCases(prev => {
-                              const updated = prev.map(x => x.id === id ? { ...x, snapshot: dataUrl } : x);
-                              saveCases(updated);
-                              return updated;
-                            });
-                          }}
-                        />
-                      ))}
-                    </AnimatePresence>
+                    {/* Skeleton saat loading awal dari cloud */}
+                    {loading && cases.length === 0 ? (
+                      <>
+                        <div className="h-2.5 w-16 rounded-full bg-slate-200 animate-pulse" />
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <CaseCardSkeleton key={i} />
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                          {filtered.length} kasus
+                        </p>
+                        <AnimatePresence>
+                          {filtered.map((c) => (
+                            <CaseCard
+                              key={c.id}
+                              c={c}
+                              onSelect={(c) => setSelectedCaseId(c.id === selectedCaseId ? null : c.id)}
+                              onDelete={(id) => setDeleteTarget(cases.find(c => c.id === id) || null)}
+                              selected={c.id === selectedCaseId}
+                              onUpdateSnapshot={(id, dataUrl) => {
+                                setCases(prev => {
+                                  const updated = prev.map(x => x.id === id ? { ...x, snapshot: dataUrl } : x);
+                                  saveCases(updated);
+                                  return updated;
+                                });
+                              }}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -2074,6 +2289,18 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         cases={cases}
         initialCase={compareCases?.[0] || null}
       />
+      <DeleteConfirmModal
+        caseData={deleteTarget}
+        onConfirm={() => { handleDelete(deleteTarget.id); setDeleteTarget(null); }}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      {showSaveForm && (
+        <SaveForm
+          currentSession={currentSession}
+          onSave={handleSave}
+          onCancel={() => setShowSaveForm(false)}
+        />
+      )}
       <AnimatePresence>
         {lightboxSrc && (
           <ImagePreviewLightbox
@@ -2092,6 +2319,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           />
         )}
       </AnimatePresence>
+      <SyncingToast syncing={syncing} />
     </>
   );
 }

@@ -66,7 +66,6 @@ function ConfirmDialog({ user, onConfirm, onCancel }) {
               <LogOut className="h-10 w-10" style={{ color: "#d94f4f", strokeWidth: 1.4 }} />
             </div>
 
-            <p className="text-[11px] font-medium" style={{ color: "#8899bb" }}>Konfirmasi Keluar</p>
             <p className="mt-1 text-[22px] font-black leading-tight text-white">Keluar dari akun?</p>
             <p className="mt-2 text-[11px] leading-relaxed" style={{ color: "#6b7d9e" }}>
               Sesi kerja Anda akan berakhir. Anda perlu login kembali untuk mengakses workspace Anda.
