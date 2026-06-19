@@ -897,7 +897,13 @@ export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases 
   const [authenticated, setAuthenticated] = useState(() => getAuth());
 
   useEffect(() => {
-    if (isOpen) setAuthenticated(getAuth());
+    if (isOpen) {
+      setAuthenticated(getAuth());
+    } else {
+      // Reset saat ditutup — wajib input password ulang
+      setAuthenticated(false);
+      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
