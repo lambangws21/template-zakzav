@@ -90,14 +90,17 @@ function ConfirmLogout({ user, onConfirm, onCancel }) {
 // ─── Dropdown menu ────────────────────────────────────────────────────────────
 
 function ProfileDropdown({ user, anchorRef, onClose, onLogout, onAnalytics }) {
-  const email   = user?.email || "—";
-  const name    = user?.displayName || email.split("@")[0];
-  const initial = email[0]?.toUpperCase() || "?";
+  const email      = user?.email || "—";
+  const name       = user?.displayName || email.split("@")[0];
+  const initial    = email[0]?.toUpperCase() || "?";
+  const menuRef    = useRef(null);
 
-  // Close on outside click
+  // Tutup hanya jika klik di luar anchor DAN di luar menu
   useEffect(() => {
     const handler = (e) => {
-      if (anchorRef.current && !anchorRef.current.contains(e.target)) onClose();
+      const outsideAnchor = !anchorRef.current?.contains(e.target);
+      const outsideMenu   = !menuRef.current?.contains(e.target);
+      if (outsideAnchor && outsideMenu) onClose();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -108,6 +111,7 @@ function ProfileDropdown({ user, anchorRef, onClose, onLogout, onAnalytics }) {
   return createPortal(
     <AnimatePresence>
       <motion.div
+        ref={menuRef}
         initial={{ opacity: 0, y: -8, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -8, scale: 0.95 }}
