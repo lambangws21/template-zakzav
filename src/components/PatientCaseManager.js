@@ -37,6 +37,10 @@ import {
 import PostOpDataModal from "./PostOpDataModal";
 import TemplatingAnalytics from "./TemplatingAnalytics";
 import PreOpReportModal from "./PreOpReportModal";
+import CaseFullReportModal from "./CaseFullReportModal";
+import CaseCompareModal from "./CaseCompareModal";
+import ThemeToggle from "./ThemeToggle";
+import UserProfileBadge from "./UserProfileBadge";
 
 const STORAGE_KEY = "zakzav_patient_cases_v1";
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
@@ -1065,7 +1069,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
 
 // ─── Case Detail Modal ─────────────────────────────────────────────────────────
 
-function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onLightbox }) {
+function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox }) {
   const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
   useEffect(() => { setPostOpPhotoIdx(0); }, [caseData?.id]);
 
@@ -1393,6 +1397,24 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                 <FileText className="h-3 w-3" />
                 Laporan Pre-Op (PDF)
               </button>
+              <button
+                type="button"
+                onClick={() => { onFullReport(caseData); onClose(); }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 py-2 text-[10px] font-black text-sky-700"
+              >
+                <Download className="h-3 w-3" />
+                Laporan Lengkap PDF
+              </button>
+              {onCompare && (
+                <button
+                  type="button"
+                  onClick={() => { onCompare(caseData); onClose(); }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 py-2 text-[10px] font-black text-violet-700"
+                >
+                  <BarChart2 className="h-3 w-3" />
+                  Bandingkan Kasus
+                </button>
+              )}
             </div>
           </div>
         </motion.div>
@@ -1412,6 +1434,9 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [syncOk, setSyncOk] = useState(false);
   const [cloudError, setCloudError] = useState("");
   const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all"); // "all" | "pending" | "done"
+  const [filterProc, setFilterProc] = useState("all");
+  const [showIncompleteAlert, setShowIncompleteAlert] = useState(true);
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [selectedCaseId, setSelectedCaseId] = useState(null);
   const [caseDetailMinimized, setCaseDetailMinimized] = useState(false);
@@ -1424,6 +1449,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [lightboxName, setLightboxName] = useState(null);
   const [lightboxCaseId, setLightboxCaseId] = useState(null);
+  const [compareCases, setCompareCases] = useState(null);
+  const [fullReportCase, setFullReportCase] = useState(null);
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
@@ -1447,15 +1474,31 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
       .finally(() => setLoading(false));
   }, [isOpen, hasCloud]);
 
+  // Unique procedure labels for filter dropdown
+  const procOptions = Array.from(new Set(cases.map(c => (c.procedure || "").split("(")[0].trim()).filter(Boolean)));
+
+  // Cases that lack post-op data, grouped by days since templating
+  const incompleteCases = cases.filter(c => !c.actualImplantLabel && !c.actualSizeNum);
+  const incompleteSince7d = incompleteCases.filter(c => {
+    const d = (Date.now() - new Date(c.savedAt).getTime()) / 86400000;
+    return d >= 7;
+  });
+
   const filtered = cases
     .filter((c) => {
       const q = search.toLowerCase();
-      return (
-        !q ||
+      const matchSearch = !q ||
         c.patientName?.toLowerCase().includes(q) ||
         c.procedure?.toLowerCase().includes(q) ||
-        c.imageName?.toLowerCase().includes(q)
-      );
+        c.imageName?.toLowerCase().includes(q);
+      const matchStatus =
+        filterStatus === "all" ? true :
+        filterStatus === "pending" ? (!c.actualImplantLabel && !c.actualSizeNum) :
+        filterStatus === "done" ? Boolean(c.actualImplantLabel || c.actualSizeNum) :
+        true;
+      const matchProc = filterProc === "all" ? true :
+        (c.procedure || "").toLowerCase().includes(filterProc.toLowerCase());
+      return matchSearch && matchStatus && matchProc;
     })
     .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
 
@@ -1656,8 +1699,15 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                 </div>
                 <p className="text-[10px] text-purple-300">
                   {cases.length} kasus{hasCloud ? " · Google Sheets" : " · lokal"}
+                  {incompleteCases.length > 0 && (
+                    <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[8px] font-black text-white">
+                      {incompleteCases.length} pending
+                    </span>
+                  )}
                 </p>
               </div>
+              <UserProfileBadge />
+              <ThemeToggle />
               <button
                 type="button"
                 onClick={() => setAnalyticsOpen(true)}
@@ -1725,6 +1775,36 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                   )}
                 </AnimatePresence>
 
+                {/* Notifikasi kasus belum lengkap */}
+                <AnimatePresence>
+                  {showIncompleteAlert && incompleteSince7d.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5"
+                    >
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-black text-amber-700">
+                          {incompleteSince7d.length} kasus belum ada data post-op (≥7 hari)
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { setFilterStatus("pending"); setShowIncompleteAlert(false); }}
+                          className="mt-0.5 text-[9px] font-black text-amber-600 underline underline-offset-2"
+                        >
+                          Lihat kasus
+                        </button>
+                      </div>
+                      <button type="button" onClick={() => setShowIncompleteAlert(false)}
+                        className="shrink-0 text-amber-400 hover:text-amber-600">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Search */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -1735,6 +1815,40 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                     placeholder="Cari pasien, prosedur..."
                     className="w-full rounded-2xl border border-slate-200 bg-white/70 py-2 pl-9 pr-3 text-xs text-slate-800 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                   />
+                </div>
+
+                {/* Filter chips */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { id: "all", label: `Semua (${cases.length})` },
+                    { id: "pending", label: `Belum Post-Op (${incompleteCases.length})` },
+                    { id: "done", label: `Selesai (${cases.length - incompleteCases.length})` },
+                  ].map((chip) => (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      onClick={() => setFilterStatus(chip.id)}
+                      className={`rounded-full px-2.5 py-1 text-[9px] font-black transition ${
+                        filterStatus === chip.id
+                          ? "bg-purple-600 text-white"
+                          : "border border-slate-200 bg-white/70 text-slate-500 hover:border-purple-300 hover:text-purple-600"
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                  {procOptions.length > 1 && (
+                    <select
+                      value={filterProc}
+                      onChange={(e) => setFilterProc(e.target.value)}
+                      className="ml-auto rounded-full border border-slate-200 bg-white/70 py-1 pl-2.5 pr-6 text-[9px] text-slate-500 outline-none focus:border-purple-400"
+                    >
+                      <option value="all">Semua Prosedur</option>
+                      {procOptions.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Edit Case — handled as modal, rendered via portal below */}
@@ -1805,6 +1919,13 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                         <p className="mt-1 text-[10px] text-slate-400">
                           Klik "Simpan" untuk menyimpan sesi templating aktif sebagai kasus pasien
                         </p>
+                      </>
+                    ) : filterStatus !== "all" ? (
+                      <>
+                        <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                        <p className="text-xs text-slate-400">Tidak ada kasus dengan filter ini</p>
+                        <button type="button" onClick={() => { setFilterStatus("all"); setFilterProc("all"); }}
+                          className="mt-2 text-[10px] font-black text-purple-500 underline">Reset filter</button>
                       </>
                     ) : (
                       <>
@@ -1890,6 +2011,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           onPostOp={(c) => { setPostOpCase(c); }}
           onLoadAsLayer={onLoadAsLayer}
           onPreOpReport={(c) => setPreOpReportCase(c)}
+          onFullReport={(c) => setFullReportCase(c)}
+          onCompare={(c) => setCompareCases([c])}
           onLightbox={(src, name, caseId) => { setLightboxSrc(src); setLightboxName(name); setLightboxCaseId(caseId ?? null); }}
         />,
         document.body
@@ -1939,6 +2062,17 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         templateInventoryRows={[]}
         hkaSets={[]}
         imageName={preOpReportCase?.imageName || ""}
+      />
+      <CaseFullReportModal
+        isOpen={Boolean(fullReportCase)}
+        onClose={() => setFullReportCase(null)}
+        caseData={fullReportCase}
+      />
+      <CaseCompareModal
+        isOpen={Boolean(compareCases)}
+        onClose={() => setCompareCases(null)}
+        cases={cases}
+        initialCase={compareCases?.[0] || null}
       />
       <AnimatePresence>
         {lightboxSrc && (

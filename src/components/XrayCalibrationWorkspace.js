@@ -24,6 +24,7 @@ import {
 } from "@/lib/uiTokens";
 import ThemeToggle from "@/components/ThemeToggle";
 import LogoutButton from "@/components/LogoutButton";
+import UserProfileBadge from "@/components/UserProfileBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { ID, Query } from "appwrite";
 import { AnimatePresence, motion } from "framer-motion";
@@ -27141,6 +27142,7 @@ export default function XrayCalibrationWorkspace({
               </button>
             </>
           ) : null}
+          <UserProfileBadge className="ml-1" />
           <ThemeToggle className="ml-1" />
           <LogoutButton variant="header" />
           {!isSimpleUiMode ? (

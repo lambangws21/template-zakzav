@@ -124,6 +124,155 @@ function computeComponentStats(cases) {
     .sort((a, b) => b.n - a.n);
 }
 
+function groupByMonth(cases) {
+  const map = {};
+  cases.forEach(c => {
+    const d = new Date(c.savedAt || c.createdAt || "");
+    if (isNaN(d)) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (!map[key]) map[key] = { key, label: d.toLocaleDateString("id-ID", { month: "short", year: "2-digit" }), total: 0, done: 0 };
+    map[key].total++;
+    if (c.actualImplantLabel || c.actualSizeNum != null) map[key].done++;
+  });
+  return Object.values(map).sort((a, b) => a.key.localeCompare(b.key)).slice(-12);
+}
+
+function groupByProcedureAll(cases) {
+  const map = {};
+  cases.forEach(c => {
+    const key = (c.procedure || "Lainnya").split("(")[0].trim().slice(0, 20);
+    map[key] = (map[key] || 0) + 1;
+  });
+  return Object.entries(map).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+}
+
+// ─── SVG Charts ───────────────────────────────────────────────────────────────
+
+function MonthlyBarChart({ data }) {
+  if (!data.length) return null;
+  const maxVal = Math.max(...data.map(d => d.total), 1);
+  const W = 300; const H = 100; const BAR_W = Math.min(22, (W / data.length) - 4);
+  const COLORS = { total: "#6366f1", done: "#10b981" };
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 24}`} className="w-full" style={{ maxHeight: 140 }}>
+      {data.map((d, i) => {
+        const x = (i / data.length) * W + (W / data.length - BAR_W) / 2;
+        const totalH = (d.total / maxVal) * H;
+        const doneH = (d.done / maxVal) * H;
+        return (
+          <g key={d.key}>
+            <rect x={x} y={H - totalH} width={BAR_W} height={totalH} rx={3} fill={COLORS.total} opacity={0.35} />
+            <rect x={x} y={H - doneH} width={BAR_W} height={doneH} rx={3} fill={COLORS.done} opacity={0.85} />
+            <text x={x + BAR_W / 2} y={H + 12} textAnchor="middle" fontSize={6} fill="currentColor" opacity={0.5}>{d.label}</text>
+            {d.total > 0 && (
+              <text x={x + BAR_W / 2} y={H - totalH - 3} textAnchor="middle" fontSize={6.5} fill="currentColor" opacity={0.7}>{d.total}</text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function ProcedurePieChart({ data }) {
+  if (!data.length) return null;
+  const total = data.reduce((s, d) => s + d.count, 0);
+  const COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4"];
+  let startAngle = -Math.PI / 2;
+  const slices = data.slice(0, 6).map((d, i) => {
+    const angle = (d.count / total) * 2 * Math.PI;
+    const x1 = 50 + 40 * Math.cos(startAngle);
+    const y1 = 50 + 40 * Math.sin(startAngle);
+    startAngle += angle;
+    const x2 = 50 + 40 * Math.cos(startAngle);
+    const y2 = 50 + 40 * Math.sin(startAngle);
+    const large = angle > Math.PI ? 1 : 0;
+    return { d: `M50,50 L${x1},${y1} A40,40 0 ${large},1 ${x2},${y2} Z`, color: COLORS[i % COLORS.length], name: d.name, count: d.count };
+  });
+  return (
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 100 100" className="h-24 w-24 shrink-0">
+        {slices.map((s, i) => <path key={i} d={s.d} fill={s.color} opacity={0.85} />)}
+        <circle cx="50" cy="50" r="22" fill="var(--soft-raised-bg)" />
+        <text x="50" y="53" textAnchor="middle" fontSize="10" fill="currentColor" fontWeight="bold">{total}</text>
+      </svg>
+      <div className="flex flex-col gap-1">
+        {slices.map((s, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <div className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+            <span className="text-[8px] [color:var(--soft-text)] opacity-70 truncate max-w-[120px]">{s.name}</span>
+            <span className="ml-auto text-[8px] font-black [color:var(--soft-text)]">{s.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Grafik Tab ───────────────────────────────────────────────────────────────
+
+function GrafikTab({ cases }) {
+  const monthly = groupByMonth(cases);
+  const byProc = groupByProcedureAll(cases);
+  const incompleteCases = cases.filter(c => !c.actualImplantLabel && c.actualSizeNum == null);
+  const daysSince = (c) => Math.floor((Date.now() - new Date(c.savedAt || c.createdAt || "").getTime()) / 86400000);
+
+  return (
+    <div className="space-y-5 px-4 py-4">
+      {/* Monthly chart */}
+      <div>
+        <p className="mb-2 text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">Kasus per Bulan</p>
+        <div className="rounded-2xl border border-[var(--soft-border)] bg-[var(--soft-inset-bg)] p-3">
+          <MonthlyBarChart data={monthly} />
+          <div className="mt-2 flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className="h-2 w-4 rounded-sm bg-indigo-500 opacity-35" />
+              <span className="text-[8px] [color:var(--soft-text)] opacity-60">Total</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-2 w-4 rounded-sm bg-emerald-500 opacity-85" />
+              <span className="text-[8px] [color:var(--soft-text)] opacity-60">Post-Op lengkap</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Procedure distribution */}
+      <div>
+        <p className="mb-2 text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">Distribusi Prosedur</p>
+        <div className="rounded-2xl border border-[var(--soft-border)] bg-[var(--soft-inset-bg)] p-3">
+          <ProcedurePieChart data={byProc} />
+        </div>
+      </div>
+
+      {/* Incomplete cases list */}
+      {incompleteCases.length > 0 && (
+        <div>
+          <p className="mb-2 text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">
+            ⏳ {incompleteCases.length} Kasus Belum Post-Op
+          </p>
+          <div className="space-y-1.5">
+            {incompleteCases.slice(0, 10).map(c => {
+              const days = daysSince(c);
+              return (
+                <div key={c.id} className={`flex items-center gap-3 rounded-2xl border px-3 py-2 ${days >= 14 ? "border-red-500/20 bg-red-500/5" : days >= 7 ? "border-amber-500/20 bg-amber-500/5" : "border-[var(--soft-border)]"}`}>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[10px] font-black [color:var(--soft-text)]">{c.patientName || "—"}</p>
+                    <p className="truncate text-[8px] [color:var(--soft-text)] opacity-50">{(c.procedure || "—").split("(")[0].trim()}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-black ${days >= 14 ? "bg-red-500/15 text-red-400" : days >= 7 ? "bg-amber-500/15 text-amber-400" : "bg-[var(--soft-inset-bg)] [color:var(--soft-text)] opacity-50"}`}>
+                    {days} hari
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
 function AccBadge({ pct }) {
@@ -685,6 +834,7 @@ function Dashboard({ onClose }) {
       <div className="flex gap-1 border-b border-[var(--soft-border)] px-4 pt-2 pb-0">
         {[
           { id: "summary", label: "Ringkasan" },
+          { id: "grafik", label: "Grafik" },
           { id: "cases", label: `Kasus (${withPostOp.length})` },
         ].map(t => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
@@ -704,6 +854,10 @@ function Dashboard({ onClose }) {
         {tab === "summary" ? (
           <motion.div key="summary" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <SummaryTab cases={cases} />
+          </motion.div>
+        ) : tab === "grafik" ? (
+          <motion.div key="grafik" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <GrafikTab cases={cases} />
           </motion.div>
         ) : (
           <motion.div key="cases" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>

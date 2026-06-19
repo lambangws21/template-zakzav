@@ -1,13 +1,108 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LogOut } from "lucide-react";
+import { LogOut, User } from "lucide-react";
 import { logOut } from "@/lib/authServices";
+import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
+
+// ─── Konfirmasi Dialog (portal) ────────────────────────────────────────────────
+
+function ConfirmDialog({ user, onConfirm, onCancel }) {
+  const initial = user?.email?.[0]?.toUpperCase() || "?";
+  const email   = user?.email || "—";
+  const name    = user?.displayName || email.split("@")[0];
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        key="overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={onCancel}
+        className="fixed inset-0 z-[99999] flex items-center justify-center p-6"
+        style={{ background: "rgba(4,6,18,0.80)", backdropFilter: "blur(10px)" }}
+      >
+        <motion.div
+          key="dialog"
+          initial={{ opacity: 0, scale: 0.86, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.86, y: 24 }}
+          transition={{ type: "spring", damping: 24, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-[300px]"
+        >
+          {/* Avatar floating above card */}
+          <div className="absolute -top-9 left-1/2 z-10 -translate-x-1/2">
+            <div
+              className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-[26px] font-black text-white shadow-2xl"
+              style={{
+                background: "radial-gradient(circle at 35% 35%, #e05555, #a31515)",
+                boxShadow: "0 0 0 4px #1a2440, 0 8px 24px rgba(180,20,20,0.5)",
+              }}
+            >
+              {initial}
+            </div>
+          </div>
+
+          {/* Card */}
+          <div
+            className="overflow-hidden rounded-[28px] px-6 pb-6 pt-12 text-center"
+            style={{ background: "#1a2440", border: "1px solid rgba(255,255,255,0.07)" }}
+          >
+            <p className="text-[15px] font-black text-white">{name}</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">{email}</p>
+
+            <div className="my-4 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
+
+            {/* Logout icon */}
+            <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center">
+              <LogOut className="h-10 w-10" style={{ color: "#d94f4f", strokeWidth: 1.4 }} />
+            </div>
+
+            <p className="text-[11px] font-medium" style={{ color: "#8899bb" }}>Konfirmasi Keluar</p>
+            <p className="mt-1 text-[22px] font-black leading-tight text-white">Keluar dari akun?</p>
+            <p className="mt-2 text-[11px] leading-relaxed" style={{ color: "#6b7d9e" }}>
+              Sesi kerja Anda akan berakhir. Anda perlu login kembali untuk mengakses workspace Anda.
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 rounded-2xl py-3 text-[13px] font-black text-white transition hover:brightness-110 active:scale-95"
+                style={{ background: "#0d1526" }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="flex-1 rounded-2xl py-3 text-[13px] font-black text-white transition hover:brightness-110 active:scale-95"
+                style={{ background: "#c0392b", boxShadow: "0 4px 16px rgba(192,57,43,0.4)" }}
+              >
+                Ya, Logout
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
+  );
+}
+
+// ─── LogoutButton ─────────────────────────────────────────────────────────────
 
 export default function LogoutButton({ collapsed = false, variant = "sidebar" }) {
   const { isDark } = useTheme();
+  const { user } = useAuth();
   const [confirming, setConfirming] = useState(false);
 
   const handleConfirm = () => {
@@ -15,6 +110,7 @@ export default function LogoutButton({ collapsed = false, variant = "sidebar" })
     logOut();
   };
 
+  // ── header variant ───────────────────────────────────────────────────────────
   if (variant === "header") {
     return (
       <>
@@ -26,20 +122,12 @@ export default function LogoutButton({ collapsed = false, variant = "sidebar" })
         >
           <LogOut className="h-3.5 w-3.5" />
         </button>
-
-        <AnimatePresence>
-          {confirming && (
-            <ConfirmDialog
-              isDark={isDark}
-              onConfirm={handleConfirm}
-              onCancel={() => setConfirming(false)}
-            />
-          )}
-        </AnimatePresence>
+        {confirming && <ConfirmDialog user={user} onConfirm={handleConfirm} onCancel={() => setConfirming(false)} />}
       </>
     );
   }
 
+  // ── compact variant ──────────────────────────────────────────────────────────
   if (variant === "compact") {
     return (
       <>
@@ -47,44 +135,36 @@ export default function LogoutButton({ collapsed = false, variant = "sidebar" })
           type="button"
           onClick={() => setConfirming(true)}
           title="Logout"
-          style={{
-            background: isDark ? "rgba(248,113,113,0.12)" : "rgba(239,68,68,0.08)",
-            border: isDark ? "1px solid rgba(248,113,113,0.22)" : "1px solid rgba(239,68,68,0.18)",
-            color: "#f87171",
-            boxShadow: isDark ? "inset 0 1px 0 rgba(255,255,255,0.06)" : "0 1px 3px rgba(239,68,68,0.12)",
-          }}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-rose-500/20 bg-rose-500/10 text-rose-400 transition active:scale-95 hover:bg-rose-500/20"
         >
           <LogOut className="h-3.5 w-3.5" />
         </button>
-
-        <AnimatePresence>
-          {confirming && (
-            <ConfirmDialog
-              isDark={isDark}
-              onConfirm={handleConfirm}
-              onCancel={() => setConfirming(false)}
-            />
-          )}
-        </AnimatePresence>
+        {confirming && <ConfirmDialog user={user} onConfirm={handleConfirm} onCancel={() => setConfirming(false)} />}
       </>
     );
   }
 
-  // sidebar variant
+  // ── sidebar variant ──────────────────────────────────────────────────────────
+  const email   = user?.email || "";
+  const initial = email[0]?.toUpperCase() || "?";
+  const name    = user?.displayName || email.split("@")[0] || "User";
+
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+      <div className="flex items-center gap-2 min-w-0">
         {!collapsed && (
-          <span style={{
-            flex: 1, fontSize: 10,
-            color: isDark ? "#64748b" : "#94a3b8",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0,
-          }}>
-            {typeof window !== "undefined" ? "" : ""}
-          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-600 to-slate-800 text-[9px] font-black text-white">
+              {initial}
+            </div>
+            <span className="min-w-0 flex-1 truncate text-[9px] font-bold"
+              style={{ color: isDark ? "#64748b" : "#94a3b8" }}>
+              {name}
+            </span>
+          </div>
         )}
         <button
+          type="button"
           onClick={() => setConfirming(true)}
           title="Logout"
           style={{
@@ -100,101 +180,7 @@ export default function LogoutButton({ collapsed = false, variant = "sidebar" })
           <LogOut size={13} />
         </button>
       </div>
-
-      <AnimatePresence>
-        {confirming && (
-          <ConfirmDialog
-            isDark={isDark}
-            onConfirm={handleConfirm}
-            onCancel={() => setConfirming(false)}
-          />
-        )}
-      </AnimatePresence>
+      {confirming && <ConfirmDialog user={user} onConfirm={handleConfirm} onCancel={() => setConfirming(false)} />}
     </>
-  );
-}
-
-function ConfirmDialog({ isDark, onConfirm, onCancel }) {
-  const bg      = isDark ? "#1a2438" : "#f1f5f9";
-  const border  = isDark ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.75)";
-  const shadow  = isDark
-    ? "0 16px 48px rgba(0,5,20,0.70), 0 2px 8px rgba(0,5,20,0.40)"
-    : "0 16px 48px rgba(148,163,184,0.32), 0 2px 8px rgba(148,163,184,0.18)";
-  const text    = isDark ? "#c8d5e8" : "#334155";
-  const subtext = isDark ? "#64748b" : "#94a3b8";
-
-  return (
-    <motion.div
-      key="overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      onClick={onCancel}
-      style={{
-        position: "fixed", inset: 0, zIndex: 9999,
-        background: isDark ? "rgba(0,5,20,0.55)" : "rgba(15,23,42,0.35)",
-        backdropFilter: "blur(3px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "1rem",
-      }}
-    >
-      <motion.div
-        key="dialog"
-        initial={{ opacity: 0, scale: 0.93, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.93, y: 10 }}
-        transition={{ type: "spring", damping: 22, stiffness: 300 }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "100%", maxWidth: 320, borderRadius: 24, padding: "1.5rem",
-          background: bg, border: `1px solid ${border}`, boxShadow: shadow,
-        }}
-      >
-        {/* Icon */}
-        <div style={{
-          width: 44, height: 44, borderRadius: 14, marginBottom: "1rem",
-          background: isDark ? "rgba(248,113,113,0.12)" : "rgba(239,68,68,0.08)",
-          border: `1px solid ${isDark ? "rgba(248,113,113,0.22)" : "rgba(239,68,68,0.15)"}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <LogOut size={18} color="#f87171" />
-        </div>
-
-        <p style={{ fontSize: "0.9rem", fontWeight: 700, color: text, marginBottom: "0.35rem" }}>
-          Keluar dari akun?
-        </p>
-        <p style={{ fontSize: "0.75rem", color: subtext, marginBottom: "1.25rem", lineHeight: 1.5 }}>
-          Sesi kamu akan diakhiri dan kamu perlu login kembali untuk mengakses workspace.
-        </p>
-
-        <div style={{ display: "flex", gap: "0.6rem" }}>
-          <button
-            onClick={onCancel}
-            style={{
-              flex: 1, borderRadius: 12, padding: "0.6rem",
-              fontSize: "0.78rem", fontWeight: 600, cursor: "pointer",
-              color: subtext, background: "transparent",
-              border: `1px solid ${border}`, transition: "all 0.15s",
-            }}
-          >
-            Batal
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{
-              flex: 1, borderRadius: 12, padding: "0.6rem",
-              fontSize: "0.78rem", fontWeight: 700, cursor: "pointer",
-              color: "#fff", background: "#ef4444",
-              border: "1px solid rgba(239,68,68,0.4)",
-              boxShadow: "0 2px 8px rgba(239,68,68,0.28)",
-              transition: "all 0.15s",
-            }}
-          >
-            Ya, Logout
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
   );
 }
