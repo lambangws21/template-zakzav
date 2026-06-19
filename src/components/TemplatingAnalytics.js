@@ -767,20 +767,37 @@ function PinGate({ onAuth }) {
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
 
-function Dashboard({ onClose }) {
-  const [cases, setCases] = useState([]);
-  const [loading, setLoading] = useState(true);
+function Dashboard({ onClose, initialCases }) {
+  const [cases, setCases] = useState(initialCases || []);
+  const [loading, setLoading] = useState(!initialCases || initialCases.length === 0);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [tab, setTab] = useState("summary");
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setCases(await fetchAllCases()); } catch {}
+    try {
+      const cloud = await fetchAllCases();
+      // Merge: cloud takes priority, local fills gaps
+      if (cloud.length > 0) {
+        setCases(cloud);
+      } else if (initialCases?.length > 0) {
+        setCases(initialCases);
+      }
+    } catch {
+      if (initialCases?.length > 0) setCases(initialCases);
+    }
     setLoading(false);
-  }, []);
+  }, [initialCases]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (initialCases?.length > 0) {
+      setCases(initialCases);
+      setLoading(false);
+    } else {
+      load();
+    }
+  }, [initialCases, load]);
 
   const stats = computeStats(cases);
   const byProcedure = groupByProcedure(cases);
@@ -871,18 +888,24 @@ function Dashboard({ onClose }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function TemplatingAnalytics({ isOpen, onClose }) {
+export default function TemplatingAnalytics({ isOpen, onClose, cases: propCases }) {
+  const hasLocalCases = Array.isArray(propCases) && propCases.length > 0;
   const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      if (hasLocalCases) {
+        // Langsung buka tanpa PIN jika kasus lokal tersedia
+        setAuthenticated(true);
+        return;
+      }
       try {
         setAuthenticated(sessionStorage.getItem(SESSION_KEY) === "1");
       } catch {
         setAuthenticated(false);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, hasLocalCases]);
 
   const handleLogout = () => {
     try { sessionStorage.removeItem(SESSION_KEY); } catch {}
@@ -940,7 +963,7 @@ export default function TemplatingAnalytics({ isOpen, onClose }) {
               <AnimatePresence mode="wait">
                 {authenticated ? (
                   <motion.div key="dash" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                    <Dashboard onClose={onClose} />
+                    <Dashboard onClose={onClose} initialCases={propCases} />
                   </motion.div>
                 ) : (
                   <motion.div key="pin" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

@@ -2268,6 +2268,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
       <TemplatingAnalytics
         isOpen={analyticsOpen}
         onClose={() => setAnalyticsOpen(false)}
+        cases={cases}
       />
       <PreOpReportModal
         isOpen={Boolean(preOpReportCase)}

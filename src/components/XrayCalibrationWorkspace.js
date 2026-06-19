@@ -128,6 +128,7 @@ import PreOpSummaryModal from "./PreOpSummaryModal";
 import PreOpReportModal from "./PreOpReportModal";
 import ImplantSizePanel from "./ImplantSizePanel";
 import PatientCaseManager from "./PatientCaseManager";
+import TemplatingAnalytics from "./TemplatingAnalytics";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
@@ -5007,6 +5008,7 @@ export default function XrayCalibrationWorkspace({
   const [saveBeforeLeaveModalOpen, setSaveBeforeLeaveModalOpen] = useState(false);
   const [preOpReportModalOpen, setPreOpReportModalOpen] = useState(false);
   const [patientCaseManagerOpen, setPatientCaseManagerOpen] = useState(false);
+  const [wsAnalyticsOpen, setWsAnalyticsOpen] = useState(false);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
@@ -27143,7 +27145,7 @@ export default function XrayCalibrationWorkspace({
             </>
           ) : null}
           <ThemeToggle className="hidden sm:block ml-1" />
-          <UserProfileBadge className="ml-1" />
+          <UserProfileBadge className="ml-1" onAnalytics={() => setWsAnalyticsOpen(true)} />
           {!isSimpleUiMode ? (
             <IconButton
               icon={mobileControlsOpen ? "close" : "menu"}
@@ -33854,7 +33856,7 @@ export default function XrayCalibrationWorkspace({
                       style={{ background: isDark ? "rgba(255,255,255,0.16)" : "rgba(148,163,184,0.35)" }}
                     />
 
-                    <UserProfileBadge />
+                    <UserProfileBadge onAnalytics={() => setWsAnalyticsOpen(true)} />
                   </div>
                 </div>
               ) : null}
@@ -35502,6 +35504,11 @@ export default function XrayCalibrationWorkspace({
             try { return c ? c.toDataURL("image/jpeg", 0.6) : null; } catch { return null; }
           },
         }}
+      />
+
+      <TemplatingAnalytics
+        isOpen={wsAnalyticsOpen}
+        onClose={() => setWsAnalyticsOpen(false)}
       />
 
       {/* Cup Orientation Info Modal */}
