@@ -23,6 +23,7 @@ import {
   Loader2,
   CheckCircle2,
   BarChart2,
+  Lock,
   ClipboardCheck,
   FileText,
   Pencil,
@@ -1935,15 +1936,24 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                 <div className="hidden sm:block h-4 w-px mx-1 bg-purple-400/20" />
 
                 {/* Analitik */}
-                <button
-                  type="button"
-                  onClick={() => setAnalyticsOpen(true)}
-                  className="flex items-center gap-1 rounded-full bg-violet-600/20 border border-violet-400/20 px-2.5 py-1.5 text-violet-300 hover:bg-violet-600/30 transition"
-                  title="Analitik Kasus"
-                >
-                  <BarChart2 className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline text-[10px] font-black">Analitik</span>
-                </button>
+                {(() => {
+                  const isUnlocked = cases.length > 0 || (() => { try { return sessionStorage.getItem("zakzav_analytics_auth_v1") === "1"; } catch { return false; } })();
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setAnalyticsOpen(true)}
+                      className="relative flex h-7 w-7 items-center justify-center rounded-full border border-violet-400/20 bg-violet-600/20 text-violet-300 transition hover:bg-violet-600/30"
+                      title={isUnlocked ? "Analitik Kasus" : "Analitik Kasus (terkunci)"}
+                    >
+                      <BarChart2 className="h-3.5 w-3.5" />
+                      {!isUnlocked && (
+                        <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#1a0d2e] ring-1 ring-purple-900/60">
+                          <Lock className="h-2 w-2 text-violet-400" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
 
                 {/* Simpan — icon only on mobile, icon+text on desktop */}
                 <button
