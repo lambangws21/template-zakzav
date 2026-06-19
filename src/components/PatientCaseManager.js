@@ -1934,6 +1934,17 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                 {/* Separator */}
                 <div className="hidden sm:block h-4 w-px mx-1 bg-purple-400/20" />
 
+                {/* Analitik */}
+                <button
+                  type="button"
+                  onClick={() => setAnalyticsOpen(true)}
+                  className="flex items-center gap-1 rounded-full bg-violet-600/20 border border-violet-400/20 px-2.5 py-1.5 text-violet-300 hover:bg-violet-600/30 transition"
+                  title="Analitik Kasus"
+                >
+                  <BarChart2 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline text-[10px] font-black">Analitik</span>
+                </button>
+
                 {/* Simpan — icon only on mobile, icon+text on desktop */}
                 <button
                   type="button"
@@ -1947,7 +1958,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                 </button>
 
                 {/* Profile */}
-                <UserProfileBadge className="ml-0.5" onAnalytics={() => setAnalyticsOpen(true)} />
+                <UserProfileBadge className="ml-0.5" />
 
                 {/* Close */}
                 <button
