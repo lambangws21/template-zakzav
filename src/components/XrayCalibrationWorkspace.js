@@ -127,6 +127,7 @@ import SmartHintBanner from "./SmartHintBanner";
 import PreOpSummaryModal from "./PreOpSummaryModal";
 import PreOpReportModal from "./PreOpReportModal";
 import ImplantSizePanel from "./ImplantSizePanel";
+import DriveImplantLibraryPanel from "./DriveImplantLibraryPanel";
 import PatientCaseManager from "./PatientCaseManager";
 import TemplatingAnalytics from "./TemplatingAnalytics";
 
@@ -5011,6 +5012,7 @@ export default function XrayCalibrationWorkspace({
   const [wsAnalyticsOpen, setWsAnalyticsOpen] = useState(false);
   const [wsAnalyticsCases, setWsAnalyticsCases] = useState([]);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
+  const [driveLibraryOpen, setDriveLibraryOpen] = useState(false);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
   // Cup assessment drawn directly on canvas (image-space coords)
@@ -27579,6 +27581,19 @@ export default function XrayCalibrationWorkspace({
                 {!isLeftSidebarCompact && <span className="truncate">Estimator Implan</span>}
               </button>
 
+              {/* Library Implant Drive */}
+              <button
+                type="button"
+                onClick={() => setDriveLibraryOpen(true)}
+                className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700 transition hover:bg-sky-100 active:scale-[0.98]"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 3v4M8 3v4M3 11h18" />
+                </svg>
+                {!isLeftSidebarCompact && <span className="truncate">Library Drive</span>}
+              </button>
+
 
               {/* Baris 2: Simpan ke Drive */}
               {!isLeftSidebarCompact ? (
@@ -33256,6 +33271,7 @@ export default function XrayCalibrationWorkspace({
                       onPreOpReport={() => setPreOpReportModalOpen(true)}
                       onPatientCases={() => setPatientCaseManagerOpen(true)}
                       onImplantEstimator={() => setImplantSizePanelOpen(true)}
+                      onDriveLibrary={() => setDriveLibraryOpen(true)}
                       onCupAssessment={() => setShowCupAssessment(v => !v)}
                       cupAssessmentActive={showCupAssessment}
                       lines={lines.filter((l) => l.id !== calibrationLineId)}
@@ -33552,6 +33568,17 @@ export default function XrayCalibrationWorkspace({
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                 </svg>
                                 Estimator Implan
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setSimpleMobilePanel(null); setDriveLibraryOpen(true); }}
+                                className="col-span-2 flex items-center justify-center gap-1.5 min-h-11 rounded-2xl border border-sky-200 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700"
+                              >
+                                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 3v4M8 3v4M3 11h18" />
+                                </svg>
+                                Library Drive Implant
                               </button>
                               <button
                                 type="button"
@@ -35747,6 +35774,26 @@ export default function XrayCalibrationWorkspace({
           if (item?.type) setSelectedImplantType(item.type);
           if (item?.id) setSelectedImplantLibraryId(item.id);
           setImplantSizePanelOpen(false);
+        }}
+      />
+
+      <DriveImplantLibraryPanel
+        isOpen={driveLibraryOpen}
+        onClose={() => setDriveLibraryOpen(false)}
+        onSelect={(item) => {
+          if (!item?.src) return;
+          void addTemplateToCanvas({
+            id: `drive-${item.id}`,
+            name: item.label || item.name || "Implant Drive",
+            imageSrc: item.src,
+            sourceWidth: 0,
+            sourceHeight: 0,
+            autoScaleFromCalibration: true,
+            physicalSize: null,
+            physicalWidthMm: null,
+            physicalHeightMm: null,
+            transparentWhiteBackground: false,
+          });
         }}
       />
     </div>

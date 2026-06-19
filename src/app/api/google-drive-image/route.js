@@ -18,7 +18,7 @@ async function buildNoImageResponse(status = 200) {
       headers: {
         "Content-Type": "image/png",
         "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=1800",
+        "Cache-Control": "no-store",
         "X-Drive-Image-Fallback": "1",
       },
     });
@@ -67,6 +67,7 @@ export async function GET(request) {
       const response = await fetch(candidate, {
         cache: "no-store",
         redirect: "follow",
+        signal: AbortSignal.timeout(7000),
         headers: {
           Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
           "User-Agent":

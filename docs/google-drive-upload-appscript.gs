@@ -271,6 +271,17 @@ function doGet(e) {
     const params = (e && e.parameter) || {};
     const action = normalizeAction_(params.action || "");
 
+    // ── Library implant: list isi folder Drive ─────────────────────────────
+    if (action === "list_drive_folder" || action === "listdrivefolder") {
+      const folderId  = String(params.folderId  || "").trim();
+      const withFiles = String(params.withFiles || "").trim() === "true";
+      if (!folderId) {
+        return jsonOutput_({ ok: false, status: "error", error: "folderId wajib diisi." });
+      }
+      return jsonOutput_(listDriveFolder_(folderId, withFiles));
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     if (
       !action ||
       action === "all" ||
@@ -2247,4 +2258,71 @@ function deletePatientCase_(payload) {
   }
 
   return { ok: true, status: "success", id: id };
+}
+
+// ─── Library Implant: List isi folder Drive ────────────────────────────────────
+// Dipanggil dari doGet dengan action=list_drive_folder&folderId=...&withFiles=true
+
+function listDriveFolder_(folderId, withFiles) {
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+
+    var result = {
+      ok: true,
+      id: folder.getId(),
+      name: folder.getName(),
+      subfolders: [],
+      files: []
+    };
+
+    // List subfolder (kategori implant)
+    var subIter = folder.getFolders();
+    while (subIter.hasNext()) {
+      var sub = subIter.next();
+      var subData = {
+        id: sub.getId(),
+        name: sub.getName(),
+        files: []
+      };
+
+      // Jika withFiles=true, ambil juga gambar di dalam subfolder ini
+      if (withFiles) {
+        var fIter = sub.getFiles();
+        while (fIter.hasNext()) {
+          var f = fIter.next();
+          var mime = f.getMimeType();
+          if (mime && mime.indexOf("image/") === 0) {
+            subData.files.push({
+              id: f.getId(),
+              name: f.getName(),
+              mimeType: mime
+            });
+          }
+        }
+      }
+
+      result.subfolders.push(subData);
+    }
+
+    // Gambar langsung di root folder ini (jika withFiles=true)
+    if (withFiles) {
+      var rootIter = folder.getFiles();
+      while (rootIter.hasNext()) {
+        var rf = rootIter.next();
+        var rm = rf.getMimeType();
+        if (rm && rm.indexOf("image/") === 0) {
+          result.files.push({
+            id: rf.getId(),
+            name: rf.getName(),
+            mimeType: rm
+          });
+        }
+      }
+    }
+
+    return result;
+
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
 }

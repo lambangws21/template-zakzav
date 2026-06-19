@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   allowedDevOrigins: ["10.149.106.124"],
+  experimental: {
+    serverActions: { bodySizeLimit: "20mb" },
+  },
   env: {
     VITE_APPWRITE_ENDPOINT: process.env.VITE_APPWRITE_ENDPOINT,
     VITE_APPWRITE_PROJECT_ID: process.env.VITE_APPWRITE_PROJECT_ID,

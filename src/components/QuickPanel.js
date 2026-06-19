@@ -167,6 +167,7 @@ export default function QuickPanel({
   onPreOpReport,
   onPatientCases,
   onImplantEstimator,
+  onDriveLibrary,
   onCupAssessment,
   cupAssessmentActive = false,
   lines = [],
@@ -368,6 +369,7 @@ export default function QuickPanel({
                   <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-1.5">
                     <Btn icon={Users} iconCls="text-purple-400" onClick={onPatientCases} className="py-2">Kasus Pasien</Btn>
                     <Btn icon={Zap} iconCls="text-teal-400" onClick={onImplantEstimator} className="py-2">Estimator</Btn>
+                    <Btn icon={FolderOpen} iconCls="text-sky-400" onClick={onDriveLibrary} className="col-span-2 py-2">Library Drive Implant</Btn>
                   </motion.div>
 
                   <motion.div variants={STAGGER_ITEM} className="h-px bg-[var(--soft-border)] my-0.5" />
