@@ -168,6 +168,8 @@ export default function QuickPanel({
   onPatientCases,
   onImplantEstimator,
   onDriveLibrary,
+  onBrushTool,
+  brushToolActive = false,
   onCupAssessment,
   cupAssessmentActive = false,
   lines = [],
@@ -370,6 +372,15 @@ export default function QuickPanel({
                     <Btn icon={Users} iconCls="text-purple-400" onClick={onPatientCases} className="py-2">Kasus Pasien</Btn>
                     <Btn icon={Zap} iconCls="text-teal-400" onClick={onImplantEstimator} className="py-2">Estimator</Btn>
                     <Btn icon={FolderOpen} iconCls="text-sky-400" onClick={onDriveLibrary} className="col-span-2 py-2">Library Drive Implant</Btn>
+                    <Btn iconCls="text-violet-400" onClick={onBrushTool} className="col-span-2 py-2" active={brushToolActive}
+                      icon={() => (
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      )}
+                    >
+                      {brushToolActive ? "Nonaktifkan Brush" : "Brush Tool"}
+                    </Btn>
                   </motion.div>
 
                   <motion.div variants={STAGGER_ITEM} className="h-px bg-[var(--soft-border)] my-0.5" />

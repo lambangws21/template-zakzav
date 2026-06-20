@@ -62,6 +62,7 @@ import {
   MoveDown,
   MoveUp,
   Package,
+  Paintbrush,
   PencilLine,
   Plus,
   RefreshCcw,
@@ -155,16 +156,74 @@ function NavClock() {
   );
 }
 
+const CUT_LAYER_IDB_STORE = "cut_layer_images";
+
 function openImageIDB() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") { reject(new Error("no idb")); return; }
-    const req = indexedDB.open(IMAGE_IDB_NAME, 1);
+    const req = indexedDB.open(IMAGE_IDB_NAME, 2);
     req.onupgradeneeded = (e) => {
-      e.target.result.createObjectStore(IMAGE_IDB_STORE);
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IMAGE_IDB_STORE)) {
+        db.createObjectStore(IMAGE_IDB_STORE);
+      }
+      if (!db.objectStoreNames.contains(CUT_LAYER_IDB_STORE)) {
+        db.createObjectStore(CUT_LAYER_IDB_STORE);
+      }
     };
     req.onsuccess = (e) => resolve(e.target.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+async function saveCutLayersToIDB(cutLayers) {
+  try {
+    const layers = (cutLayers || []).filter(
+      (l) => l.kind === "free-cut" && l.imageSrc && l.imageSrc.startsWith("data:")
+    );
+    if (!layers.length) return;
+    const db = await openImageIDB();
+    await new Promise((resolve) => {
+      const tx = db.transaction(CUT_LAYER_IDB_STORE, "readwrite");
+      const store = tx.objectStore(CUT_LAYER_IDB_STORE);
+      // Save each cut layer keyed by its ID
+      layers.forEach((l) => store.put({ imageSrc: l.imageSrc, maskPoints: l.maskPoints }, String(l.id)));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch { /* silent fail */ }
+}
+
+async function loadCutLayerFromIDB(layerId) {
+  try {
+    const db = await openImageIDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(CUT_LAYER_IDB_STORE, "readonly");
+      const req = tx.objectStore(CUT_LAYER_IDB_STORE).get(String(layerId));
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+async function clearCutLayersFromIDB(keepIds) {
+  try {
+    const db = await openImageIDB();
+    await new Promise((resolve) => {
+      const tx = db.transaction(CUT_LAYER_IDB_STORE, "readwrite");
+      const store = tx.objectStore(CUT_LAYER_IDB_STORE);
+      const keep = new Set((keepIds || []).map(String));
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor) return;
+        if (!keep.has(String(cursor.key))) cursor.delete();
+        cursor.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch { /* silent fail */ }
 }
 
 async function saveImageToIDB(dataUrl, name) {
@@ -1238,6 +1297,85 @@ function getPolygonBounds(points) {
   };
 }
 
+function applyBrushToCanvas(canvas, canvasPt, canvasRadius, mode, strength, color) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const s = Math.max(0.01, Math.min(1, strength));
+  if (mode === "erase") {
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    const g = ctx.createRadialGradient(canvasPt.x, canvasPt.y, 0, canvasPt.x, canvasPt.y, canvasRadius);
+    g.addColorStop(0, `rgba(0,0,0,${s})`);
+    g.addColorStop(0.6, `rgba(0,0,0,${s * 0.5})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(canvasPt.x, canvasPt.y, canvasRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else if (mode === "color") {
+    const r = parseInt(color.slice(1, 3), 16) || 0;
+    const gr = parseInt(color.slice(3, 5), 16) || 0;
+    const b = parseInt(color.slice(5, 7), 16) || 0;
+    const g = ctx.createRadialGradient(canvasPt.x, canvasPt.y, 0, canvasPt.x, canvasPt.y, canvasRadius);
+    g.addColorStop(0, `rgba(${r},${gr},${b},${s})`);
+    g.addColorStop(0.6, `rgba(${r},${gr},${b},${s * 0.5})`);
+    g.addColorStop(1, `rgba(${r},${gr},${b},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(canvasPt.x, canvasPt.y, canvasRadius, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (mode === "blur") {
+    const bx = Math.max(0, Math.floor(canvasPt.x - canvasRadius));
+    const by = Math.max(0, Math.floor(canvasPt.y - canvasRadius));
+    const bw = Math.min(canvas.width - bx, Math.ceil(canvasRadius * 2 + 2));
+    const bh = Math.min(canvas.height - by, Math.ceil(canvasRadius * 2 + 2));
+    if (bw <= 0 || bh <= 0) return;
+    const tmp = document.createElement("canvas");
+    tmp.width = bw;
+    tmp.height = bh;
+    const tCtx = tmp.getContext("2d");
+    if (!tCtx) return;
+    const blurPx = Math.max(2, Math.round(canvasRadius * 0.35));
+    tCtx.filter = `blur(${blurPx}px)`;
+    tCtx.drawImage(canvas, bx, by, bw, bh, 0, 0, bw, bh);
+    tCtx.filter = "none";
+    tCtx.globalCompositeOperation = "destination-in";
+    const cx = canvasPt.x - bx;
+    const cy = canvasPt.y - by;
+    const mg = tCtx.createRadialGradient(cx, cy, 0, cx, cy, canvasRadius);
+    mg.addColorStop(0, `rgba(0,0,0,${s})`);
+    mg.addColorStop(0.7, `rgba(0,0,0,${s * 0.6})`);
+    mg.addColorStop(1, "rgba(0,0,0,0)");
+    tCtx.fillStyle = mg;
+    tCtx.beginPath();
+    tCtx.arc(cx, cy, canvasRadius, 0, Math.PI * 2);
+    tCtx.fill();
+    ctx.drawImage(tmp, bx, by);
+  } else if (mode === "transparent") {
+    const bx = Math.max(0, Math.floor(canvasPt.x - canvasRadius));
+    const by = Math.max(0, Math.floor(canvasPt.y - canvasRadius));
+    const bw = Math.min(canvas.width - bx, Math.ceil(canvasRadius * 2 + 2));
+    const bh = Math.min(canvas.height - by, Math.ceil(canvasRadius * 2 + 2));
+    if (bw <= 0 || bh <= 0) return;
+    const imageData = ctx.getImageData(bx, by, bw, bh);
+    const data = imageData.data;
+    const cx = canvasPt.x - bx;
+    const cy = canvasPt.y - by;
+    for (let py = 0; py < bh; py++) {
+      for (let px = 0; px < bw; px++) {
+        const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+        if (dist > canvasRadius) continue;
+        const falloff = Math.cos((dist / canvasRadius) * (Math.PI / 2));
+        const reduction = s * falloff;
+        const idx = (py * bw + px) * 4;
+        data[idx + 3] = Math.round(data[idx + 3] * (1 - reduction));
+      }
+    }
+    ctx.putImageData(imageData, bx, by);
+  }
+}
+
 function tracePolygonPath(ctx, points) {
   if (!ctx || !Array.isArray(points) || points.length === 0) return;
   ctx.beginPath();
@@ -1400,9 +1538,7 @@ function buildFreeCutLayerFromPoints({
     y: point.y - sourceY,
   }));
 
-  ctx.save();
-  tracePolygonPath(ctx, normalizedPoints);
-  ctx.clip();
+  // Gambar dulu tanpa clip
   ctx.drawImage(
     sourceImage,
     sourceOffsetX + sourceX,
@@ -1414,7 +1550,25 @@ function buildFreeCutLayerFromPoints({
     width,
     height,
   );
-  ctx.restore();
+
+  // Buat mask canvas dengan feathering (blur) di tepi polygon
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskCtx = maskCanvas.getContext("2d");
+  if (maskCtx) {
+    const feather = Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
+    maskCtx.filter = `blur(${feather}px)`;
+    maskCtx.fillStyle = "#ffffff";
+    tracePolygonPath(maskCtx, normalizedPoints);
+    maskCtx.fill();
+    maskCtx.filter = "none";
+  }
+
+  // Terapkan mask sebagai alpha channel
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.drawImage(maskCanvas, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
 
   let imageSrc = "";
   try {
@@ -1517,10 +1671,7 @@ function buildFreeCutLayerFromLayerPoints({
   }));
 
   ctx.save();
-  tracePolygonPath(ctx, normalizedSourcePoints);
-  ctx.clip();
   ctx.filter = getLayerFilterValue(sourceLayer);
-  ctx.globalAlpha = clamp(sourceLayer.opacity ?? 1, 0.05, 1);
   ctx.drawImage(
     sourceImage,
     Number(sourceLayer.sourceX || 0) + sourceX,
@@ -1533,6 +1684,22 @@ function buildFreeCutLayerFromLayerPoints({
     height,
   );
   ctx.restore();
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskCtx = maskCanvas.getContext("2d");
+  if (maskCtx) {
+    const feather = Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
+    maskCtx.filter = `blur(${feather}px)`;
+    maskCtx.fillStyle = "#ffffff";
+    tracePolygonPath(maskCtx, normalizedSourcePoints);
+    maskCtx.fill();
+    maskCtx.filter = "none";
+  }
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.drawImage(maskCanvas, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
 
   let imageSrc = "";
   try {
@@ -1821,6 +1988,8 @@ function isMobilePrecisionInteractionMode(mode) {
     "move-angle-handle",
     "move-circle-center",
     "move-circle-radius",
+    "move-circle-diameter",
+    "move-circle-label",
     "move-hka-handle",
     "move-planning-guide-handle",
     "move-free-line-point",
@@ -1835,6 +2004,8 @@ function shouldAutoZoomMobilePrecisionInteractionMode(mode) {
     "move-angle-handle",
     "move-circle-center",
     "move-circle-radius",
+    "move-circle-diameter",
+    "move-circle-label",
     "move-hka-handle",
     "move-planning-guide-handle",
     "move-free-line-point",
@@ -2256,6 +2427,17 @@ function toLayerShapeLocal(point, layer) {
   return {
     x: layer.flipX ? -local.x : local.x,
     y: layer.flipY ? -local.y : local.y,
+  };
+}
+
+function imagePointToLayerCanvasPoint(imgPt, layer) {
+  const shapeLocal = toLayerShapeLocal(imgPt, layer);
+  const displaySize = getLayerDisplaySize(layer);
+  const displayX = shapeLocal.x + displaySize.width / 2;
+  const displayY = shapeLocal.y + displaySize.height / 2;
+  return {
+    x: displayX * (layer.sourceWidth / Math.max(1, displaySize.width)),
+    y: displayY * (layer.sourceHeight / Math.max(1, displaySize.height)),
   };
 }
 
@@ -3577,6 +3759,7 @@ const ICON_COMPONENTS = {
   saveCal: BadgeCheck,
   trash: Trash2,
   clear: Eraser,
+  brush: Paintbrush,
   lock: Lock,
   unlock: LockOpen,
   reset: RefreshCcw,
@@ -3804,6 +3987,7 @@ const TOOL_ICON_COMPONENTS = {
   freeLine: SplinePointer,
   pan: HandGrab,
   cut: Slice,
+  brush: Paintbrush,
   centerFinder: Target,
   axisBuilder: Bone,
   guideBuilder: RulerDimensionLine,
@@ -4713,10 +4897,12 @@ export default function XrayCalibrationWorkspace({
     y: 0,
     scale: 1,
   });
+  const viewRef = useRef(null);
   const view = useMemo(
     () => withViewportPanAliases(canvasViewport),
     [canvasViewport],
   );
+  viewRef.current = view;
   const setView = useCallback((nextView) => {
     setCanvasViewport((prev) => {
       const prevWithAliases = withViewportPanAliases(prev);
@@ -5013,6 +5199,15 @@ export default function XrayCalibrationWorkspace({
   const [wsAnalyticsCases, setWsAnalyticsCases] = useState([]);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
   const [driveLibraryOpen, setDriveLibraryOpen] = useState(false);
+  const [brushMode, setBrushMode] = useState("erase");
+  const [brushSize, setBrushSize] = useState(40);
+  const [brushStrength, setBrushStrength] = useState(0.7);
+  const [brushColor, setBrushColor] = useState("#ff0000");
+  const brushWorkCanvasRef = useRef(null);
+  const brushWorkLayerIdRef = useRef(null);
+  const brushCursorOuterRef = useRef(null);
+  const brushCursorDotRef = useRef(null);
+  const hoverScanLastRef = useRef(0);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
   // Cup assessment drawn directly on canvas (image-space coords)
@@ -5041,6 +5236,8 @@ export default function XrayCalibrationWorkspace({
 
   const [actionToast, setActionToast] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
+  const activityLogRef = useRef([]);
+  activityLogRef.current = activityLog;
   const [planNote, setPlanNote] = useState("");
   const [planSteps, setPlanSteps] = useState([]);
   const [planningGuides, setPlanningGuides] = useState([]);
@@ -7141,6 +7338,17 @@ export default function XrayCalibrationWorkspace({
     [cutLayers],
   );
 
+  const layerDisplayData = useMemo(() => {
+    const map = new Map();
+    for (const layer of cutLayers) {
+      map.set(layer.id, {
+        displaySize: getLayerDisplaySize(layer),
+        maskPoints: getLayerMaskDisplayPoints(layer),
+      });
+    }
+    return map;
+  }, [cutLayers]);
+
   const buildStoryPayload = useCallback(
     () => ({
       version: 1,
@@ -7150,7 +7358,7 @@ export default function XrayCalibrationWorkspace({
       compareImageSrc: getPersistableImageSrc(compareImageSrc),
       compareImageName,
       compareMode,
-      view,
+      view: viewRef.current,
       tool,
       lines,
       angles,
@@ -7214,11 +7422,9 @@ export default function XrayCalibrationWorkspace({
       tibialCutDirection,
       tibialCutOffsetPx,
       tibialCutLineLengthPx,
-      notice,
-      activityLog: activityLog.slice(-120),
+      activityLog: activityLogRef.current.slice(-120),
     }),
     [
-      activityLog,
       actualMmInput,
       actualUnit,
       calibrationDraftStrokeWidth,
@@ -7250,7 +7456,6 @@ export default function XrayCalibrationWorkspace({
       showRightSidebar,
       mmPerPixel,
       mmPerPixelAt100Input,
-      notice,
       planNote,
       planSteps,
       planningGuideMode,
@@ -7288,7 +7493,6 @@ export default function XrayCalibrationWorkspace({
       valgusCutLineLengthPx,
       valgusCutOffsetPx,
       valgusCutSide,
-      view,
     ],
   );
 
@@ -9145,7 +9349,21 @@ export default function XrayCalibrationWorkspace({
               }
 
               if (baseLayer.kind === "free-cut") {
-                return null;
+                // Coba muat dari IDB (disimpan saat story terakhir di-save)
+                const cached = await loadCutLayerFromIDB(baseLayer.id);
+                const src = cached?.imageSrc || "";
+                if (!src) return null;
+                try {
+                  const layerImage = await loadImageFromSrc(src);
+                  return {
+                    ...baseLayer,
+                    imageSrc: src,
+                    image: layerImage,
+                    maskPoints: cached.maskPoints ?? baseLayer.maskPoints,
+                  };
+                } catch {
+                  return null;
+                }
               }
 
               return baseLayer;
@@ -9371,11 +9589,14 @@ export default function XrayCalibrationWorkspace({
 
     saveDebounceRef.current = setTimeout(() => {
       try {
-        window.localStorage.setItem(
-          STORY_STORAGE_KEY,
-          JSON.stringify(buildStoryPayload()),
-        );
+        const payload = buildStoryPayload();
+        window.localStorage.setItem(STORY_STORAGE_KEY, JSON.stringify(payload));
         storageWarningRef.current = false;
+        // Simpan data gambar cut layer ke IDB agar survive browser close
+        void saveCutLayersToIDB(cutLayers);
+        // Bersihkan IDB entry untuk cut layer yang sudah dihapus
+        const activeIds = cutLayers.filter((l) => l.kind === "free-cut").map((l) => l.id);
+        void clearCutLayersFromIDB(activeIds);
       } catch {
         if (!storageWarningRef.current) {
           storageWarningRef.current = true;
@@ -9391,7 +9612,7 @@ export default function XrayCalibrationWorkspace({
         clearTimeout(saveDebounceRef.current);
       }
     };
-  }, [buildStoryPayload]);
+  }, [buildStoryPayload, cutLayers]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -10326,6 +10547,18 @@ export default function XrayCalibrationWorkspace({
         if (centerDistance <= centerThreshold) {
           return { circleId: circle.id, handleKey: "center" };
         }
+        // Check proximity to diameter endpoint handles (takes priority over generic radius)
+        const dAngle = ((circle.diameterAngle ?? 0) * Math.PI) / 180;
+        const dCos = Math.cos(dAngle);
+        const dSin = Math.sin(dAngle);
+        const dEnd1 = { x: circle.cx + circle.radius * dCos, y: circle.cy + circle.radius * dSin };
+        const dEnd2 = { x: circle.cx - circle.radius * dCos, y: circle.cy - circle.radius * dSin };
+        if (Math.hypot(imagePoint.x - dEnd1.x, imagePoint.y - dEnd1.y) <= radiusThreshold) {
+          return { circleId: circle.id, handleKey: "diameter" };
+        }
+        if (Math.hypot(imagePoint.x - dEnd2.x, imagePoint.y - dEnd2.y) <= radiusThreshold) {
+          return { circleId: circle.id, handleKey: "diameter" };
+        }
         const radiusDistance = Math.abs(centerDistance - circle.radius);
         if (radiusDistance <= radiusThreshold) {
           return { circleId: circle.id, handleKey: "radius" };
@@ -10373,9 +10606,11 @@ export default function XrayCalibrationWorkspace({
         const center = imageToScreenPoint(circle.cx, circle.cy);
         const edge = imageToScreenPoint(circle.cx + circle.radius, circle.cy);
         const radiusPx = Math.hypot(edge.x - center.x, edge.y - center.y);
+        const labelX = center.x + (circle.labelOffsetX ?? 0);
+        const labelY = center.y - radiusPx - 12 + (circle.labelOffsetY ?? 0);
         const bounds = getTagBounds(
-          center.x,
-          center.y - radiusPx - 12,
+          labelX,
+          labelY,
           getCircleCanvasLabelText(circle, mmPerPixel, measurementUnit, true),
           { fontSize: 9, radius: 4 },
         );
@@ -11025,7 +11260,9 @@ export default function XrayCalibrationWorkspace({
 
       for (const layer of cutLayers) {
         if (layer.hidden) continue;
-        const displaySize = getLayerDisplaySize(layer);
+        const cachedLayerData = layerDisplayData.get(layer.id);
+        const displaySize = cachedLayerData?.displaySize ?? getLayerDisplaySize(layer);
+        const cachedMaskPoints = cachedLayerData?.maskPoints ?? null;
 
         imageCtx.save();
         imageCtx.translate(layer.centerX, layer.centerY);
@@ -11035,7 +11272,7 @@ export default function XrayCalibrationWorkspace({
         imageCtx.filter = "none";
 
         if (layer.kind === "free-line") {
-          const localMaskPoints = getLayerMaskDisplayPoints(layer);
+          const localMaskPoints = cachedMaskPoints ?? getLayerMaskDisplayPoints(layer);
           if (localMaskPoints?.length >= MIN_FREE_CUT_POINTS) {
             const curveStrength = getFreeLineCurveStrength(layer);
             imageCtx.fillStyle = layer.fillColor || DEFAULT_FREE_LINE_COLOR;
@@ -11057,8 +11294,8 @@ export default function XrayCalibrationWorkspace({
           imageCtx.filter = isImageBacked
             ? getLayerFilterValue(layer)
             : "none";
-          const localMaskPoints = getLayerMaskDisplayPoints(layer);
-          if (localMaskPoints?.length >= MIN_FREE_CUT_POINTS) {
+          const localMaskPoints = cachedMaskPoints ?? getLayerMaskDisplayPoints(layer);
+          if (localMaskPoints?.length >= MIN_FREE_CUT_POINTS && layer.kind !== "free-cut") {
             traceSmoothClosedPath(
               imageCtx,
               localMaskPoints,
@@ -11585,29 +11822,41 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.beginPath();
       overlayCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
       overlayCtx.stroke();
-      if (isEmphasized) {
-        overlayCtx.setLineDash([6, 4]);
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(center.x - radiusPx, center.y);
-        overlayCtx.lineTo(center.x + radiusPx, center.y);
-        overlayCtx.stroke();
-        overlayCtx.setLineDash([]);
-      }
+      // Diameter line at user-defined angle
+      const dAngleRad = ((circle.diameterAngle ?? 0) * Math.PI) / 180;
+      const dCos = Math.cos(dAngleRad);
+      const dSin = Math.sin(dAngleRad);
+      // Always show diameter line (faint when not emphasized)
+      overlayCtx.save();
+      overlayCtx.setLineDash([6, 4]);
+      overlayCtx.lineWidth = isEmphasized ? strokeWidth : Math.max(0.8, strokeWidth * 0.5);
+      overlayCtx.strokeStyle = color;
+      overlayCtx.globalAlpha = isEmphasized ? 1 : 0.4;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(center.x - radiusPx * dCos, center.y - radiusPx * dSin);
+      overlayCtx.lineTo(center.x + radiusPx * dCos, center.y + radiusPx * dSin);
+      overlayCtx.stroke();
+      overlayCtx.restore();
+      overlayCtx.setLineDash([]);
+
       overlayCtx.fillStyle = color;
       overlayCtx.beginPath();
       overlayCtx.arc(center.x, center.y, isEmphasized ? 4.6 : 4, 0, Math.PI * 2);
       overlayCtx.fill();
       if (isEmphasized) {
+        // 2 diameter endpoint handles (rotatable) + 2 perpendicular radius handles
+        const perpCos = Math.cos(dAngleRad + Math.PI / 2);
+        const perpSin = Math.sin(dAngleRad + Math.PI / 2);
         const handles = [
-          { x: center.x + radiusPx, y: center.y },
-          { x: center.x - radiusPx, y: center.y },
-          { x: center.x, y: center.y + radiusPx },
-          { x: center.x, y: center.y - radiusPx },
+          { x: center.x + radiusPx * dCos,    y: center.y + radiusPx * dSin,    isDia: true },
+          { x: center.x - radiusPx * dCos,    y: center.y - radiusPx * dSin,    isDia: true },
+          { x: center.x + radiusPx * perpCos, y: center.y + radiusPx * perpSin, isDia: false },
+          { x: center.x - radiusPx * perpCos, y: center.y - radiusPx * perpSin, isDia: false },
         ];
-        overlayCtx.fillStyle = "#f8fafc";
-        overlayCtx.strokeStyle = color;
         overlayCtx.lineWidth = 1.5;
         for (const handle of handles) {
+          overlayCtx.fillStyle = handle.isDia ? color : "#f8fafc";
+          overlayCtx.strokeStyle = color;
           overlayCtx.beginPath();
           overlayCtx.arc(handle.x, handle.y, 4.8, 0, Math.PI * 2);
           overlayCtx.fill();
@@ -11616,10 +11865,27 @@ export default function XrayCalibrationWorkspace({
       }
       overlayCtx.restore();
 
+      const labelAnchorX = center.x;
+      const labelAnchorY = center.y - radiusPx - 12;
+      const labelX = labelAnchorX + (circle.labelOffsetX ?? 0);
+      const labelY = labelAnchorY + (circle.labelOffsetY ?? 0);
+      const hasLabelOffset = Math.abs(circle.labelOffsetX ?? 0) > 2 || Math.abs(circle.labelOffsetY ?? 0) > 2;
+      if (hasLabelOffset) {
+        overlayCtx.save();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(labelAnchorX, center.y - radiusPx);
+        overlayCtx.lineTo(labelX, labelY);
+        overlayCtx.setLineDash([3, 4]);
+        overlayCtx.lineWidth = 1;
+        overlayCtx.strokeStyle = color;
+        overlayCtx.globalAlpha = 0.45;
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
       drawTag(
         overlayCtx,
-        center.x,
-        center.y - radiusPx - 12,
+        labelX,
+        labelY,
         getCircleCanvasLabelText(
           circle,
           mmPerPixel,
@@ -13138,6 +13404,7 @@ export default function XrayCalibrationWorkspace({
     lineTypeLabel,
     lines,
     cutLayers,
+    layerDisplayData,
     getLineLabelText,
     getMobileAngleHandleAssistGeometry,
     getMobileHandleAssistGeometry,
@@ -13913,6 +14180,42 @@ export default function XrayCalibrationWorkspace({
           endY: imagePoint.y,
         };
         setCropDraftPoints({ startX: imagePoint.x, startY: imagePoint.y, endX: imagePoint.x, endY: imagePoint.y });
+        return;
+      }
+
+      // ── Brush tool ──────────────────────────────────────────────────────────
+      if (tool === "brush") {
+        const hitLayerId = findCutLayerByPoint(imagePoint) ?? selectedCutLayerId;
+        if (hitLayerId) {
+          const targetLayer = cutLayers.find((l) => l.id === hitLayerId);
+          if (targetLayer && isImageBackedLayerKind(targetLayer.kind) && targetLayer.image) {
+            const sw = Math.max(1, targetLayer.sourceWidth);
+            const sh = Math.max(1, targetLayer.sourceHeight);
+            const workCanvas = document.createElement("canvas");
+            workCanvas.width = sw;
+            workCanvas.height = sh;
+            const wCtx = workCanvas.getContext("2d");
+            const srcX = targetLayer.sourceX || 0;
+            const srcY = targetLayer.sourceY || 0;
+            wCtx.drawImage(targetLayer.image, srcX, srcY, sw, sh, 0, 0, sw, sh);
+            brushWorkCanvasRef.current = workCanvas;
+            brushWorkLayerIdRef.current = hitLayerId;
+            const canvasPt = imagePointToLayerCanvasPoint(imagePoint, targetLayer);
+            const radiusInImage = brushSize / view.scale;
+            const canvasRadius = radiusInImage * (targetLayer.sourceWidth / Math.max(1, getLayerDisplaySize(targetLayer).width));
+            applyBrushToCanvas(workCanvas, canvasPt, canvasRadius, brushMode, brushStrength, brushColor);
+            setCutLayers((prev) => prev.map((l) => {
+              if (l.id !== hitLayerId) return l;
+              const copyCanvas = document.createElement("canvas");
+              copyCanvas.width = workCanvas.width;
+              copyCanvas.height = workCanvas.height;
+              copyCanvas.getContext("2d").drawImage(workCanvas, 0, 0);
+              return { ...l, image: copyCanvas, sourceX: 0, sourceY: 0 };
+            }));
+            setHistoryPaused(true);
+            interactionRef.current = { mode: "brush-stroke", layerId: hitLayerId, layer: targetLayer };
+          }
+        }
         return;
       }
 
@@ -15068,6 +15371,34 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      const hitCircleLabelId = findCircleLabelByPoint(point);
+      if (hitCircleLabelId !== null) {
+        const targetCircle = circles.find((c) => c.id === hitCircleLabelId);
+        if (!targetCircle) return;
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setSelectedCircleId(targetCircle.id);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        triggerSelectionPulse("circle", targetCircle.id);
+        clearMobileHandleAssist();
+        clearMobilePlanningGuideHandleAssist();
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-circle-label",
+          circleId: targetCircle.id,
+          startX: point.x,
+          startY: point.y,
+          originOffsetX: targetCircle.labelOffsetX ?? 0,
+          originOffsetY: targetCircle.labelOffsetY ?? 0,
+        };
+        return;
+      }
+
       const genericHitHandle = findClosestHandle(imagePoint);
       if (genericHitHandle) {
         const targetLine = lines.find(
@@ -15241,6 +15572,11 @@ export default function XrayCalibrationWorkspace({
               startImageY: boundedPoint.y,
               originCenterX: targetCircle.cx,
               originCenterY: targetCircle.cy,
+            };
+          } else if (genericCircleHandle.handleKey === "diameter") {
+            interactionRef.current = {
+              mode: "move-circle-diameter",
+              circleId: genericCircleHandle.circleId,
             };
           } else {
             interactionRef.current = {
@@ -16143,6 +16479,11 @@ export default function XrayCalibrationWorkspace({
       showCupAssessment,
       canvasCup,
       imageToScreenPoint,
+      brushMode,
+      brushSize,
+      brushStrength,
+      brushColor,
+      selectedCutLayerId,
     ],
   );
 
@@ -16255,7 +16596,9 @@ export default function XrayCalibrationWorkspace({
           screenToImagePoint(point.x, point.y),
         );
         let shouldKeepSnapPreview = false;
-        if (!isCoarsePointer) {
+        const now = Date.now();
+        if (!isCoarsePointer && now - hoverScanLastRef.current >= 50) {
+          hoverScanLastRef.current = now;
           const hoveredHkaLabelId = findHkaLabelByPoint(point);
           const hoveredHkaId =
             hoveredHkaLabelId ?? findClosestHkaId(moveImagePoint);
@@ -16299,7 +16642,7 @@ export default function XrayCalibrationWorkspace({
             }
             return current;
           });
-        } else if (hoveredMeasurementInfo) {
+        } else if (isCoarsePointer && hoveredMeasurementInfo) {
           setHoveredMeasurementInfo(null);
         }
 
@@ -16400,6 +16743,32 @@ export default function XrayCalibrationWorkspace({
             { relaxed: true },
           ),
         );
+        return;
+      }
+
+      if (interactionRef.current.mode === "brush-stroke") {
+        const { layerId, layer: strokeLayer } = interactionRef.current;
+        const workCanvas = brushWorkCanvasRef.current;
+        if (workCanvas && layerId && strokeLayer) {
+          const imgPt = screenToImagePoint(point.x, point.y);
+          const canvasPt = imagePointToLayerCanvasPoint(imgPt, strokeLayer);
+          const radiusInImage = brushSize / view.scale;
+          const canvasRadius = radiusInImage * (strokeLayer.sourceWidth / Math.max(1, getLayerDisplaySize(strokeLayer).width));
+          applyBrushToCanvas(workCanvas, canvasPt, canvasRadius, brushMode, brushStrength, brushColor);
+          scheduleCutLayersUpdate((prev) => {
+            if (interactionRef.current.mode !== "brush-stroke" || interactionRef.current.layerId !== layerId) {
+              return prev;
+            }
+            return prev.map((l) => {
+              if (l.id !== layerId) return l;
+              const copyCanvas = document.createElement("canvas");
+              copyCanvas.width = workCanvas.width;
+              copyCanvas.height = workCanvas.height;
+              copyCanvas.getContext("2d").drawImage(workCanvas, 0, 0);
+              return { ...l, image: copyCanvas, sourceX: 0, sourceY: 0 };
+            });
+          });
+        }
         return;
       }
 
@@ -17162,6 +17531,41 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      if (interactionRef.current.mode === "move-circle-diameter") {
+        const { circleId } = interactionRef.current;
+        const nextImagePoint = screenToImagePoint(point.x, point.y);
+        scheduleCirclesUpdate((prev) =>
+          prev.map((item) => {
+            if (item.id !== circleId) return item;
+            const dx = nextImagePoint.x - item.cx;
+            const dy = nextImagePoint.y - item.cy;
+            const newAngleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+            return { ...item, diameterAngle: newAngleDeg };
+          }),
+        );
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-circle-label") {
+        clearSnapPreview();
+        const { circleId, startX, startY, originOffsetX, originOffsetY } =
+          interactionRef.current;
+        const dx = point.x - startX;
+        const dy = point.y - startY;
+        scheduleCirclesUpdate((prev) =>
+          prev.map((item) =>
+            item.id === circleId
+              ? {
+                  ...item,
+                  labelOffsetX: clamp(originOffsetX + dx, -320, 320),
+                  labelOffsetY: clamp(originOffsetY + dy, -220, 220),
+                }
+              : item,
+          ),
+        );
+        return;
+      }
+
       if (interactionRef.current.mode === "move-hka-handle") {
         const movePoint = screenToImagePoint(point.x, point.y);
         const {
@@ -17212,7 +17616,6 @@ export default function XrayCalibrationWorkspace({
       clearMobileLongPress,
       clearSnapPreview,
       beginMobilePrecisionEdit,
-      cutLayers,
       draftCirclePoints,
       draftCut,
       draftFreeLine,
@@ -17251,6 +17654,10 @@ export default function XrayCalibrationWorkspace({
       trackMobileGesturePointer,
       updateMobilePrecisionOverlay,
       view.scale,
+      brushMode,
+      brushSize,
+      brushStrength,
+      brushColor,
     ],
   );
 
@@ -17290,6 +17697,32 @@ export default function XrayCalibrationWorkspace({
         setCropRect({ x: newX, y: newY, width: newW, height: newH });
         setTimeout(() => fitImageToViewport(), 0);
         setNotice("Crop diterapkan. Klik 'Reset Crop' untuk kembali ke gambar penuh.");
+      }
+      return;
+    }
+
+    // ── Brush stroke end ────────────────────────────────────────────────────
+    if (completedInteractionMode === "brush-stroke") {
+      const { layerId } = interactionRef.current;
+      const workCanvas = brushWorkCanvasRef.current;
+      interactionRef.current = { mode: null };
+      brushWorkCanvasRef.current = null;
+      brushWorkLayerIdRef.current = null;
+      setHistoryPaused(false);
+      if (workCanvas && layerId) {
+        const dataUrl = workCanvas.toDataURL("image/png");
+        setCutLayers((prev) => prev.map((l) => {
+          if (l.id !== layerId) return l;
+          const finalCanvas = document.createElement("canvas");
+          finalCanvas.width = workCanvas.width;
+          finalCanvas.height = workCanvas.height;
+          finalCanvas.getContext("2d").drawImage(workCanvas, 0, 0);
+          return { ...l, image: finalCanvas, imageSrc: dataUrl, sourceX: 0, sourceY: 0 };
+        }));
+        const targetLayer = cutLayers.find((l) => l.id === layerId);
+        if (targetLayer?.kind === "free-cut") {
+          saveCutLayersToIDB(cutLayers.map((l) => l.id === layerId ? { ...l, imageSrc: dataUrl } : l));
+        }
       }
       return;
     }
@@ -17436,6 +17869,7 @@ export default function XrayCalibrationWorkspace({
     restoreMobilePrecisionView,
     setGuideBuilderPreviewPoint,
     shouldUseMobileOneShotTool,
+    cutLayers,
   ]);
 
   const handleTouchFallbackEnd = useCallback(
@@ -17463,6 +17897,31 @@ export default function XrayCalibrationWorkspace({
     }
     handlePointerUp();
   }, [handlePointerUp]);
+
+  const handleCanvasPointerMove = useCallback((e) => {
+    if (tool === "brush") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = String(e.clientX - rect.left);
+      const y = String(e.clientY - rect.top);
+      if (brushCursorOuterRef.current) {
+        brushCursorOuterRef.current.setAttribute("cx", x);
+        brushCursorOuterRef.current.setAttribute("cy", y);
+        brushCursorOuterRef.current.style.display = "";
+      }
+      if (brushCursorDotRef.current) {
+        brushCursorDotRef.current.setAttribute("cx", x);
+        brushCursorDotRef.current.setAttribute("cy", y);
+        brushCursorDotRef.current.style.display = "";
+      }
+    }
+    handlePointerMove(e);
+  }, [tool, handlePointerMove]);
+
+  const handleCanvasPointerLeave = useCallback((e) => {
+    if (brushCursorOuterRef.current) brushCursorOuterRef.current.style.display = "none";
+    if (brushCursorDotRef.current) brushCursorDotRef.current.style.display = "none";
+    handlePointerLeave(e);
+  }, [handlePointerLeave]);
 
   useEffect(() => {
     const finishPointerInteraction = (event) => {
@@ -18694,12 +19153,15 @@ export default function XrayCalibrationWorkspace({
         STORY_STORAGE_KEY,
         JSON.stringify(buildStoryPayload()),
       );
+      void saveCutLayersToIDB(cutLayers);
+      const activeIds = cutLayers.filter((l) => l.kind === "free-cut").map((l) => l.id);
+      void clearCutLayersFromIDB(activeIds);
       restoredRef.current = true;
       setNotice("Story disimpan ke perangkat. Bisa dibuka lagi saat offline.");
     } catch {
       setNotice("Gagal simpan story. Penyimpanan lokal mungkin penuh.");
     }
-  }, [buildStoryPayload]);
+  }, [buildStoryPayload, cutLayers]);
 
   const saveTemporaryXrayCaseToGoogleDrive = useCallback(async () => {
     const endpoint = String(sheetMainImageEndpoint || "").trim();
@@ -20630,6 +21092,7 @@ export default function XrayCalibrationWorkspace({
       selectedAnnotationId !== null;
 
     if (cropToolActive) return "cursor-crosshair";
+    if (tool === "brush") return "cursor-none";
     if (tool === "annotation") return "cursor-text";
     if (tool === "freeLine" && freeLineMode === "point") return "cursor-default";
     if (activeMode === "pan") return "cursor-grabbing";
@@ -27594,6 +28057,19 @@ export default function XrayCalibrationWorkspace({
                 {!isLeftSidebarCompact && <span className="truncate">Library Drive</span>}
               </button>
 
+              {/* Brush Tool */}
+              {image && (
+                <button
+                  type="button"
+                  onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                  className={`flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border px-3 py-2 text-xs font-black transition active:scale-[0.98] ${tool === "brush" ? "border-violet-400 bg-violet-100 text-violet-700 shadow-inner" : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  {!isLeftSidebarCompact && <span className="truncate">{tool === "brush" ? "Keluar Brush" : "Brush Tool"}</span>}
+                </button>
+              )}
 
               {/* Baris 2: Simpan ke Drive */}
               {!isLeftSidebarCompact ? (
@@ -27726,6 +28202,13 @@ export default function XrayCalibrationWorkspace({
                 label="Redo (Ctrl/Cmd+Y)"
                 onClick={redoHistory}
                 disabled={historyState.redo < 1}
+              />
+              <ToolIconButton
+                icon="brush"
+                label="Brush Tool — Hapus / Blur / Warna"
+                onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                active={tool === "brush"}
+                disabled={!image}
               />
             </div>
           </div>
@@ -29718,6 +30201,14 @@ export default function XrayCalibrationWorkspace({
                   label="Parallel / Perpendicular Guide (Q)"
                   onClick={() => handleToolChange("guideBuilder")}
                   active={tool === "guideBuilder"}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
+                  icon="brush"
+                  label="Brush Tool — Hapus / Blur / Warna"
+                  onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                  active={tool === "brush"}
+                  disabled={!image}
                   className="h-9 w-full"
                 />
                 <ToolIconButton
@@ -32723,6 +33214,12 @@ export default function XrayCalibrationWorkspace({
                         {isSimpleUiMode ? (
                           <>
                             <LayerToolbarActionButton
+                              icon="brush"
+                              label="Brush Tool"
+                              active={tool === "brush"}
+                              onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                            />
+                            <LayerToolbarActionButton
                               icon="package"
                               label="Ganti template"
                               active={simpleLayerFloatingPopup === "template"}
@@ -32742,6 +33239,12 @@ export default function XrayCalibrationWorkspace({
                           </>
                         ) : (
                           <>
+                            <LayerToolbarActionButton
+                              icon="brush"
+                              label="Brush Tool"
+                              active={tool === "brush"}
+                              onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                            />
                             <LayerToolbarActionButton
                               icon={showLayerToolbarName ? "eyeOff" : "eye"}
                               label={
@@ -32797,6 +33300,12 @@ export default function XrayCalibrationWorkspace({
                       {isSimpleUiMode ? (
                         <>
                           <LayerToolbarActionButton
+                            icon="brush"
+                            label="Brush Tool"
+                            active={tool === "brush"}
+                            onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                          />
+                          <LayerToolbarActionButton
                             icon="package"
                             label="Ganti template"
                             active={simpleLayerFloatingPopup === "template"}
@@ -32816,6 +33325,12 @@ export default function XrayCalibrationWorkspace({
                         </>
                       ) : (
                         <>
+                          <LayerToolbarActionButton
+                            icon="brush"
+                            label="Brush Tool"
+                            active={tool === "brush"}
+                            onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                          />
                           <LayerToolbarActionButton
                             icon={showLayerToolbarName ? "eyeOff" : "eye"}
                             label={
@@ -33272,6 +33787,8 @@ export default function XrayCalibrationWorkspace({
                       onPatientCases={() => setPatientCaseManagerOpen(true)}
                       onImplantEstimator={() => setImplantSizePanelOpen(true)}
                       onDriveLibrary={() => setDriveLibraryOpen(true)}
+                      onBrushTool={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                      brushToolActive={tool === "brush"}
                       onCupAssessment={() => setShowCupAssessment(v => !v)}
                       cupAssessmentActive={showCupAssessment}
                       lines={lines.filter((l) => l.id !== calibrationLineId)}
@@ -33580,6 +34097,18 @@ export default function XrayCalibrationWorkspace({
                                 </svg>
                                 Library Drive Implant
                               </button>
+                              {image && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setSimpleMobilePanel(null); setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); }}
+                                  className={`col-span-2 flex items-center justify-center gap-1.5 min-h-11 rounded-2xl border px-2.5 text-[10px] font-black ${tool === "brush" ? "border-violet-400 bg-violet-100 text-violet-700" : "border-violet-200 bg-violet-50 text-violet-700"}`}
+                                >
+                                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                  {tool === "brush" ? "Nonaktifkan Brush" : "Brush Tool"}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => { setSimpleMobilePanel(null); setPreOpSummaryOpen(true); }}
@@ -35235,10 +35764,10 @@ export default function XrayCalibrationWorkspace({
                   transformOrigin: "0 0",
                 }}
                 onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
+                onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handleTouchFallbackEnd}
-                onPointerLeave={handlePointerLeave}
+                onPointerLeave={handleCanvasPointerLeave}
                 onTouchEnd={handleTouchFallbackEnd}
                 onTouchCancel={handleTouchFallbackEnd}
                 onContextMenu={(event) => event.preventDefault()}
@@ -35250,6 +35779,35 @@ export default function XrayCalibrationWorkspace({
                   });
                 }}
               />
+
+              {/* ── Brush cursor overlay — always rendered when brush active, position via DOM ref ── */}
+              {tool === "brush" && (
+                <svg
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ width: "100%", height: "100%", overflow: "visible" }}
+                >
+                  <circle
+                    ref={brushCursorOuterRef}
+                    cx="-9999"
+                    cy="-9999"
+                    r={brushSize / 2}
+                    fill={brushMode === "erase" ? "rgba(255,255,255,0.1)" : brushMode === "color" ? `${brushColor}22` : brushMode === "transparent" ? "rgba(251,146,60,0.1)" : "rgba(99,102,241,0.12)"}
+                    stroke={brushMode === "erase" ? "#ffffff" : brushMode === "color" ? brushColor : brushMode === "transparent" ? "#fb923c" : "#818cf8"}
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    style={{ display: "none" }}
+                  />
+                  <circle
+                    ref={brushCursorDotRef}
+                    cx="-9999"
+                    cy="-9999"
+                    r={2}
+                    fill={brushMode === "color" ? brushColor : "#fff"}
+                    opacity={0.8}
+                    style={{ display: "none" }}
+                  />
+                </svg>
+              )}
 
               {/* ── HKA Wizard ─────────────────────────────────────────────────── */}
               <AnimatePresence>
@@ -35796,6 +36354,164 @@ export default function XrayCalibrationWorkspace({
           });
         }}
       />
+
+      {/* ── Brush Tool Settings Panel ────────────────────────────────────────── */}
+      {tool === "brush" && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 160,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            background: isDark ? "rgba(15,23,42,0.96)" : "rgba(248,250,252,0.98)",
+            border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(203,213,225,0.6)",
+            borderRadius: 20,
+            padding: "10px 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            boxShadow: isDark
+              ? "0 12px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)"
+              : "0 8px 32px rgba(148,163,184,0.3), inset 0 1px 0 rgba(255,255,255,0.9)",
+            backdropFilter: "blur(16px)",
+          }}
+        >
+          {/* Mode buttons with icons */}
+          <div style={{ display: "flex", gap: 5 }}>
+            {[
+              {
+                key: "erase", label: "Hapus", color: "#f87171",
+                icon: (
+                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 20H7L3 16 14 5l6 6-5 5"/>
+                    <path d="M7 20l3.5-3.5"/>
+                  </svg>
+                ),
+              },
+              {
+                key: "transparent", label: "Transparan", color: "#fb923c",
+                icon: (
+                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="7" width="14" height="14" rx="2"/>
+                    <path d="M8 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/>
+                  </svg>
+                ),
+              },
+              {
+                key: "blur", label: "Blur", color: "#818cf8",
+                icon: (
+                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2c0 6-6 8-6 13a6 6 0 0 0 12 0c0-5-6-7-6-13z"/>
+                  </svg>
+                ),
+              },
+              {
+                key: "color", label: "Warna", color: "#34d399",
+                icon: (
+                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/>
+                  </svg>
+                ),
+              },
+            ].map(({ key, label, color, icon }) => {
+              const isActive = brushMode === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setBrushMode(key)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    width: 62,
+                    padding: "9px 4px 7px",
+                    borderRadius: 13,
+                    border: `1.5px solid ${isActive ? color : isDark ? "rgba(255,255,255,0.1)" : "rgba(203,213,225,0.7)"}`,
+                    background: isActive
+                      ? `${color}1a`
+                      : isDark ? "rgba(255,255,255,0.04)" : "rgba(241,245,249,0.9)",
+                    color: isActive ? color : isDark ? "rgba(255,255,255,0.4)" : "#94a3b8",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    boxShadow: isActive
+                      ? `0 0 14px ${color}28`
+                      : isDark ? "none" : "0 1px 3px rgba(148,163,184,0.15), inset 0 1px 0 rgba(255,255,255,0.8)",
+                  }}
+                >
+                  {icon}
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.2 }}>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Divider */}
+          <div style={{
+            width: 1, height: 54, flexShrink: 0,
+            background: isDark ? "rgba(255,255,255,0.08)" : "rgba(203,213,225,0.5)",
+          }} />
+
+          {/* Sliders */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 9, minWidth: 168 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, width: 44, color: isDark ? "rgba(255,255,255,0.4)" : "#94a3b8" }}>Ukuran</span>
+              <input
+                type="range" min={10} max={200} value={brushSize}
+                onChange={(e) => setBrushSize(Number(e.target.value))}
+                style={{ flex: 1, accentColor: "#818cf8", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: 10, fontWeight: 800, width: 26, textAlign: "right", color: isDark ? "#a5b4fc" : "#6366f1" }}>{brushSize}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, width: 44, color: isDark ? "rgba(255,255,255,0.4)" : "#94a3b8" }}>Kuat</span>
+              <input
+                type="range" min={5} max={100} value={Math.round(brushStrength * 100)}
+                onChange={(e) => setBrushStrength(Number(e.target.value) / 100)}
+                style={{ flex: 1, accentColor: "#818cf8", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: 10, fontWeight: 800, width: 26, textAlign: "right", color: isDark ? "#a5b4fc" : "#6366f1" }}>{Math.round(brushStrength * 100)}%</span>
+            </div>
+          </div>
+
+          {/* Color picker */}
+          {brushMode === "color" && (
+            <>
+              <div style={{ width: 1, height: 54, flexShrink: 0, background: isDark ? "rgba(255,255,255,0.08)" : "rgba(203,213,225,0.5)" }} />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <input
+                  type="color" value={brushColor}
+                  onChange={(e) => setBrushColor(e.target.value)}
+                  style={{ width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", padding: 2, background: "none" }}
+                />
+                <span style={{ fontSize: 9, fontWeight: 700, color: isDark ? "rgba(255,255,255,0.35)" : "#94a3b8" }}>Warna</span>
+              </div>
+            </>
+          )}
+
+          {/* Close */}
+          <button
+            type="button"
+            onClick={() => setTool(getIdleTool())}
+            title="Tutup brush tool"
+            style={{
+              marginLeft: 2,
+              width: 26, height: 26, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRadius: "50%",
+              border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(203,213,225,0.6)",
+              background: isDark ? "rgba(255,255,255,0.06)" : "rgba(241,245,249,0.9)",
+              color: isDark ? "rgba(255,255,255,0.4)" : "#94a3b8",
+              fontSize: 12, fontWeight: 900, cursor: "pointer", lineHeight: 1,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
