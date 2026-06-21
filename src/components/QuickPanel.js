@@ -185,6 +185,7 @@ export default function QuickPanel({
   const [actionsOpen, setActionsOpen] = useState(true);
   const [implantOpen, setImplantOpen] = useState(false);
   const [implantPreviewItem, setImplantPreviewItem] = useState(null);
+  const [exportOpen, setExportOpen]   = useState(false);
 
   const activeToolKey = activeTool === "pan" ? "move" : activeTool;
 
@@ -284,9 +285,8 @@ export default function QuickPanel({
                     <Btn icon={Upload} iconCls="text-slate-400" onClick={() => { setUploadOpen(false); onUpload?.(); }} className="py-2">Lokal</Btn>
                   </motion.div>
                   <motion.p variants={STAGGER_ITEM} className="text-[8px] font-black tracking-widest text-[var(--soft-text-lo,theme(colors.slate.400))] uppercase">+ Layer Baru</motion.p>
-                  <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-1.5">
-                    <Btn icon={FolderOpen} iconCls="text-violet-400" onClick={() => { setUploadOpen(false); onOpenLibrary?.(); }} className="py-2">Drive</Btn>
-                    <Btn icon={Upload} iconCls="text-violet-400" onClick={() => { setUploadOpen(false); onUploadLayer?.(); }} className="py-2">Lokal</Btn>
+                  <motion.div variants={STAGGER_ITEM}>
+                    <Btn icon={Upload} iconCls="text-violet-400" onClick={() => { setUploadOpen(false); onUploadLayer?.(); }} className="w-full py-2">Lokal</Btn>
                   </motion.div>
                 </motion.div>
               </motion.div>
@@ -349,51 +349,110 @@ export default function QuickPanel({
 
                   <motion.div variants={STAGGER_ITEM} className="h-px bg-[var(--soft-border)] my-0.5" />
 
-                  <motion.p variants={STAGGER_ITEM} className="text-[8px] font-black tracking-widest text-[var(--soft-text-lo,theme(colors.slate.400))] uppercase">Export</motion.p>
-                  <motion.div variants={STAGGER_ITEM} className="grid grid-cols-3 gap-1.5">
-                    <Btn icon={Download} iconCls="text-cyan-400" disabled={!canExport} onClick={onExportPng} className="py-2">PNG</Btn>
-                    <Btn icon={Download} iconCls="text-amber-400" disabled={!canExport} onClick={onExportJpeg} className="py-2">JPEG</Btn>
-                    <Btn icon={FileText} iconCls="text-slate-400" disabled={!canExport} onClick={onExportPdf} className="py-2">PDF</Btn>
+                  {/* Export — single trigger + dropdown */}
+                  <motion.div variants={STAGGER_ITEM} className="space-y-1.5 mt-2">
+                    <motion.button
+                      type="button"
+                      disabled={!canExport}
+                      onClick={() => setExportOpen((p) => !p)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-2xl border px-3 py-2.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        exportOpen
+                          ? "border-cyan-500/40 bg-cyan-500/12 text-cyan-300"
+                          : "border-[var(--soft-border)] text-[var(--soft-text)] hover:bg-white/6"
+                      }`}
+                      {...TAP}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Download className={`h-3.5 w-3.5 shrink-0 ${exportOpen ? "text-cyan-400" : "text-slate-400"}`} />
+                        Export
+                      </span>
+                      <motion.span
+                        animate={{ rotate: exportOpen ? 180 : 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="shrink-0"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                      </motion.span>
+                    </motion.button>
+                    <AnimatePresence initial={false}>
+                      {exportOpen && (
+                        <motion.div
+                          key="export-options"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1, transition: { type: "spring", damping: 24, stiffness: 300 } }}
+                          exit={{ height: 0, opacity: 0, transition: { duration: 0.18 } }}
+                          className="overflow-hidden"
+                        >
+                          <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                            {[
+                              { label: "PNG",  icon: Download, iconCls: "text-cyan-400",  onClick: () => { onExportPng?.();  setExportOpen(false); } },
+                              { label: "JPEG", icon: Download, iconCls: "text-amber-400", onClick: () => { onExportJpeg?.(); setExportOpen(false); } },
+                              { label: "PDF",  icon: FileText, iconCls: "text-rose-400",  onClick: () => { onExportPdf?.();  setExportOpen(false); } },
+                            ].map(({ label, icon: Icon, iconCls, onClick }) => (
+                              <motion.button
+                                key={label}
+                                type="button"
+                                onClick={onClick}
+                                className="flex flex-col items-center gap-1 rounded-2xl border border-[var(--soft-border)] py-2.5 text-[10px] font-black text-[var(--soft-text)] transition hover:bg-white/8 active:scale-95"
+                                whileTap={{ scale: 0.93 }}
+                              >
+                                <Icon className={`h-4 w-4 ${iconCls}`} />
+                                {label}
+                              </motion.button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </motion.div>
 
                   <motion.p variants={STAGGER_ITEM} className="text-[8px] font-black tracking-widest text-blue-400/70 uppercase">Fitur Unggulan</motion.p>
+
+                  {/* Primary action — Laporan */}
                   <motion.div variants={STAGGER_ITEM}>
                     <motion.button
                       type="button"
                       onClick={onPreOpReport}
-                      className="flex w-full items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3 py-2.5 text-[10px] font-black text-white shadow-[0_3px_12px_rgba(37,99,235,0.35),inset_0_1px_0_rgba(255,255,255,0.1)] transition active:scale-[0.97]"
+                      className="flex w-full items-center gap-2.5 rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#2563eb)] px-3.5 py-3 text-[11px] font-black text-white shadow-[0_4px_16px_rgba(37,99,235,0.40),inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:shadow-[0_6px_20px_rgba(37,99,235,0.50)] active:scale-[0.97]"
                       whileTap={{ scale: 0.97 }}
                     >
-                      <FileText className="h-3.5 w-3.5 shrink-0" />
+                      <FileText className="h-4 w-4 shrink-0" />
                       Laporan Pre-Op PDF
                     </motion.button>
                   </motion.div>
+
+                  {/* secondary actions */}
                   <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-1.5">
-                    <Btn icon={Users} iconCls="text-purple-400" onClick={onPatientCases} className="py-2">Kasus Pasien</Btn>
-                    <Btn icon={Zap} iconCls="text-teal-400" onClick={onImplantEstimator} className="py-2">Estimator</Btn>
-                    <Btn icon={FolderOpen} iconCls="text-sky-400" onClick={onDriveLibrary} className="col-span-2 py-2">Library Drive Implant</Btn>
-                    <Btn iconCls="text-violet-400" onClick={onBrushTool} className="col-span-2 py-2" active={brushToolActive}
-                      icon={() => (
-                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      )}
+                    <Btn
+                      icon={Users}
+                      iconCls="text-purple-400"
+                      onClick={onPatientCases}
+                      className="py-2.5 border-purple-500/30 bg-purple-500/8 hover:bg-purple-500/15 text-purple-300"
                     >
-                      {brushToolActive ? "Nonaktifkan Brush" : "Brush Tool"}
+                      Kasus Pasien
+                    </Btn>
+                    <Btn
+                      icon={Zap}
+                      iconCls="text-teal-400"
+                      onClick={onImplantEstimator}
+                      className="py-2.5 border-teal-500/30 bg-teal-500/8 hover:bg-teal-500/15 text-teal-300"
+                    >
+                      Estimator
+                    </Btn>
+                    <Btn
+                      icon={FolderOpen}
+                      iconCls="text-sky-400"
+                      onClick={onDriveLibrary}
+                      className="col-span-2 py-2.5 border-sky-500/30 bg-sky-500/8 hover:bg-sky-500/15 text-sky-300"
+                    >
+                      Library Drive Implant
                     </Btn>
                   </motion.div>
 
                   <motion.div variants={STAGGER_ITEM} className="h-px bg-[var(--soft-border)] my-0.5" />
 
-                  <motion.p variants={STAGGER_ITEM} className="text-[8px] font-black tracking-widest text-[var(--soft-text-lo,theme(colors.slate.400))] uppercase">Drive</motion.p>
-                  <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-1.5">
-                    <Btn icon={FolderOpen} iconCls="text-cyan-400" onClick={onOpenLibrary} className="py-2">
-                      Library{libraryCount > 0 ? ` (${libraryCount})` : ""}
-                    </Btn>
-                    <Btn icon={Save} iconCls="text-emerald-400" disabled={!canSaveTemplate} onClick={onSaveTemplate} className="py-2">Simpan</Btn>
-                  </motion.div>
                   <motion.div variants={STAGGER_ITEM}>
-                    <Btn icon={Upload} iconCls="text-cyan-400" disabled={!canUploadDrive} onClick={onUploadDrive} className="w-full py-2">
+                    <Btn icon={Upload} iconCls="text-cyan-400" disabled={!canUploadDrive} onClick={onUploadDrive} className="w-full py-2.5">
                       Upload ke Drive
                     </Btn>
                   </motion.div>

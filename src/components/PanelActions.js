@@ -34,6 +34,24 @@ function CupIcon({ className }) {
   );
 }
 
+function ZakAcetaIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      {/* ITD baseline */}
+      <line x1="3" y1="14" x2="21" y2="14" strokeDasharray="3 1.5"/>
+      {/* Hip length lines left + right */}
+      <line x1="7" y1="14" x2="7" y2="7"/>
+      <line x1="17" y1="14" x2="17" y2="6"/>
+      {/* Femoral heads */}
+      <circle cx="7" cy="6" r="2"/>
+      <circle cx="17" cy="5" r="2"/>
+      {/* LLD arrow */}
+      <line x1="19" y1="5" x2="19" y2="6" strokeWidth={1.5}/>
+      <polyline points="18,5.8 19,4.5 20,5.8" strokeWidth={1.5}/>
+    </svg>
+  );
+}
+
 const TOOL_ICON_MAP = {
   draw: PenTool,
   pan: Move,
@@ -48,6 +66,7 @@ const TOOL_ICON_MAP = {
   annotation: MessageSquare,
   imageProcess: Activity,
   cupAssessment: CupIcon,
+  zakAceta: ZakAcetaIcon,
 };
 
 // ─── accent system — glassmorphism ────────────────────────────────────────────
@@ -67,6 +86,8 @@ const TOOL_ACCENT = {
   annotation:   { bg: "bg-orange-500/10",  border: "border-orange-500/45",  text: "text-orange-400",  inner: "shadow-[inset_0_1px_4px_rgba(249,115,22,0.22)]",   headerBg: "bg-orange-500/20" },
   imageProcess: { bg: "bg-sky-500/10",     border: "border-sky-500/45",     text: "text-sky-400",     inner: "shadow-[inset_0_1px_4px_rgba(14,165,233,0.22)]",   headerBg: "bg-sky-500/20" },
   cupAssessment:{ bg: "bg-amber-500/10",   border: "border-amber-500/45",   text: "text-amber-400",   inner: "shadow-[inset_0_1px_4px_rgba(245,158,11,0.22)]",   headerBg: "bg-amber-500/20" },
+  zakAceta:     { bg: "bg-rose-500/10",    border: "border-rose-500/45",    text: "text-rose-400",    inner: "shadow-[inset_0_1px_4px_rgba(244,63,94,0.22)]",    headerBg: "bg-rose-500/20" },
+  brush:        { bg: "bg-violet-500/10",  border: "border-violet-500/45",  text: "text-violet-400",  inner: "shadow-[inset_0_1px_4px_rgba(139,92,246,0.22)]",   headerBg: "bg-violet-500/20" },
 };
 
 const IDLE_ICON_COLOR = {
@@ -83,6 +104,8 @@ const IDLE_ICON_COLOR = {
   annotation:   "text-orange-400",
   imageProcess: "text-sky-400",
   cupAssessment:"text-amber-400",
+  zakAceta:     "text-rose-400",
+  brush:        "text-violet-400",
 };
 
 // ─── grouping ─────────────────────────────────────────────────────────────────
@@ -92,11 +115,13 @@ const GROUP_META = {
   "Drawing":  { label: "Pengukuran",  color: "text-blue-500/70" },
   "Planning": { label: "Perencanaan", color: "text-purple-500/70" },
   "ZakVisor": { label: "ZakVisor",    color: "text-sky-500/70" },
+  "Editing":  { label: "Editing",     color: "text-violet-500/70" },
 };
 
 function getToolGroupKey(item) {
   if (item.key === "pan")          return "Move";
   if (item.key === "imageProcess") return "ZakVisor";
+  if (item.key === "brush")        return "Editing";
   if (["draw","angle","circle","annotation"].includes(item.key) || item.freeLineMode)
     return "Drawing";
   return "Planning";
@@ -108,7 +133,7 @@ function getToolIcon(item) {
 }
 
 function groupTools(tools) {
-  const order = ["Move", "Drawing", "Planning", "ZakVisor"];
+  const order = ["Move", "Drawing", "Planning", "ZakVisor", "Editing"];
   const map = {};
   for (const item of tools) {
     const g = getToolGroupKey(item);
@@ -212,6 +237,7 @@ export default function PanelActions({
   canRedo = true,
   onCupAssessment,
   cupAssessmentActive = false,
+  zakAcetaActive = false,
 }) {
   const groups = groupTools(tools);
 
@@ -223,6 +249,7 @@ export default function PanelActions({
 
   const isItemActive = (item) => {
     if (item.key === "cupAssessment") return cupAssessmentActive;
+    if (item.key === "zakAceta") return zakAcetaActive;
     return item.freeLineMode
       ? activeTool === "freeLine" && activeFreeLineMode === item.freeLineMode
       : activeTool === item.key;

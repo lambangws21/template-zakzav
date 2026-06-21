@@ -612,6 +612,15 @@ const MOBILE_DOUBLE_TAP_MS_RESET = 360;
 const MOBILE_DOUBLE_TAP_DISTANCE_SCREEN = 28;
 const DEFAULT_LINE_STROKE_WIDTH = 2;
 const DEFAULT_LINE_COLOR = "#38bdf8";
+
+// Presets that snap to horizontal (y locked to start)
+const HORIZONTAL_LINE_PRESETS = new Set(["interteardrop", "femoralOffset", "acetabularOffset", "globalOffset"]);
+// Presets that snap to vertical (x locked to start)
+const VERTICAL_LINE_PRESETS = new Set(["hipLength", "lld"]);
+
+function constrainLineByPreset(draft, _preset) {
+  return draft;
+}
 const DEFAULT_ANGLE_COLOR = "#f97316";
 const DEFAULT_ANGLE_STROKE_WIDTH = 2;
 const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
@@ -3809,6 +3818,8 @@ const HIP_FUNCTION_SUMMARY_ITEMS = [
     detail:
       "Preset garis offset umum untuk membandingkan jarak antar landmark sesuai kebutuhan templating.",
     notice: "Gambar line pada landmark yang ingin dibandingkan.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "Fig. 3 — Landmark mekanis: femoral offset (3), acetabular offset (4), hip length (5), LLD (6R/6L)",
   },
   {
     key: "femoralOffset",
@@ -3816,19 +3827,23 @@ const HIP_FUNCTION_SUMMARY_ITEMS = [
     shortLabel: "Femoral offset",
     activeClass: "text-emerald-700",
     detail:
-      "Femoral offset mengukur jarak lateral center femoral head terhadap axis femur. Ini dipakai untuk menilai restoration offset femur.",
+      "Femoral offset: jarak terpendek antara pusat rotasi femoral head dan axis longitudinal femur proksimal (Scheerlinck 2010). Mengontrol tegangan & moment arm otot abduktor, beban implant, dan keausan acetabular.",
     notice:
-      "Pakai untuk mengukur jarak lateral head center terhadap axis femur.",
+      "Gambar garis dari pusat rotasi femoral head tegak lurus ke axis longitudinal femur.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "Fig. 3 — Femoral offset (no.3): jarak horizontal dari pusat rotasi ke axis femur",
   },
   {
     key: "globalOffset",
     label: "G-Offset",
-    shortLabel: "Global offset",
+    shortLabel: "Combined offset",
     activeClass: "text-violet-700",
     detail:
-      "Global offset mengukur kombinasi offset femur dan acetabulum/pelvis. Ini dipakai untuk menilai keseimbangan offset total hip.",
+      "Combined offset (femoral + acetabular offset): jumlah kedua offset yang mengontrol posisi relatif greater trochanter terhadap pelvis dan tegangan otot gluteal. Digunakan saat restorasi rotasi center asli tidak memungkinkan.",
     notice:
-      "Pakai untuk membandingkan offset total dari pelvis/acetabulum sampai femur.",
+      "Pakai untuk membandingkan combined offset femoral dan acetabular dari pelvis sampai femur.",
+    image: "/images/jurnal-scheerlinck/fig6-compensating-offset.jpeg",
+    imageCaption: "Fig. 6 — Kompensasi offset: A. Normal, B. Cup medialisasi → femoral offset ditambah, C. Cup tinggi → stem lebih proud",
   },
   {
     key: "lld",
@@ -3836,9 +3851,71 @@ const HIP_FUNCTION_SUMMARY_ITEMS = [
     shortLabel: "Leg length",
     activeClass: "text-orange-700",
     detail:
-      "LLD mengukur leg length discrepancy, yaitu beda panjang tungkai kiri-kanan dari garis referensi pelvis atau landmark yang dipilih.",
+      "LLD (Leg Length Discrepancy): beda panjang tungkai kiri-kanan diukur dari inferior teardrop ke lantai pada foto AP pelvis berdiri (Scheerlinck 2010). Bandingkan dengan hip length discrepancy untuk menentukan sumber perbedaan.",
     notice:
-      "Pakai untuk mengukur beda panjang tungkai dari referensi pelvis atau landmark yang dipilih.",
+      "Gambar garis vertikal dari ujung inferior teardrop ke titik referensi yang sama di sisi kontralateral.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "Fig. 3 — LLD (6R vs 6L): beda jarak inferior teardrop ke garis horizontal referensi",
+  },
+  {
+    key: "interteardrop",
+    label: "ITD",
+    shortLabel: "Interteardrop line",
+    activeClass: "text-teal-700",
+    detail:
+      "Interteardrop line: garis horizontal referensi yang menghubungkan ujung inferior teardrop kanan dan kiri (Scheerlinck 2010). Digunakan sebagai baseline untuk mengukur acetabular offset dan leg length discrepancy.",
+    notice:
+      "Gambar garis horizontal melewati ujung inferior kedua teardrop sebagai referensi utama pengukuran.",
+    image: "/images/jurnal-scheerlinck/fig1-anatomical-landmarks.jpeg",
+    imageCaption: "Fig. 1 — Teardrop (no.6): landmark acetabular inferior sebagai titik referensi garis ITD",
+  },
+  {
+    key: "acetabularOffset",
+    label: "A-Off",
+    shortLabel: "Acetabular offset",
+    activeClass: "text-amber-700",
+    detail:
+      "Acetabular offset: jarak terpendek antara pusat rotasi acetabulum dan garis tegak lurus interteardrop (Scheerlinck 2010). Mengontrol tegangan otot abduktor, lever arm beban tubuh, dan beban pada acetabulum.",
+    notice:
+      "Gambar garis dari pusat rotasi acetabular tegak lurus ke garis interteardrop.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "Fig. 3 — Acetabular offset (no.4): jarak pusat rotasi acetabulum ke garis vertikal interteardrop",
+  },
+  {
+    key: "hipLength",
+    label: "H-Len",
+    shortLabel: "Hip length",
+    activeClass: "text-sky-700",
+    detail:
+      "Hip length: jarak dari ujung inferior teardrop ke titik referensi pada femur proksimal, misal batas atas lesser trochanter (Scheerlinck 2010). Digunakan untuk menilai leg length discrepancy pada level sendi panggul saja, terpisah dari LLD tungkai total.",
+    notice:
+      "Gambar garis dari ujung inferior teardrop ke titik referensi pada femur proksimal (misal: upper border lesser trochanter).",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "Fig. 3 — Hip length (no.5): dari inferior teardrop ke upper border lesser trochanter",
+  },
+  {
+    key: "headDiameter",
+    label: "Head-D",
+    shortLabel: "Diameter kepala femur",
+    activeClass: "text-pink-700",
+    detail:
+      "Diameter kepala femur: garis melalui titik terlebar kepala femur. Midpoint garis = Hip Rotation Centre (HRC/FRC). Nilai diameter digunakan untuk memilih ukuran kepala implan. Ditandai dengan crosshair (+) di titik tengah (HRC) dan tick mark di ujung.",
+    notice:
+      "Gambar garis dari tepi kepala femur satu sisi ke tepi sisi berlawanan, melewati titik terlebar. Titik tengah otomatis = HRC.",
+    image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
+    imageCaption: "Fig. 5 — FRC (Femoral Rotation Centre): pusat kepala femur, basis templating rotasi implan",
+  },
+  {
+    key: "femurAxis",
+    label: "Fem-Axis",
+    shortLabel: "Longitudinal axis femur proksimal",
+    activeClass: "text-indigo-700",
+    detail:
+      "Longitudinal axis femur proksimal: garis sepanjang sumbu shaft femur. Digunakan untuk menghitung femoral offset secara presisi — jarak tegak lurus dari HRC (titik tengah Head-D) ke axis ini. Ditandai dengan ujung panah di kedua arah.",
+    notice:
+      "Gambar garis sepanjang sumbu medullary canal femur proksimal. Gunakan bersama Head-D untuk kalkulasi femoral offset otomatis.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "Fig. 3 — Sumbu femur (no.2): longitudinal axis femur proksimal untuk referensi offset",
   },
 ];
 
@@ -3850,6 +3927,431 @@ const HIP_FUNCTION_SUMMARY_BY_KEY = HIP_FUNCTION_SUMMARY_ITEMS.reduce(
   {},
 );
 
+// ── Hip Planning Wizard Steps ─────────────────────────────────────────────────
+const HIP_WIZARD_STEPS = [
+  {
+    key: "interteardrop",
+    shortLabel: "ITD",
+    label: "Interteardrop Line (ITD)",
+    instruction: "Tarik garis dari titik 6 kiri ke 6 kanan.\nIkuti garis I di gambar — baseline semua pengukuran.",
+    tip: "I = garis ITD · 6 = teardrop (titik awal & akhir)",
+    image: "/images/jurnal-scheerlinck/fig1-anatomical-landmarks.jpeg",
+    caption: "Fig. 1 — I: Garis horizontal melewati titik 6 (teardrop) kiri & kanan",
+    color: "#0d9488",
+    needCount: 1,
+    countType: "interteardrop",
+  },
+  {
+    key: "hipLength",
+    shortLabel: "H-Len",
+    label: "Hip Length — 2 Sisi (H-Len)",
+    instruction: "Tarik 2 garis vertikal mengikuti panah 5:\n① Dari garis ITD → ke titik 1 kanan\n② Dari garis ITD → ke titik 1 kiri\nSelisih = LLD (6R − 6L)",
+    tip: "1 = pusat caput · 5 = Hip Length · 6R/6L = LLD",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    caption: "Fig. 3 — 5: Hip Length dari ITD ke 1 (pusat caput femur), kiri & kanan",
+    color: "#0284c7",
+    needCount: 2,
+    countType: "hipLength",
+  },
+  {
+    key: "headDiameter",
+    shortLabel: "Head-D",
+    label: "Diameter Kepala Femur (Head-D)",
+    instruction: "Tarik garis dari tepi kiri ke tepi kanan kepala femur.\nMidpoint otomatis = HRC (Hip Rotation Centre).\nGambar di kedua sisi untuk perbandingan.",
+    tip: "FRC = titik tengah garis ini · panjang = diameter kepala",
+    image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
+    caption: "Fig. 5 — FRC: pusat kepala femur, otomatis terdeteksi dari midpoint garis Head-D",
+    color: "#ec4899",
+    needCount: 1,
+    countType: "headDiameter",
+  },
+  {
+    key: "femurAxis",
+    shortLabel: "Fem-Axis",
+    label: "Longitudinal Axis Femur (Fem-Axis)",
+    instruction: "Tarik garis sepanjang sumbu shaft femur.\nIkuti garis 2 di gambar — dari proksimal ke distal.\nF-Off = jarak tegak lurus HRC ke axis ini (otomatis).",
+    tip: "2 = sumbu shaft · F-Off dihitung otomatis dari HRC ke axis",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    caption: "Fig. 3 — 2: Longitudinal axis femur proksimal, referensi femoral offset presisi",
+    color: "#6366f1",
+    needCount: 1,
+    countType: "femurAxis",
+  },
+  {
+    key: "acetabularOffset",
+    shortLabel: "A-Off",
+    label: "Acetabular Offset (A-Off)",
+    instruction: "Tarik garis horizontal mengikuti panah 4:\nDari midline pelvis → ke titik 1 (pusat acetabulum).\nG-Off = F-Off (otomatis) + A-Off.",
+    tip: "4 = Acetabular Offset · dari midline ke 1 pusat acetabulum",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    caption: "Fig. 3 — 4: Acetabular Offset dari midline ke 1 (pusat acetabulum)",
+    color: "#d97706",
+    needCount: 1,
+    countType: "acetabularOffset",
+  },
+  {
+    key: "done",
+    shortLabel: "✓",
+    label: "Planning Selesai!",
+    instruction: "Semua line selesai!\nF-Off dihitung otomatis dari HRC → Fem-Axis.\nLLD, G-Off, & Head size tampil di panel.",
+    tip: "Geser ujung line → nilai kalkulasi update real-time",
+    image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
+    caption: "Fig. 5 — FRC & ARC: acuan templating posisi implan",
+    color: "#8b5cf6",
+    needCount: 0,
+    countType: null,
+    isDone: true,
+  },
+];
+
+function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, measurementUnit }) {
+  const [step, setStep] = useState(0);
+  const [showResults, setShowResults] = useState(false);
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const getCount = (type) =>
+    type ? lines.filter((l) => l.type === type).length : 0;
+  const isStepComplete = (s) =>
+    s.isDone ? true : getCount(s.countType) >= s.needCount;
+
+  const fmtPx = (px) => {
+    if (px === null || px === undefined) return "—";
+    if (mmPerPixel) {
+      const mm = px * mmPerPixel;
+      return measurementUnit === "cm"
+        ? `${(mm / 10).toFixed(2)} cm`
+        : `${mm.toFixed(1)} mm`;
+    }
+    return `${Math.round(px)} px`;
+  };
+
+  // ── auto group center: pisah L/R berdasarkan x-midpoint ITD atau canvas ──
+  const byType = (type) => lines.filter((l) => l.type === type);
+  const itdLine = byType("interteardrop")[0];
+  const centerX = itdLine
+    ? (itdLine.x1 + itdLine.x2) / 2
+    : null;
+
+  const groupLR = (arr) => {
+    if (arr.length === 0) return { L: null, R: null, all: [] };
+    const sorted = [...arr].sort((a, b) => (a.x1 + a.x2) / 2 - (b.x1 + b.x2) / 2);
+    if (sorted.length === 1) {
+      const midX = (sorted[0].x1 + sorted[0].x2) / 2;
+      const side = centerX !== null
+        ? midX < centerX ? "L" : "R"
+        : "L";
+      return { L: side === "L" ? sorted[0] : null, R: side === "R" ? sorted[0] : null, all: sorted };
+    }
+    return { L: sorted[0], R: sorted[sorted.length - 1], all: sorted };
+  };
+
+  const hLen  = groupLR(byType("hipLength"));
+  const fOff  = groupLR(byType("femoralOffset"));
+  const aOff  = groupLR(byType("acetabularOffset"));
+  const gOff  = groupLR(byType("globalOffset"));
+
+  const hLenLpx = hLen.L ? getLineLength(hLen.L) : null;
+  const hLenRpx = hLen.R ? getLineLength(hLen.R) : null;
+  const lldPx   = hLenLpx !== null && hLenRpx !== null ? Math.abs(hLenRpx - hLenLpx) : null;
+  const lldSide  = hLenLpx !== null && hLenRpx !== null
+    ? hLenRpx > hLenLpx ? "R > L" : hLenRpx < hLenLpx ? "L > R" : "="
+    : null;
+
+  const gOffLpx = gOff.L ? getLineLength(gOff.L)
+    : (fOff.L && aOff.L ? getLineLength(fOff.L) + getLineLength(aOff.L) : null);
+  const gOffRpx = gOff.R ? getLineLength(gOff.R)
+    : (fOff.R && aOff.R ? getLineLength(fOff.R) + getLineLength(aOff.R) : null);
+  const deltaGOff = gOffLpx !== null && gOffRpx !== null ? Math.abs(gOffRpx - gOffLpx) : null;
+
+  const hasAnyLine = byType("interteardrop").length + byType("hipLength").length +
+    byType("femoralOffset").length + byType("acetabularOffset").length +
+    byType("globalOffset").length > 0;
+
+  // ── wizard state ──────────────────────────────────────────────────────────
+  const current = HIP_WIZARD_STEPS[step];
+  const currentDone = isStepComplete(current);
+  const allMeasurementsDone = HIP_WIZARD_STEPS.filter((s) => !s.isDone).every(isStepComplete);
+
+  useEffect(() => {
+    if (currentDone && !current.isDone && step < HIP_WIZARD_STEPS.length - 1) {
+      const t = setTimeout(() => setStep((s) => s + 1), 700);
+      return () => clearTimeout(t);
+    }
+  }, [currentDone, current.isDone, step]);
+
+  useEffect(() => {
+    const firstIncomplete = HIP_WIZARD_STEPS.findIndex(
+      (s) => !s.isDone && getCount(s.countType) < s.needCount,
+    );
+    if (firstIncomplete !== -1 && firstIncomplete < step) {
+      setStep(firstIncomplete);
+    }
+  }, [lines]);
+
+  // ── render ────────────────────────────────────────────────────────────────
+  const C = { itd:"#0d9488", hLen:"#0284c7", lld:"#ef4444", fOff:"#10b981", aOff:"#d97706", gOff:"#8b5cf6" };
+
+  const ResultRow = ({ label, color, value, note, highlight }) => (
+    <div className={`flex items-center justify-between gap-1 py-[2px] text-[9px] ${highlight ? "font-bold" : ""}`}>
+      <span className="flex items-center gap-1 text-slate-500">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
+        {label}
+        {note && <span className="text-[8px] text-slate-400">({note})</span>}
+      </span>
+      <span className="font-mono font-bold" style={{ color: highlight ? "#ef4444" : color }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_8px_32px_rgba(15,23,42,0.16)]">
+      {/* Header */}
+      <div className="flex items-center justify-between bg-slate-900 px-3 py-2.5">
+        <div className="flex items-center gap-2 text-[10px] font-black tracking-wider text-white uppercase">
+          <Icon name="target" className="h-3.5 w-3.5 text-rose-400" />
+          Panduan Hip Planning
+        </div>
+        <button onClick={onClose} className="rounded p-0.5 text-slate-400 transition hover:text-white">
+          <Icon name="close" className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex gap-1 px-3 pt-2.5 pb-1">
+        {HIP_WIZARD_STEPS.map((s, i) => (
+          <button
+            key={s.key}
+            title={s.label}
+            onClick={() => setStep(i)}
+            className="h-1.5 flex-1 rounded-full transition-all duration-300"
+            style={{
+              background: i === step ? current.color : isStepComplete(s) ? "#34d399" : "#e2e8f0",
+              transform: i === step ? "scaleY(1.5)" : "scaleY(1)",
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Gambar jurnal */}
+      <div className="mx-3 mt-2 overflow-hidden rounded-xl border border-slate-100">
+        <img src={current.image} alt={current.caption} className="max-h-44 w-full object-contain" />
+        <p className="bg-slate-50/80 px-2 py-1 text-[8px] italic leading-snug text-slate-400">
+          {current.caption}
+        </p>
+      </div>
+
+      {/* Konten step */}
+      <div className="px-3 pt-2.5">
+        <div className="flex items-start gap-2">
+          <span className="mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black text-white" style={{ background: current.color }}>
+            {step + 1}/{HIP_WIZARD_STEPS.length}
+          </span>
+          <div className="min-w-0">
+            <div className="text-[11px] font-extrabold leading-tight" style={{ color: current.color }}>
+              {current.label}
+            </div>
+            <p className="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-slate-600">
+              {current.instruction}
+            </p>
+          </div>
+        </div>
+
+        {/* Tip */}
+        <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[9px] leading-snug text-slate-500">
+          💡 {current.tip}
+        </div>
+
+        {/* Status line */}
+        {!current.isDone && (
+          <div className={`mt-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-colors duration-300 ${currentDone ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
+            <span>{currentDone ? "✅" : "⬜"}</span>
+            <span>
+              {currentDone
+                ? `${getCount(current.countType)} line ${current.shortLabel} sudah tergambar`
+                : `Butuh ${current.needCount} line ${current.shortLabel} — sekarang: ${getCount(current.countType)}`}
+            </span>
+          </div>
+        )}
+
+        {/* Ringkasan akhir */}
+        {current.isDone && (
+          <div className={`mt-1.5 rounded-lg px-2 py-1.5 text-[10px] font-semibold ${allMeasurementsDone ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+            {allMeasurementsDone
+              ? "✅ Semua pengukuran lengkap!"
+              : "⚠️ Ada langkah yang belum selesai."}
+          </div>
+        )}
+
+        {/* ── Hasil Panel (collapsible) ─────────────────────────────────── */}
+        {hasAnyLine && (
+          <div className="mt-2">
+            <button
+              onClick={() => setShowResults((v) => !v)}
+              className="flex w-full items-center justify-between rounded-lg bg-slate-100 px-2.5 py-1.5 text-[9px] font-bold text-slate-600 transition hover:bg-slate-200"
+            >
+              <span className="flex items-center gap-1.5">
+                <span>📊</span>
+                <span>Lihat Hasil</span>
+                {!mmPerPixel && <span className="rounded bg-amber-100 px-1 text-[7px] text-amber-600">px</span>}
+              </span>
+              <span>{showResults ? "▲" : "▼"}</span>
+            </button>
+
+            {showResults && (
+              <div className="mt-1.5 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/60 px-2.5 py-2">
+                {/* Auto group center — center dari ITD */}
+                {itdLine && (
+                  <div className="mb-1 rounded bg-teal-50 px-2 py-1 text-[8px] text-teal-700">
+                    ⊕ Center X dari ITD: {Math.round((itdLine.x1 + itdLine.x2) / 2)} px
+                    {" — "}kiri/kanan ditentukan otomatis
+                  </div>
+                )}
+
+                {/* ITD */}
+                {byType("interteardrop").map((l) => (
+                  <ResultRow key={l.id} label="ITD" color={C.itd} value={fmtPx(getLineLength(l))} />
+                ))}
+
+                {/* H-Len L / R + LLD */}
+                {(hLen.L || hLen.R) && (
+                  <div className="rounded-lg border border-sky-100 bg-sky-50/60 px-2 py-1.5">
+                    <div className="mb-1 text-[8px] font-extrabold text-sky-700 uppercase">Hip Length</div>
+                    {hLen.L && <ResultRow label="H-Len L" color={C.hLen} value={fmtPx(hLenLpx)} />}
+                    {hLen.R && <ResultRow label="H-Len R" color={C.hLen} value={fmtPx(hLenRpx)} />}
+                    {lldPx !== null && (
+                      <>
+                        <div className="my-1 border-t border-sky-200/60" />
+                        <ResultRow
+                          label="LLD"
+                          color={C.lld}
+                          value={fmtPx(lldPx)}
+                          note={lldSide}
+                          highlight={mmPerPixel ? lldPx * mmPerPixel > 10 : false}
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* F-Off / A-Off / G-Off */}
+                {(fOff.L || fOff.R || aOff.L || aOff.R || gOff.L || gOff.R) && (
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-2 py-1.5">
+                    <div className="mb-1 text-[8px] font-extrabold text-emerald-700 uppercase">Offset</div>
+                    {fOff.L && <ResultRow label="F-Off L" color={C.fOff} value={fmtPx(getLineLength(fOff.L))} />}
+                    {fOff.R && <ResultRow label="F-Off R" color={C.fOff} value={fmtPx(getLineLength(fOff.R))} />}
+                    {aOff.L && <ResultRow label="A-Off L" color={C.aOff} value={fmtPx(getLineLength(aOff.L))} />}
+                    {aOff.R && <ResultRow label="A-Off R" color={C.aOff} value={fmtPx(getLineLength(aOff.R))} />}
+                    {(gOffLpx !== null || gOffRpx !== null) && (
+                      <>
+                        <div className="my-1 border-t border-emerald-200/60" />
+                        {gOffLpx !== null && <ResultRow label="G-Off L" color={C.gOff} value={fmtPx(gOffLpx)} note={!gOff.L ? "F+A" : undefined} />}
+                        {gOffRpx !== null && <ResultRow label="G-Off R" color={C.gOff} value={fmtPx(gOffRpx)} note={!gOff.R ? "F+A" : undefined} />}
+                        {deltaGOff !== null && (
+                          <ResultRow label="ΔG-Off" color={C.gOff} value={fmtPx(deltaGOff)} highlight={mmPerPixel ? deltaGOff * mmPerPixel > 5 : false} />
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Tombol aksi */}
+      <div className="flex items-center gap-1.5 px-3 pb-3 pt-2.5">
+        {!current.isDone && (
+          <button
+            onClick={() => onSelectPreset(current.key)}
+            className="flex-1 rounded-xl py-2 text-[10px] font-black text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
+            style={{ background: current.color }}
+          >
+            Gambar {current.shortLabel}
+          </button>
+        )}
+        {current.isDone && (
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl bg-violet-600 py-2 text-[10px] font-black text-white shadow-sm transition hover:bg-violet-700"
+          >
+            Tutup Panduan ✓
+          </button>
+        )}
+        <div className="flex shrink-0 gap-1">
+          {step > 0 && (
+            <button
+              onClick={() => setStep((s) => s - 1)}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+            >
+              ◀
+            </button>
+          )}
+          {step < HIP_WIZARD_STEPS.length - 1 && (
+            <button
+              onClick={() => setStep((s) => Math.min(s + 1, HIP_WIZARD_STEPS.length - 1))}
+              className="rounded-xl px-3 py-2 text-[10px] font-bold text-white transition"
+              style={{ background: currentDone ? "#334155" : "#cbd5e1", cursor: currentDone ? "pointer" : "default" }}
+            >
+              {currentDone ? "Lanjut ▶" : "Lewati ▶"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HipPlanningWizardButton({ lines, onSelectPreset, mmPerPixel, measurementUnit }) {
+  const [open, setOpen] = useState(false);
+
+  const doneCount = HIP_WIZARD_STEPS.filter(
+    (s) => !s.isDone && s.countType && lines.filter((l) => l.type === s.countType).length >= s.needCount,
+  ).length;
+  const totalSteps = HIP_WIZARD_STEPS.filter((s) => !s.isDone).length;
+
+  if (open) {
+    return (
+      <div className="mt-2">
+        <HipPlanningWizard
+          lines={lines}
+          onSelectPreset={onSelectPreset}
+          onClose={() => setOpen(false)}
+          mmPerPixel={mmPerPixel}
+          measurementUnit={measurementUnit}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setOpen(true)}
+      className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border-2 border-dashed border-rose-300/70 bg-rose-50/60 px-3 py-2.5 text-left transition hover:border-rose-400 hover:bg-rose-50 active:scale-[0.99]"
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-xl leading-none">📋</span>
+        <div>
+          <div className="text-[10px] font-black text-rose-800">
+            Panduan Step-by-Step
+          </div>
+          <div className="text-[9px] text-rose-500">
+            Ikuti langkah berdasarkan jurnal Scheerlinck 2010
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div
+          className={`rounded-full px-1.5 py-0.5 text-[8px] font-black text-white ${
+            doneCount === totalSteps ? "bg-emerald-500" : "bg-rose-500"
+          }`}
+        >
+          {doneCount}/{totalSteps}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function HipFunctionSummaryPanel({
   className = "",
   compact = false,
@@ -3857,6 +4359,7 @@ function HipFunctionSummaryPanel({
   title = "Ringkasan Fungsi HIP",
 }) {
   const [isOpen, setIsOpen] = useState(defaultExpanded);
+  const [openItemKey, setOpenItemKey] = useState(null);
 
   return (
     <details
@@ -3878,24 +4381,58 @@ function HipFunctionSummaryPanel({
           compact ? "grid-cols-1" : "sm:grid-cols-2"
         }`}
       >
-        {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => (
-          <div
-            key={`hip-summary-${item.key}`}
-            className={`${SOFT_SURFACE_CLASS} px-2.5 py-2`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className={`text-[10px] font-extrabold ${item.activeClass}`}>
-                {item.label}
-              </span>
-              <span className="truncate text-[9px] font-bold text-slate-500">
-                {item.shortLabel}
-              </span>
+        {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => {
+          const itemOpen = openItemKey === item.key;
+          return (
+            <div
+              key={`hip-summary-${item.key}`}
+              className={`${SOFT_SURFACE_CLASS} overflow-hidden px-2.5 py-2`}
+            >
+              <button
+                type="button"
+                onClick={() => setOpenItemKey(itemOpen ? null : item.key)}
+                className="flex w-full items-center justify-between gap-2 text-left"
+              >
+                <span className={`text-[10px] font-extrabold ${item.activeClass}`}>
+                  {item.label}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[9px] font-bold text-slate-500">
+                    {item.shortLabel}
+                  </span>
+                  <span className={`shrink-0 text-[8px] font-black transition-transform duration-200 ${itemOpen ? "rotate-180" : ""} text-slate-400`}>
+                    ▾
+                  </span>
+                </span>
+              </button>
+              {itemOpen && (
+                <div className="mt-1.5 border-t border-slate-200/60 pt-1.5 space-y-2">
+                  <p className="text-[10px] leading-4 text-slate-600">
+                    {item.detail}
+                  </p>
+                  {item.image && (
+                    <div className="overflow-hidden rounded-lg border border-slate-200/70">
+                      <img
+                        src={item.image}
+                        alt={item.imageCaption || item.shortLabel}
+                        className="w-full object-contain"
+                        loading="lazy"
+                      />
+                      {item.imageCaption && (
+                        <p className="bg-slate-50 px-2 py-1 text-[9px] leading-3.5 text-slate-500 italic">
+                          {item.imageCaption}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[9px] font-semibold text-slate-400 italic">
+                    💡 {item.notice}
+                  </p>
+                </div>
+              )}
             </div>
-            <p className="mt-1 text-[10px] leading-4 text-slate-600">
-              {item.detail}
-            </p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </details>
   );
@@ -4794,6 +5331,309 @@ function CupAssessmentOverlayInline({ onClose, onSave, savedData }) {
   );
 }
 
+// ── Hip Planning Calculator ───────────────────────────────────────────────────
+function HipCalcRow({ label, color, value, badge, highlight, note }) {
+  return (
+    <div className={`flex items-center justify-between gap-2 py-[3px] text-[10px] ${highlight ? "font-bold" : ""}`}>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+        <span className="truncate text-slate-600">{label}</span>
+        {note && <span className="shrink-0 text-[8px] text-slate-400">{note}</span>}
+        {badge && (
+          <span
+            className="shrink-0 rounded px-1 py-0.5 text-[8px] font-bold text-white"
+            style={{ background: color }}
+          >
+            {badge}
+          </span>
+        )}
+      </span>
+      <span
+        className="shrink-0 font-mono font-bold"
+        style={{ color: highlight ? "#ef4444" : color }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
+  const fmt = (mm) => {
+    if (mm === null || mm === undefined) return "—";
+    if (measurementUnit === "cm") return `${(mm / 10).toFixed(2)} cm`;
+    return `${mm.toFixed(1)} mm`;
+  };
+  const pxToMm = (px) => (mmPerPixel !== null ? px * mmPerPixel : px);
+  const fmtPx = (px) =>
+    mmPerPixel !== null ? fmt(pxToMm(px)) : `${Math.round(px)} px`;
+
+  const byType = (type) => lines.filter((l) => l.type === type);
+  const sortByX = (arr) =>
+    [...arr].sort((a, b) => (a.x1 + a.x2) / 2 - (b.x1 + b.x2) / 2);
+
+  const itdLines      = byType("interteardrop");
+  const hLenLines     = sortByX(byType("hipLength"));
+  const fOffLines     = sortByX(byType("femoralOffset"));
+  const aOffLines     = sortByX(byType("acetabularOffset"));
+  const gOffLines     = sortByX(byType("globalOffset"));
+  const lldLines      = byType("lld");
+  const offsetLines   = sortByX(byType("offset"));
+  const headDiamLines = sortByX(byType("headDiameter"));
+  const femurAxisLines = sortByX(byType("femurAxis"));
+
+  // Precision: HRC dari midpoint headDiameter, femoral offset = jarak tegak lurus HRC ke femurAxis
+  const pointToLinePx = (px, py, lx1, ly1, lx2, ly2) => {
+    const num = Math.abs((ly2 - ly1) * px - (lx2 - lx1) * py + lx2 * ly1 - ly2 * lx1);
+    const den = Math.hypot(ly2 - ly1, lx2 - lx1);
+    return den > 0 ? num / den : 0;
+  };
+  const precisionFOffResults = headDiamLines.map((hd) => {
+    const hrcX = (hd.x1 + hd.x2) / 2;
+    const hrcY = (hd.y1 + hd.y2) / 2;
+    const axis = femurAxisLines.find((a) => {
+      const midAX = (a.x1 + a.x2) / 2;
+      const midHX = hrcX;
+      return Math.abs(midAX - midHX) < Math.abs((hd.x2 - hd.x1) * 2);
+    }) || femurAxisLines[0];
+    if (!axis) return null;
+    return {
+      headDPx: getLineLength(hd),
+      hrcX, hrcY,
+      fOffPx: pointToLinePx(hrcX, hrcY, axis.x1, axis.y1, axis.x2, axis.y2),
+      side: (hrcX < (axis.x1 + axis.x2) / 2) ? "L" : "R",
+    };
+  }).filter(Boolean);
+
+  const hasAny = [itdLines, hLenLines, fOffLines, aOffLines, gOffLines, lldLines, offsetLines, headDiamLines, femurAxisLines]
+    .some((arr) => arr.length > 0);
+
+  if (!hasAny) {
+    return (
+      <div className="mt-2 rounded-xl border border-dashed border-slate-300/80 px-3 py-3 text-center text-[9px] leading-relaxed text-slate-400">
+        Gambar line <span className="font-bold text-teal-600">ITD</span>,{" "}
+        <span className="font-bold text-sky-600">H-Len</span>,{" "}
+        <span className="font-bold text-emerald-600">F-Off</span>, atau{" "}
+        <span className="font-bold text-amber-600">A-Off</span> untuk kalkulasi otomatis
+      </div>
+    );
+  }
+
+  // Derived: LLD from H-Len lines
+  const hLenPx = hLenLines.map((l) => getLineLength(l));
+  const lldFromHLen =
+    hLenPx.length >= 2 ? Math.abs(hLenPx[1] - hLenPx[0]) : null;
+  const lldSign =
+    hLenPx.length >= 2
+      ? hLenPx[1] - hLenPx[0] > 0
+        ? "R > L"
+        : hLenPx[1] - hLenPx[0] < 0
+          ? "L > R"
+          : "Sama"
+      : null;
+
+  // Derived: Global Offset = F-Off + A-Off per sisi (jika tidak ada garis globalOffset)
+  const derivedGOff = [0, 1].map((i) => {
+    const fo = fOffLines[i] ? getLineLength(fOffLines[i]) : null;
+    const ao = aOffLines[i] ? getLineLength(aOffLines[i]) : null;
+    return fo !== null && ao !== null ? fo + ao : null;
+  });
+
+  const COLORS = {
+    itd: "#0d9488",
+    hLen: "#0284c7",
+    lld: "#ef4444",
+    fOff: "#10b981",
+    aOff: "#d97706",
+    gOff: "#8b5cf6",
+    offset: "#f43f5e",
+  };
+
+  const sideLabel = (i, arr) => (arr.length > 1 ? (i === 0 ? " L" : " R") : "");
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {!mmPerPixel && (
+        <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-[9px] text-amber-700">
+          ⚠️ Kalibrasi belum aktif — nilai dalam piksel
+        </div>
+      )}
+
+      {/* ITD */}
+      {itdLines.map((l, i) => (
+        <HipCalcRow
+          key={l.id}
+          label={`ITD${sideLabel(i, itdLines)}`}
+          color={COLORS.itd}
+          value={fmtPx(getLineLength(l))}
+        />
+      ))}
+
+      {/* Hip Length + LLD */}
+      {hLenLines.length > 0 && (
+        <div className="rounded-xl border border-sky-200/60 bg-sky-50/50 px-2.5 py-2">
+          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-sky-700 uppercase">
+            Hip Length
+          </div>
+          {hLenLines.map((l, i) => (
+            <HipCalcRow
+              key={l.id}
+              label={`H-Len${sideLabel(i, hLenLines)}`}
+              color={COLORS.hLen}
+              value={fmtPx(getLineLength(l))}
+            />
+          ))}
+          {lldFromHLen !== null && (
+            <>
+              <div className="my-1 border-t border-sky-200/80" />
+              <HipCalcRow
+                label="LLD"
+                color={COLORS.lld}
+                value={fmtPx(lldFromHLen)}
+                badge={lldSign}
+                highlight={mmPerPixel ? pxToMm(lldFromHLen) > 10 : false}
+                note="= |H-Len R − H-Len L|"
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Offset section */}
+      {(fOffLines.length > 0 || aOffLines.length > 0 || gOffLines.length > 0) && (
+        <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/50 px-2.5 py-2">
+          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-emerald-700 uppercase">
+            Offset
+          </div>
+          {fOffLines.map((l, i) => (
+            <HipCalcRow
+              key={l.id}
+              label={`F-Off${sideLabel(i, fOffLines)}`}
+              color={COLORS.fOff}
+              value={fmtPx(getLineLength(l))}
+            />
+          ))}
+          {aOffLines.map((l, i) => (
+            <HipCalcRow
+              key={l.id}
+              label={`A-Off${sideLabel(i, aOffLines)}`}
+              color={COLORS.aOff}
+              value={fmtPx(getLineLength(l))}
+            />
+          ))}
+
+          {/* Global Offset: pakai garis eksplisit, atau hitung F-Off + A-Off */}
+          {gOffLines.length > 0
+            ? gOffLines.map((l, i) => (
+                <HipCalcRow
+                  key={l.id}
+                  label={`G-Off${sideLabel(i, gOffLines)}`}
+                  color={COLORS.gOff}
+                  value={fmtPx(getLineLength(l))}
+                />
+              ))
+            : derivedGOff.map(
+                (px, i) =>
+                  px !== null && (
+                    <HipCalcRow
+                      key={i}
+                      label={`G-Off${fOffLines.length > 1 || aOffLines.length > 1 ? (i === 0 ? " L" : " R") : ""}`}
+                      color={COLORS.gOff}
+                      value={fmtPx(px)}
+                      note="= F-Off + A-Off"
+                    />
+                  ),
+              )}
+
+          {/* Perbedaan G-Off antar sisi */}
+          {(gOffLines.length >= 2 || derivedGOff.filter(Boolean).length >= 2) && (() => {
+            const leftPx = gOffLines.length >= 2
+              ? getLineLength(gOffLines[0])
+              : derivedGOff[0];
+            const rightPx = gOffLines.length >= 2
+              ? getLineLength(gOffLines[1])
+              : derivedGOff[1];
+            if (leftPx === null || rightPx === null) return null;
+            const diff = Math.abs(rightPx - leftPx);
+            return (
+              <>
+                <div className="my-1 border-t border-emerald-200/80" />
+                <HipCalcRow
+                  label="ΔG-Off"
+                  color={COLORS.gOff}
+                  value={fmtPx(diff)}
+                  note="perbedaan G-Off"
+                />
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Offset umum */}
+      {offsetLines.map((l, i) => (
+        <HipCalcRow
+          key={l.id}
+          label={`Offset${sideLabel(i, offsetLines)}`}
+          color={COLORS.offset}
+          value={fmtPx(getLineLength(l))}
+        />
+      ))}
+
+      {/* Explicit LLD line */}
+      {lldLines.map((l, i) => (
+        <HipCalcRow
+          key={l.id}
+          label={`LLD${sideLabel(i, lldLines)}`}
+          color={COLORS.lld}
+          value={fmtPx(getLineLength(l))}
+        />
+      ))}
+
+      {/* ── Precision: Head Diameter + Femoral Axis ───────────────────── */}
+      {(headDiamLines.length > 0 || femurAxisLines.length > 0) && (
+        <div className="rounded-xl border border-pink-200/60 bg-pink-50/50 px-2.5 py-2">
+          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-pink-700 uppercase">
+            Presisi — Head & Axis
+          </div>
+          {headDiamLines.map((l, i) => (
+            <HipCalcRow
+              key={l.id}
+              label={`Head-D ${i === 0 && headDiamLines.length > 1 ? "L" : headDiamLines.length > 1 ? "R" : ""}`}
+              color="#ec4899"
+              value={fmtPx(getLineLength(l))}
+              note="diameter"
+            />
+          ))}
+          {femurAxisLines.map((l, i) => (
+            <HipCalcRow
+              key={l.id}
+              label={`Fem-Axis ${femurAxisLines.length > 1 ? (i === 0 ? "L" : "R") : ""}`}
+              color="#6366f1"
+              value={fmtPx(getLineLength(l))}
+              note="axis"
+            />
+          ))}
+          {precisionFOffResults.length > 0 && (
+            <>
+              <div className="my-1 border-t border-pink-200/60" />
+              {precisionFOffResults.map((r, i) => (
+                <HipCalcRow
+                  key={i}
+                  label={`F-Off ${r.side} (HRC→Axis)`}
+                  color="#ec4899"
+                  value={fmtPx(r.fOffPx)}
+                  note="presisi"
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function XrayCalibrationWorkspace({
   simpleUiMode = false,
   onOpenSimpleUi,
@@ -5059,6 +5899,7 @@ export default function XrayCalibrationWorkspace({
   const [mobilePrecisionOverlay, setMobilePrecisionOverlay] = useState(null);
   const [selectionPulse, setSelectionPulse] = useState(null);
   const [hoveredMeasurementInfo, setHoveredMeasurementInfo] = useState(null);
+  const [lineLabelHoverInfo, setLineLabelHoverInfo] = useState(null);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
@@ -5224,6 +6065,7 @@ export default function XrayCalibrationWorkspace({
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
     useState(false);
+  const [simpleWizardOpen, setSimpleWizardOpen] = useState(false);
   const [notice, setNotice] = useState(
     "Upload gambar lalu tarik garis. Garis yang sudah ada bisa di-adjust dengan drag titik ujung atau geser garis.",
   );
@@ -7064,6 +7906,11 @@ export default function XrayCalibrationWorkspace({
     if (type === "femoralOffset") return "FEM-OFF";
     if (type === "globalOffset") return "GLB-OFF";
     if (type === "lld") return "LLD";
+    if (type === "interteardrop") return "ITD";
+    if (type === "acetabularOffset") return "A-OFF";
+    if (type === "hipLength") return "H-LEN";
+    if (type === "headDiameter") return "HEAD-D";
+    if (type === "femurAxis") return "FEM-AXIS";
     return "LINE";
   }, []);
 
@@ -7077,6 +7924,11 @@ export default function XrayCalibrationWorkspace({
     if (type === "femoralOffset") return "#10b981";
     if (type === "globalOffset") return "#8b5cf6";
     if (type === "lld") return "#f97316";
+    if (type === "interteardrop") return "#0d9488";
+    if (type === "acetabularOffset") return "#d97706";
+    if (type === "hipLength") return "#0284c7";
+    if (type === "headDiameter") return "#ec4899";
+    if (type === "femurAxis") return "#6366f1";
     return DEFAULT_LINE_COLOR;
   }, []);
 
@@ -7119,6 +7971,16 @@ export default function XrayCalibrationWorkspace({
         dashPattern = [12, 4];
       } else if (type === "perpendicularGuide") {
         dashPattern = [4, 5];
+      } else if (type === "interteardrop") {
+        dashPattern = [16, 4];
+      } else if (type === "acetabularOffset") {
+        dashPattern = [6, 3, 2, 3];
+      } else if (type === "hipLength") {
+        dashPattern = [12, 3];
+      } else if (type === "femurAxis") {
+        dashPattern = [6, 3, 2, 3];
+      } else if (type === "headDiameter") {
+        dashPattern = [3, 4]; // garis diameter tipis sebagai referensi
       }
 
       if (isLocked) {
@@ -11562,6 +12424,97 @@ export default function XrayCalibrationWorkspace({
       }
 
       overlayCtx.restore();
+
+      // ── headDiameter: 2 lingkaran konsentris + HRC crosshair ────────
+      if (line.type === "headDiameter") {
+        const mx = (start.x + end.x) / 2;
+        const my = (start.y + end.y) / 2;
+        const rInner = Math.hypot(end.x - start.x, end.y - start.y) / 2;
+
+        if (rInner > 2) {
+          // Hitung offset 2mm ke screen pixels
+          const imagePx = getLineLength(line);
+          const screenPerImg = imagePx > 0 ? rInner / (imagePx / 2) : 1;
+          const offsetMm = 2;
+          const rOuter = rInner + (mmPerPixel ? (offsetMm / mmPerPixel) * screenPerImg : 7);
+
+          overlayCtx.save();
+          overlayCtx.lineCap = "round";
+
+          // Lingkaran dalam — solid, full opacity
+          overlayCtx.strokeStyle = opts.color;
+          overlayCtx.lineWidth = opts.width || 2;
+          overlayCtx.setLineDash([]);
+          overlayCtx.globalAlpha = 0.9;
+          overlayCtx.beginPath();
+          overlayCtx.arc(mx, my, rInner, 0, Math.PI * 2);
+          overlayCtx.stroke();
+
+          // Lingkaran luar — dash, 50% opacity (2mm gap)
+          overlayCtx.lineWidth = (opts.width || 2) * 0.75;
+          overlayCtx.setLineDash([5, 3]);
+          overlayCtx.globalAlpha = 0.5;
+          overlayCtx.beginPath();
+          overlayCtx.arc(mx, my, rOuter, 0, Math.PI * 2);
+          overlayCtx.stroke();
+
+          // HRC crosshair di tengah
+          overlayCtx.setLineDash([]);
+          overlayCtx.globalAlpha = 1;
+          overlayCtx.lineWidth = 1.5;
+          const cs = 7;
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(mx - cs, my); overlayCtx.lineTo(mx + cs, my);
+          overlayCtx.moveTo(mx, my - cs); overlayCtx.lineTo(mx, my + cs);
+          overlayCtx.stroke();
+
+          // Titik pusat
+          overlayCtx.fillStyle = opts.color;
+          overlayCtx.beginPath();
+          overlayCtx.arc(mx, my, 2.5, 0, Math.PI * 2);
+          overlayCtx.fill();
+
+          overlayCtx.restore();
+
+          // Label HRC di atas lingkaran luar
+          drawTag(overlayCtx, mx, my - rOuter - 10, "HRC", opts.color, {
+            bgOpacity: 0.9, fontSize: 8, paddingX: 3, paddingY: 1.5, radius: 3,
+          });
+        }
+      }
+
+      // ── femurAxis: arrowheads at both ends ────────────────────────────
+      if (line.type === "femurAxis") {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 24) {
+          const ux = dx / len;
+          const uy = dy / len;
+          const aLen = 10;
+          const aW = 5;
+          overlayCtx.save();
+          overlayCtx.strokeStyle = opts.color;
+          overlayCtx.lineWidth = (opts.width || 2) * 0.85;
+          overlayCtx.lineCap = "round";
+          overlayCtx.setLineDash([]);
+          // Arrow at start (backward)
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(start.x, start.y);
+          overlayCtx.lineTo(start.x + ux * aLen - uy * aW, start.y + uy * aLen + ux * aW);
+          overlayCtx.moveTo(start.x, start.y);
+          overlayCtx.lineTo(start.x + ux * aLen + uy * aW, start.y + uy * aLen - ux * aW);
+          overlayCtx.stroke();
+          // Arrow at end (forward)
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(end.x, end.y);
+          overlayCtx.lineTo(end.x - ux * aLen - uy * aW, end.y - uy * aLen + ux * aW);
+          overlayCtx.moveTo(end.x, end.y);
+          overlayCtx.lineTo(end.x - ux * aLen + uy * aW, end.y - uy * aLen - ux * aW);
+          overlayCtx.stroke();
+          overlayCtx.restore();
+        }
+      }
 
       const label = getLineLabelText(line);
       const lineMidX = (start.x + end.x) / 2;
@@ -16307,12 +17260,13 @@ export default function XrayCalibrationWorkspace({
       const start = snappedPlacementPoint;
       if (isSimpleUiMode || isTouchLikePointer) {
         if (draftLine) {
-          const nextLineInput = {
+          const resolvedType = draftLine.type || linePreset;
+          const nextLineInput = constrainLineByPreset({
             ...draftLine,
             x2: start.x,
             y2: start.y,
-            type: draftLine.type || linePreset,
-          };
+            type: resolvedType,
+          }, resolvedType);
           const length = getLineLength(nextLineInput);
           if (length < 2) {
             setNotice("Line terlalu pendek. Tap titik akhir yang lebih jauh.");
@@ -16608,6 +17562,12 @@ export default function XrayCalibrationWorkspace({
           const hoveredCircleLabelId = findCircleLabelByPoint(point);
           const hoveredCircleId =
             hoveredCircleLabelId ?? findClosestCircleId(moveImagePoint);
+          const hoveredLineLabelId = findLineLabelByPoint(point);
+          setLineLabelHoverInfo((cur) => {
+            if (!hoveredLineLabelId) return cur ? null : cur;
+            if (cur?.lineId === hoveredLineLabelId && cur.screenX === Math.round(point.x) && cur.screenY === Math.round(point.y)) return cur;
+            return { lineId: hoveredLineLabelId, screenX: point.x, screenY: point.y };
+          });
           setHoveredMeasurementInfo((current) => {
             if (hoveredHkaId !== null) {
               if (current?.type === "hka" && current.id === hoveredHkaId) {
@@ -16644,6 +17604,7 @@ export default function XrayCalibrationWorkspace({
           });
         } else if (isCoarsePointer && hoveredMeasurementInfo) {
           setHoveredMeasurementInfo(null);
+          setLineLabelHoverInfo(null);
         }
 
         if (tool === "cut" && draftCut?.points?.length) {
@@ -16676,9 +17637,11 @@ export default function XrayCalibrationWorkspace({
         } else if (tool === "draw" && draftLine) {
           shouldKeepSnapPreview = true;
           const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
-          setDraftLine((prev) =>
-            prev ? { ...prev, x2: movePoint.x, y2: movePoint.y } : prev,
-          );
+          setDraftLine((prev) => {
+            if (!prev) return prev;
+            const updated = { ...prev, x2: movePoint.x, y2: movePoint.y };
+            return constrainLineByPreset(updated, prev.type || linePreset);
+          });
         } else if (tool === "circle" && draftCirclePoints.length > 0) {
           shouldKeepSnapPreview = true;
           const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
@@ -17728,16 +18691,17 @@ export default function XrayCalibrationWorkspace({
     }
 
     if (interactionRef.current.mode === "draw" && draftLine) {
-      const length = getLineLength(draftLine);
+      const constrainedDraft = constrainLineByPreset(draftLine, draftLine.type || linePreset);
+      const length = getLineLength(constrainedDraft);
       if (length >= 2) {
         const nextLine = {
-          ...draftLine,
+          ...constrainedDraft,
           id: nextLineIdRef.current,
           labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
           labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
           labelOpacity: DEFAULT_LABEL_OPACITY,
-          strokeWidth: Number.isFinite(draftLine.strokeWidth)
-            ? draftLine.strokeWidth
+          strokeWidth: Number.isFinite(constrainedDraft.strokeWidth)
+            ? constrainedDraft.strokeWidth
             : calibrationDraftStrokeWidth,
         };
         nextLineIdRef.current += 1;
@@ -17892,6 +18856,7 @@ export default function XrayCalibrationWorkspace({
 
   const handlePointerLeave = useCallback(() => {
     setHoveredMeasurementInfo(null);
+    setLineLabelHoverInfo(null);
     if (interactionRef.current.mode && activePointerIdRef.current !== null) {
       return;
     }
@@ -20600,6 +21565,17 @@ export default function XrayCalibrationWorkspace({
       const isMeta = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
 
+      // Brush tool shortcuts (intercept before global shortcuts)
+      if (tool === "brush") {
+        if (key === "[") { event.preventDefault(); setBrushSize((s) => Math.max(10, s - 10)); return; }
+        if (key === "]") { event.preventDefault(); setBrushSize((s) => Math.min(200, s + 10)); return; }
+        if (key === "1") { event.preventDefault(); setBrushMode("erase"); return; }
+        if (key === "2") { event.preventDefault(); setBrushMode("transparent"); return; }
+        if (key === "3") { event.preventDefault(); setBrushMode("blur"); return; }
+        if (key === "4") { event.preventDefault(); setBrushMode("color"); return; }
+        if (key === "escape") { event.preventDefault(); setTool(getIdleTool()); return; }
+      }
+
       if (isMeta && key === "z") {
         event.preventDefault();
         if (event.shiftKey) {
@@ -20723,11 +21699,15 @@ export default function XrayCalibrationWorkspace({
     duplicateSelectedCutLayer,
     freeLineMode,
     fitImageToViewport,
+    getIdleTool,
     handleToolChange,
     moveSelectedCutLayersInStack,
     redoHistory,
     removeSelectedLine,
     selectedCutLayerIds.length,
+    setBrushMode,
+    setBrushSize,
+    tool,
     undoHistory,
   ]);
 
@@ -21343,6 +22323,8 @@ export default function XrayCalibrationWorkspace({
     { icon: "hka", label: "HKA", desc: "axis knee", key: "hkaAuto" },
     { icon: "guideBuilder", label: "Guide", desc: "parallel", key: "guideBuilder" },
     { icon: "cupAssessment", label: "Cup Assess", desc: "incl & AV", key: "cupAssessment", action: "cupAssessment" },
+    { icon: "zakAceta", label: "ZakAceta", desc: "hip wizard", key: "zakAceta", action: "zakAceta" },
+    { icon: "brush", label: "Brush", desc: "hapus / blur", key: "brush", action: "brushTool", disabled: !image },
   ];
   const mobileNavigationTabs = [
     {
@@ -21479,6 +22461,110 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
+      {/* ── Line Label Hover Tooltip ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {lineLabelHoverInfo && (() => {
+          const line = lines.find((l) => l.id === lineLabelHoverInfo.lineId);
+          if (!line) return null;
+          const preset = line.type || "normal";
+          const presetInfo = HIP_FUNCTION_SUMMARY_BY_KEY[preset] ?? null;
+          const measurement = (() => {
+            const px = getLineLength(line);
+            return px > 0 && mmPerPixel ? formatMeasurementFromPx(px) : null;
+          })();
+          const typeLabel = lineTypeLabel(preset);
+          const color = line.color || lineTypeColor(preset);
+
+          const TOOLTIP_W = 260;
+          const TOOLTIP_OFFSET = 18;
+          const vpW = typeof window !== "undefined" ? window.innerWidth : 1200;
+          const vpH = typeof window !== "undefined" ? window.innerHeight : 800;
+          let tx = lineLabelHoverInfo.screenX + TOOLTIP_OFFSET;
+          let ty = lineLabelHoverInfo.screenY + TOOLTIP_OFFSET;
+          if (tx + TOOLTIP_W > vpW - 8) tx = lineLabelHoverInfo.screenX - TOOLTIP_W - TOOLTIP_OFFSET;
+          if (ty > vpH * 0.6) ty = lineLabelHoverInfo.screenY - TOOLTIP_OFFSET - (presetInfo?.image ? 320 : 120);
+
+          return (
+            <motion.div
+              key={`line-label-tip-${lineLabelHoverInfo.lineId}`}
+              initial={{ opacity: 0, scale: 0.94, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 4 }}
+              transition={{ duration: 0.14 }}
+              className="fixed z-[120] pointer-events-none"
+              style={{ left: tx, top: ty, width: TOOLTIP_W }}
+            >
+              <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl">
+                {/* Header */}
+                <div
+                  className="flex items-center justify-between gap-2 px-3 py-2"
+                  style={{ background: `${color}18`, borderBottom: `1.5px solid ${color}30` }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="rounded-md px-1.5 py-0.5 text-[9px] font-black tracking-widest text-white uppercase"
+                      style={{ background: color }}
+                    >
+                      {typeLabel}
+                    </span>
+                    {presetInfo && (
+                      <span className="text-[10px] font-bold text-slate-600">
+                        {presetInfo.shortLabel}
+                      </span>
+                    )}
+                  </div>
+                  {measurement && (
+                    <span className="shrink-0 font-mono text-sm font-black" style={{ color }}>
+                      {measurement}
+                    </span>
+                  )}
+                </div>
+
+                {/* Detail text */}
+                {presetInfo && (
+                  <div className="px-3 pt-2 pb-1">
+                    <p className="text-[10px] leading-[1.5] text-slate-600">
+                      {presetInfo.detail}
+                    </p>
+                  </div>
+                )}
+
+                {/* Journal image */}
+                {presetInfo?.image && (
+                  <div className="mx-3 mb-2 mt-1.5 overflow-hidden rounded-xl border border-slate-200/70">
+                    <img
+                      src={presetInfo.image}
+                      alt={presetInfo.imageCaption || presetInfo.shortLabel}
+                      className="w-full object-contain"
+                    />
+                    {presetInfo.imageCaption && (
+                      <p className="bg-slate-50 px-2 py-1 text-[8px] leading-tight text-slate-400 italic">
+                        {presetInfo.imageCaption}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Tip */}
+                {presetInfo?.notice && (
+                  <div className="px-3 pb-2">
+                    <p className="text-[9px] text-slate-400 italic">
+                      💡 {presetInfo.notice}
+                    </p>
+                  </div>
+                )}
+
+                {!presetInfo && (
+                  <div className="px-3 pb-2 pt-1 text-[10px] text-slate-500">
+                    {line.name ? `"${line.name}"` : `Line #${line.id}`}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
       <AnimatePresence>
         {imageProcessingBusy && !imageProcessingModalOpen ? (
           <motion.div
@@ -26115,17 +27201,18 @@ export default function XrayCalibrationWorkspace({
                   </>
                 ) : (
                   <>
-                    <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 text-xs font-semibold text-slate-600 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
-                      <div className="text-sm font-extrabold text-slate-700">
-                        Hip Summary
+                    <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+                      <div className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-slate-700">
+                        <Icon name="target" className="h-4 w-4 text-rose-700" />
+                        Kalkulasi Hip
                       </div>
-                      <div className="mt-2 grid gap-1.5 sm:grid-cols-3">
-                        <div>Femoral: {legPackageSummary.femoralMean}</div>
-                        <div>Global: {legPackageSummary.globalMean}</div>
-                        <div>LLD: {legPackageSummary.lldDelta}</div>
-                      </div>
+                      <HipPlanningCalculator
+                        lines={lines}
+                        mmPerPixel={mmPerPixel}
+                        measurementUnit={measurementUnit}
+                      />
                     </div>
-                    <HipFunctionSummaryPanel defaultExpanded />
+                    <HipFunctionSummaryPanel />
                     <div className="grid gap-2 sm:grid-cols-2">
                       {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => (
                         <button
@@ -28057,20 +29144,6 @@ export default function XrayCalibrationWorkspace({
                 {!isLeftSidebarCompact && <span className="truncate">Library Drive</span>}
               </button>
 
-              {/* Brush Tool */}
-              {image && (
-                <button
-                  type="button"
-                  onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
-                  className={`flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border px-3 py-2 text-xs font-black transition active:scale-[0.98] ${tool === "brush" ? "border-violet-400 bg-violet-100 text-violet-700 shadow-inner" : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
-                >
-                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                  {!isLeftSidebarCompact && <span className="truncate">{tool === "brush" ? "Keluar Brush" : "Brush Tool"}</span>}
-                </button>
-              )}
-
               {/* Baris 2: Simpan ke Drive */}
               {!isLeftSidebarCompact ? (
                 <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
@@ -28202,13 +29275,6 @@ export default function XrayCalibrationWorkspace({
                 label="Redo (Ctrl/Cmd+Y)"
                 onClick={redoHistory}
                 disabled={historyState.redo < 1}
-              />
-              <ToolIconButton
-                icon="brush"
-                label="Brush Tool — Hapus / Blur / Warna"
-                onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
-                active={tool === "brush"}
-                disabled={!image}
               />
             </div>
           </div>
@@ -29683,6 +30749,42 @@ export default function XrayCalibrationWorkspace({
               >
                 LLD
               </button>
+              <button
+                type="button"
+                onClick={() => handleLinePresetChange("interteardrop")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.interteardrop.detail}
+                className={`rounded-md border px-2 py-1 text-[10px] ${
+                  linePreset === "interteardrop"
+                    ? "border-teal-600 bg-teal-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700"
+                }`}
+              >
+                ITD
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLinePresetChange("acetabularOffset")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.acetabularOffset.detail}
+                className={`rounded-md border px-2 py-1 text-[10px] ${
+                  linePreset === "acetabularOffset"
+                    ? "border-amber-600 bg-amber-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700"
+                }`}
+              >
+                A-Off
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLinePresetChange("hipLength")}
+                title={HIP_FUNCTION_SUMMARY_BY_KEY.hipLength.detail}
+                className={`rounded-md border px-2 py-1 text-[10px] ${
+                  linePreset === "hipLength"
+                    ? "border-sky-600 bg-sky-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700"
+                }`}
+              >
+                H-Len
+              </button>
             </div>
             <div className="grid grid-cols-[1fr_64px] gap-1.5">
               <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
@@ -29819,11 +30921,16 @@ export default function XrayCalibrationWorkspace({
                 className="h-8 w-full"
               />
             </div>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600">
-              <div>Leg package</div>
-              <div>Femoral Offset: {legPackageSummary.femoralMean}</div>
-              <div>Global Offset: {legPackageSummary.globalMean}</div>
-              <div>LLD: {legPackageSummary.lldDelta}</div>
+            <div className="rounded-xl border border-rose-200/60 bg-rose-50/40 px-2.5 py-2">
+              <div className="mb-1 flex items-center gap-1.5 text-[9px] font-extrabold tracking-wide text-rose-800 uppercase">
+                <Icon name="target" className="h-3 w-3 shrink-0" />
+                Kalkulasi Hip
+              </div>
+              <HipPlanningCalculator
+                lines={lines}
+                mmPerPixel={mmPerPixel}
+                measurementUnit={measurementUnit}
+              />
             </div>
           </div>
 
@@ -30204,14 +31311,6 @@ export default function XrayCalibrationWorkspace({
                   className="h-9 w-full"
                 />
                 <ToolIconButton
-                  icon="brush"
-                  label="Brush Tool — Hapus / Blur / Warna"
-                  onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
-                  active={tool === "brush"}
-                  disabled={!image}
-                  className="h-9 w-full"
-                />
-                <ToolIconButton
                   icon="undo"
                   label="Undo (Ctrl/Cmd+Z)"
                   onClick={undoHistory}
@@ -30527,6 +31626,43 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 )}
               </div>
+              {/* ── Advanced Tools: Brush + ZakVisor ───────────────────────── */}
+              <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
+                <div className="mb-2 text-[10px] font-semibold tracking-wide text-cyan-900 uppercase">
+                  {isRightSidebarCompact ? null : "Advanced Tools"}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                    disabled={!image}
+                    className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${
+                      tool === "brush"
+                        ? "border-violet-400 bg-violet-100 text-violet-700 shadow-inner"
+                        : `${SOFT_TEXT_BUTTON_CLASS} text-violet-700`
+                    }`}
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    {!isRightSidebarCompact && (
+                      <span>{tool === "brush" ? "Keluar Brush" : "Brush Tool"}</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openImageProcessingModal}
+                    disabled={!image}
+                    className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${SOFT_TEXT_BUTTON_CLASS} text-indigo-700`}
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    {!isRightSidebarCompact && <span>ZakVisor</span>}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           ) : null}
 
@@ -30832,6 +31968,25 @@ export default function XrayCalibrationWorkspace({
                     compact
                     title="Fungsi Offset"
                   />
+                  {/* ── Wizard Panduan Step-by-Step ──────────────── */}
+                  <HipPlanningWizardButton
+                    lines={lines}
+                    onSelectPreset={handleLinePresetChange}
+                    mmPerPixel={mmPerPixel}
+                    measurementUnit={measurementUnit}
+                  />
+                  {/* ── Auto Kalkulasi Hip Planning ───────────────── */}
+                  <div className="mt-2 rounded-xl border border-rose-200/60 bg-rose-50/40 px-2.5 py-2">
+                    <div className="mb-1 flex items-center gap-1.5 text-[9px] font-extrabold tracking-wide text-rose-800 uppercase">
+                      <Icon name="target" className="h-3 w-3 shrink-0" />
+                      Kalkulasi Otomatis
+                    </div>
+                    <HipPlanningCalculator
+                      lines={lines}
+                      mmPerPixel={mmPerPixel}
+                      measurementUnit={measurementUnit}
+                    />
+                  </div>
                 </div>
               ) : null}
               <div className={`${SOFT_SURFACE_CLASS} px-3 py-2`}>
@@ -30858,6 +32013,9 @@ export default function XrayCalibrationWorkspace({
                       { key: "femoralOffset", label: "FEM-OFF" },
                       { key: "globalOffset", label: "GLB-OFF" },
                       { key: "lld", label: "LLD" },
+                      { key: "interteardrop", label: "ITD" },
+                      { key: "acetabularOffset", label: "A-OFF" },
+                      { key: "hipLength", label: "H-LEN" },
                       { key: "ruler", label: "RULER" },
                       { key: "hka", label: "HKA" },
                     ].map((item) => {
@@ -30925,7 +32083,7 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 ) : (
                   <div className="mt-1 text-[9px] text-slate-500">
-                    LINE, AXIS, PARA, PERP, OFFSET, FEM-OFF, GLB-OFF, LLD, RULER, HKA, GUIDE
+                    LINE, AXIS, PARA, PERP, OFFSET, FEM-OFF, GLB-OFF, LLD, ITD, A-OFF, H-LEN, RULER, HKA, GUIDE
                   </div>
                 )}
               </div>
@@ -32940,15 +34098,16 @@ export default function XrayCalibrationWorkspace({
                 />
               </div>
               {measureAnatomyTab === "hip" ? (
-                <div
-                  className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-[11px] text-rose-900`}
-                >
-                  <div className="mb-1 font-medium text-rose-950">
-                    Hip Summary
+                <div className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-rose-900`}>
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-extrabold tracking-wide text-rose-800 uppercase">
+                    <Icon name="target" className="h-3.5 w-3.5 shrink-0" />
+                    Kalkulasi Hip
                   </div>
-                  <div>Femoral Offset: {legPackageSummary.femoralMean}</div>
-                  <div>Global Offset: {legPackageSummary.globalMean}</div>
-                  <div>LLD: {legPackageSummary.lldDelta}</div>
+                  <HipPlanningCalculator
+                    lines={lines}
+                    mmPerPixel={mmPerPixel}
+                    measurementUnit={measurementUnit}
+                  />
                   <HipFunctionSummaryPanel
                     className="mt-2"
                     compact
@@ -33791,6 +34950,7 @@ export default function XrayCalibrationWorkspace({
                       brushToolActive={tool === "brush"}
                       onCupAssessment={() => setShowCupAssessment(v => !v)}
                       cupAssessmentActive={showCupAssessment}
+                      zakAcetaActive={simpleWizardOpen}
                       lines={lines.filter((l) => l.id !== calibrationLineId)}
                       selectedLineId={selectedLineId}
                       onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
@@ -33829,7 +34989,9 @@ export default function XrayCalibrationWorkspace({
                       onMinimize={() => setSimpleToolPanelMinimized(true)}
                       onSelectTool={(item) => {
                         if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
+                        if (item.action === "zakAceta") { setSimpleWizardOpen((v) => !v); return; }
                         if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
+                        if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
                         if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
                         handleToolChange(item.key);
                       }}
@@ -33838,10 +35000,32 @@ export default function XrayCalibrationWorkspace({
                       canUndo={historyState.undo > 0}
                       canRedo={historyState.redo > 0}
                       cupAssessmentActive={showCupAssessment}
+                      zakAcetaActive={simpleWizardOpen}
                     />
                   )}
                   </AnimatePresence>
 
+                  {/* ── ZakAceta Wizard — muncul di kiri PanelActions saat diklik ── */}
+                  <AnimatePresence>
+                    {simpleWizardOpen && (
+                      <motion.div
+                        key="canvas-wizard"
+                        initial={{ opacity: 0, x: 14, scale: 0.93 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 10, scale: 0.94 }}
+                        transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                        className="pointer-events-auto absolute top-1/2 right-[212px] w-72 -translate-y-1/2"
+                      >
+                        <HipPlanningWizard
+                          lines={lines}
+                          onSelectPreset={handleLinePresetChange}
+                          onClose={() => setSimpleWizardOpen(false)}
+                          mmPerPixel={mmPerPixel}
+                          measurementUnit={measurementUnit}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                 </div>
               ) : null}
@@ -33916,7 +35100,9 @@ export default function XrayCalibrationWorkspace({
                           setSimpleMobilePanel(null);
                           setMobileCanvasMode("edit");
                           if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
+                          if (item.action === "zakAceta") { setSimpleWizardOpen((v) => !v); return; }
                           if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
+                          if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
                           if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
                           handleToolChange(item.key);
                         }}
@@ -33932,6 +35118,7 @@ export default function XrayCalibrationWorkspace({
                         canRedo={historyState.redo > 0}
                         onCupAssessment={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
                         cupAssessmentActive={showCupAssessment}
+                      zakAcetaActive={simpleWizardOpen}
                       />
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
@@ -34438,7 +35625,7 @@ export default function XrayCalibrationWorkspace({
                 const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
                 const ratio = canvasCup.a > 0 ? Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a)) : 0;
                 const anteversion = (Math.asin(ratio) * 180) / Math.PI;
-                const { label: zoneLabel, color: zoneColor, bg: zoneBg } = cupZoneStatus(inclination, anteversion);
+                const { label: zoneLabel, color: zoneColor } = cupZoneStatus(inclination, anteversion);
                 const dialDeg = ((canvasCup.angle * 180) / Math.PI % 360 + 360) % 360;
                 const zoneIcon = zoneLabel.trim().charAt(0);
                 const zoneText = zoneLabel.trim().slice(1).trim();
@@ -36358,41 +37545,23 @@ export default function XrayCalibrationWorkspace({
       {/* ── Brush Tool Settings Panel ────────────────────────────────────────── */}
       {tool === "brush" && (
         <div
-          style={{
-            position: "fixed",
-            bottom: 160,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 9999,
-            background: isDark ? "rgba(15,23,42,0.96)" : "rgba(248,250,252,0.98)",
-            border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(203,213,225,0.6)",
-            borderRadius: 20,
-            padding: "10px 14px",
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            boxShadow: isDark
-              ? "0 12px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)"
-              : "0 8px 32px rgba(148,163,184,0.3), inset 0 1px 0 rgba(255,255,255,0.9)",
-            backdropFilter: "blur(16px)",
-          }}
+          className={`fixed bottom-36 left-1/2 z-[9999] -translate-x-1/2 flex max-w-[calc(100vw-16px)] flex-wrap items-center gap-3 rounded-[20px] px-3 py-2.5 backdrop-blur-xl ${SOFT_FLOAT_SURFACE_CLASS}`}
         >
-          {/* Mode buttons with icons */}
-          <div style={{ display: "flex", gap: 5 }}>
+          {/* Mode buttons */}
+          <div className="flex gap-1.5">
             {[
               {
                 key: "erase", label: "Hapus", color: "#f87171",
                 icon: (
-                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 20H7L3 16 14 5l6 6-5 5"/>
-                    <path d="M7 20l3.5-3.5"/>
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 20H7L3 16 14 5l6 6-5 5"/><path d="M7 20l3.5-3.5"/>
                   </svg>
                 ),
               },
               {
                 key: "transparent", label: "Transparan", color: "#fb923c",
                 icon: (
-                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     <rect x="2" y="7" width="14" height="14" rx="2"/>
                     <path d="M8 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/>
                   </svg>
@@ -36401,7 +37570,7 @@ export default function XrayCalibrationWorkspace({
               {
                 key: "blur", label: "Blur", color: "#818cf8",
                 icon: (
-                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2c0 6-6 8-6 13a6 6 0 0 0 12 0c0-5-6-7-6-13z"/>
                   </svg>
                 ),
@@ -36409,85 +37578,74 @@ export default function XrayCalibrationWorkspace({
               {
                 key: "color", label: "Warna", color: "#34d399",
                 icon: (
-                  <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/>
                   </svg>
                 ),
               },
-            ].map(({ key, label, color, icon }) => {
+            ].map(({ key, label, color, icon }, idx) => {
               const isActive = brushMode === key;
               return (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setBrushMode(key)}
+                  title={`${label} (${idx + 1})`}
+                  className="flex w-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-[13px] border py-2 transition-all active:scale-95"
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 5,
-                    width: 62,
-                    padding: "9px 4px 7px",
-                    borderRadius: 13,
-                    border: `1.5px solid ${isActive ? color : isDark ? "rgba(255,255,255,0.1)" : "rgba(203,213,225,0.7)"}`,
-                    background: isActive
-                      ? `${color}1a`
-                      : isDark ? "rgba(255,255,255,0.04)" : "rgba(241,245,249,0.9)",
-                    color: isActive ? color : isDark ? "rgba(255,255,255,0.4)" : "#94a3b8",
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                    boxShadow: isActive
-                      ? `0 0 14px ${color}28`
-                      : isDark ? "none" : "0 1px 3px rgba(148,163,184,0.15), inset 0 1px 0 rgba(255,255,255,0.8)",
+                    borderColor: isActive ? color : "var(--soft-border)",
+                    background: isActive ? `${color}1a` : "var(--soft-raised-bg)",
+                    color: isActive ? color : "var(--color-text-muted)",
+                    boxShadow: isActive ? `0 0 14px ${color}28` : "var(--soft-shadow-raised)",
                   }}
                 >
                   {icon}
-                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.2 }}>{label}</span>
+                  <span className="text-[9px] font-black tracking-wide">{label}</span>
                 </button>
               );
             })}
           </div>
 
           {/* Divider */}
-          <div style={{
-            width: 1, height: 54, flexShrink: 0,
-            background: isDark ? "rgba(255,255,255,0.08)" : "rgba(203,213,225,0.5)",
-          }} />
+          <div className="h-12 w-px shrink-0 bg-[var(--soft-border)]" />
 
           {/* Sliders */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 9, minWidth: 168 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, width: 44, color: isDark ? "rgba(255,255,255,0.4)" : "#94a3b8" }}>Ukuran</span>
+          <div className="flex flex-col gap-2" style={{ minWidth: 160 }}>
+            <div className="flex items-center gap-2">
+              <div className="flex w-11 flex-col">
+                <span className="text-[10px] font-bold text-[var(--color-text-muted)]">Ukuran</span>
+                <span className="text-[8px] font-mono text-[var(--color-text-muted)] opacity-50">[ ]</span>
+              </div>
               <input
                 type="range" min={10} max={200} value={brushSize}
                 onChange={(e) => setBrushSize(Number(e.target.value))}
-                style={{ flex: 1, accentColor: "#818cf8", cursor: "pointer" }}
+                className="flex-1 cursor-pointer accent-indigo-400"
               />
-              <span style={{ fontSize: 10, fontWeight: 800, width: 26, textAlign: "right", color: isDark ? "#a5b4fc" : "#6366f1" }}>{brushSize}</span>
+              <span className="w-7 text-right text-[10px] font-black text-indigo-400">{brushSize}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, width: 44, color: isDark ? "rgba(255,255,255,0.4)" : "#94a3b8" }}>Kuat</span>
+            <div className="flex items-center gap-2">
+              <span className="w-11 text-[10px] font-bold text-[var(--color-text-muted)]">Kuat</span>
               <input
                 type="range" min={5} max={100} value={Math.round(brushStrength * 100)}
                 onChange={(e) => setBrushStrength(Number(e.target.value) / 100)}
-                style={{ flex: 1, accentColor: "#818cf8", cursor: "pointer" }}
+                className="flex-1 cursor-pointer accent-indigo-400"
               />
-              <span style={{ fontSize: 10, fontWeight: 800, width: 26, textAlign: "right", color: isDark ? "#a5b4fc" : "#6366f1" }}>{Math.round(brushStrength * 100)}%</span>
+              <span className="w-7 text-right text-[10px] font-black text-indigo-400">{Math.round(brushStrength * 100)}%</span>
             </div>
           </div>
 
           {/* Color picker */}
           {brushMode === "color" && (
             <>
-              <div style={{ width: 1, height: 54, flexShrink: 0, background: isDark ? "rgba(255,255,255,0.08)" : "rgba(203,213,225,0.5)" }} />
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div className="h-12 w-px shrink-0 bg-[var(--soft-border)]" />
+              <div className="flex flex-col items-center gap-1">
                 <input
                   type="color" value={brushColor}
                   onChange={(e) => setBrushColor(e.target.value)}
-                  style={{ width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", padding: 2, background: "none" }}
+                  className="h-8 w-8 cursor-pointer rounded-lg border-none p-0.5"
+                  style={{ background: "none" }}
                 />
-                <span style={{ fontSize: 9, fontWeight: 700, color: isDark ? "rgba(255,255,255,0.35)" : "#94a3b8" }}>Warna</span>
+                <span className="text-[9px] font-bold text-[var(--color-text-muted)]">Warna</span>
               </div>
             </>
           )}
@@ -36497,16 +37655,7 @@ export default function XrayCalibrationWorkspace({
             type="button"
             onClick={() => setTool(getIdleTool())}
             title="Tutup brush tool"
-            style={{
-              marginLeft: 2,
-              width: 26, height: 26, flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              borderRadius: "50%",
-              border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(203,213,225,0.6)",
-              background: isDark ? "rgba(255,255,255,0.06)" : "rgba(241,245,249,0.9)",
-              color: isDark ? "rgba(255,255,255,0.4)" : "#94a3b8",
-              fontSize: 12, fontWeight: 900, cursor: "pointer", lineHeight: 1,
-            }}
+            className={`ml-1 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-xs font-black text-[var(--color-text-muted)] transition hover:text-rose-400 ${SOFT_RAISED_CLASS}`}
           >
             ✕
           </button>
