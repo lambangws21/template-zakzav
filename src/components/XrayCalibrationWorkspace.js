@@ -2004,6 +2004,7 @@ function isMobilePrecisionInteractionMode(mode) {
     "move-free-line-point",
     "move-free-line-curve-handle",
     "move-annotation",
+    "move-annotation-pointer",
   ].includes(mode);
 }
 
@@ -3629,7 +3630,62 @@ function cloneAnnotation(annotation) {
       0.08,
       1,
     ),
+    px: annotation?.px != null ? Number(annotation.px) : null,
+    py: annotation?.py != null ? Number(annotation.py) : null,
   };
+}
+
+function drawLeaderLine(ctx, labelX, labelY, tagWidth, tagHeight, tipX, tipY, color, isSelected) {
+  const dx = tipX - labelX;
+  const dy = tipY - labelY;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 4) return;
+  const nx = dx / dist;
+  const ny = dy / dist;
+  // Exit point from label border
+  const hw = tagWidth / 2 + 3;
+  const hh = tagHeight / 2 + 3;
+  const tEdge = Math.min(
+    Math.abs(hw / (nx || 0.001)),
+    Math.abs(hh / (ny || 0.001)),
+  );
+  const edgeDist = Math.min(tEdge, dist);
+  const sx = labelX + nx * edgeDist;
+  const sy = labelY + ny * edgeDist;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = isSelected ? 1 : 0.88;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = "round";
+  ctx.setLineDash([]);
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  // Arrowhead at tip
+  const angle = Math.atan2(dy, dx);
+  ctx.save();
+  ctx.translate(tipX, tipY);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-9, -4);
+  ctx.lineTo(-9, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  // Pointer tip dot (drag handle)
+  ctx.beginPath();
+  ctx.arc(tipX, tipY, isSelected ? 5 : 3.5, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(248,250,252,0.95)";
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
 }
 
 function escapeHtml(value) {
@@ -6086,6 +6142,7 @@ export default function XrayCalibrationWorkspace({
   const [selectedPlanningGuideId, setSelectedPlanningGuideId] = useState(null);
   const [annotations, setAnnotations] = useState([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState(null);
+  const [placingAnnotationPointer, setPlacingAnnotationPointer] = useState(null);
   const [planningGuideMode, setPlanningGuideMode] = useState("valgusCut");
   const [valgusCutAngleDeg, setValgusCutAngleDeg] = useState(5);
   const [valgusCutSide, setValgusCutSide] = useState("Right");
@@ -11173,6 +11230,19 @@ export default function XrayCalibrationWorkspace({
     [annotations, imageToScreenPoint],
   );
 
+  const findAnnotationPointerByPoint = useCallback(
+    (point) => {
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        const ann = annotations[i];
+        if (ann.px == null || ann.py == null) continue;
+        const tip = imageToScreenPoint(ann.px, ann.py);
+        if (Math.hypot(point.x - tip.x, point.y - tip.y) <= 12) return ann.id;
+      }
+      return null;
+    },
+    [annotations, imageToScreenPoint],
+  );
+
   const findClosestHandle = useCallback(
     (imagePoint) => {
       const thresholdInImage =
@@ -13457,6 +13527,17 @@ export default function XrayCalibrationWorkspace({
         paddingY: 4,
         radius: 7,
       });
+      if (annotation.px != null && annotation.py != null) {
+        const tip = imageToScreenPoint(annotation.px, annotation.py);
+        const tagBounds = getTagBounds(anchor.x, anchor.y, text, {
+          fontSize: annotation.fontSize || 11,
+          paddingX: 7,
+          paddingY: 4,
+        });
+        const tw = tagBounds.right - tagBounds.left;
+        const th = tagBounds.bottom - tagBounds.top;
+        drawLeaderLine(overlayCtx, anchor.x, anchor.y, tw, th, tip.x, tip.y, color, isSelectedAnnotation);
+      }
     }
 
     const activeCutLayer =
@@ -15443,6 +15524,34 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      // Pointer placement mode — next tap sets leader line tip
+      if (placingAnnotationPointer !== null) {
+        updateAnnotationById(placingAnnotationPointer, {
+          px: boundedPoint.x,
+          py: boundedPoint.y,
+        });
+        setPlacingAnnotationPointer(null);
+        setMobileObjectSettingsOpen(true);
+        return;
+      }
+
+      // Hit-test annotation pointer tip (leader line drag)
+      const hitPointerAnnotId = findAnnotationPointerByPoint(point);
+      if (hitPointerAnnotId !== null) {
+        selectAnnotationFromCanvas(hitPointerAnnotId, { openPanel: false });
+        setHistoryPaused(true);
+        const ann = annotations.find((a) => a.id === hitPointerAnnotId);
+        interactionRef.current = {
+          mode: "move-annotation-pointer",
+          annotationId: hitPointerAnnotId,
+          startImageX: imagePoint.x,
+          startImageY: imagePoint.y,
+          originPx: ann?.px ?? imagePoint.x,
+          originPy: ann?.py ?? imagePoint.y,
+        };
+        return;
+      }
+
       const hitAnnotationId = findAnnotationByPoint(point);
       if (hitAnnotationId !== null) {
         const targetAnnotation = annotations.find(
@@ -15452,6 +15561,7 @@ export default function XrayCalibrationWorkspace({
         selectAnnotationFromCanvas(hitAnnotationId, {
           openPanel: isTouchLikePointer,
         });
+        setMobileObjectSettingsOpen(true);
         setHistoryPaused(true);
         interactionRef.current = {
           mode: "move-annotation",
@@ -15461,7 +15571,7 @@ export default function XrayCalibrationWorkspace({
           originX: targetAnnotation.x,
           originY: targetAnnotation.y,
         };
-        setNotice("Anotasi aktif. Geser untuk memindahkan catatan.");
+        setNotice("Geser label untuk pindah. Gunakan panel untuk tambah/ubah panah.");
         return;
       }
 
@@ -17370,6 +17480,7 @@ export default function XrayCalibrationWorkspace({
       getMobilePlanningGuideHandleAssistGeometry,
       clearActiveCanvasSelection,
       findAnnotationByPoint,
+      findAnnotationPointerByPoint,
       findLineLabelByPoint,
       findClosestPlanningGuideHandle,
       findClosestPlanningGuideId,
@@ -17438,6 +17549,9 @@ export default function XrayCalibrationWorkspace({
       brushStrength,
       brushColor,
       selectedCutLayerId,
+      placingAnnotationPointer,
+      setPlacingAnnotationPointer,
+      updateAnnotationById,
     ],
   );
 
@@ -17763,6 +17877,21 @@ export default function XrayCalibrationWorkspace({
             points: [...prev.points, movePoint],
           };
         });
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-annotation-pointer") {
+        const movePoint = clampToImageBounds(screenToImagePoint(point.x, point.y));
+        const { annotationId, startImageX, startImageY, originPx, originPy } = interactionRef.current;
+        const dx = movePoint.x - startImageX;
+        const dy = movePoint.y - startImageY;
+        scheduleAnnotationsUpdate((prev) =>
+          prev.map((ann) =>
+            ann.id === annotationId
+              ? { ...ann, px: clamp(originPx + dx, 0, modelWidth), py: clamp(originPy + dy, 0, modelHeight) }
+              : ann,
+          ),
+        );
         return;
       }
 
@@ -23882,6 +24011,29 @@ export default function XrayCalibrationWorkspace({
                       aria-label="Custom text color"
                     />
                   </div>
+                  <div className="mt-2">
+                    <div className="mb-1 text-[10px] font-black tracking-widest text-slate-400 uppercase">Titik Panah</div>
+                    {selectedAnnotation.px != null ? (
+                      <div className="space-y-1">
+                        <p className="text-[9px] text-slate-400">Aktif — geser titik putih di canvas</p>
+                        <div className="grid grid-cols-2 gap-1">
+                          <button type="button"
+                            onClick={() => { setSimpleColorPanelOpen(false); setPlacingAnnotationPointer(selectedAnnotation.id); }}
+                            className="rounded-lg border border-blue-400/60 bg-blue-500/10 py-1.5 text-[9px] font-bold text-blue-300"
+                          >Pindah Titik</button>
+                          <button type="button"
+                            onClick={() => updateAnnotationById(selectedAnnotation.id, { px: null, py: null })}
+                            className="rounded-lg border border-rose-400/40 bg-rose-500/10 py-1.5 text-[9px] font-bold text-rose-300"
+                          >Hapus Panah</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button"
+                        onClick={() => { setSimpleColorPanelOpen(false); setPlacingAnnotationPointer(selectedAnnotation.id); }}
+                        className="w-full rounded-lg border border-teal-400/60 bg-teal-500/10 py-2 text-[9px] font-bold text-teal-300"
+                      >&#65291; Tambah Panah &#8594; Tap Struktur</button>
+                    )}
+                  </div>
                 </div>
               ) : null}
 
@@ -28679,6 +28831,10 @@ export default function XrayCalibrationWorkspace({
                       }}
                       onActivateAnnotationTool={(mode) => {
                         if (mode === "pan") { handleToolChange("pan"); } else { handleToolChange("annotation"); }
+                      }}
+                      onSetPointerMode={(id) => {
+                        setSimpleColorPanelOpen(false);
+                        setPlacingAnnotationPointer(id);
                       }}
                       defaultAnnotationColor={DEFAULT_ANNOTATION_COLOR}
                     />
@@ -35212,6 +35368,10 @@ export default function XrayCalibrationWorkspace({
                           setMobileCanvasMode("edit");
                           handleToolChange(mode === "pan" ? "pan" : "annotation");
                         }}
+                        onSetPointerMode={(id) => {
+                          setSimpleMobilePanel(null);
+                          setPlacingAnnotationPointer(id);
+                        }}
                         defaultAnnotationColor={DEFAULT_ANNOTATION_COLOR}
                       />
                     ) : simpleMobilePanel === "export" ? (
@@ -35855,17 +36015,22 @@ export default function XrayCalibrationWorkspace({
               ) : null}
 
               {isSimpleUiMode &&
-              isMobileViewport &&
               hasMobileObjectSelection &&
               mobileObjectSettingsOpen &&
               !simpleMobilePanel ? (
+                <>
+                  {/* backdrop — click outside to close */}
+                  <div
+                    className="pointer-events-auto absolute inset-0 z-39"
+                    onClick={() => setMobileObjectSettingsOpen(false)}
+                  />
                 <motion.div
                   initial={{ opacity: 0, y: 18, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 14, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
                   data-mobj=""
-                  className="pointer-events-auto absolute z-40 max-h-[min(22vh,220px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] p-2 backdrop-blur-md"
+                  className="pointer-events-auto absolute z-40 max-h-[min(40vh,340px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] p-2 backdrop-blur-md"
                   style={{
                     background: isDark ? "rgba(15,23,42,0.92)" : "rgba(235,240,247,0.94)",
                     border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(255,255,255,0.45)",
@@ -35873,7 +36038,7 @@ export default function XrayCalibrationWorkspace({
                     color: isDark ? "#c8d5e8" : "#1e293b",
                     ...(mobileObjPanelPos
                       ? { left: mobileObjPanelPos.x, top: mobileObjPanelPos.y, transform: "none" }
-                      : { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 150px)", transform: "translateX(-50%)" }),
+                      : { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 60px)", transform: "translateX(-50%)" }),
                   }}
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -36664,7 +36829,10 @@ export default function XrayCalibrationWorkspace({
                   {!selectedCutLayer && selectedAnnotation ? (
                     <div className="space-y-2">
                       <textarea
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
                         value={selectedAnnotation.text}
+                        placeholder="Tulis teks anotasi..."
                         onChange={(event) =>
                           updateAnnotationById(selectedAnnotation.id, {
                             text: event.target.value,
@@ -36720,6 +36888,46 @@ export default function XrayCalibrationWorkspace({
                           </label>
                         </div>
                       </div>
+                      <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                        <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                          Titik Panah
+                        </div>
+                        {selectedAnnotation.px != null ? (
+                          <div className="space-y-1">
+                            <p className="text-[9px] text-slate-500">Panah aktif — geser titik putih di canvas untuk ubah posisi</p>
+                            <div className="grid grid-cols-2 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMobileObjectSettingsOpen(false);
+                                  setPlacingAnnotationPointer(selectedAnnotation.id);
+                                }}
+                                className="rounded-xl border border-blue-300/60 bg-blue-50 py-1.5 text-[9px] font-black text-blue-700"
+                              >
+                                Pindah Titik
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateAnnotationById(selectedAnnotation.id, { px: null, py: null })}
+                                className="rounded-xl border border-rose-200 bg-rose-50 py-1.5 text-[9px] font-black text-rose-600"
+                              >
+                                Hapus Panah
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMobileObjectSettingsOpen(false);
+                              setPlacingAnnotationPointer(selectedAnnotation.id);
+                            }}
+                            className="w-full rounded-xl border border-teal-300/60 bg-teal-50 py-2 text-[9px] font-black text-teal-700"
+                          >
+                            &#65291; Tambah Panah &#8594; Tap Struktur
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={removeSelectedAnnotation}
@@ -36756,6 +36964,7 @@ export default function XrayCalibrationWorkspace({
                     </div>
                   ) : null}
                 </motion.div>
+                </>
               ) : null}
 
                 {/* ── Hint banner + workflow progress — single row, never overlap ── */}
@@ -36994,6 +37203,22 @@ export default function XrayCalibrationWorkspace({
                     style={{ display: "none" }}
                   />
                 </svg>
+              )}
+
+              {/* ── Leader line placement hint ────────────────────────────────── */}
+              {placingAnnotationPointer !== null && (
+                <div className="pointer-events-none absolute inset-x-0 top-14 z-50 flex justify-center">
+                  <div className="rounded-2xl border border-teal-400/60 bg-teal-900/85 px-4 py-2 text-xs font-black text-teal-200 shadow-lg backdrop-blur-md">
+                    Tap struktur di canvas untuk set titik panah
+                    <button
+                      type="button"
+                      className="pointer-events-auto ml-3 text-teal-400 underline"
+                      onClick={() => setPlacingAnnotationPointer(null)}
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </div>
               )}
 
               {/* ── HKA Wizard ─────────────────────────────────────────────────── */}

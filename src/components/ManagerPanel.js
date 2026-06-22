@@ -30,6 +30,7 @@ function AnnotationPanel({
   onUpdateAnnotation,
   onRemoveAnnotation,
   onActivateAnnotationTool,
+  onSetPointerMode,
   defaultColor = "#f97316",
 }) {
   const selected = annotations.find((a) => String(a.id) === String(selectedAnnotationId)) || null;
@@ -135,6 +136,31 @@ function AnnotationPanel({
             </label>
           </div>
 
+          {/* Leader line */}
+          <div>
+            <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Titik Panah</p>
+            {selected.px != null ? (
+              <div className="space-y-1.5">
+                <p className="text-[9px] text-slate-400">Aktif — geser titik putih di canvas untuk ubah arah</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={() => onSetPointerMode?.(selected.id)}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-blue-200/70 bg-blue-50 py-1.5 text-[10px] font-bold text-blue-600 transition hover:bg-blue-100">
+                    Pindah Titik
+                  </button>
+                  <button type="button" onClick={() => onUpdateAnnotation?.(selected.id, { px: null, py: null })}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-rose-200/70 bg-rose-50 py-1.5 text-[10px] font-bold text-rose-600 transition hover:bg-rose-100">
+                    Hapus Panah
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => onSetPointerMode?.(selected.id)}
+                className="w-full flex items-center justify-center gap-1 rounded-xl border border-teal-200/70 bg-teal-50 py-2 text-[10px] font-bold text-teal-700 transition hover:bg-teal-100">
+                &#65291; Tambah Panah ke Struktur
+              </button>
+            )}
+          </div>
+
           {/* Actions */}
           <div className="grid grid-cols-2 gap-1.5">
             <button
@@ -222,6 +248,7 @@ export default function ManagerPanel({
   onUpdateAnnotation,
   onRemoveAnnotation,
   onActivateAnnotationTool,
+  onSetPointerMode,
   defaultAnnotationColor = "#f97316",
   style,
 }) {
@@ -373,6 +400,7 @@ export default function ManagerPanel({
             onUpdateAnnotation={onUpdateAnnotation}
             onRemoveAnnotation={onRemoveAnnotation}
             onActivateAnnotationTool={onActivateAnnotationTool}
+            onSetPointerMode={onSetPointerMode}
             defaultColor={defaultAnnotationColor}
           />
         )}

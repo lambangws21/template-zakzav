@@ -132,7 +132,7 @@ export default function ImagingWorkspaceShell() {
           </motion.div>
         ) : (
           <motion.div
-            key={effectiveWorkspace}
+            key="workspace"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
             style={{ flex: 1, display: "flex", flexDirection: "column" }}
