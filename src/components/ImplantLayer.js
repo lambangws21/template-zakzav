@@ -225,15 +225,15 @@ export default function ImplantLayer({
 
       {/* Count pills */}
       {!compact ? (
-        <div className="grid grid-cols-3 gap-2">
-          <MetricPill label="Stem" value={counts.stem || 0} />
-          <MetricPill label="Cup" value={counts.cup || 0} />
-          <MetricPill label="Knee" value={counts.knee || 0} />
+        <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${TYPE_KEYS.length}, minmax(0, 1fr))` }}>
+          {TYPE_KEYS.map((type) => (
+            <MetricPill key={type} label={IMPLANT_LIBRARY_TYPE_LABELS[type]} value={counts[type] || 0} />
+          ))}
         </div>
       ) : null}
 
       {/* Type tabs */}
-      <div className="implant-layer-inset grid grid-cols-3 gap-1.5 rounded-2xl p-1.5">
+      <div className="implant-layer-inset gap-1.5 rounded-2xl p-1.5" style={{ display: "grid", gridTemplateColumns: `repeat(${TYPE_KEYS.length}, minmax(0, 1fr))` }}>
         {TYPE_KEYS.map((type) => {
           const label = IMPLANT_LIBRARY_TYPE_LABELS[type];
           const isActive = normalizedType === type;

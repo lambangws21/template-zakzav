@@ -7,8 +7,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   X, BarChart2, Lock, Eye, EyeOff, Loader2,
   FileDown, CheckCircle2, AlertCircle, TrendingUp,
-  RefreshCw, ChevronDown, ChevronUp, Activity,
+  RefreshCw, ChevronDown, ChevronUp, Activity, Database,
 } from "lucide-react";
+import MLAnnotationMonitor from "./MLAnnotationMonitor";
 
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
 const SESSION_KEY = "zakzav_analytics_auth_v1";
@@ -783,6 +784,7 @@ function Dashboard({ onClose, initialCases }) {
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [tab, setTab] = useState("summary");
+  const [mlMonitorOpen, setMlMonitorOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -863,6 +865,7 @@ function Dashboard({ onClose, initialCases }) {
           { id: "summary", label: "Ringkasan" },
           { id: "grafik", label: "Grafik" },
           { id: "cases", label: `Kasus (${withPostOp.length})` },
+          { id: "ml", label: "Dataset ML" },
         ].map(t => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
             className={`rounded-t-xl px-3 py-2 text-[10px] font-black transition-colors ${
@@ -885,6 +888,36 @@ function Dashboard({ onClose, initialCases }) {
         ) : tab === "grafik" ? (
           <motion.div key="grafik" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <GrafikTab cases={cases} />
+          </motion.div>
+        ) : tab === "ml" ? (
+          <motion.div key="ml" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <div className="flex flex-col items-center gap-5 px-4 py-8">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/15">
+                <Database className="h-8 w-8 text-violet-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-[13px] font-black [color:var(--soft-text)]">Monitor Anotasi Landmark ML</p>
+                <p className="mt-1.5 text-[9px] leading-relaxed [color:var(--soft-text)] opacity-60">
+                  Pantau semua data anotasi yang tersimpan di Firebase — kelengkapan field,<br />
+                  distribusi landmark, kualitas foto, dan detail tiap dokumen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMlMonitorOpen(true)}
+                className="flex items-center gap-2.5 rounded-2xl bg-violet-600 px-6 py-3 text-[11px] font-black text-white shadow-[0_4px_16px_rgba(139,92,246,0.40)] transition hover:bg-violet-500 active:scale-95"
+              >
+                <Database className="h-4 w-4" />
+                Buka Monitor Dataset ML
+              </button>
+              <p className="text-[8px] [color:var(--soft-text)] opacity-30">
+                Hanya dapat diakses setelah verifikasi PIN analitik
+              </p>
+            </div>
+            <MLAnnotationMonitor
+              isOpen={mlMonitorOpen}
+              onClose={() => setMlMonitorOpen(false)}
+            />
           </motion.div>
         ) : (
           <motion.div key="cases" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>

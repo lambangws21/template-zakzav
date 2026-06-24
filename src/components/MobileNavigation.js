@@ -8,6 +8,7 @@ import {
   Layers,
   Lock,
   LockOpen,
+  MapPin,
   Maximize2,
   MousePointer2,
   Move,
@@ -69,6 +70,7 @@ const TAB_ICONS = {
   measure:     Ruler,
   manager:     Layers,
   export:      Download,
+  annotate:    MapPin,
 };
 
 const TAB_ACTIVE_COLORS = {
@@ -77,6 +79,7 @@ const TAB_ACTIVE_COLORS = {
   measure:     "text-blue-600",
   manager:     "text-violet-600",
   export:      "text-emerald-600",
+  annotate:    "text-rose-600",
 };
 
 function Btn({ active, icon: Icon, label, children, className = "", color = "", ...rest }) {

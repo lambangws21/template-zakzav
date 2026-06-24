@@ -1,5 +1,7 @@
+import { TRAUMA_IMPLANTS } from "../../data/traumaImplants.js";
+
 /**
- * @typedef {"stem" | "cup" | "knee"} ImplantLibraryType
+ * @typedef {"stem" | "cup" | "knee" | "trauma"} ImplantLibraryType
  */
 
 /**
@@ -21,6 +23,7 @@ export const IMPLANT_LIBRARY_TYPE_LABELS = {
   stem: "Stem",
   cup: "Cup",
   knee: "Knee",
+  trauma: "Trauma",
 };
 
 /**
@@ -30,7 +33,7 @@ export const IMPLANT_LIBRARY_TYPE_LABELS = {
  *
  * @type {ImplantLibraryItem[]}
  */
-export const LOCAL_IMPLANT_LIBRARY = [
+const BASE_LIBRARY = [
   {
     id: "cup-trilogy",
     brand: "Zimmer",
@@ -403,7 +406,44 @@ export const LOCAL_IMPLANT_LIBRARY = [
   transparentWhiteBackground: item.transparentWhiteBackground ?? true,
 }));
 
-export const LOCAL_IMPLANT_LIBRARY_TYPES = ["stem", "cup", "knee"];
+// ── Trauma implants ────────────────────────────────────────────────────────────
+// Tab TRAU memakai katalog yang sama dengan Trauma Planning agar Simple UI tidak
+// tertinggal saat src/data/traumaImplants.js diperbarui.
+const TRAUMA_LIBRARY = TRAUMA_IMPLANTS.flatMap((implant) => {
+  const preferredView =
+    implant.views?.find((view) => view.key === "lateral") ||
+    implant.views?.[0] ||
+    null;
+  const imageSrc = preferredView?.svgPath || implant.svgPath;
+  const physicalWidthMm =
+    preferredView?.physicalWidthMm ?? implant.plateWidthMm ?? null;
+  const sizes = implant.sizeTable?.length
+    ? implant.sizeTable
+    : [{ holes: null, lengthMm: implant.physicalHeightMm ?? null }];
+
+  return sizes.map((sizeRow, index) => {
+    const sizeLabel = sizeRow.holes ? `${sizeRow.holes} lubang` : "custom";
+    const lengthLabel = sizeRow.lengthMm ? ` (${sizeRow.lengthMm}mm)` : "";
+    return {
+      id: `${implant.id}-${preferredView?.key || "view"}-${sizeRow.holes || index}`,
+      brand: implant.manufacturer || "Trauma",
+      system: implant.name,
+      type: "trauma",
+      size: sizeLabel,
+      label: `${implant.name} — ${preferredView?.label || "View"} — ${sizeLabel}${lengthLabel}`,
+      imageSrc,
+      physicalWidthMm,
+      physicalHeightMm: sizeRow.lengthMm ?? null,
+      physicalSize: null,
+      transparentWhiteBackground: false,
+      implantViewMode: preferredView?.key || null,
+    };
+  });
+});
+
+export const LOCAL_IMPLANT_LIBRARY = [...BASE_LIBRARY, ...TRAUMA_LIBRARY];
+
+export const LOCAL_IMPLANT_LIBRARY_TYPES = ["stem", "cup", "knee", "trauma"];
 
 export function getImplantLibraryItemById(itemId, items = LOCAL_IMPLANT_LIBRARY) {
   return items.find((item) => String(item.id) === String(itemId)) || null;

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   Compass,
@@ -15,6 +16,7 @@ import {
   History,
   Info,
   Layers,
+  MapPin,
   Move,
   Palette,
   RotateCcw,
@@ -133,6 +135,7 @@ export default function QuickPanel({
   onMove,
   onOpenTka,
   onOpenHip,
+  onTraumaPlanning,
   onHistory,
   canHistory = true,
   onReset,
@@ -168,6 +171,7 @@ export default function QuickPanel({
   onPatientCases,
   onImplantEstimator,
   onDriveLibrary,
+  onLandmarkAnnotation,
   onBrushTool,
   brushToolActive = false,
   onCupAssessment,
@@ -184,6 +188,7 @@ export default function QuickPanel({
   const [uploadOpen, setUploadOpen]   = useState(false);
   const [actionsOpen, setActionsOpen] = useState(true);
   const [implantOpen, setImplantOpen] = useState(false);
+  const [openImplantSystems, setOpenImplantSystems] = useState({});
   const [implantPreviewItem, setImplantPreviewItem] = useState(null);
   const [exportOpen, setExportOpen]   = useState(false);
 
@@ -204,8 +209,16 @@ export default function QuickPanel({
 
   const handleImplantTypeChange = (type) => {
     onSelectImplantType?.(type);
+    setOpenImplantSystems({});
     const first = getImplantLibraryItemsByType(type, implantItems)[0];
     if (first) onSelectImplantItemId?.(first.id);
+  };
+
+  const toggleImplantSystem = (system, defaultOpen = false) => {
+    setOpenImplantSystems((prev) => ({
+      ...prev,
+      [system]: !(prev[system] ?? defaultOpen),
+    }));
   };
 
   return (
@@ -317,6 +330,22 @@ export default function QuickPanel({
             <Btn onClick={onOpenHip} className="py-2.5">
               <img src="/images/quick-panel/hip-icon.svg" alt="HIP" className="h-4 w-4 shrink-0 object-contain" />
               HIP
+            </Btn>
+            <Btn
+              icon={AlertTriangle}
+              iconCls="text-orange-400"
+              onClick={onTraumaPlanning}
+              className="col-span-2 py-2.5 border-orange-500/30 bg-orange-500/8 text-orange-300 hover:bg-orange-500/15"
+            >
+              Trauma
+            </Btn>
+            <Btn
+              icon={MapPin}
+              iconCls="text-rose-400"
+              onClick={onLandmarkAnnotation}
+              className="col-span-2 py-2.5 border-rose-500/30 bg-rose-500/8 text-rose-300 hover:bg-rose-500/15"
+            >
+              Anotasi Landmark
             </Btn>
           </div>
 
@@ -504,71 +533,114 @@ export default function QuickPanel({
                   </motion.div>
 
                   {/* Cards grouped by system */}
-                  <motion.div variants={STAGGER_ITEM} className="max-h-56 overflow-y-auto space-y-3 pr-0.5">
+                  <motion.div variants={STAGGER_ITEM} className="max-h-56 overflow-y-auto space-y-2 pr-0.5">
                     {Object.keys(groupedImplants).length === 0 ? (
                       <p className="py-3 text-center text-[10px] text-[var(--soft-text-lo,theme(colors.slate.400))]">Belum ada item</p>
                     ) : (
-                      Object.entries(groupedImplants).map(([system, items]) => (
-                        <div key={system} className="space-y-1.5">
-                          <p className="px-1 text-[8px] font-black uppercase tracking-widest text-[var(--soft-text-lo,theme(colors.slate.400))]">{system}</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {items.map((item) => {
-                              const isSelected = String(item.id) === String(selectedImplant?.id);
-                              return (
-                                <motion.button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => onSelectImplantItemId?.(item.id)}
-                                  className={`group relative flex flex-col items-center gap-1 rounded-2xl border p-1.5 text-left transition-all duration-200 ${
-                                    isSelected
-                                      ? "border-violet-500/45 bg-violet-500/10 shadow-[inset_0_1px_4px_rgba(139,92,246,0.2)]"
-                                      : "border-[var(--soft-border)] bg-transparent hover:bg-violet-500/8 hover:border-violet-500/30"
-                                  }`}
-                                  {...TAP}
-                                  layout
+                      Object.entries(groupedImplants).map(([system, items]) => {
+                        const hasSelected = items.some((item) => String(item.id) === String(selectedImplant?.id));
+                        const systemOpen = openImplantSystems[system] ?? hasSelected;
+                        return (
+                          <div key={system} className="overflow-hidden rounded-2xl border border-[var(--soft-border)] bg-white/[0.03]">
+                            <button
+                              type="button"
+                              onClick={() => toggleImplantSystem(system, hasSelected)}
+                              className={`flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left transition ${
+                                hasSelected ? "bg-violet-500/10" : "hover:bg-white/[0.04]"
+                              }`}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-[9px] font-black uppercase tracking-widest text-[var(--soft-text)]">
+                                  {system}
+                                </span>
+                                <span className="mt-0.5 block text-[8px] font-bold text-[var(--soft-text-lo,theme(colors.slate.400))]">
+                                  {items.length} item
+                                </span>
+                              </span>
+                              <motion.span
+                                animate={{ rotate: systemOpen ? 180 : 0 }}
+                                transition={{ duration: 0.18 }}
+                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                                  hasSelected
+                                    ? "border-violet-500/35 bg-violet-500/15 text-violet-400"
+                                    : "border-[var(--soft-border)] text-[var(--soft-text-lo,theme(colors.slate.400))]"
+                                }`}
+                              >
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </motion.span>
+                            </button>
+                            <AnimatePresence initial={false}>
+                              {systemOpen ? (
+                                <motion.div
+                                  key={`${system}-implant-items`}
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: "auto", opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.18, ease: "easeOut" }}
+                                  className="overflow-hidden"
                                 >
-                                  <div className="flex h-10 w-full items-center justify-center overflow-hidden rounded-xl bg-black/60">
-                                    {item.imageSrc ? (
-                                      <img
-                                        src={item.imageSrc}
-                                        alt={item.label}
-                                        className="h-full w-full object-contain"
-                                      />
-                                    ) : (
-                                      <Layers className="h-5 w-5 text-slate-500" />
-                                    )}
+                                  <div className="grid grid-cols-3 gap-1.5 px-2.5 pb-2.5 pt-0.5">
+                                    {items.map((item) => {
+                                      const isSelected = String(item.id) === String(selectedImplant?.id);
+                                      return (
+                                        <motion.button
+                                          key={item.id}
+                                          type="button"
+                                          onClick={() => onSelectImplantItemId?.(item.id)}
+                                          className={`group relative flex flex-col items-center gap-1 rounded-2xl border p-1.5 text-left transition-all duration-200 ${
+                                            isSelected
+                                              ? "border-violet-500/45 bg-violet-500/10 shadow-[inset_0_1px_4px_rgba(139,92,246,0.2)]"
+                                              : "border-[var(--soft-border)] bg-transparent hover:bg-violet-500/8 hover:border-violet-500/30"
+                                          }`}
+                                          {...TAP}
+                                          layout
+                                        >
+                                          <div className="flex h-10 w-full items-center justify-center overflow-hidden rounded-xl bg-black/60">
+                                            {item.imageSrc ? (
+                                              <img
+                                                src={item.imageSrc}
+                                                alt={item.label}
+                                                className="h-full w-full object-contain"
+                                              />
+                                            ) : (
+                                              <Layers className="h-5 w-5 text-slate-500" />
+                                            )}
+                                          </div>
+                                          <span className={`w-full truncate text-center text-[8px] font-bold leading-tight ${isSelected ? "text-violet-400" : "text-[var(--soft-text-lo,theme(colors.slate.500))]"}`}>
+                                            {item.size || item.label}
+                                          </span>
+                                          <motion.div
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={(e) => { e.stopPropagation(); setImplantPreviewItem(item); }}
+                                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setImplantPreviewItem(item); } }}
+                                            className="absolute -top-1 -right-1 hidden h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-violet-500/40 bg-violet-500/20 text-violet-400 shadow-sm group-hover:flex"
+                                            title="Preview"
+                                            whileTap={{ scale: 0.88 }}
+                                          >
+                                            <Eye className="h-3 w-3" />
+                                          </motion.div>
+                                          <AnimatePresence>
+                                            {isSelected && (
+                                              <motion.span
+                                                key="sel"
+                                                initial={{ scale: 0 }}
+                                                animate={{ scale: 1 }}
+                                                exit={{ scale: 0 }}
+                                                className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_5px_rgba(139,92,246,0.6)]"
+                                              />
+                                            )}
+                                          </AnimatePresence>
+                                        </motion.button>
+                                      );
+                                    })}
                                   </div>
-                                  <span className={`w-full truncate text-center text-[8px] font-bold leading-tight ${isSelected ? "text-violet-400" : "text-[var(--soft-text-lo,theme(colors.slate.500))]"}`}>
-                                    {item.size || item.label}
-                                  </span>
-                                  <motion.div
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => { e.stopPropagation(); setImplantPreviewItem(item); }}
-                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setImplantPreviewItem(item); } }}
-                                    className="absolute -top-1 -right-1 hidden h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-violet-500/40 bg-violet-500/20 text-violet-400 shadow-sm group-hover:flex"
-                                    title="Preview"
-                                    whileTap={{ scale: 0.88 }}
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </motion.div>
-                                  <AnimatePresence>
-                                    {isSelected && (
-                                      <motion.span
-                                        key="sel"
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        exit={{ scale: 0 }}
-                                        className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_5px_rgba(139,92,246,0.6)]"
-                                      />
-                                    )}
-                                  </AnimatePresence>
-                                </motion.button>
-                              );
-                            })}
+                                </motion.div>
+                              ) : null}
+                            </AnimatePresence>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </motion.div>
 

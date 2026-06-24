@@ -115,6 +115,8 @@ import {
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import ImplantLayer from "./ImplantLayer";
 import CalibrationWizard from "./KalibrasiWizzard";
+import FreeWarpOverlay from "./FreeWarpOverlay";
+import { SHAPE_PRESETS } from "../data/shapePresets";
 import LayerManager from "./LayerManager";
 import LineManager from "./LineManager";
 import ManagerPanel from "./ManagerPanel";
@@ -128,139 +130,145 @@ import SmartHintBanner from "./SmartHintBanner";
 import PreOpSummaryModal from "./PreOpSummaryModal";
 import PreOpReportModal from "./PreOpReportModal";
 import ImplantSizePanel from "./ImplantSizePanel";
+import TraumaPlanningPanel from "./TraumaPlanningPanel";
+import LandmarkAnnotationPanel from "./LandmarkAnnotationPanel";
 import DriveImplantLibraryPanel from "./DriveImplantLibraryPanel";
 import PatientCaseManager from "./PatientCaseManager";
 import TemplatingAnalytics from "./TemplatingAnalytics";
+import NavClock from "./workspace/NavClock";
+import Icon from "./workspace/Icon";
+import InfoTooltip from "./workspace/InfoTooltip";
+import {
+  getSoftToneClass,
+  IconButton,
+  LayerToolbarActionButton,
+  ToolIconButton,
+  ColorSwatchButton,
+  CompactSliderField,
+} from "./workspace/WorkspaceButtons";
+import {
+  BUTTON_HOVER,
+  BUTTON_TAP,
+  KNOB_START_DEG,
+  KNOB_SWEEP_DEG,
+  MOBILE_PANEL_PREVIEW_EVENT,
+  triggerMobileHaptic,
+  setMobilePanelPreview,
+} from "../lib/xray/workspaceUtils";
+import {
+  HipPlanningWizard,
+  HipPlanningWizardButton,
+  HipFunctionSummaryPanel,
+  TkaSummaryPanel,
+  HIP_FUNCTION_SUMMARY_BY_KEY,
+  HIP_FUNCTION_SUMMARY_ITEMS,
+  TKA_PLANNING_ITEMS,
+} from "./workspace/HipPlanningWizard";
+import {
+  openImageIDB,
+  saveCutLayersToIDB,
+  loadCutLayerFromIDB,
+  clearCutLayersFromIDB,
+  saveImageToIDB,
+  loadImageFromIDB,
+  clearImageFromIDB,
+} from "../lib/xray/storageUtils";
+import { jlaExtendLine, jlaLineIntersect, jlaDrawAngleArc } from "../lib/xray/jlaUtils";
+import {
+  IMAGE_PROCESSING_MODES,
+  IMAGE_PROCESSING_MODE_LABELS,
+  IMG_PROC_PREVIEW_MAX_SIDE,
+  IMG_PROC_DETECT_MAX_SIDE,
+  loadImageFromSrc,
+  readFileAsDataUrl,
+  isTransientImageSrc,
+  getPersistableImageSrc,
+  loadImageFromCandidates,
+  normalizeImageProcessingMode,
+  getLimitedProcessingSize,
+  applyContrastLevelToImageData,
+  equalizeXrayImageData,
+  invertImageData,
+  sharpenImageData,
+  edgeDetectImageData,
+  gammaImageData,
+  claheImageData,
+  createProcessedXrayCanvas,
+  detectCalibrationMarkerLineFromCanvas,
+} from "../lib/xray/imageProcessingUtils";
+import CupAssessmentOverlayInline, {
+  CupAngleDial,
+  SvgLabel,
+  cupZoneStatus,
+} from "./workspace/CupAssessmentOverlay";
+import { HipCalcRow, HipPlanningCalculator } from "./workspace/HipPlanningCalculator";
+import {
+  clamp, normalizeViewportState, withViewportPanAliases, isFinitePoint,
+  normalizeRect, getPolygonBounds, pointInPolygon, projectPointOnSegment,
+  getLineLength, getDistance, getAngleDegrees, getAngleArcGeometry, degToRad,
+  rotateVector, normalizeRotationDegrees, getSignedAngleDeltaDegrees,
+  distancePointToSegment, getSegmentMidpoint, getCircumcircleFromThreePoints,
+  projectPointToInfiniteLine, getCircleTangentPointsFromExternalPoint,
+} from "../lib/xray/geometryUtils";
+import {
+  HKA_MODE_DEFINITIONS,
+  getAngleResultOpacity, getHkaLineColor, getHkaModeDefinition, cloneOptionalPoint,
+  getHkaPointEntries, getAnglePointEntries, cloneHkaItem, getHkaDraftNotice,
+  isMobilePrecisionInteractionMode, shouldAutoZoomMobilePrecisionInteractionMode,
+  getMobileInteractionLabel, getHkaMeasurementResult, normalizeHkaSide,
+  normalizeHkaSignedDeviation, inferHkaDirectionFromSignedDeviation,
+  inferHkaDirectionFromPoints, getHkaSideLabel, getHkaCanvasLabelText,
+  getAngleCanvasLabelText, getCircleDiameterText, getCircleCanvasLabelText,
+} from "../lib/xray/measurementUtils";
+import {
+  constrainLineByPreset, buildFreeCutLayerFromPoints, buildFreeCutLayerFromLayerPoints,
+  buildFreeLineLayerFromPoints, buildValgusCutGeometry, buildTibialSlopeGeometry,
+  buildTibialCutGeometry,
+  DEFAULT_ANGLE_COLOR, DEFAULT_ANGLE_STROKE_WIDTH, DEFAULT_HKA_LINE_COLOR,
+  DEFAULT_HKA_STROKE_WIDTH, DEFAULT_CIRCLE_COLOR, DEFAULT_CIRCLE_STROKE_WIDTH,
+  DEFAULT_PLANNING_GUIDE_STROKE_WIDTH, DEFAULT_FREE_LINE_COLOR,
+  DEFAULT_LAYER_DUPLICATE_OFFSET, DEFAULT_FREE_LINE_MODE,
+  DEFAULT_FREE_LINE_CURVE_FREEHAND, DEFAULT_FREE_LINE_CURVE_POINT,
+  ANGLE_COLOR_OPTIONS, LINE_COLOR_OPTIONS, CIRCLE_COLOR_OPTIONS,
+  FREE_SHAPE_COLOR_OPTIONS, HKA_COLOR_OPTIONS, PLANNING_GUIDE_COLOR_OPTIONS,
+  IMG_PROC_DEBOUNCE_MS,
+} from "../lib/xray/cutGeometryUtils";
+import {
+  getFreeLineCurveStrength, getSmoothClosedSegmentControls, traceSmoothClosedPath,
+  normalizeFreeLineLayerBounds, getFreeLineVertexPoints, getFreeLineLocalHandlePair,
+  getFreeLineCurveRadius, getFreeLineCurveHandles, toLayerMaskPoint, cloneMaskPoint,
+  applyFreeLineCurveRadiusToPoint, getLayerMaskScreenPoints,
+} from "../lib/xray/freeLineUtils";
+import {
+  getLayerPalette, isImageBackedLayerKind, getLayerFilterValue, getLayerDefaultName,
+  toLayerLocal, toLayerShapeLocal, imagePointToLayerCanvasPoint, getLayerDisplaySize,
+  isEditableMaskLayer, transformLayerLocalPoint, getLayerMaskDisplayPoints,
+  getLayerCorners, getLayerBounds, reorderLayerStack, getLayerControlPoints,
+  isWarpableImageLayer, isImplantWarpEnabled, getImplantWarpWorldPoints,
+  getImplantWarpAnchors, drawWarpedImageLayer,
+} from "../lib/xray/layerUtils";
+import {
+  getTemplateKey, mergeTemplateLibraryLists, getOrientedSize, orientPoint,
+  inverseOrientPoint, getImageContentBounds, getA5PhysicalSizeForImage,
+  resolveTemplatePhysicalSize, makeWhiteBackgroundTransparent,
+  normalizeImageToPhysicalAspect, getMedian, getProjectionTickSpacing,
+  estimateTemplateRulerPxPerMm,
+} from "../lib/xray/templateUtils";
+import {
+  applyBrushToCanvas, tracePolygonPath, drawTag, fillCircleMarkers,
+  strokeCircleMarkers, getTagBounds, cloneAnnotation, drawLeaderLine, escapeHtml,
+} from "../lib/xray/canvasUtils";
+import {
+  buildAxisLineFromPoints, buildGuideLineFromReference, getSegmentIntersectionPoint,
+  normalizeSnapSettings, getSnapTypeShortLabel, getSnapTargetSignature,
+} from "../lib/xray/snapUtils";
+import { removeImageBackground, createCombinedReportCanvas } from "../lib/xray/reportUtils";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
 const STORY_STORAGE_KEY = "xray_workspace_story_v1";
-const IMAGE_IDB_NAME = "zakzav_workspace";
-const IMAGE_IDB_STORE = "last_image";
-const IMAGE_IDB_KEY = "main";
 
-// ─── Live clock for navbar ────────────────────────────────────────────────────
-function NavClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const timeStr = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const dateStr = now.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-  return (
-    <div className="flex flex-col items-center leading-none select-none">
-      <span className="font-mono text-[13px] font-black tracking-tight text-slate-800">{timeStr}</span>
-      <span className="text-[9px] font-semibold tracking-wide text-slate-400">{dateStr}</span>
-    </div>
-  );
-}
 
-const CUT_LAYER_IDB_STORE = "cut_layer_images";
-
-function openImageIDB() {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") { reject(new Error("no idb")); return; }
-    const req = indexedDB.open(IMAGE_IDB_NAME, 2);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(IMAGE_IDB_STORE)) {
-        db.createObjectStore(IMAGE_IDB_STORE);
-      }
-      if (!db.objectStoreNames.contains(CUT_LAYER_IDB_STORE)) {
-        db.createObjectStore(CUT_LAYER_IDB_STORE);
-      }
-    };
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function saveCutLayersToIDB(cutLayers) {
-  try {
-    const layers = (cutLayers || []).filter(
-      (l) => l.kind === "free-cut" && l.imageSrc && l.imageSrc.startsWith("data:")
-    );
-    if (!layers.length) return;
-    const db = await openImageIDB();
-    await new Promise((resolve) => {
-      const tx = db.transaction(CUT_LAYER_IDB_STORE, "readwrite");
-      const store = tx.objectStore(CUT_LAYER_IDB_STORE);
-      // Save each cut layer keyed by its ID
-      layers.forEach((l) => store.put({ imageSrc: l.imageSrc, maskPoints: l.maskPoints }, String(l.id)));
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
-  } catch { /* silent fail */ }
-}
-
-async function loadCutLayerFromIDB(layerId) {
-  try {
-    const db = await openImageIDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(CUT_LAYER_IDB_STORE, "readonly");
-      const req = tx.objectStore(CUT_LAYER_IDB_STORE).get(String(layerId));
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
-  } catch { return null; }
-}
-
-async function clearCutLayersFromIDB(keepIds) {
-  try {
-    const db = await openImageIDB();
-    await new Promise((resolve) => {
-      const tx = db.transaction(CUT_LAYER_IDB_STORE, "readwrite");
-      const store = tx.objectStore(CUT_LAYER_IDB_STORE);
-      const keep = new Set((keepIds || []).map(String));
-      const req = store.openCursor();
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (!cursor) return;
-        if (!keep.has(String(cursor.key))) cursor.delete();
-        cursor.continue();
-      };
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
-  } catch { /* silent fail */ }
-}
-
-async function saveImageToIDB(dataUrl, name) {
-  try {
-    const db = await openImageIDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(IMAGE_IDB_STORE, "readwrite");
-      tx.objectStore(IMAGE_IDB_STORE).put({ dataUrl, name }, IMAGE_IDB_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
-  } catch { /* silent fail */ }
-}
-
-async function loadImageFromIDB() {
-  try {
-    const db = await openImageIDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(IMAGE_IDB_STORE, "readonly");
-      const req = tx.objectStore(IMAGE_IDB_STORE).get(IMAGE_IDB_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
-  } catch { return null; }
-}
-
-async function clearImageFromIDB() {
-  try {
-    const db = await openImageIDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(IMAGE_IDB_STORE, "readwrite");
-      tx.objectStore(IMAGE_IDB_STORE).delete(IMAGE_IDB_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
-  } catch { /* silent fail */ }
-}
 const TEMPLATE_LIBRARY_KEY = "xray_template_library_v1";
 const MEASURE_LEGEND_VISIBILITY_KEY = "xray_measure_legend_visible_v1";
 const WHATS_NEW_STORAGE_KEY = "xray_workspace_whats_new_seen_v2";
@@ -276,8 +284,7 @@ const ANNOTATION_COLOR_OPTIONS = [
   "#facc15",
 ];
 const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
-const A5_PORTRAIT_WIDTH_MM = 148;
-const A5_PORTRAIT_HEIGHT_MM = 210;
+
 const VIEW_PAN_VISIBLE_MARGIN = 96;
 const DEFAULT_SNAP_SETTINGS = {
   endpoint: true,
@@ -294,22 +301,14 @@ const LEFT_SIDEBAR_DEFAULT_WIDTH = 260;
 const RIGHT_SIDEBAR_MIN_WIDTH = 130;
 const RIGHT_SIDEBAR_MAX_WIDTH = 460;
 const RIGHT_SIDEBAR_DEFAULT_WIDTH = 280;
-const LAYER_PALETTE = [
-  { border: "#10b981", bg: "#ecfdf5", text: "#065f46" },
-  { border: "#06b6d4", bg: "#ecfeff", text: "#155e75" },
-  { border: "#f59e0b", bg: "#fffbeb", text: "#92400e" },
-  { border: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6" },
-  { border: "#f43f5e", bg: "#fff1f2", text: "#9f1239" },
-  { border: "#3b82f6", bg: "#eff6ff", text: "#1d4ed8" },
-];
+
 const SIDEBAR_ICON_GRID_CLASS =
   "grid gap-1.5 [grid-template-columns:repeat(auto-fit,minmax(40px,1fr))]";
 const SIDEBAR_TEXT_BUTTON_GRID_CLASS =
   "grid gap-1.5 [grid-template-columns:repeat(auto-fit,minmax(112px,1fr))]";
 const SIDEBAR_TAB_GRID_CLASS =
   "grid gap-1.5 [grid-template-columns:repeat(auto-fit,minmax(72px,1fr))]";
-const BUTTON_HOVER = { scale: 1.03, y: -1 };
-const BUTTON_TAP = { scale: 0.97 };
+
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
 const MOBILE_PANEL_TRANSITION = { duration: 0.12, ease: "easeOut" };
 const MEASUREMENT_WORKFLOW_ITEMS = [
@@ -364,61 +363,7 @@ const DEFAULT_HKA_LABEL_OFFSET_Y = -16;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
-const KNOB_START_DEG = 135;
-const KNOB_SWEEP_DEG = 270;
-const HKA_MODE_DEFINITIONS = {
-  full: {
-    key: "full",
-    label: "HKA",
-    modeLabel: "Full Length Standing HKA",
-    points: [
-      { key: "hip", shortLabel: "CFH", promptLabel: "center femoral head" },
-      { key: "knee", shortLabel: "CK", promptLabel: "center knee / notch" },
-      { key: "ankle", shortLabel: "CA", promptLabel: "center ankle" },
-    ],
-  },
-  fta: {
-    key: "fta",
-    label: "FTA",
-    modeLabel: "FTA (Fem2 + Tib1)",
-    points: [
-      {
-        key: "femurMidshaft10cm",
-        shortLabel: "Fem2",
-        promptLabel: "Fem2 mid-shaft ±10 cm proximal",
-      },
-      {
-        key: "femoralNotch",
-        shortLabel: "Notch",
-        promptLabel: "femoral notch",
-      },
-      {
-        key: "tibiaMidshaft4cm",
-        shortLabel: "Tib1 4",
-        promptLabel: "Tib1 ±4 cm distal",
-      },
-      {
-        key: "tibiaMidshaft10cm",
-        shortLabel: "Tib1 10",
-        promptLabel: "Tib1 ±10 cm distal",
-      },
-    ],
-  },
-  jla: {
-    key: "jla",
-    label: "JLA",
-    modeLabel: "Joint Line Analysis (LDFA · MPTA · JLCA)",
-    points: [
-      { key: "hip",               shortLabel: "CFH",  promptLabel: "center femoral head" },
-      { key: "knee",              shortLabel: "CK",   promptLabel: "center knee / notch" },
-      { key: "ankle",             shortLabel: "CA",   promptLabel: "center ankle" },
-      { key: "femCondyleMedial",  shortLabel: "MFC",  promptLabel: "kondilus femur medial (titik terendah)" },
-      { key: "femCondyleLateral", shortLabel: "LFC",  promptLabel: "kondilus femur lateral (titik terendah)" },
-      { key: "tibPlateauMedial",  shortLabel: "MTP",  promptLabel: "plateau tibia medial (titik tertinggi)" },
-      { key: "tibPlateauLateral", shortLabel: "LTP",  promptLabel: "plateau tibia lateral (titik tertinggi)" },
-    ],
-  },
-};
+
 
 const HKA_POINT_HINTS = {
   hip:               { color: "#facc15", label: "CFH",       hint: "Klik pusat kepala femur (center of femoral head)" },
@@ -544,54 +489,7 @@ const HKA_INFO_BUBBLES = {
   },
 };
 
-function jlaExtendLine(a, b, extendPx) {
-  if (!a || !b) return { a, b };
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  return {
-    a: { x: a.x - (dx / len) * extendPx, y: a.y - (dy / len) * extendPx },
-    b: { x: b.x + (dx / len) * extendPx, y: b.y + (dy / len) * extendPx },
-  };
-}
 
-function jlaLineIntersect(p1, p2, p3, p4) {
-  if (!p1 || !p2 || !p3 || !p4) return null;
-  const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
-  const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
-  const cross = d1x * d2y - d1y * d2x;
-  if (Math.abs(cross) < 1e-8) return null;
-  const dx = p3.x - p1.x, dy = p3.y - p1.y;
-  const t = (dx * d2y - dy * d2x) / cross;
-  return { x: p1.x + t * d1x, y: p1.y + t * d1y };
-}
-
-function jlaDrawAngleArc(ctx, vertex, ptA, ptB, radius, label, color) {
-  if (!vertex || !ptA || !ptB) return;
-  const angleA = Math.atan2(ptA.y - vertex.y, ptA.x - vertex.x);
-  const angleB = Math.atan2(ptB.y - vertex.y, ptB.x - vertex.x);
-  let diff = angleB - angleA;
-  while (diff > Math.PI) diff -= 2 * Math.PI;
-  while (diff < -Math.PI) diff += 2 * Math.PI;
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.6;
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 0.72;
-  ctx.beginPath();
-  ctx.arc(vertex.x, vertex.y, radius, angleA, angleB, diff < 0);
-  ctx.stroke();
-  const midAngle = angleA + diff / 2;
-  const lx = vertex.x + (radius + 11) * Math.cos(midAngle);
-  const ly = vertex.y + (radius + 11) * Math.sin(midAngle);
-  ctx.globalAlpha = 1;
-  ctx.font = "bold 10px Arial";
-  ctx.strokeStyle = "rgba(0,0,0,0.75)";
-  ctx.lineWidth = 3;
-  ctx.strokeText(label, lx, ly);
-  ctx.fillStyle = color;
-  ctx.fillText(label, lx, ly);
-  ctx.restore();
-}
 
 const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
@@ -617,5078 +515,6 @@ const DEFAULT_LINE_COLOR = "#38bdf8";
 const HORIZONTAL_LINE_PRESETS = new Set(["interteardrop", "femoralOffset", "acetabularOffset", "globalOffset"]);
 // Presets that snap to vertical (x locked to start)
 const VERTICAL_LINE_PRESETS = new Set(["hipLength", "lld"]);
-
-function constrainLineByPreset(draft, _preset) {
-  return draft;
-}
-const DEFAULT_ANGLE_COLOR = "#f97316";
-const DEFAULT_ANGLE_STROKE_WIDTH = 2;
-const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
-const DEFAULT_HKA_STROKE_WIDTH = 2;
-const DEFAULT_CIRCLE_COLOR = "#8b5cf6";
-const DEFAULT_CIRCLE_STROKE_WIDTH = 2;
-const DEFAULT_PLANNING_GUIDE_STROKE_WIDTH = 2;
-const DEFAULT_FREE_LINE_COLOR = "#3b82f6";
-const DEFAULT_LAYER_DUPLICATE_OFFSET = 18;
-const DEFAULT_FREE_LINE_MODE = "freehand";
-const DEFAULT_FREE_LINE_CURVE_FREEHAND = 0.16;
-const DEFAULT_FREE_LINE_CURVE_POINT = 0.58;
-const ANGLE_COLOR_OPTIONS = [
-  "#f97316",
-  "#ef4444",
-  "#f59e0b",
-  "#22c55e",
-  "#06b6d4",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899",
-];
-const LINE_COLOR_OPTIONS = [
-  "#38bdf8",
-  "#22c55e",
-  "#f43f5e",
-  "#f59e0b",
-  "#8b5cf6",
-  "#111827",
-  "#94a3b8",
-];
-const CIRCLE_COLOR_OPTIONS = [
-  "#8b5cf6",
-  "#06b6d4",
-  "#22c55e",
-  "#f59e0b",
-  "#f43f5e",
-  "#111827",
-  "#94a3b8",
-];
-const FREE_SHAPE_COLOR_OPTIONS = [
-  "#3b82f6",
-  "#06b6d4",
-  "#22c55e",
-  "#f59e0b",
-  "#f43f5e",
-  "#8b5cf6",
-  "#111827",
-  "#94a3b8",
-];
-const HKA_COLOR_OPTIONS = [
-  "#14b8a6",
-  "#0ea5e9",
-  "#22c55e",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#111827",
-  "#94a3b8",
-];
-const IMAGE_PROCESSING_MODES = [
-  { key: "normal", label: "Normal", desc: "Tampilan asli dengan contrast/level." },
-  { key: "enhance", label: "Enhance", desc: "Histogram equalization untuk X-ray." },
-  { key: "clahe", label: "CLAHE", desc: "Equalisasi adaptif per-region, terbaik untuk tulang." },
-  { key: "gamma", label: "Gamma", desc: "Koreksi gamma — terangkan area gelap." },
-  { key: "edge", label: "Edge", desc: "Sobel edge detection kontur tulang." },
-  { key: "invert", label: "Invert", desc: "Balik hitam/putih." },
-  { key: "sharpen", label: "Sharpen", desc: "Tajamkan detail tulang/template." },
-  { key: "detectMarker", label: "Detect Marker", desc: "Cari marker/ruler kalibrasi otomatis." },
-];
-const IMAGE_PROCESSING_MODE_LABELS = IMAGE_PROCESSING_MODES.reduce(
-  (acc, mode) => ({ ...acc, [mode.key]: mode.label }),
-  {},
-);
-const PLANNING_GUIDE_COLOR_OPTIONS = [
-  "#38bdf8",
-  "#22c55e",
-  "#f97316",
-  "#f43f5e",
-  "#eab308",
-  "#a855f7",
-  "#14b8a6",
-  "#f59e0b",
-];
-const MOBILE_PANEL_PREVIEW_EVENT = "xray-mobile-panel-preview";
-const TOOL_CONFIG_MODAL_DEFAULT_SIZES = {
-  snapTool: { width: 560, height: 420 },
-  centerFinder: { width: 520, height: 320 },
-  axisBuilder: { width: 520, height: 320 },
-  guideBuilder: { width: 560, height: 360 },
-  layerMove: { width: 980, height: 760 },
-  layerLayout: { width: 980, height: 760 },
-  layerSettings: { width: 1120, height: 820 },
-};
-const TOOL_CONFIG_MODAL_MIN_WIDTH = 420;
-const TOOL_CONFIG_MODAL_MIN_HEIGHT = 260;
-const IMG_PROC_PREVIEW_MAX_SIDE = 1100;
-const IMG_PROC_DETECT_MAX_SIDE = 900;
-const IMG_PROC_DEBOUNCE_MS = 260;
-let mobilePanelPreviewTimeoutId = null;
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizeViewportState(nextViewport, fallback = { x: 0, y: 0, scale: 1 }) {
-  const source = nextViewport || fallback;
-  const fallbackScale = Number.isFinite(fallback?.scale) ? fallback.scale : 1;
-  const fallbackX = Number.isFinite(fallback?.x)
-    ? fallback.x
-    : Number.isFinite(fallback?.panX)
-      ? fallback.panX
-      : 0;
-  const fallbackY = Number.isFinite(fallback?.y)
-    ? fallback.y
-    : Number.isFinite(fallback?.panY)
-      ? fallback.panY
-      : 0;
-
-  const rawX = Number.isFinite(source.x) ? source.x : source.panX;
-  const rawY = Number.isFinite(source.y) ? source.y : source.panY;
-
-  return {
-    x: Number.isFinite(rawX) ? rawX : fallbackX,
-    y: Number.isFinite(rawY) ? rawY : fallbackY,
-    scale: Number.isFinite(source.scale) ? source.scale : fallbackScale,
-  };
-}
-
-function withViewportPanAliases(viewportState) {
-  const normalized = normalizeViewportState(viewportState);
-  return {
-    ...normalized,
-    panX: normalized.x,
-    panY: normalized.y,
-  };
-}
-
-function isFinitePoint(point) {
-  return Boolean(
-    point &&
-      Number.isFinite(point.x) &&
-      Number.isFinite(point.y)
-  );
-}
-
-function triggerMobileHaptic(pattern = 8) {
-  if (typeof window === "undefined") return;
-  const navigatorRef = window.navigator;
-  const supportsCoarsePointer =
-    typeof window.matchMedia === "function"
-      ? window.matchMedia("(pointer: coarse)").matches
-      : false;
-
-  if (!supportsCoarsePointer) return;
-  if (!navigatorRef || typeof navigatorRef.vibrate !== "function") return;
-
-  navigatorRef.vibrate(pattern);
-}
-
-function setMobilePanelPreview(active, durationMs = 0) {
-  if (typeof window === "undefined") return;
-
-  if (mobilePanelPreviewTimeoutId !== null) {
-    window.clearTimeout(mobilePanelPreviewTimeoutId);
-    mobilePanelPreviewTimeoutId = null;
-  }
-
-  window.dispatchEvent(
-    new CustomEvent(MOBILE_PANEL_PREVIEW_EVENT, {
-      detail: { active },
-    }),
-  );
-
-  if (active && durationMs > 0) {
-    mobilePanelPreviewTimeoutId = window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent(MOBILE_PANEL_PREVIEW_EVENT, {
-          detail: { active: false },
-        }),
-      );
-      mobilePanelPreviewTimeoutId = null;
-    }, durationMs);
-  }
-}
-
-function getLayerPalette(layerId) {
-  const index = Math.abs(Number(layerId) || 0) % LAYER_PALETTE.length;
-  return LAYER_PALETTE[index];
-}
-
-function loadImageFromSrc(rawSrc) {
-  return new Promise((resolve, reject) => {
-    const src = buildDriveImageCandidates(rawSrc)[0] || rawSrc;
-    const canTryAnonymous =
-      typeof src === "string" &&
-      !src.startsWith("data:") &&
-      !src.startsWith("blob:");
-    const tryLoad = (anonymous) => {
-      const img = new Image();
-      if (anonymous) {
-        img.crossOrigin = "anonymous";
-      }
-      img.onload = () => resolve(img);
-      img.onerror = (error) => {
-        if (anonymous) {
-          tryLoad(false);
-          return;
-        }
-        reject(error);
-      };
-      img.src = src;
-    };
-
-    tryLoad(canTryAnonymous);
-  });
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("File tidak menghasilkan data URL."));
-    };
-    reader.onerror = () =>
-      reject(reader.error || new Error("Gagal membaca file."));
-    reader.readAsDataURL(file);
-  });
-}
-
-function isTransientImageSrc(src) {
-  const raw = String(src || "").trim();
-  return raw.startsWith("blob:") || raw.startsWith("data:");
-}
-
-function getPersistableImageSrc(src) {
-  const raw = String(src || "").trim();
-  return raw && !isTransientImageSrc(raw) ? raw : "";
-}
-
-async function loadImageFromCandidates(candidates) {
-  const sources = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
-  let lastError = null;
-  for (const src of sources) {
-    try {
-      const image = await loadImageFromSrc(src);
-      return { image, src };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error("Semua kandidat URL gambar gagal dimuat.");
-}
-
-function normalizeRect(x1, y1, x2, y2) {
-  const left = Math.min(x1, x2);
-  const top = Math.min(y1, y2);
-  const right = Math.max(x1, x2);
-  const bottom = Math.max(y1, y2);
-
-  return {
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-  };
-}
-
-function isImageBackedLayerKind(kind) {
-  return kind === "upload" || kind === "free-cut";
-}
-
-function getLayerFilterValue(layer) {
-  const layerContrast = clamp(Number(layer?.contrast ?? 100), 10, 300);
-  const layerLevel = clamp(Number(layer?.level ?? 100), 10, 300);
-  return `contrast(${layerContrast}%) brightness(${layerLevel}%)`;
-}
-
-function normalizeImageProcessingMode(mode) {
-  return IMAGE_PROCESSING_MODE_LABELS[mode] ? mode : "normal";
-}
-
-function getLimitedProcessingSize(width, height, maxSide) {
-  const safeWidth = Math.max(1, Math.round(Number(width) || 1));
-  const safeHeight = Math.max(1, Math.round(Number(height) || 1));
-  const limit = Math.max(256, Number(maxSide) || IMG_PROC_PREVIEW_MAX_SIDE);
-  const scale = Math.min(1, limit / Math.max(safeWidth, safeHeight));
-
-  return {
-    width: Math.max(1, Math.round(safeWidth * scale)),
-    height: Math.max(1, Math.round(safeHeight * scale)),
-    scale,
-  };
-}
-
-function applyContrastLevelToImageData(imageData, contrastPercent, levelPercent) {
-  const data = imageData.data;
-  const contrastFactor = clamp(Number(contrastPercent) || 100, 10, 300) / 100;
-  const levelFactor = clamp(Number(levelPercent) || 100, 10, 300) / 100;
-
-  for (let index = 0; index < data.length; index += 4) {
-    for (let channel = 0; channel < 3; channel += 1) {
-      const value = data[index + channel];
-      data[index + channel] = clamp(
-        Math.round((value - 128) * contrastFactor + 128 * levelFactor),
-        0,
-        255,
-      );
-    }
-  }
-}
-
-function equalizeXrayImageData(imageData) {
-  const data = imageData.data;
-  const histogram = new Array(256).fill(0);
-  const grayValues = new Uint8ClampedArray(data.length / 4);
-
-  for (let index = 0, pixel = 0; index < data.length; index += 4, pixel += 1) {
-    const gray = Math.round(
-      data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114,
-    );
-    grayValues[pixel] = gray;
-    histogram[gray] += 1;
-  }
-
-  const totalPixels = grayValues.length;
-  let cumulative = 0;
-  let cdfMin = 0;
-  const lut = new Uint8ClampedArray(256);
-  for (let value = 0; value < 256; value += 1) {
-    cumulative += histogram[value];
-    if (!cdfMin && cumulative > 0) cdfMin = cumulative;
-    lut[value] = clamp(
-      Math.round(((cumulative - cdfMin) / Math.max(1, totalPixels - cdfMin)) * 255),
-      0,
-      255,
-    );
-  }
-
-  for (let index = 0, pixel = 0; index < data.length; index += 4, pixel += 1) {
-    const equalized = lut[grayValues[pixel]];
-    data[index] = equalized;
-    data[index + 1] = equalized;
-    data[index + 2] = equalized;
-  }
-}
-
-function invertImageData(imageData) {
-  const data = imageData.data;
-  for (let index = 0; index < data.length; index += 4) {
-    data[index] = 255 - data[index];
-    data[index + 1] = 255 - data[index + 1];
-    data[index + 2] = 255 - data[index + 2];
-  }
-}
-
-function sharpenImageData(imageData) {
-  const { width, height, data } = imageData;
-  const source = new Uint8ClampedArray(data);
-  const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
-
-  for (let y = 1; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 1; x += 1) {
-      const targetIndex = (y * width + x) * 4;
-      for (let channel = 0; channel < 3; channel += 1) {
-        let sum = 0;
-        let kernelIndex = 0;
-        for (let ky = -1; ky <= 1; ky += 1) {
-          for (let kx = -1; kx <= 1; kx += 1) {
-            const sourceIndex = ((y + ky) * width + (x + kx)) * 4 + channel;
-            sum += source[sourceIndex] * kernel[kernelIndex];
-            kernelIndex += 1;
-          }
-        }
-        data[targetIndex + channel] = clamp(Math.round(sum), 0, 255);
-      }
-    }
-  }
-}
-
-function edgeDetectImageData(imageData, threshold) {
-  const { width, height, data } = imageData;
-  const source = new Uint8ClampedArray(data);
-  const gray = new Uint8ClampedArray(width * height);
-  const sobelX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
-  const sobelY = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const index = (y * width + x) * 4;
-      gray[y * width + x] = Math.round(
-        source[index] * 0.299 + source[index + 1] * 0.587 + source[index + 2] * 0.114,
-      );
-    }
-  }
-
-  for (let y = 1; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 1; x += 1) {
-      let gx = 0;
-      let gy = 0;
-      let kernelIndex = 0;
-      for (let ky = -1; ky <= 1; ky += 1) {
-        for (let kx = -1; kx <= 1; kx += 1) {
-          const value = gray[(y + ky) * width + (x + kx)];
-          gx += value * sobelX[kernelIndex];
-          gy += value * sobelY[kernelIndex];
-          kernelIndex += 1;
-        }
-      }
-      const magnitude = clamp(Math.round(Math.hypot(gx, gy)), 0, 255);
-      const val = magnitude > (threshold || 0) ? magnitude : 0;
-      const targetIndex = (y * width + x) * 4;
-      data[targetIndex] = val;
-      data[targetIndex + 1] = val;
-      data[targetIndex + 2] = val;
-      data[targetIndex + 3] = 255;
-    }
-  }
-}
-
-function gammaImageData(imageData, gamma) {
-  const data = imageData.data;
-  const g = clamp(Number(gamma) || 1, 0.1, 5);
-  const lut = new Uint8ClampedArray(256);
-  for (let i = 0; i < 256; i++) {
-    lut[i] = clamp(Math.round(255 * Math.pow(i / 255, 1 / g)), 0, 255);
-  }
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = lut[data[i]];
-    data[i + 1] = lut[data[i + 1]];
-    data[i + 2] = lut[data[i + 2]];
-  }
-}
-
-function claheImageData(imageData, clipLimit, tileGridSize) {
-  const { width, height, data } = imageData;
-  const tiles = Math.max(2, Math.round(tileGridSize) || 8);
-  const clip = Math.max(0.5, Number(clipLimit) || 3);
-  const tileW = Math.ceil(width / tiles);
-  const tileH = Math.ceil(height / tiles);
-
-  const gray = new Uint8ClampedArray(width * height);
-  for (let i = 0; i < width * height; i++) {
-    gray[i] = Math.round(data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114);
-  }
-
-  const luts = [];
-  for (let ty = 0; ty < tiles; ty++) {
-    luts.push([]);
-    for (let tx = 0; tx < tiles; tx++) {
-      const x0 = tx * tileW;
-      const y0 = ty * tileH;
-      const x1 = Math.min(x0 + tileW, width);
-      const y1 = Math.min(y0 + tileH, height);
-      const hist = new Int32Array(256);
-      let count = 0;
-      for (let y = y0; y < y1; y++) {
-        for (let x = x0; x < x1; x++) {
-          hist[gray[y * width + x]]++;
-          count++;
-        }
-      }
-      const limit = Math.max(1, Math.round((clip * count) / 256));
-      let excess = 0;
-      for (let i = 0; i < 256; i++) {
-        if (hist[i] > limit) { excess += hist[i] - limit; hist[i] = limit; }
-      }
-      const add = Math.floor(excess / 256);
-      const rem = excess % 256;
-      for (let i = 0; i < 256; i++) { hist[i] += add + (i < rem ? 1 : 0); }
-      const lut = new Uint8ClampedArray(256);
-      let cdf = 0; let cdfMin = -1;
-      for (let i = 0; i < 256; i++) {
-        cdf += hist[i];
-        if (cdfMin < 0 && cdf > 0) cdfMin = cdf;
-        lut[i] = clamp(Math.round(((cdf - cdfMin) / Math.max(1, count - cdfMin)) * 255), 0, 255);
-      }
-      luts[ty].push(lut);
-    }
-  }
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const tx = x / tileW - 0.5;
-      const ty = y / tileH - 0.5;
-      const tx0 = clamp(Math.floor(tx), 0, tiles - 1);
-      const ty0 = clamp(Math.floor(ty), 0, tiles - 1);
-      const tx1 = clamp(tx0 + 1, 0, tiles - 1);
-      const ty1 = clamp(ty0 + 1, 0, tiles - 1);
-      const fx = clamp(tx - Math.floor(tx), 0, 1);
-      const fy = clamp(ty - Math.floor(ty), 0, 1);
-      const g = gray[y * width + x];
-      const eq = Math.round(
-        luts[ty0][tx0][g] * (1 - fx) * (1 - fy) +
-        luts[ty0][tx1][g] * fx * (1 - fy) +
-        luts[ty1][tx0][g] * (1 - fx) * fy +
-        luts[ty1][tx1][g] * fx * fy,
-      );
-      const idx = (y * width + x) * 4;
-      data[idx] = eq; data[idx + 1] = eq; data[idx + 2] = eq;
-    }
-  }
-}
-
-function createProcessedXrayCanvas({
-  image,
-  sourceX,
-  sourceY,
-  sourceWidth,
-  sourceHeight,
-  targetWidth,
-  targetHeight,
-  mode,
-  contrastPercent,
-  levelPercent,
-  filterIntensity = 100,
-  gammaValue = 1.5,
-  edgeThreshold = 40,
-  claheClip = 3.0,
-  claheTiles = 8,
-}) {
-  if (typeof document === "undefined" || !image || !targetWidth || !targetHeight) {
-    return null;
-  }
-
-  const normalizedMode = normalizeImageProcessingMode(mode);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(targetWidth));
-  canvas.height = Math.max(1, Math.round(targetHeight));
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return null;
-
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    0,
-    0,
-    canvas.width,
-    canvas.height,
-  );
-
-  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  applyContrastLevelToImageData(imageData, contrastPercent, levelPercent);
-
-  if (normalizedMode !== "normal") {
-    const intensity = clamp(Number(filterIntensity) || 100, 0, 200);
-    const origPixels = intensity !== 100 ? new Uint8ClampedArray(imageData.data) : null;
-
-    if (normalizedMode === "enhance") {
-      equalizeXrayImageData(imageData);
-      sharpenImageData(imageData);
-    } else if (normalizedMode === "clahe") {
-      claheImageData(imageData, claheClip, claheTiles);
-    } else if (normalizedMode === "gamma") {
-      gammaImageData(imageData, gammaValue);
-    } else if (normalizedMode === "invert") {
-      invertImageData(imageData);
-    } else if (normalizedMode === "sharpen") {
-      sharpenImageData(imageData);
-    } else if (normalizedMode === "edge") {
-      edgeDetectImageData(imageData, edgeThreshold);
-    }
-
-    if (origPixels) {
-      const t = intensity / 100;
-      const d = imageData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        d[i] = clamp(Math.round(origPixels[i] * (1 - t) + d[i] * t), 0, 255);
-        d[i + 1] = clamp(Math.round(origPixels[i + 1] * (1 - t) + d[i + 1] * t), 0, 255);
-        d[i + 2] = clamp(Math.round(origPixels[i + 2] * (1 - t) + d[i + 2] * t), 0, 255);
-      }
-    }
-  }
-
-  context.putImageData(imageData, 0, 0);
-  return canvas;
-}
-
-function detectCalibrationMarkerLineFromCanvas(canvas) {
-  if (!canvas) return null;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return null;
-  const { width, height } = canvas;
-  if (width < 24 || height < 24) return null;
-
-  const imageData = context.getImageData(0, 0, width, height);
-  edgeDetectImageData(imageData);
-  const data = imageData.data;
-  const points = [];
-  const step = Math.max(2, Math.floor(Math.max(width, height) / 420));
-  const margin = Math.max(8, Math.round(Math.min(width, height) * 0.018));
-  for (let y = margin; y < height - margin; y += step) {
-    for (let x = margin; x < width - margin; x += step) {
-      const value = data[(y * width + x) * 4];
-      if (value >= 208) {
-        points.push({ x, y });
-      }
-    }
-  }
-  if (points.length < 32) return null;
-
-  const diag = Math.hypot(width, height);
-  const rhoStep = Math.max(3, Math.round(diag / 280));
-  let best = null;
-  for (let angle = 0; angle < 180; angle += 4) {
-    const theta = (angle * Math.PI) / 180;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const bins = new Map();
-    for (const point of points) {
-      const rho = Math.round((point.x * cos + point.y * sin) / rhoStep);
-      bins.set(rho, (bins.get(rho) || 0) + 1);
-    }
-    for (const [rho, count] of bins.entries()) {
-      if (!best || count > best.count) {
-        best = { angle, theta, cos, sin, rho: rho * rhoStep, count };
-      }
-    }
-  }
-  if (!best || best.count < 18) return null;
-
-  const ux = -best.sin;
-  const uy = best.cos;
-  const linePoints = points
-    .filter((point) => Math.abs(point.x * best.cos + point.y * best.sin - best.rho) <= rhoStep * 1.8)
-    .map((point) => ({
-      ...point,
-      projection: point.x * ux + point.y * uy,
-    }))
-    .sort((a, b) => a.projection - b.projection);
-  if (linePoints.length < 16) return null;
-
-  const first = linePoints[0];
-  const last = linePoints[linePoints.length - 1];
-  const length = Math.hypot(last.x - first.x, last.y - first.y);
-  if (length < Math.min(width, height) * 0.08) return null;
-
-  return {
-    x1: clamp(first.x, 0, width),
-    y1: clamp(first.y, 0, height),
-    x2: clamp(last.x, 0, width),
-    y2: clamp(last.y, 0, height),
-    confidence: clamp(best.count / Math.max(1, linePoints.length), 0, 1),
-  };
-}
-
-function getLayerDefaultName(layer) {
-  if (!layer) return "Layer";
-  if (layer.kind === "upload") return "Template";
-  if (layer.kind === "free-cut") return "Free Cut";
-  if (layer.kind === "free-line") return "Free Line";
-  return "Fragment";
-}
-
-function getPolygonBounds(points) {
-  if (!Array.isArray(points) || points.length === 0) return null;
-
-  let minX = points[0].x;
-  let minY = points[0].y;
-  let maxX = points[0].x;
-  let maxY = points[0].y;
-
-  for (let index = 1; index < points.length; index += 1) {
-    const point = points[index];
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
-  }
-
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY,
-  };
-}
-
-function applyBrushToCanvas(canvas, canvasPt, canvasRadius, mode, strength, color) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const s = Math.max(0.01, Math.min(1, strength));
-  if (mode === "erase") {
-    ctx.save();
-    ctx.globalCompositeOperation = "destination-out";
-    const g = ctx.createRadialGradient(canvasPt.x, canvasPt.y, 0, canvasPt.x, canvasPt.y, canvasRadius);
-    g.addColorStop(0, `rgba(0,0,0,${s})`);
-    g.addColorStop(0.6, `rgba(0,0,0,${s * 0.5})`);
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(canvasPt.x, canvasPt.y, canvasRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  } else if (mode === "color") {
-    const r = parseInt(color.slice(1, 3), 16) || 0;
-    const gr = parseInt(color.slice(3, 5), 16) || 0;
-    const b = parseInt(color.slice(5, 7), 16) || 0;
-    const g = ctx.createRadialGradient(canvasPt.x, canvasPt.y, 0, canvasPt.x, canvasPt.y, canvasRadius);
-    g.addColorStop(0, `rgba(${r},${gr},${b},${s})`);
-    g.addColorStop(0.6, `rgba(${r},${gr},${b},${s * 0.5})`);
-    g.addColorStop(1, `rgba(${r},${gr},${b},0)`);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(canvasPt.x, canvasPt.y, canvasRadius, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (mode === "blur") {
-    const bx = Math.max(0, Math.floor(canvasPt.x - canvasRadius));
-    const by = Math.max(0, Math.floor(canvasPt.y - canvasRadius));
-    const bw = Math.min(canvas.width - bx, Math.ceil(canvasRadius * 2 + 2));
-    const bh = Math.min(canvas.height - by, Math.ceil(canvasRadius * 2 + 2));
-    if (bw <= 0 || bh <= 0) return;
-    const tmp = document.createElement("canvas");
-    tmp.width = bw;
-    tmp.height = bh;
-    const tCtx = tmp.getContext("2d");
-    if (!tCtx) return;
-    const blurPx = Math.max(2, Math.round(canvasRadius * 0.35));
-    tCtx.filter = `blur(${blurPx}px)`;
-    tCtx.drawImage(canvas, bx, by, bw, bh, 0, 0, bw, bh);
-    tCtx.filter = "none";
-    tCtx.globalCompositeOperation = "destination-in";
-    const cx = canvasPt.x - bx;
-    const cy = canvasPt.y - by;
-    const mg = tCtx.createRadialGradient(cx, cy, 0, cx, cy, canvasRadius);
-    mg.addColorStop(0, `rgba(0,0,0,${s})`);
-    mg.addColorStop(0.7, `rgba(0,0,0,${s * 0.6})`);
-    mg.addColorStop(1, "rgba(0,0,0,0)");
-    tCtx.fillStyle = mg;
-    tCtx.beginPath();
-    tCtx.arc(cx, cy, canvasRadius, 0, Math.PI * 2);
-    tCtx.fill();
-    ctx.drawImage(tmp, bx, by);
-  } else if (mode === "transparent") {
-    const bx = Math.max(0, Math.floor(canvasPt.x - canvasRadius));
-    const by = Math.max(0, Math.floor(canvasPt.y - canvasRadius));
-    const bw = Math.min(canvas.width - bx, Math.ceil(canvasRadius * 2 + 2));
-    const bh = Math.min(canvas.height - by, Math.ceil(canvasRadius * 2 + 2));
-    if (bw <= 0 || bh <= 0) return;
-    const imageData = ctx.getImageData(bx, by, bw, bh);
-    const data = imageData.data;
-    const cx = canvasPt.x - bx;
-    const cy = canvasPt.y - by;
-    for (let py = 0; py < bh; py++) {
-      for (let px = 0; px < bw; px++) {
-        const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
-        if (dist > canvasRadius) continue;
-        const falloff = Math.cos((dist / canvasRadius) * (Math.PI / 2));
-        const reduction = s * falloff;
-        const idx = (py * bw + px) * 4;
-        data[idx + 3] = Math.round(data[idx + 3] * (1 - reduction));
-      }
-    }
-    ctx.putImageData(imageData, bx, by);
-  }
-}
-
-function tracePolygonPath(ctx, points) {
-  if (!ctx || !Array.isArray(points) || points.length === 0) return;
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  for (let index = 1; index < points.length; index += 1) {
-    ctx.lineTo(points[index].x, points[index].y);
-  }
-  ctx.closePath();
-}
-
-function getFreeLineCurveStrength(shape) {
-  const fallback =
-    shape?.drawMode === "point"
-      ? DEFAULT_FREE_LINE_CURVE_POINT
-      : DEFAULT_FREE_LINE_CURVE_FREEHAND;
-  return clamp(
-    Number.isFinite(shape?.curveStrength) ? shape.curveStrength : fallback,
-    0,
-    1,
-  );
-}
-
-function getSmoothClosedSegmentControls(points, index, smoothness = 0) {
-  const len = points.length;
-  const p0 = points[(index - 1 + len) % len];
-  const p1 = points[index];
-  const p2 = points[(index + 1) % len];
-  const p3 = points[(index + 2) % len];
-  const tension = clamp(smoothness, 0, 1) * 0.9;
-  const autoCp1 = {
-    x: p1.x + ((p2.x - p0.x) / 6) * tension,
-    y: p1.y + ((p2.y - p0.y) / 6) * tension,
-  };
-  const autoCp2 = {
-    x: p2.x - ((p3.x - p1.x) / 6) * tension,
-    y: p2.y - ((p3.y - p1.y) / 6) * tension,
-  };
-
-  return {
-    cp1:
-      Number.isFinite(p1.handleOutX) && Number.isFinite(p1.handleOutY)
-        ? { x: p1.handleOutX, y: p1.handleOutY }
-        : autoCp1,
-    cp2:
-      Number.isFinite(p2.handleInX) && Number.isFinite(p2.handleInY)
-        ? { x: p2.handleInX, y: p2.handleInY }
-        : autoCp2,
-  };
-}
-
-function traceSmoothClosedPath(ctx, points, smoothness = 0) {
-  if (!ctx || !Array.isArray(points) || points.length === 0) return;
-  const hasCustomCurveHandles = points.some(
-    (point) =>
-      Number.isFinite(point?.handleInX) ||
-      Number.isFinite(point?.handleInY) ||
-      Number.isFinite(point?.handleOutX) ||
-      Number.isFinite(point?.handleOutY),
-  );
-  if (points.length < 3 || (smoothness <= 0.01 && !hasCustomCurveHandles)) {
-    tracePolygonPath(ctx, points);
-    return;
-  }
-
-  const len = points.length;
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-
-  for (let index = 0; index < len; index += 1) {
-    const p2 = points[(index + 1) % len];
-    const { cp1, cp2 } = getSmoothClosedSegmentControls(
-      points,
-      index,
-      smoothness,
-    );
-    ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
-  }
-
-  ctx.closePath();
-}
-
-function pointInPolygon(point, polygon) {
-  if (!Array.isArray(polygon) || polygon.length < 3) return false;
-  let inside = false;
-
-  for (
-    let currentIndex = 0, previousIndex = polygon.length - 1;
-    currentIndex < polygon.length;
-    previousIndex = currentIndex, currentIndex += 1
-  ) {
-    const currentPoint = polygon[currentIndex];
-    const previousPoint = polygon[previousIndex];
-    const intersects =
-      currentPoint.y > point.y !== previousPoint.y > point.y &&
-      point.x <
-        ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) /
-          (previousPoint.y - currentPoint.y || Number.EPSILON) +
-          currentPoint.x;
-    if (intersects) inside = !inside;
-  }
-
-  return inside;
-}
-
-function projectPointOnSegment(point, start, end) {
-  const vx = end.x - start.x;
-  const vy = end.y - start.y;
-  const segmentLengthSq = vx * vx + vy * vy;
-  if (segmentLengthSq <= Number.EPSILON) {
-    return { x: start.x, y: start.y, t: 0 };
-  }
-  const t = clamp(
-    ((point.x - start.x) * vx + (point.y - start.y) * vy) / segmentLengthSq,
-    0,
-    1,
-  );
-  return {
-    x: start.x + vx * t,
-    y: start.y + vy * t,
-    t,
-  };
-}
-
-function buildFreeCutLayerFromPoints({
-  sourceImage,
-  sourceOffsetX = 0,
-  sourceOffsetY = 0,
-  polygonPoints,
-  layerId,
-  name,
-}) {
-  if (
-    typeof document === "undefined" ||
-    !sourceImage ||
-    !Array.isArray(polygonPoints) ||
-    polygonPoints.length < MIN_FREE_CUT_POINTS
-  ) {
-    return null;
-  }
-
-  const rawBounds = getPolygonBounds(polygonPoints);
-  if (!rawBounds) return null;
-
-  const sourceX = Math.floor(rawBounds.x);
-  const sourceY = Math.floor(rawBounds.y);
-  const sourceRight = Math.ceil(rawBounds.x + rawBounds.width);
-  const sourceBottom = Math.ceil(rawBounds.y + rawBounds.height);
-  const width = Math.max(1, sourceRight - sourceX);
-  const height = Math.max(1, sourceBottom - sourceY);
-  if (width < 8 || height < 8) return null;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-
-  const normalizedPoints = polygonPoints.map((point) => ({
-    x: point.x - sourceX,
-    y: point.y - sourceY,
-  }));
-
-  // Gambar dulu tanpa clip
-  ctx.drawImage(
-    sourceImage,
-    sourceOffsetX + sourceX,
-    sourceOffsetY + sourceY,
-    width,
-    height,
-    0,
-    0,
-    width,
-    height,
-  );
-
-  // Buat mask canvas dengan feathering (blur) di tepi polygon
-  const maskCanvas = document.createElement("canvas");
-  maskCanvas.width = width;
-  maskCanvas.height = height;
-  const maskCtx = maskCanvas.getContext("2d");
-  if (maskCtx) {
-    const feather = Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
-    maskCtx.filter = `blur(${feather}px)`;
-    maskCtx.fillStyle = "#ffffff";
-    tracePolygonPath(maskCtx, normalizedPoints);
-    maskCtx.fill();
-    maskCtx.filter = "none";
-  }
-
-  // Terapkan mask sebagai alpha channel
-  ctx.globalCompositeOperation = "destination-in";
-  ctx.drawImage(maskCanvas, 0, 0);
-  ctx.globalCompositeOperation = "source-over";
-
-  let imageSrc = "";
-  try {
-    imageSrc = canvas.toDataURL("image/png");
-  } catch {
-    imageSrc = "";
-  }
-
-  return {
-    id: layerId,
-    kind: "free-cut",
-    image: canvas,
-    imageSrc,
-    name: name || `Free Cut ${layerId}`,
-    sourceX: 0,
-    sourceY: 0,
-    sourceWidth: width,
-    sourceHeight: height,
-    displayWidth: width,
-    displayHeight: height,
-    centerX: sourceX + width / 2,
-    centerY: sourceY + height / 2,
-    rotation: 0,
-    flipX: false,
-    flipY: false,
-    opacity: 1,
-    contrast: 100,
-    level: 100,
-    lockScale: false,
-    hidden: false,
-    curveStrength: DEFAULT_FREE_LINE_CURVE_POINT,
-    maskPoints: normalizedPoints.map((point) => ({
-      x: point.x - width / 2,
-      y: point.y - height / 2,
-    })),
-  };
-}
-
-function buildFreeCutLayerFromLayerPoints({
-  sourceLayer,
-  sourceImage,
-  polygonPoints,
-  layerId,
-  name,
-}) {
-  if (
-    typeof document === "undefined" ||
-    !sourceLayer ||
-    !sourceImage ||
-    !Array.isArray(polygonPoints) ||
-    polygonPoints.length < MIN_FREE_CUT_POINTS
-  ) {
-    return null;
-  }
-
-  const sourceWidth = Math.max(1, Number(sourceLayer.sourceWidth || 0));
-  const sourceHeight = Math.max(1, Number(sourceLayer.sourceHeight || 0));
-  const displaySize = getLayerDisplaySize(sourceLayer);
-  const displayScaleX = Math.max(1, displaySize.width) / sourceWidth;
-  const displayScaleY = Math.max(1, displaySize.height) / sourceHeight;
-
-  const sourcePoints = polygonPoints.map((point) => {
-    const maskPoint = toLayerMaskPoint(point, sourceLayer, {
-      clampToBounds: true,
-    });
-    return {
-      x: clamp(maskPoint.x + sourceWidth / 2, 0, sourceWidth),
-      y: clamp(maskPoint.y + sourceHeight / 2, 0, sourceHeight),
-    };
-  });
-
-  const rawBounds = getPolygonBounds(sourcePoints);
-  if (!rawBounds) return null;
-
-  const sourceX = clamp(Math.floor(rawBounds.x), 0, sourceWidth - 1);
-  const sourceY = clamp(Math.floor(rawBounds.y), 0, sourceHeight - 1);
-  const sourceRight = clamp(
-    Math.ceil(rawBounds.x + rawBounds.width),
-    sourceX + 1,
-    sourceWidth,
-  );
-  const sourceBottom = clamp(
-    Math.ceil(rawBounds.y + rawBounds.height),
-    sourceY + 1,
-    sourceHeight,
-  );
-  const width = Math.max(1, sourceRight - sourceX);
-  const height = Math.max(1, sourceBottom - sourceY);
-  if (width < 8 || height < 8) return null;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-
-  const normalizedSourcePoints = sourcePoints.map((point) => ({
-    x: point.x - sourceX,
-    y: point.y - sourceY,
-  }));
-
-  ctx.save();
-  ctx.filter = getLayerFilterValue(sourceLayer);
-  ctx.drawImage(
-    sourceImage,
-    Number(sourceLayer.sourceX || 0) + sourceX,
-    Number(sourceLayer.sourceY || 0) + sourceY,
-    width,
-    height,
-    0,
-    0,
-    width,
-    height,
-  );
-  ctx.restore();
-
-  const maskCanvas = document.createElement("canvas");
-  maskCanvas.width = width;
-  maskCanvas.height = height;
-  const maskCtx = maskCanvas.getContext("2d");
-  if (maskCtx) {
-    const feather = Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
-    maskCtx.filter = `blur(${feather}px)`;
-    maskCtx.fillStyle = "#ffffff";
-    tracePolygonPath(maskCtx, normalizedSourcePoints);
-    maskCtx.fill();
-    maskCtx.filter = "none";
-  }
-  ctx.globalCompositeOperation = "destination-in";
-  ctx.drawImage(maskCanvas, 0, 0);
-  ctx.globalCompositeOperation = "source-over";
-
-  let imageSrc = "";
-  try {
-    imageSrc = canvas.toDataURL("image/png");
-  } catch {
-    imageSrc = "";
-  }
-
-  const localCenter = {
-    x: (sourceX + width / 2 - sourceWidth / 2) * displayScaleX,
-    y: (sourceY + height / 2 - sourceHeight / 2) * displayScaleY,
-  };
-  const layerCenter = transformLayerLocalPoint(sourceLayer, localCenter);
-
-  return {
-    id: layerId,
-    kind: "free-cut",
-    image: canvas,
-    imageSrc,
-    name: name || `Free Cut ${layerId}`,
-    sourceX: 0,
-    sourceY: 0,
-    sourceWidth: width,
-    sourceHeight: height,
-    displayWidth: Math.max(1, width * displayScaleX),
-    displayHeight: Math.max(1, height * displayScaleY),
-    centerX: layerCenter.x,
-    centerY: layerCenter.y,
-    rotation: Number(sourceLayer.rotation || 0),
-    flipX: Boolean(sourceLayer.flipX),
-    flipY: Boolean(sourceLayer.flipY),
-    opacity: 1,
-    contrast: 100,
-    level: 100,
-    lockScale: false,
-    hidden: false,
-    sourceLayerId: sourceLayer.id,
-    curveStrength: DEFAULT_FREE_LINE_CURVE_POINT,
-    maskPoints: normalizedSourcePoints.map((point) => ({
-      x: point.x - width / 2,
-      y: point.y - height / 2,
-    })),
-  };
-}
-
-function buildFreeLineLayerFromPoints({
-  polygonPoints,
-  layerId,
-  name,
-  fillColor = DEFAULT_FREE_LINE_COLOR,
-  drawMode = DEFAULT_FREE_LINE_MODE,
-  curveStrength,
-}) {
-  if (
-    !Array.isArray(polygonPoints) ||
-    polygonPoints.length < MIN_FREE_CUT_POINTS
-  ) {
-    return null;
-  }
-
-  const rawBounds = getPolygonBounds(polygonPoints);
-  if (!rawBounds) return null;
-
-  const sourceX = Math.floor(rawBounds.x);
-  const sourceY = Math.floor(rawBounds.y);
-  const sourceRight = Math.ceil(rawBounds.x + rawBounds.width);
-  const sourceBottom = Math.ceil(rawBounds.y + rawBounds.height);
-  const width = Math.max(1, sourceRight - sourceX);
-  const height = Math.max(1, sourceBottom - sourceY);
-  if (width < 8 || height < 8) return null;
-
-  return {
-    id: layerId,
-    kind: "free-line",
-    name: name || `Free Line ${layerId}`,
-    sourceX: 0,
-    sourceY: 0,
-    sourceWidth: width,
-    sourceHeight: height,
-    displayWidth: width,
-    displayHeight: height,
-    centerX: sourceX + width / 2,
-    centerY: sourceY + height / 2,
-    rotation: 0,
-    flipX: false,
-    flipY: false,
-    opacity: 0.85,
-    contrast: 100,
-    level: 100,
-    lockScale: false,
-    hidden: false,
-    fillColor,
-    drawMode,
-    curveStrength: clamp(
-      Number.isFinite(curveStrength)
-        ? curveStrength
-        : drawMode === "point"
-          ? DEFAULT_FREE_LINE_CURVE_POINT
-          : DEFAULT_FREE_LINE_CURVE_FREEHAND,
-      0,
-      1,
-    ),
-    maskPoints: polygonPoints.map((point) => ({
-      x: point.x - (sourceX + width / 2),
-      y: point.y - (sourceY + height / 2),
-    })),
-  };
-}
-
-function getTemplateKey(template) {
-  const safeName = String(template?.name || "")
-    .trim()
-    .toLowerCase();
-  const safeSrc =
-    typeof template?.imageSrc === "string"
-      ? template.imageSrc.slice(0, 120)
-      : "";
-  return `${safeName}::${safeSrc}`;
-}
-
-function mergeTemplateLibraryLists(primaryTemplates, fallbackTemplates) {
-  const merged = [];
-  const seen = new Set();
-  for (const item of [...primaryTemplates, ...fallbackTemplates]) {
-    if (!item || typeof item.imageSrc !== "string" || !item.imageSrc) continue;
-    const key = getTemplateKey(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(item);
-  }
-  return merged.slice(0, 60);
-}
-
-function getOrientedSize(width, height, rotation) {
-  if (rotation === 90 || rotation === 270) {
-    return { width: height, height: width };
-  }
-
-  return { width, height };
-}
-
-function orientPoint(x, y, width, height, rotation, flipX, flipY) {
-  let nx = x;
-  let ny = y;
-
-  if (flipX) nx = width - nx;
-  if (flipY) ny = height - ny;
-
-  if (rotation === 90) {
-    return { x: height - ny, y: nx };
-  }
-
-  if (rotation === 180) {
-    return { x: width - nx, y: height - ny };
-  }
-
-  if (rotation === 270) {
-    return { x: ny, y: width - nx };
-  }
-
-  return { x: nx, y: ny };
-}
-
-function inverseOrientPoint(x, y, width, height, rotation, flipX, flipY) {
-  let nx = x;
-  let ny = y;
-
-  if (rotation === 90) {
-    nx = y;
-    ny = height - x;
-  } else if (rotation === 180) {
-    nx = width - x;
-    ny = height - y;
-  } else if (rotation === 270) {
-    nx = width - y;
-    ny = x;
-  }
-
-  if (flipX) nx = width - nx;
-  if (flipY) ny = height - ny;
-
-  return { x: nx, y: ny };
-}
-
-function getLineLength(line) {
-  return Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
-}
-
-function getDistance(a, b) {
-  return Math.hypot(b.x - a.x, b.y - a.y);
-}
-
-function getAngleDegrees(a, vertex, b) {
-  const v1x = a.x - vertex.x;
-  const v1y = a.y - vertex.y;
-  const v2x = b.x - vertex.x;
-  const v2y = b.y - vertex.y;
-  const mag1 = Math.hypot(v1x, v1y);
-  const mag2 = Math.hypot(v2x, v2y);
-  if (mag1 === 0 || mag2 === 0) return 0;
-  const cos = clamp((v1x * v2x + v1y * v2y) / (mag1 * mag2), -1, 1);
-  return (Math.acos(cos) * 180) / Math.PI;
-}
-
-function getAngleResultOpacity(angle) {
-  const rawValue = Number.isFinite(angle?.resultOpacity)
-    ? angle.resultOpacity
-    : Number.isFinite(angle?.labelOpacity)
-      ? angle.labelOpacity
-      : DEFAULT_LABEL_OPACITY;
-  return clamp(rawValue, 0.08, 1);
-}
-
-function getHkaLineColor(hka) {
-  return hka?.lineColor || DEFAULT_HKA_LINE_COLOR;
-}
-
-function getHkaModeDefinition(mode = "full") {
-  return HKA_MODE_DEFINITIONS[mode] || HKA_MODE_DEFINITIONS.full;
-}
-
-function cloneOptionalPoint(point) {
-  return point ? { ...point } : null;
-}
-
-function getHkaPointEntries(hka) {
-  const definition = getHkaModeDefinition(hka?.mode);
-  return definition.points
-    .map((pointDef) =>
-      hka?.[pointDef.key]
-        ? {
-            ...pointDef,
-            point: hka[pointDef.key],
-          }
-        : null,
-    )
-    .filter(Boolean);
-}
-
-function getAnglePointEntries(angle) {
-  if (!angle) return [];
-  return [
-    { key: "p1", point: angle.p1 },
-    { key: "p2", point: angle.p2 },
-    { key: "p3", point: angle.p3 },
-  ].filter((entry) => entry.point);
-}
-
-function cloneHkaItem(item) {
-  const definition = getHkaModeDefinition(item?.mode);
-  const cloned = {
-    ...item,
-    mode: definition.key,
-    direction: item?.direction || "varus",
-    side: item?.side || "right",
-    showArc: definition.key === "full" ? item?.showArc !== false : false,
-    lineColor: item?.lineColor || DEFAULT_HKA_LINE_COLOR,
-    labelOffsetX: Number.isFinite(item?.labelOffsetX)
-      ? item.labelOffsetX
-      : DEFAULT_HKA_LABEL_OFFSET_X,
-    labelOffsetY: Number.isFinite(item?.labelOffsetY)
-      ? item.labelOffsetY
-      : DEFAULT_HKA_LABEL_OFFSET_Y,
-  };
-
-  for (const pointDef of definition.points) {
-    cloned[pointDef.key] = cloneOptionalPoint(item?.[pointDef.key]);
-  }
-
-  return cloned;
-}
-
-function getHkaDraftNotice(mode, pointsPlaced) {
-  const definition = getHkaModeDefinition(mode);
-  const remaining = definition.points.length - pointsPlaced;
-  if (remaining <= 0) return `${definition.label} siap dibuat.`;
-  return `${definition.label}: pilih ${remaining} titik lagi (${definition.points
-    .slice(pointsPlaced)
-    .map((item) => item.promptLabel)
-    .join(" -> ")}).`;
-}
-
-function isMobilePrecisionInteractionMode(mode) {
-  return [
-    "move-handle",
-    "move-angle-handle",
-    "move-circle-center",
-    "move-circle-radius",
-    "move-circle-diameter",
-    "move-circle-label",
-    "move-hka-handle",
-    "move-planning-guide-handle",
-    "move-free-line-point",
-    "move-free-line-curve-handle",
-    "move-annotation",
-    "move-annotation-pointer",
-  ].includes(mode);
-}
-
-function shouldAutoZoomMobilePrecisionInteractionMode(mode) {
-  return [
-    "move-handle",
-    "move-angle-handle",
-    "move-circle-center",
-    "move-circle-radius",
-    "move-circle-diameter",
-    "move-circle-label",
-    "move-hka-handle",
-    "move-planning-guide-handle",
-    "move-free-line-point",
-    "move-free-line-curve-handle",
-  ].includes(mode);
-}
-
-function getMobileInteractionLabel(mode) {
-  if (!mode) return "Edit";
-  if (mode.includes("hka")) return "HKA";
-  if (mode.includes("angle")) return "Angle";
-  if (mode.includes("circle")) return "Circle";
-  if (mode.includes("planning-guide")) return "Guide";
-  if (mode.includes("cut-layer") || mode.includes("free-line")) return "Layer";
-  if (mode.includes("annotation")) return "Note";
-  if (mode.includes("line")) return "Line";
-  return "Edit";
-}
-
-function getHkaMeasurementResult(hka) {
-  const mode = hka?.mode || "full";
-  const definition = getHkaModeDefinition(mode);
-  const isComplete = definition.points.every((pointDef) => hka?.[pointDef.key]);
-
-  if (!isComplete) {
-    return {
-      mode,
-      absoluteDeviation: null,
-      signedDeviation: null,
-      direction: hka?.direction || "varus",
-      side: hka?.side || "right",
-      label: mode === "fta" ? "FTA belum lengkap" : mode === "jla" ? "JLA belum lengkap" : "Belum lengkap",
-      modeLabel: definition.modeLabel,
-      fta: null,
-      predictedHka: null,
-      jla: null,
-    };
-  }
-
-  if (mode === "fta") {
-    const fta = calculateFTA({
-      femurMidshaft10cm: hka.femurMidshaft10cm,
-      femoralNotch: hka.femoralNotch,
-      tibiaMidshaft4cm: hka.tibiaMidshaft4cm,
-      tibiaMidshaft10cm: hka.tibiaMidshaft10cm,
-    });
-    const predictedHka = predictHKAAFromFTA(fta);
-
-    return {
-      mode,
-      absoluteDeviation: predictedHka,
-      signedDeviation: null,
-      direction: hka.direction || "varus",
-      side: hka.side || "right",
-      label:
-        fta !== null && predictedHka !== null
-          ? `FTA ${fta.toFixed(1)}° -> HKAA ${predictedHka.toFixed(1)}°`
-          : "FTA belum lengkap",
-      modeLabel: definition.modeLabel,
-      fta,
-      predictedHka,
-      jla: null,
-    };
-  }
-
-  if (mode === "jla") {
-    const jla = computeJLA({
-      femoralHead:       hka.hip,
-      kneeCenter:        hka.knee,
-      ankleCenter:       hka.ankle,
-      femCondyleMedial:  hka.femCondyleMedial,
-      femCondyleLateral: hka.femCondyleLateral,
-      tibPlateauMedial:  hka.tibPlateauMedial,
-      tibPlateauLateral: hka.tibPlateauLateral,
-    });
-    return {
-      mode,
-      absoluteDeviation: jla?.JLCA ?? null,
-      signedDeviation: null,
-      direction: hka?.direction || "varus",
-      side: hka?.side || "right",
-      label: jla ? `LDFA ${jla.LDFA}° · MPTA ${jla.MPTA}°` : "JLA belum lengkap",
-      modeLabel: definition.modeLabel,
-      fta: null,
-      predictedHka: null,
-      jla,
-    };
-  }
-
-  const direction = hka.direction || "varus";
-  const side = hka.side || "right";
-  const result = calculateFullLengthHKA({
-    femoralHead: hka.hip,
-    kneeCenter: hka.knee,
-    ankleCenter: hka.ankle,
-    side,
-  });
-  const absoluteDeviation = result?.absoluteDeviation ?? null;
-  const signedDeviation = normalizeHkaSignedDeviation(
-    getHkaSignedCoronalAngle(hka.hip, hka.knee, hka.ankle),
-  );
-
-  return {
-    mode,
-    absoluteDeviation,
-    signedDeviation,
-    direction,
-    side,
-    label: classifyAlignment(absoluteDeviation, direction),
-    modeLabel: definition.modeLabel,
-    fta: null,
-    predictedHka: null,
-    jla: null,
-  };
-}
-
-function normalizeHkaSide(side) {
-  return String(side || "").toLowerCase() === "left" ? "left" : "right";
-}
-
-function normalizeHkaSignedDeviation(rawAngle) {
-  if (!Number.isFinite(rawAngle)) return null;
-  let normalized = rawAngle;
-  if (normalized > 90) normalized -= 180;
-  if (normalized < -90) normalized += 180;
-  return normalized;
-}
-
-function inferHkaDirectionFromSignedDeviation(signedDeviation, side, fallback = "varus") {
-  if (!Number.isFinite(signedDeviation) || Math.abs(signedDeviation) < 0.2) {
-    return fallback === "valgus" ? "valgus" : "varus";
-  }
-  const normalizedSide = normalizeHkaSide(side);
-  // Konvensi radiologis: kaki kanan tampil di KIRI gambar → medial ke KANAN layar
-  // Varus kanan = lutut lateral = ke kiri → deviation < 0
-  // Valgus kanan = lutut medial = ke kanan → deviation > 0
-  const isVarus =
-    normalizedSide === "right" ? signedDeviation < 0 : signedDeviation > 0;
-  return isVarus ? "varus" : "valgus";
-}
-
-function inferHkaDirectionFromPoints(hip, knee, ankle, side, fallback = "varus") {
-  return inferHkaDirectionFromSignedDeviation(
-    normalizeHkaSignedDeviation(getHkaSignedCoronalAngle(hip, knee, ankle)),
-    side,
-    fallback,
-  );
-}
-
-function getHkaSideLabel(side) {
-  return normalizeHkaSide(side) === "left" ? "Kaki kiri" : "Kaki kanan";
-}
-
-function getHkaCanvasLabelText(measurement, expanded = false) {
-  if (!measurement) return "HKA";
-
-  if (measurement.mode === "fta") {
-    if (measurement.fta === null) return "FTA";
-    if (expanded && measurement.predictedHka !== null) {
-      return `FTA ${measurement.fta.toFixed(1)}° | HKAA ${measurement.predictedHka.toFixed(1)}°`;
-    }
-    return `FTA ${measurement.fta.toFixed(1)}°`;
-  }
-
-  if (measurement.mode === "jla") {
-    const jla = measurement.jla;
-    if (!jla) return "JLA";
-    if (expanded) {
-      return `LDFA ${jla.LDFA}° | MPTA ${jla.MPTA}° | JLCA ${jla.JLCA}°`;
-    }
-    return `${jla.cpakType} | LDFA ${jla.LDFA}°`;
-  }
-
-  if (measurement.absoluteDeviation === null) return "HKA";
-  const sidePrefix = normalizeHkaSide(measurement.side) === "left" ? "L" : "R";
-  if (expanded) {
-    return `${sidePrefix} ${measurement.label} (${measurement.absoluteDeviation.toFixed(1)}°)`;
-  }
-  if (measurement.absoluteDeviation < 3) {
-    return `${sidePrefix} Neutral ${measurement.absoluteDeviation.toFixed(1)}°`;
-  }
-  return `${sidePrefix} ${
-    measurement.direction === "valgus" ? "Valgus" : "Varus"
-  } ${measurement.absoluteDeviation.toFixed(1)}°`;
-}
-
-function getAngleCanvasLabelText(angle, expanded = false) {
-  if (!angle) return "ANGLE";
-  const value = getAngleDegrees(angle.p1, angle.p2, angle.p3);
-  if (!Number.isFinite(value)) return "ANGLE";
-  if (expanded) {
-    return `ANGLE: ${value.toFixed(1)}°`;
-  }
-  return `${value.toFixed(1)}°`;
-}
-
-function getCircleDiameterText(
-  circle,
-  mmPerPixel,
-  measurementUnit = "cm",
-  decimals = 1,
-) {
-  if (!circle) return "-";
-  if (mmPerPixel !== null) {
-    const diameterMm = circle.radius * 2 * mmPerPixel;
-    return measurementUnit === "cm"
-      ? `${(diameterMm / 10).toFixed(decimals)} ${measurementUnit}`
-      : `${diameterMm.toFixed(decimals)} ${measurementUnit}`;
-  }
-  return `${(circle.radius * 2).toFixed(decimals)} px`;
-}
-
-function getCircleCanvasLabelText(
-  circle,
-  mmPerPixel,
-  measurementUnit = "cm",
-  expanded = false,
-) {
-  if (!circle) return "DIA";
-  if (circle.source === "centerFinder") {
-    return expanded
-      ? `CTR | DIA: ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 2)}`
-      : "CTR";
-  }
-  return expanded
-    ? `DIA: ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 2)}`
-    : `DIA ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 1)}`;
-}
-
-function getAngleArcGeometry(a, vertex, b) {
-  const v1x = a.x - vertex.x;
-  const v1y = a.y - vertex.y;
-  const v2x = b.x - vertex.x;
-  const v2y = b.y - vertex.y;
-  const len1 = Math.hypot(v1x, v1y);
-  const len2 = Math.hypot(v2x, v2y);
-
-  if (!len1 || !len2) return null;
-
-  const startAngle = Math.atan2(v1y, v1x);
-  let sweep = Math.atan2(v2y, v2x) - startAngle;
-  while (sweep <= -Math.PI) sweep += Math.PI * 2;
-  while (sweep > Math.PI) sweep -= Math.PI * 2;
-
-  return {
-    radius: clamp(Math.min(len1, len2) * 0.28, 14, 36),
-    startAngle,
-    endAngle: startAngle + sweep,
-    counterclockwise: sweep < 0,
-  };
-}
-
-function degToRad(deg) {
-  return (deg * Math.PI) / 180;
-}
-
-function buildValgusCutGeometry(anchorStart, anchorEnd, params) {
-  const axis = {
-    x: anchorEnd.x - anchorStart.x,
-    y: anchorEnd.y - anchorStart.y,
-  };
-  const axisLen = Math.hypot(axis.x, axis.y);
-  if (!axisLen) return null;
-  const axisUnit = { x: axis.x / axisLen, y: axis.y / axisLen };
-  const baseline = { x: -axisUnit.y, y: axisUnit.x };
-  const sign = params.side === "Right" ? 1 : -1;
-  const theta = degToRad((Number(params.angleDeg) || 0) * sign);
-  const cos = Math.cos(theta);
-  const sin = Math.sin(theta);
-  const cutDir = {
-    x: baseline.x * cos - baseline.y * sin,
-    y: baseline.x * sin + baseline.y * cos,
-  };
-  const cutCenter = {
-    x: anchorEnd.x + axisUnit.x * (Number(params.offsetPx) || 0),
-    y: anchorEnd.y + axisUnit.y * (Number(params.offsetPx) || 0),
-  };
-  const half = Math.max(10, (Number(params.lineLengthPx) || 100) / 2);
-  return {
-    baseA: {
-      x: cutCenter.x - baseline.x * 60,
-      y: cutCenter.y - baseline.y * 60,
-    },
-    baseB: {
-      x: cutCenter.x + baseline.x * 60,
-      y: cutCenter.y + baseline.y * 60,
-    },
-    cutA: {
-      x: cutCenter.x - cutDir.x * half,
-      y: cutCenter.y - cutDir.y * half,
-    },
-    cutB: {
-      x: cutCenter.x + cutDir.x * half,
-      y: cutCenter.y + cutDir.y * half,
-    },
-    cutCenter,
-  };
-}
-
-function buildTibialSlopeGeometry(anchorStart, anchorEnd, params) {
-  const axis = {
-    x: anchorEnd.x - anchorStart.x,
-    y: anchorEnd.y - anchorStart.y,
-  };
-  const axisLen = Math.hypot(axis.x, axis.y);
-  if (!axisLen) return null;
-  const axisUnit = { x: axis.x / axisLen, y: axis.y / axisLen };
-  const baseline = { x: -axisUnit.y, y: axisUnit.x };
-  const sign = params.posteriorSide === "Right" ? 1 : -1;
-  const theta = degToRad((Number(params.angleDeg) || 0) * sign);
-  const cos = Math.cos(theta);
-  const sin = Math.sin(theta);
-  const slopeDir = {
-    x: baseline.x * cos - baseline.y * sin,
-    y: baseline.x * sin + baseline.y * cos,
-  };
-  const cutCenter = {
-    x: anchorStart.x + axisUnit.x * (Number(params.offsetPx) || 0),
-    y: anchorStart.y + axisUnit.y * (Number(params.offsetPx) || 0),
-  };
-  const half = Math.max(10, (Number(params.lineLengthPx) || 90) / 2);
-  return {
-    baseA: {
-      x: cutCenter.x - baseline.x * 60,
-      y: cutCenter.y - baseline.y * 60,
-    },
-    baseB: {
-      x: cutCenter.x + baseline.x * 60,
-      y: cutCenter.y + baseline.y * 60,
-    },
-    cutA: {
-      x: cutCenter.x - slopeDir.x * half,
-      y: cutCenter.y - slopeDir.y * half,
-    },
-    cutB: {
-      x: cutCenter.x + slopeDir.x * half,
-      y: cutCenter.y + slopeDir.y * half,
-    },
-    cutCenter,
-  };
-}
-
-function buildTibialCutGeometry(anchorStart, anchorEnd, params) {
-  const axis = {
-    x: anchorEnd.x - anchorStart.x,
-    y: anchorEnd.y - anchorStart.y,
-  };
-  const axisLen = Math.hypot(axis.x, axis.y);
-  if (!axisLen) return null;
-  const axisUnit = { x: axis.x / axisLen, y: axis.y / axisLen };
-  const baseline = { x: -axisUnit.y, y: axisUnit.x };
-  const sign = params.direction === "Valgus" ? 1 : -1;
-  const theta = degToRad((Number(params.angleDeg) || 0) * sign);
-  const cos = Math.cos(theta);
-  const sin = Math.sin(theta);
-  const cutDir = {
-    x: baseline.x * cos - baseline.y * sin,
-    y: baseline.x * sin + baseline.y * cos,
-  };
-  const cutCenter = {
-    x: anchorStart.x + axisUnit.x * (Number(params.offsetPx) || 0),
-    y: anchorStart.y + axisUnit.y * (Number(params.offsetPx) || 0),
-  };
-  const half = Math.max(10, (Number(params.lineLengthPx) || 90) / 2);
-  return {
-    baseA: {
-      x: cutCenter.x - baseline.x * 60,
-      y: cutCenter.y - baseline.y * 60,
-    },
-    baseB: {
-      x: cutCenter.x + baseline.x * 60,
-      y: cutCenter.y + baseline.y * 60,
-    },
-    cutA: {
-      x: cutCenter.x - cutDir.x * half,
-      y: cutCenter.y - cutDir.y * half,
-    },
-    cutB: {
-      x: cutCenter.x + cutDir.x * half,
-      y: cutCenter.y + cutDir.y * half,
-    },
-    cutCenter,
-  };
-}
-
-function rotateVector(x, y, rotation) {
-  const rad = (rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return {
-    x: x * cos - y * sin,
-    y: x * sin + y * cos,
-  };
-}
-
-function normalizeRotationDegrees(rotation) {
-  return (((rotation || 0) % 360) + 360) % 360;
-}
-
-function getSignedAngleDeltaDegrees(startRad, endRad) {
-  const delta = endRad - startRad;
-  return (Math.atan2(Math.sin(delta), Math.cos(delta)) * 180) / Math.PI;
-}
-
-function toLayerLocal(point, layer) {
-  const dx = point.x - layer.centerX;
-  const dy = point.y - layer.centerY;
-  const rad = (layer.rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return {
-    x: dx * cos + dy * sin,
-    y: -dx * sin + dy * cos,
-  };
-}
-
-function toLayerShapeLocal(point, layer) {
-  const local = toLayerLocal(point, layer);
-  return {
-    x: layer.flipX ? -local.x : local.x,
-    y: layer.flipY ? -local.y : local.y,
-  };
-}
-
-function imagePointToLayerCanvasPoint(imgPt, layer) {
-  const shapeLocal = toLayerShapeLocal(imgPt, layer);
-  const displaySize = getLayerDisplaySize(layer);
-  const displayX = shapeLocal.x + displaySize.width / 2;
-  const displayY = shapeLocal.y + displaySize.height / 2;
-  return {
-    x: displayX * (layer.sourceWidth / Math.max(1, displaySize.width)),
-    y: displayY * (layer.sourceHeight / Math.max(1, displaySize.height)),
-  };
-}
-
-function getLayerDisplaySize(layer) {
-  return {
-    width: layer.displayWidth || layer.sourceWidth,
-    height: layer.displayHeight || layer.sourceHeight,
-  };
-}
-
-function isEditableMaskLayer(layer) {
-  return Boolean(
-    layer &&
-      (layer.kind === "free-line" || layer.kind === "free-cut") &&
-      Array.isArray(layer.maskPoints) &&
-      layer.maskPoints.length >= MIN_FREE_CUT_POINTS,
-  );
-}
-
-function transformLayerLocalPoint(layer, point) {
-  const flippedX = layer.flipX ? -point.x : point.x;
-  const flippedY = layer.flipY ? -point.y : point.y;
-  const rotated = rotateVector(flippedX, flippedY, layer.rotation);
-  return {
-    x: layer.centerX + rotated.x,
-    y: layer.centerY + rotated.y,
-  };
-}
-
-function getLayerMaskDisplayPoints(layer) {
-  if (!Array.isArray(layer.maskPoints) || layer.maskPoints.length < 3) {
-    return null;
-  }
-
-  const size = getLayerDisplaySize(layer);
-  const scaleX = size.width / Math.max(1, layer.sourceWidth || size.width);
-  const scaleY = size.height / Math.max(1, layer.sourceHeight || size.height);
-
-  return layer.maskPoints.map((point) => ({
-    x: point.x * scaleX,
-    y: point.y * scaleY,
-    handleInX: Number.isFinite(point?.handleInX)
-      ? point.handleInX * scaleX
-      : undefined,
-    handleInY: Number.isFinite(point?.handleInY)
-      ? point.handleInY * scaleY
-      : undefined,
-    handleOutX: Number.isFinite(point?.handleOutX)
-      ? point.handleOutX * scaleX
-      : undefined,
-    handleOutY: Number.isFinite(point?.handleOutY)
-      ? point.handleOutY * scaleY
-      : undefined,
-  }));
-}
-
-function normalizeFreeLineLayerBounds(layer) {
-  if (layer?.kind !== "free-line") return layer;
-
-  const localPoints = getLayerMaskDisplayPoints(layer);
-  if (!localPoints || localPoints.length < MIN_FREE_CUT_POINTS) return layer;
-
-  const coordinates = [];
-  for (const point of localPoints) {
-    coordinates.push({ x: point.x, y: point.y });
-    if (Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)) {
-      coordinates.push({ x: point.handleInX, y: point.handleInY });
-    }
-    if (Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)) {
-      coordinates.push({ x: point.handleOutX, y: point.handleOutY });
-    }
-  }
-
-  const xs = coordinates.map((point) => point.x);
-  const ys = coordinates.map((point) => point.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return layer;
-
-  const boundsWidth = Math.max(1, maxX - minX);
-  const boundsHeight = Math.max(1, maxY - minY);
-  const padding = clamp(Math.max(boundsWidth, boundsHeight) * 0.18, 32, 96);
-  const nextWidth = Math.max(16, Math.ceil(boundsWidth + padding * 2));
-  const nextHeight = Math.max(16, Math.ceil(boundsHeight + padding * 2));
-  const shiftX = (minX + maxX) / 2;
-  const shiftY = (minY + maxY) / 2;
-  const centerOffset = rotateVector(
-    layer.flipX ? -shiftX : shiftX,
-    layer.flipY ? -shiftY : shiftY,
-    layer.rotation,
-  );
-
-  return {
-    ...layer,
-    sourceWidth: nextWidth,
-    sourceHeight: nextHeight,
-    displayWidth: nextWidth,
-    displayHeight: nextHeight,
-    centerX: layer.centerX + centerOffset.x,
-    centerY: layer.centerY + centerOffset.y,
-    maskPoints: localPoints.map((point) => {
-      const nextPoint = {
-        x: point.x - shiftX,
-        y: point.y - shiftY,
-      };
-      if (Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)) {
-        nextPoint.handleInX = point.handleInX - shiftX;
-        nextPoint.handleInY = point.handleInY - shiftY;
-      }
-      if (
-        Number.isFinite(point.handleOutX) &&
-        Number.isFinite(point.handleOutY)
-      ) {
-        nextPoint.handleOutX = point.handleOutX - shiftX;
-        nextPoint.handleOutY = point.handleOutY - shiftY;
-      }
-      return nextPoint;
-    }),
-  };
-}
-
-function getFreeLineVertexPoints(layer) {
-  const localPoints = getLayerMaskDisplayPoints(layer);
-  if (!localPoints) return [];
-
-  return localPoints.map((point, pointIndex) => {
-    const rotated = transformLayerLocalPoint(layer, point);
-    return {
-      pointIndex,
-      x: rotated.x,
-      y: rotated.y,
-    };
-  });
-}
-
-function getFreeLineLocalHandlePair(layer, pointIndex) {
-  const localPoints = getLayerMaskDisplayPoints(layer);
-  if (!localPoints || localPoints.length < 3) return null;
-
-  const current = localPoints[pointIndex];
-  if (!current) return null;
-
-  const len = localPoints.length;
-  const previous = localPoints[(pointIndex - 1 + len) % len];
-  const next = localPoints[(pointIndex + 1) % len];
-  const tangent = {
-    x: next.x - previous.x,
-    y: next.y - previous.y,
-  };
-  const tangentLength = Math.hypot(tangent.x, tangent.y) || 1;
-  const unitTangent = {
-    x: tangent.x / tangentLength,
-    y: tangent.y / tangentLength,
-  };
-  const incomingLength = getDistance(previous, current);
-  const outgoingLength = getDistance(current, next);
-  const autoRadius = clamp(
-    Math.min(incomingLength, outgoingLength) *
-      (0.18 + getFreeLineCurveStrength(layer) * 0.42),
-    8,
-    120,
-  );
-
-  const defaultIn = {
-    x: current.x - unitTangent.x * autoRadius,
-    y: current.y - unitTangent.y * autoRadius,
-  };
-  const defaultOut = {
-    x: current.x + unitTangent.x * autoRadius,
-    y: current.y + unitTangent.y * autoRadius,
-  };
-
-  return {
-    point: current,
-    autoRadius,
-    handleIn:
-      Number.isFinite(current.handleInX) && Number.isFinite(current.handleInY)
-        ? { x: current.handleInX, y: current.handleInY }
-        : defaultIn,
-    handleOut:
-      Number.isFinite(current.handleOutX) && Number.isFinite(current.handleOutY)
-        ? { x: current.handleOutX, y: current.handleOutY }
-        : defaultOut,
-  };
-}
-
-function getFreeLineCurveRadius(layer, pointIndex) {
-  const handlePair = getFreeLineLocalHandlePair(layer, pointIndex);
-  if (!handlePair) return 0;
-
-  const handleInDistance = getDistance(handlePair.point, handlePair.handleIn);
-  const handleOutDistance = getDistance(handlePair.point, handlePair.handleOut);
-  const meanDistance = (handleInDistance + handleOutDistance) / 2;
-  return clamp(meanDistance || handlePair.autoRadius || 0, 8, 120);
-}
-
-function getFreeLineCurveHandles(layer, pointIndex) {
-  const handlePair = getFreeLineLocalHandlePair(layer, pointIndex);
-  if (!handlePair) return [];
-  const anchor = transformLayerLocalPoint(layer, handlePair.point);
-
-  return [
-    {
-      pointIndex,
-      handleKey: "in",
-      anchorX: anchor.x,
-      anchorY: anchor.y,
-      ...transformLayerLocalPoint(layer, handlePair.handleIn),
-    },
-    {
-      pointIndex,
-      handleKey: "out",
-      anchorX: anchor.x,
-      anchorY: anchor.y,
-      ...transformLayerLocalPoint(layer, handlePair.handleOut),
-    },
-  ];
-}
-
-function toLayerMaskPoint(point, layer, { clampToBounds = true } = {}) {
-  const local = toLayerShapeLocal(point, layer);
-  const size = getLayerDisplaySize(layer);
-  const sourceWidth = Math.max(1, layer.sourceWidth || size.width);
-  const sourceHeight = Math.max(1, layer.sourceHeight || size.height);
-  const x = local.x * (sourceWidth / Math.max(1, size.width));
-  const y = local.y * (sourceHeight / Math.max(1, size.height));
-
-  if (!clampToBounds) {
-    return { x, y };
-  }
-
-  return {
-    x: clamp(x, -sourceWidth / 2, sourceWidth / 2),
-    y: clamp(y, -sourceHeight / 2, sourceHeight / 2),
-  };
-}
-
-function cloneMaskPoint(point) {
-  if (!point) return null;
-  const nextPoint = {
-    x: Number(point.x) || 0,
-    y: Number(point.y) || 0,
-  };
-  if (Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)) {
-    nextPoint.handleInX = Number(point.handleInX);
-    nextPoint.handleInY = Number(point.handleInY);
-  }
-  if (Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)) {
-    nextPoint.handleOutX = Number(point.handleOutX);
-    nextPoint.handleOutY = Number(point.handleOutY);
-  }
-  return nextPoint;
-}
-
-function applyFreeLineCurveRadiusToPoint(layer, pointIndex, radius) {
-  if (
-    !layer ||
-    layer.kind !== "free-line" ||
-    !Array.isArray(layer.maskPoints) ||
-    pointIndex < 0 ||
-    pointIndex >= layer.maskPoints.length
-  ) {
-    return layer;
-  }
-
-  const localPoints = getLayerMaskDisplayPoints(layer);
-  if (!localPoints || localPoints.length < 3) return layer;
-
-  const current = localPoints[pointIndex];
-  const len = localPoints.length;
-  const previous = localPoints[(pointIndex - 1 + len) % len];
-  const next = localPoints[(pointIndex + 1) % len];
-  const tangent = {
-    x: next.x - previous.x,
-    y: next.y - previous.y,
-  };
-  const tangentLength = Math.hypot(tangent.x, tangent.y) || 1;
-  const unitTangent = {
-    x: tangent.x / tangentLength,
-    y: tangent.y / tangentLength,
-  };
-  const nextRadius = clamp(radius, 6, 160);
-  const sourceScaleX =
-    Math.max(1, layer.sourceWidth || 1) /
-    Math.max(1, getLayerDisplaySize(layer).width);
-  const sourceScaleY =
-    Math.max(1, layer.sourceHeight || 1) /
-    Math.max(1, getLayerDisplaySize(layer).height);
-  const handleIn = {
-    x: current.x - unitTangent.x * nextRadius,
-    y: current.y - unitTangent.y * nextRadius,
-  };
-  const handleOut = {
-    x: current.x + unitTangent.x * nextRadius,
-    y: current.y + unitTangent.y * nextRadius,
-  };
-
-  return {
-    ...layer,
-    maskPoints: layer.maskPoints.map((point, index) => {
-      if (index !== pointIndex) return point;
-      return {
-        ...point,
-        handleInX: handleIn.x * sourceScaleX,
-        handleInY: handleIn.y * sourceScaleY,
-        handleOutX: handleOut.x * sourceScaleX,
-        handleOutY: handleOut.y * sourceScaleY,
-      };
-    }),
-  };
-}
-
-function getLayerMaskScreenPoints(layer) {
-  const localPoints = getLayerMaskDisplayPoints(layer);
-  if (!localPoints) return null;
-
-  return localPoints.map((point) => ({
-    ...transformLayerLocalPoint(layer, point),
-    handleInX:
-      Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)
-        ? transformLayerLocalPoint(layer, {
-            x: point.handleInX,
-            y: point.handleInY,
-          }).x
-        : undefined,
-    handleInY:
-      Number.isFinite(point.handleInX) && Number.isFinite(point.handleInY)
-        ? transformLayerLocalPoint(layer, {
-            x: point.handleInX,
-            y: point.handleInY,
-          }).y
-        : undefined,
-    handleOutX:
-      Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)
-        ? transformLayerLocalPoint(layer, {
-            x: point.handleOutX,
-            y: point.handleOutY,
-          }).x
-        : undefined,
-    handleOutY:
-      Number.isFinite(point.handleOutX) && Number.isFinite(point.handleOutY)
-        ? transformLayerLocalPoint(layer, {
-            x: point.handleOutX,
-            y: point.handleOutY,
-          }).y
-        : undefined,
-  }));
-}
-
-function getImageContentBounds(image) {
-  if (typeof document === "undefined" || !image) return null;
-
-  const rawWidth = image.naturalWidth || image.width || 0;
-  const rawHeight = image.naturalHeight || image.height || 0;
-  if (!rawWidth || !rawHeight) return null;
-
-  const maxScanSize = 900;
-  const scanScale = Math.min(
-    maxScanSize / rawWidth,
-    maxScanSize / rawHeight,
-    1,
-  );
-  const scanWidth = Math.max(1, Math.round(rawWidth * scanScale));
-  const scanHeight = Math.max(1, Math.round(rawHeight * scanScale));
-  const canvas = document.createElement("canvas");
-  canvas.width = scanWidth;
-  canvas.height = scanHeight;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-
-  try {
-    ctx.drawImage(image, 0, 0, scanWidth, scanHeight);
-    const pixels = ctx.getImageData(0, 0, scanWidth, scanHeight).data;
-    const cornerIndexes = [
-      0,
-      (scanWidth - 1) * 4,
-      (scanHeight - 1) * scanWidth * 4,
-      ((scanHeight - 1) * scanWidth + scanWidth - 1) * 4,
-    ];
-    const background = cornerIndexes.reduce(
-      (sum, index) => ({
-        r: sum.r + pixels[index],
-        g: sum.g + pixels[index + 1],
-        b: sum.b + pixels[index + 2],
-        a: sum.a + pixels[index + 3],
-      }),
-      { r: 0, g: 0, b: 0, a: 0 },
-    );
-    background.r /= cornerIndexes.length;
-    background.g /= cornerIndexes.length;
-    background.b /= cornerIndexes.length;
-    background.a /= cornerIndexes.length;
-
-    let minX = scanWidth;
-    let minY = scanHeight;
-    let maxX = -1;
-    let maxY = -1;
-
-    for (let y = 0; y < scanHeight; y += 1) {
-      for (let x = 0; x < scanWidth; x += 1) {
-        const index = (y * scanWidth + x) * 4;
-        const alpha = pixels[index + 3];
-        if (alpha <= 18) continue;
-
-        const distance =
-          Math.abs(pixels[index] - background.r) +
-          Math.abs(pixels[index + 1] - background.g) +
-          Math.abs(pixels[index + 2] - background.b) +
-          Math.abs(alpha - background.a) * 0.35;
-        if (distance <= 34) continue;
-
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-    }
-
-    if (maxX < minX || maxY < minY) return null;
-
-    const pad = Math.max(
-      2,
-      Math.round(Math.min(scanWidth, scanHeight) * 0.015),
-    );
-    minX = Math.max(0, minX - pad);
-    minY = Math.max(0, minY - pad);
-    maxX = Math.min(scanWidth - 1, maxX + pad);
-    maxY = Math.min(scanHeight - 1, maxY + pad);
-
-    const x = Math.floor(minX / scanScale);
-    const y = Math.floor(minY / scanScale);
-    const width = Math.min(
-      rawWidth - x,
-      Math.ceil((maxX - minX + 1) / scanScale),
-    );
-    const height = Math.min(
-      rawHeight - y,
-      Math.ceil((maxY - minY + 1) / scanScale),
-    );
-    const coversAlmostAll =
-      width >= rawWidth * 0.96 && height >= rawHeight * 0.96;
-    if (coversAlmostAll || width < 8 || height < 8) return null;
-
-    return { x, y, width, height };
-  } catch {
-    return null;
-  }
-}
-
-function getA5PhysicalSizeForImage(width, height) {
-  const isLandscape = Number(width) > Number(height);
-  return {
-    widthMm: isLandscape ? A5_PORTRAIT_HEIGHT_MM : A5_PORTRAIT_WIDTH_MM,
-    heightMm: isLandscape ? A5_PORTRAIT_WIDTH_MM : A5_PORTRAIT_HEIGHT_MM,
-    label: isLandscape ? "A5 landscape" : "A5 portrait",
-  };
-}
-
-function resolveTemplatePhysicalSize({
-  physicalSize,
-  physicalWidthMm,
-  physicalHeightMm,
-  width,
-  height,
-}) {
-  const widthMm = Number(physicalWidthMm);
-  const heightMm = Number(physicalHeightMm);
-  if (Number.isFinite(widthMm) && widthMm > 0 && Number.isFinite(heightMm) && heightMm > 0) {
-    return { widthMm, heightMm, label: `${widthMm} x ${heightMm} mm` };
-  }
-  if (String(physicalSize || "").toUpperCase() === "A5") {
-    return getA5PhysicalSizeForImage(width, height);
-  }
-  return null;
-}
-
-function makeWhiteBackgroundTransparent(image) {
-  if (typeof document === "undefined" || !image) return null;
-
-  const rawWidth = image.naturalWidth || image.width || 0;
-  const rawHeight = image.naturalHeight || image.height || 0;
-  if (!rawWidth || !rawHeight) return null;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = rawWidth;
-  canvas.height = rawHeight;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-
-  try {
-    ctx.drawImage(image, 0, 0, rawWidth, rawHeight);
-    const imageData = ctx.getImageData(0, 0, rawWidth, rawHeight);
-    const pixels = imageData.data;
-    let changedPixels = 0;
-
-    for (let index = 0; index < pixels.length; index += 4) {
-      const alpha = pixels[index + 3];
-      if (alpha <= 0) continue;
-
-      const red = pixels[index];
-      const green = pixels[index + 1];
-      const blue = pixels[index + 2];
-      const minChannel = Math.min(red, green, blue);
-      const maxChannel = Math.max(red, green, blue);
-      const spread = maxChannel - minChannel;
-
-      if (minChannel >= 244 && spread <= 18) {
-        pixels[index + 3] = 0;
-        changedPixels += 1;
-      } else if (minChannel >= 235 && spread <= 14) {
-        pixels[index + 3] = Math.round(alpha * 0.24);
-        changedPixels += 1;
-      }
-    }
-
-    if (changedPixels === 0) return null;
-
-    ctx.putImageData(imageData, 0, 0);
-    let imageSrc = "";
-    try {
-      imageSrc = canvas.toDataURL("image/png");
-    } catch {
-      imageSrc = "";
-    }
-    return { image: canvas, imageSrc, changedPixels };
-  } catch {
-    return null;
-  }
-}
-
-function normalizeImageToPhysicalAspect(image, physicalSize) {
-  if (typeof document === "undefined" || !image || !physicalSize) return null;
-
-  const rawWidth = image.naturalWidth || image.width || 0;
-  const rawHeight = image.naturalHeight || image.height || 0;
-  const targetAspect = physicalSize.widthMm / physicalSize.heightMm;
-  if (!rawWidth || !rawHeight || !Number.isFinite(targetAspect) || targetAspect <= 0) {
-    return null;
-  }
-
-  const rawAspect = rawWidth / rawHeight;
-  let canvasWidth = rawWidth;
-  let canvasHeight = rawHeight;
-  let offsetX = 0;
-  let offsetY = 0;
-
-  if (Math.abs(rawAspect - targetAspect) <= 0.01) return null;
-
-  if (rawAspect > targetAspect) {
-    canvasHeight = Math.round(rawWidth / targetAspect);
-    offsetY = Math.round((canvasHeight - rawHeight) / 2);
-  } else {
-    canvasWidth = Math.round(rawHeight * targetAspect);
-    offsetX = Math.round((canvasWidth - rawWidth) / 2);
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, canvasWidth);
-  canvas.height = Math.max(1, canvasHeight);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(image, offsetX, offsetY);
-
-  let imageSrc = "";
-  try {
-    imageSrc = canvas.toDataURL("image/png");
-  } catch {
-    imageSrc = "";
-  }
-  return { image: canvas, imageSrc };
-}
-
-function getMedian(values) {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[middle - 1] + sorted[middle]) / 2
-    : sorted[middle];
-}
-
-function getProjectionTickSpacing(projection, threshold) {
-  const groups = [];
-  let start = -1;
-  let weighted = 0;
-  let total = 0;
-
-  for (let index = 0; index <= projection.length; index += 1) {
-    const value = index < projection.length ? projection[index] : 0;
-    if (value >= threshold) {
-      if (start < 0) {
-        start = index;
-        weighted = 0;
-        total = 0;
-      }
-      weighted += index * value;
-      total += value;
-      continue;
-    }
-
-    if (start >= 0) {
-      groups.push(total > 0 ? weighted / total : start);
-      start = -1;
-    }
-  }
-
-  const diffs = [];
-  for (let index = 1; index < groups.length; index += 1) {
-    const diff = groups[index] - groups[index - 1];
-    if (diff >= 2 && diff <= 18) {
-      diffs.push(diff);
-    }
-  }
-
-  if (diffs.length < 12) return null;
-  return {
-    spacing: getMedian(diffs),
-    tickCount: groups.length,
-    diffCount: diffs.length,
-  };
-}
-
-function estimateTemplateRulerPxPerMm(image) {
-  if (typeof document === "undefined" || !image) return null;
-
-  const rawWidth = image.naturalWidth || image.width || 0;
-  const rawHeight = image.naturalHeight || image.height || 0;
-  if (!rawWidth || !rawHeight) return null;
-
-  const maxScanSize = 1100;
-  const scanScale = Math.min(
-    maxScanSize / rawWidth,
-    maxScanSize / rawHeight,
-    1,
-  );
-  const scanWidth = Math.max(1, Math.round(rawWidth * scanScale));
-  const scanHeight = Math.max(1, Math.round(rawHeight * scanScale));
-  const canvas = document.createElement("canvas");
-  canvas.width = scanWidth;
-  canvas.height = scanHeight;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-
-  try {
-    ctx.drawImage(image, 0, 0, scanWidth, scanHeight);
-    const pixels = ctx.getImageData(0, 0, scanWidth, scanHeight).data;
-    const isStrictRulerPixel = (index) => {
-      const r = pixels[index];
-      const g = pixels[index + 1];
-      const b = pixels[index + 2];
-      const a = pixels[index + 3];
-      return a > 50 && g > 90 && g > r * 1.65 && g > b * 1.65;
-    };
-
-    const isLooseRulerPixel = (index) => {
-      const r = pixels[index];
-      const g = pixels[index + 1];
-      const b = pixels[index + 2];
-      const a = pixels[index + 3];
-      return (
-        a > 50 &&
-        g > 80 &&
-        g > r * 1.35 &&
-        (g > b * 1.12 || b > r * 1.45)
-      );
-    };
-
-    const buildVerticalProjection = (startX, width, isRulerPixel) => {
-      const projection = new Array(scanHeight).fill(0);
-      const x0 = clamp(Math.round(startX), 0, Math.max(0, scanWidth - 1));
-      const x1 = clamp(
-        Math.round(startX + width),
-        x0 + 1,
-        Math.max(1, scanWidth),
-      );
-      for (let y = 0; y < scanHeight; y += 1) {
-        let count = 0;
-        for (let x = x0; x < x1; x += 1) {
-          if (isRulerPixel((y * scanWidth + x) * 4)) count += 1;
-        }
-        projection[y] = count;
-      }
-      return projection;
-    };
-
-    const buildHorizontalProjection = (startY, height, isRulerPixel) => {
-      const projection = new Array(scanWidth).fill(0);
-      const y0 = clamp(Math.round(startY), 0, Math.max(0, scanHeight - 1));
-      const y1 = clamp(
-        Math.round(startY + height),
-        y0 + 1,
-        Math.max(1, scanHeight),
-      );
-      for (let x = 0; x < scanWidth; x += 1) {
-        let count = 0;
-        for (let y = y0; y < y1; y += 1) {
-          if (isRulerPixel((y * scanWidth + x) * 4)) count += 1;
-        }
-        projection[x] = count;
-      }
-      return projection;
-    };
-
-    const verticalBandWidth = clamp(Math.round(scanWidth * 0.075), 18, 52);
-    const horizontalBandHeight = clamp(Math.round(scanHeight * 0.07), 18, 52);
-
-    const collectCandidates = (isRulerPixel) => {
-      const scanRegions = [
-        {
-          axis: "vertical-left",
-          projection: buildVerticalProjection(0, verticalBandWidth, isRulerPixel),
-          threshold: Math.max(4, Math.round(verticalBandWidth * 0.18)),
-        },
-        {
-          axis: "vertical-right",
-          projection: buildVerticalProjection(
-            scanWidth - verticalBandWidth,
-            verticalBandWidth,
-            isRulerPixel,
-          ),
-          threshold: Math.max(4, Math.round(verticalBandWidth * 0.18)),
-        },
-        {
-          axis: "horizontal-top",
-          projection: buildHorizontalProjection(0, horizontalBandHeight, isRulerPixel),
-          threshold: Math.max(4, Math.round(horizontalBandHeight * 0.18)),
-        },
-        {
-          axis: "horizontal-bottom",
-          projection: buildHorizontalProjection(
-            scanHeight - horizontalBandHeight,
-            horizontalBandHeight,
-            isRulerPixel,
-          ),
-          threshold: Math.max(4, Math.round(horizontalBandHeight * 0.18)),
-        },
-      ];
-
-      return scanRegions
-        .map((region) => {
-          const spacing = getProjectionTickSpacing(
-            region.projection,
-            region.threshold,
-          );
-          if (!spacing) return null;
-          return {
-            axis: region.axis,
-            pxPerMm: spacing.spacing / scanScale,
-            confidence: spacing.diffCount,
-          };
-        })
-        .filter(Boolean);
-    };
-
-    let candidates = collectCandidates(isStrictRulerPixel);
-    if (candidates.length === 0) {
-      candidates = collectCandidates(isLooseRulerPixel);
-    }
-
-    if (candidates.length === 0) return null;
-    candidates.sort((a, b) => b.confidence - a.confidence);
-    const best = candidates[0];
-    if (!Number.isFinite(best.pxPerMm) || best.pxPerMm <= 0) return null;
-    return best;
-  } catch {
-    return null;
-  }
-}
-
-function getLayerCorners(layer) {
-  const size = getLayerDisplaySize(layer);
-  const halfW = size.width / 2;
-  const halfH = size.height / 2;
-  const corners = [
-    { key: "tl", x: -halfW, y: -halfH },
-    { key: "tr", x: halfW, y: -halfH },
-    { key: "br", x: halfW, y: halfH },
-    { key: "bl", x: -halfW, y: halfH },
-  ];
-
-  return corners.map((corner) => {
-    const rotated = rotateVector(corner.x, corner.y, layer.rotation);
-    return {
-      key: corner.key,
-      x: layer.centerX + rotated.x,
-      y: layer.centerY + rotated.y,
-    };
-  });
-}
-
-function getLayerBounds(layer) {
-  const corners = getLayerCorners(layer);
-  const xs = corners.map((corner) => corner.x);
-  const ys = corners.map((corner) => corner.y);
-  const left = Math.min(...xs);
-  const right = Math.max(...xs);
-  const top = Math.min(...ys);
-  const bottom = Math.max(...ys);
-  return {
-    left,
-    right,
-    top,
-    bottom,
-    width: right - left,
-    height: bottom - top,
-    centerX: (left + right) / 2,
-    centerY: (top + bottom) / 2,
-  };
-}
-
-function reorderLayerStack(layers, layerIds, placement) {
-  const selectedSet = new Set(layerIds);
-  if (!selectedSet.size) return layers;
-
-  if (placement === "back") {
-    const selected = layers.filter((layer) => selectedSet.has(layer.id));
-    const rest = layers.filter((layer) => !selectedSet.has(layer.id));
-    return [...selected, ...rest];
-  }
-
-  if (placement === "front") {
-    const rest = layers.filter((layer) => !selectedSet.has(layer.id));
-    const selected = layers.filter((layer) => selectedSet.has(layer.id));
-    return [...rest, ...selected];
-  }
-
-  const next = [...layers];
-  if (placement === "up") {
-    for (let index = next.length - 2; index >= 0; index -= 1) {
-      if (
-        selectedSet.has(next[index].id) &&
-        !selectedSet.has(next[index + 1].id)
-      ) {
-        const current = next[index];
-        next[index] = next[index + 1];
-        next[index + 1] = current;
-      }
-    }
-    return next;
-  }
-
-  if (placement === "down") {
-    for (let index = 1; index < next.length; index += 1) {
-      if (
-        selectedSet.has(next[index].id) &&
-        !selectedSet.has(next[index - 1].id)
-      ) {
-        const current = next[index];
-        next[index] = next[index - 1];
-        next[index - 1] = current;
-      }
-    }
-  }
-
-  return next;
-}
-
-function getLayerControlPoints(layer) {
-  const size = getLayerDisplaySize(layer);
-  const halfW = size.width / 2;
-  const halfH = size.height / 2;
-  const rotateOffset = Math.max(30, Math.min(54, halfH * 0.24 + 18));
-  const points = [
-    { key: "tl", x: -halfW, y: -halfH, type: "corner" },
-    { key: "tm", x: 0, y: -halfH, type: "edge" },
-    { key: "tr", x: halfW, y: -halfH, type: "corner" },
-    { key: "mr", x: halfW, y: 0, type: "edge" },
-    { key: "br", x: halfW, y: halfH, type: "corner" },
-    { key: "bm", x: 0, y: halfH, type: "edge" },
-    { key: "bl", x: -halfW, y: halfH, type: "corner" },
-    { key: "ml", x: -halfW, y: 0, type: "edge" },
-    { key: "rotate", x: 0, y: halfH + rotateOffset, type: "rotate" },
-  ];
-
-  return points.map((point) => {
-    const rotated = rotateVector(point.x, point.y, layer.rotation);
-    return {
-      key: point.key,
-      type: point.type,
-      x: layer.centerX + rotated.x,
-      y: layer.centerY + rotated.y,
-    };
-  });
-}
-
-function distancePointToSegment(point, line) {
-  const vx = line.x2 - line.x1;
-  const vy = line.y2 - line.y1;
-  const segmentLengthSq = vx * vx + vy * vy;
-
-  if (segmentLengthSq === 0) {
-    return Math.hypot(point.x - line.x1, point.y - line.y1);
-  }
-
-  const t =
-    ((point.x - line.x1) * vx + (point.y - line.y1) * vy) / segmentLengthSq;
-  const clampedT = clamp(t, 0, 1);
-
-  const closestX = line.x1 + clampedT * vx;
-  const closestY = line.y1 + clampedT * vy;
-
-  return Math.hypot(point.x - closestX, point.y - closestY);
-}
-
-function getSegmentMidpoint(a, b) {
-  return {
-    x: (a.x + b.x) / 2,
-    y: (a.y + b.y) / 2,
-  };
-}
-
-function getCircumcircleFromThreePoints(a, b, c) {
-  const determinant =
-    2 *
-    (a.x * (b.y - c.y) +
-      b.x * (c.y - a.y) +
-      c.x * (a.y - b.y));
-  if (Math.abs(determinant) < 1e-6) return null;
-
-  const aSq = a.x * a.x + a.y * a.y;
-  const bSq = b.x * b.x + b.y * b.y;
-  const cSq = c.x * c.x + c.y * c.y;
-  const centerX =
-    (aSq * (b.y - c.y) + bSq * (c.y - a.y) + cSq * (a.y - b.y)) /
-    determinant;
-  const centerY =
-    (aSq * (c.x - b.x) + bSq * (a.x - c.x) + cSq * (b.x - a.x)) /
-    determinant;
-  const radius = Math.hypot(centerX - a.x, centerY - a.y);
-
-  if (
-    !Number.isFinite(centerX) ||
-    !Number.isFinite(centerY) ||
-    !Number.isFinite(radius) ||
-    radius <= 0
-  ) {
-    return null;
-  }
-
-  return {
-    center: { x: centerX, y: centerY },
-    radius,
-  };
-}
-
-function buildAxisLineFromPoints(points) {
-  if (!Array.isArray(points) || points.length < 4) return null;
-  const proximalMid = getSegmentMidpoint(points[0], points[1]);
-  const distalMid = getSegmentMidpoint(points[2], points[3]);
-  if (Math.hypot(distalMid.x - proximalMid.x, distalMid.y - proximalMid.y) < 2) {
-    return null;
-  }
-  return {
-    x1: proximalMid.x,
-    y1: proximalMid.y,
-    x2: distalMid.x,
-    y2: distalMid.y,
-  };
-}
-
-function buildGuideLineFromReference(referenceLine, throughPoint, mode = "parallel") {
-  if (!referenceLine || !throughPoint) return null;
-  const dx = referenceLine.x2 - referenceLine.x1;
-  const dy = referenceLine.y2 - referenceLine.y1;
-  const length = Math.hypot(dx, dy);
-  if (length < 1e-6) return null;
-
-  let ux = dx / length;
-  let uy = dy / length;
-  if (mode === "perpendicular") {
-    const nextUx = -uy;
-    const nextUy = ux;
-    ux = nextUx;
-    uy = nextUy;
-  }
-
-  const halfLength = Math.max(18, length * 0.5);
-  return {
-    x1: throughPoint.x - ux * halfLength,
-    y1: throughPoint.y - uy * halfLength,
-    x2: throughPoint.x + ux * halfLength,
-    y2: throughPoint.y + uy * halfLength,
-  };
-}
-
-function getSegmentIntersectionPoint(a, b) {
-  const x1 = a.x1;
-  const y1 = a.y1;
-  const x2 = a.x2;
-  const y2 = a.y2;
-  const x3 = b.x1;
-  const y3 = b.y1;
-  const x4 = b.x2;
-  const y4 = b.y2;
-
-  const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (Math.abs(denominator) < 1e-6) return null;
-
-  const determinantA = x1 * y2 - y1 * x2;
-  const determinantB = x3 * y4 - y3 * x4;
-  const px =
-    (determinantA * (x3 - x4) - (x1 - x2) * determinantB) / denominator;
-  const py =
-    (determinantA * (y3 - y4) - (y1 - y2) * determinantB) / denominator;
-
-  const withinSegment = (value, start, end) =>
-    value >= Math.min(start, end) - 1e-4 && value <= Math.max(start, end) + 1e-4;
-
-  if (
-    !withinSegment(px, x1, x2) ||
-    !withinSegment(py, y1, y2) ||
-    !withinSegment(px, x3, x4) ||
-    !withinSegment(py, y3, y4)
-  ) {
-    return null;
-  }
-
-  return { x: px, y: py };
-}
-
-function projectPointToInfiniteLine(point, line) {
-  const vx = line.x2 - line.x1;
-  const vy = line.y2 - line.y1;
-  const lengthSq = vx * vx + vy * vy;
-  if (lengthSq <= 1e-6) return null;
-  const t = ((point.x - line.x1) * vx + (point.y - line.y1) * vy) / lengthSq;
-  return {
-    x: line.x1 + t * vx,
-    y: line.y1 + t * vy,
-    t,
-  };
-}
-
-function getCircleTangentPointsFromExternalPoint(point, circle) {
-  const dx = point.x - circle.cx;
-  const dy = point.y - circle.cy;
-  const distanceSq = dx * dx + dy * dy;
-  const radiusSq = circle.radius * circle.radius;
-  if (distanceSq <= radiusSq + 1e-6) return [];
-
-  const distance = Math.sqrt(distanceSq);
-  const baseAngle = Math.atan2(dy, dx);
-  const deltaAngle = Math.acos(clamp(circle.radius / distance, -1, 1));
-
-  return [baseAngle - deltaAngle, baseAngle + deltaAngle].map((angle) => ({
-    x: circle.cx + circle.radius * Math.cos(angle),
-    y: circle.cy + circle.radius * Math.sin(angle),
-  }));
-}
-
-function normalizeSnapSettings(settings) {
-  return {
-    endpoint: settings?.endpoint !== false,
-    midpoint: settings?.midpoint !== false,
-    intersection: settings?.intersection !== false,
-    center: settings?.center !== false,
-    tangent: Boolean(settings?.tangent),
-    perpendicular: Boolean(settings?.perpendicular),
-    shiftOnlyDesktop: Boolean(settings?.shiftOnlyDesktop),
-  };
-}
-
-function getSnapTypeShortLabel(type) {
-  if (type === "midpoint") return "MID";
-  if (type === "intersection") return "X";
-  if (type === "center") return "CTR";
-  if (type === "tangent") return "TAN";
-  if (type === "perpendicular") return "PERP";
-  return "END";
-}
-
-function getSnapTargetSignature(target) {
-  if (!target) return "none";
-  const round = (value) =>
-    Number.isFinite(value) ? Number(value).toFixed(2) : "";
-  const sourceRefs = Array.isArray(target.sourceRefs)
-    ? target.sourceRefs.join(",")
-    : "";
-  const hintSegments = Array.isArray(target.hintSegments)
-    ? target.hintSegments
-        .map(
-          (segment) =>
-            `${round(segment.x1)}:${round(segment.y1)}:${round(segment.x2)}:${round(segment.y2)}`,
-        )
-        .join("|")
-    : "";
-
-  return [
-    target.type || "",
-    round(target.x),
-    round(target.y),
-    sourceRefs,
-    hintSegments,
-  ].join(";");
-}
-
-function drawTag(ctx, x, y, text, color, options = {}) {
-  const fontSize = options.fontSize ?? 10;
-  const paddingX = options.paddingX ?? 5;
-  const paddingY = options.paddingY ?? 3;
-  const bgOpacity = options.bgOpacity ?? DEFAULT_LABEL_OPACITY;
-  const textOpacity = options.textOpacity ?? 0.94;
-  const radius = options.radius ?? 5;
-  const borderOpacity = options.borderOpacity ?? 0.9;
-
-  ctx.save();
-  ctx.font = `${fontSize}px Inter, sans-serif`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  const textMetrics = ctx.measureText(text);
-  const width = textMetrics.width + paddingX * 2;
-  const height = fontSize + paddingY * 2 + 4;
-
-  ctx.fillStyle = `rgba(15, 23, 42, ${bgOpacity})`;
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = borderOpacity;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x - width / 2, y - height / 2, width, height, radius);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.globalAlpha = textOpacity;
-  ctx.fillStyle = "#f8fafc";
-  ctx.fillText(text, x - width / 2 + paddingX, y);
-  ctx.restore();
-}
-
-function fillCircleMarkers(ctx, markers) {
-  for (const marker of markers) {
-    if (!marker) continue;
-    ctx.beginPath();
-    ctx.arc(marker.x, marker.y, marker.radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function strokeCircleMarkers(ctx, markers) {
-  for (const marker of markers) {
-    if (!marker) continue;
-    ctx.beginPath();
-    ctx.arc(marker.x, marker.y, marker.radius, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-}
-
-function getTagBounds(x, y, text, options = {}) {
-  const fontSize = options.fontSize ?? 10;
-  const paddingX = options.paddingX ?? 5;
-  const paddingY = options.paddingY ?? 3;
-  const estimatedWidth = Math.max(
-    fontSize * 3.4,
-    String(text || "").length * fontSize * 0.58 + paddingX * 2,
-  );
-  const height = fontSize + paddingY * 2 + 4;
-
-  return {
-    left: x - estimatedWidth / 2,
-    right: x + estimatedWidth / 2,
-    top: y - height / 2,
-    bottom: y + height / 2,
-  };
-}
-
-function cloneAnnotation(annotation) {
-  return {
-    id: annotation?.id,
-    x: Number(annotation?.x) || 0,
-    y: Number(annotation?.y) || 0,
-    text: String(annotation?.text || ""),
-    color: annotation?.color || DEFAULT_ANNOTATION_COLOR,
-    fontSize: clamp(Number(annotation?.fontSize) || 11, 8, 24),
-    labelOpacity: clamp(
-      Number(annotation?.labelOpacity ?? DEFAULT_LABEL_OPACITY),
-      0.08,
-      1,
-    ),
-    px: annotation?.px != null ? Number(annotation.px) : null,
-    py: annotation?.py != null ? Number(annotation.py) : null,
-  };
-}
-
-function drawLeaderLine(ctx, labelX, labelY, tagWidth, tagHeight, tipX, tipY, color, isSelected) {
-  const dx = tipX - labelX;
-  const dy = tipY - labelY;
-  const dist = Math.hypot(dx, dy);
-  if (dist < 4) return;
-  const nx = dx / dist;
-  const ny = dy / dist;
-  // Exit point from label border
-  const hw = tagWidth / 2 + 3;
-  const hh = tagHeight / 2 + 3;
-  const tEdge = Math.min(
-    Math.abs(hw / (nx || 0.001)),
-    Math.abs(hh / (ny || 0.001)),
-  );
-  const edgeDist = Math.min(tEdge, dist);
-  const sx = labelX + nx * edgeDist;
-  const sy = labelY + ny * edgeDist;
-
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.globalAlpha = isSelected ? 1 : 0.88;
-  ctx.lineWidth = 1.8;
-  ctx.lineCap = "round";
-  ctx.setLineDash([]);
-  // Line
-  ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(tipX, tipY);
-  ctx.stroke();
-  // Arrowhead at tip
-  const angle = Math.atan2(dy, dx);
-  ctx.save();
-  ctx.translate(tipX, tipY);
-  ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-9, -4);
-  ctx.lineTo(-9, 4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-  // Pointer tip dot (drag handle)
-  ctx.beginPath();
-  ctx.arc(tipX, tipY, isSelected ? 5 : 3.5, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(248,250,252,0.95)";
-  ctx.fill();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => {
-    if (char === "&") return "&amp;";
-    if (char === "<") return "&lt;";
-    if (char === ">") return "&gt;";
-    if (char === '"') return "&quot;";
-    return "&#39;";
-  });
-}
-
-function removeImageBackground(imageSrc, { threshold = 30, targetColor = "white" } = {}) {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { resolve(null); return; }
-      ctx.drawImage(img, 0, 0);
-      try {
-        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = data.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const r = d[i], g = d[i + 1], b = d[i + 2];
-          let match = false;
-          if (targetColor === "white") {
-            match = r > 255 - threshold && g > 255 - threshold && b > 255 - threshold;
-          } else if (targetColor === "black") {
-            match = r < threshold && g < threshold && b < threshold;
-          } else {
-            const brightness = (r + g + b) / 3;
-            match = brightness > 255 - threshold;
-          }
-          if (match) d[i + 3] = 0;
-        }
-        ctx.putImageData(data, 0, 0);
-        resolve(canvas.toDataURL("image/png"));
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = imageSrc;
-  });
-}
-
-function createCombinedReportCanvas(
-  imageCanvas,
-  overlayCanvas,
-  { exportScale = 1, sharpen = false, background = null } = {},
-) {
-  if (!imageCanvas || !overlayCanvas) return null;
-  const outCanvas = document.createElement("canvas");
-  const scale = clamp(Number(exportScale) || 1, 1, 4);
-  outCanvas.width = Math.max(1, Math.round(imageCanvas.width * scale));
-  outCanvas.height = Math.max(1, Math.round(imageCanvas.height * scale));
-  const ctx = outCanvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  if (background) {
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
-  }
-  ctx.drawImage(imageCanvas, 0, 0, outCanvas.width, outCanvas.height);
-  ctx.drawImage(overlayCanvas, 0, 0, outCanvas.width, outCanvas.height);
-  if (sharpen) {
-    try {
-      const imageData = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
-      sharpenImageData(imageData);
-      ctx.putImageData(imageData, 0, 0);
-    } catch {
-      // If the canvas is tainted by a remote image, export will handle the error.
-    }
-  }
-  return outCanvas;
-}
-
-function InfoTooltip({ text }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <span
-      className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-    >
-      <button
-        type="button"
-        className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold text-slate-500 ${SOFT_RAISED_CLASS}`}
-        aria-label="Info"
-      >
-        !
-      </button>
-      <AnimatePresence>
-        {open ? (
-          <motion.span
-            initial={{ opacity: 0, y: -4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className={`pointer-events-none absolute top-[120%] left-1/2 z-30 w-56 -translate-x-1/2 px-3 py-2 text-[11px] leading-snug text-slate-600 ${SOFT_SURFACE_CLASS}`}
-          >
-            {text}
-          </motion.span>
-        ) : null}
-      </AnimatePresence>
-    </span>
-  );
-}
-
-const ICON_COMPONENTS = {
-  draw: PencilLine,
-  freeLine: LineSquiggle,
-  pan: HandGrab,
-  cut: Slice,
-  centerFinder: Target,
-  axisBuilder: Bone,
-  guideBuilder: RulerDimensionLine,
-  zoomIn: ZoomIn,
-  zoomOut: ZoomOut,
-  fit: Maximize2,
-  rotateLeft: RotateCcw,
-  rotateRight: RotateCw,
-  flipH: FlipHorizontal2,
-  flipV: FlipVertical2,
-  resetCrop: Crop,
-  scale: Scaling,
-  preset: RulerDimensionLine,
-  saveCal: BadgeCheck,
-  trash: Trash2,
-  clear: Eraser,
-  brush: Paintbrush,
-  lock: Lock,
-  unlock: LockOpen,
-  reset: RefreshCcw,
-  upload: Upload,
-  camera: Camera,
-  target: Target,
-  menu: Menu,
-  close: X,
-  moveLeft: MoveLeft,
-  moveRight: MoveRight,
-  save: Save,
-  history: History,
-  undo: Undo2,
-  redo: Redo2,
-  eye: Eye,
-  eyeOff: EyeOff,
-  settings: SlidersHorizontal,
-  annotation: MessageSquare,
-  layers: Layers,
-  angle: DraftingCompass,
-  circle: CircleDot,
-  hka: ChartSpline,
-  compare: GitCompare,
-  export: Download,
-  package: Package,
-  cloudOff: CloudOff,
-  minus: Minus,
-  plus: Plus,
-  moveUp: MoveUp,
-  moveDown: MoveDown,
-};
-
-function Icon({ name, className = "h-4 w-4" }) {
-  const IconComponent = ICON_COMPONENTS[name];
-  if (!IconComponent) return null;
-  return (
-    <IconComponent className={className} strokeWidth={2} aria-hidden="true" />
-  );
-}
-
-const HIP_FUNCTION_SUMMARY_ITEMS = [
-  {
-    key: "offset",
-    label: "Offset",
-    shortLabel: "Offset umum",
-    activeClass: "text-rose-700",
-    detail:
-      "Preset garis offset umum untuk membandingkan jarak antar landmark sesuai kebutuhan templating.",
-    notice: "Gambar line pada landmark yang ingin dibandingkan.",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    imageCaption: "Fig. 3 — Landmark mekanis: femoral offset (3), acetabular offset (4), hip length (5), LLD (6R/6L)",
-  },
-  {
-    key: "femoralOffset",
-    label: "F-Offset",
-    shortLabel: "Femoral offset",
-    activeClass: "text-emerald-700",
-    detail:
-      "Femoral offset: jarak terpendek antara pusat rotasi femoral head dan axis longitudinal femur proksimal (Scheerlinck 2010). Mengontrol tegangan & moment arm otot abduktor, beban implant, dan keausan acetabular.",
-    notice:
-      "Gambar garis dari pusat rotasi femoral head tegak lurus ke axis longitudinal femur.",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    imageCaption: "Fig. 3 — Femoral offset (no.3): jarak horizontal dari pusat rotasi ke axis femur",
-  },
-  {
-    key: "globalOffset",
-    label: "G-Offset",
-    shortLabel: "Combined offset",
-    activeClass: "text-violet-700",
-    detail:
-      "Combined offset (femoral + acetabular offset): jumlah kedua offset yang mengontrol posisi relatif greater trochanter terhadap pelvis dan tegangan otot gluteal. Digunakan saat restorasi rotasi center asli tidak memungkinkan.",
-    notice:
-      "Pakai untuk membandingkan combined offset femoral dan acetabular dari pelvis sampai femur.",
-    image: "/images/jurnal-scheerlinck/fig6-compensating-offset.jpeg",
-    imageCaption: "Fig. 6 — Kompensasi offset: A. Normal, B. Cup medialisasi → femoral offset ditambah, C. Cup tinggi → stem lebih proud",
-  },
-  {
-    key: "lld",
-    label: "LLD",
-    shortLabel: "Leg length",
-    activeClass: "text-orange-700",
-    detail:
-      "LLD (Leg Length Discrepancy): beda panjang tungkai kiri-kanan diukur dari inferior teardrop ke lantai pada foto AP pelvis berdiri (Scheerlinck 2010). Bandingkan dengan hip length discrepancy untuk menentukan sumber perbedaan.",
-    notice:
-      "Gambar garis vertikal dari ujung inferior teardrop ke titik referensi yang sama di sisi kontralateral.",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    imageCaption: "Fig. 3 — LLD (6R vs 6L): beda jarak inferior teardrop ke garis horizontal referensi",
-  },
-  {
-    key: "interteardrop",
-    label: "ITD",
-    shortLabel: "Interteardrop line",
-    activeClass: "text-teal-700",
-    detail:
-      "Interteardrop line: garis horizontal referensi yang menghubungkan ujung inferior teardrop kanan dan kiri (Scheerlinck 2010). Digunakan sebagai baseline untuk mengukur acetabular offset dan leg length discrepancy.",
-    notice:
-      "Gambar garis horizontal melewati ujung inferior kedua teardrop sebagai referensi utama pengukuran.",
-    image: "/images/jurnal-scheerlinck/fig1-anatomical-landmarks.jpeg",
-    imageCaption: "Fig. 1 — Teardrop (no.6): landmark acetabular inferior sebagai titik referensi garis ITD",
-  },
-  {
-    key: "acetabularOffset",
-    label: "A-Off",
-    shortLabel: "Acetabular offset",
-    activeClass: "text-amber-700",
-    detail:
-      "Acetabular offset: jarak terpendek antara pusat rotasi acetabulum dan garis tegak lurus interteardrop (Scheerlinck 2010). Mengontrol tegangan otot abduktor, lever arm beban tubuh, dan beban pada acetabulum.",
-    notice:
-      "Gambar garis dari pusat rotasi acetabular tegak lurus ke garis interteardrop.",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    imageCaption: "Fig. 3 — Acetabular offset (no.4): jarak pusat rotasi acetabulum ke garis vertikal interteardrop",
-  },
-  {
-    key: "hipLength",
-    label: "H-Len",
-    shortLabel: "Hip length",
-    activeClass: "text-sky-700",
-    detail:
-      "Hip length: jarak dari ujung inferior teardrop ke titik referensi pada femur proksimal, misal batas atas lesser trochanter (Scheerlinck 2010). Digunakan untuk menilai leg length discrepancy pada level sendi panggul saja, terpisah dari LLD tungkai total.",
-    notice:
-      "Gambar garis dari ujung inferior teardrop ke titik referensi pada femur proksimal (misal: upper border lesser trochanter).",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    imageCaption: "Fig. 3 — Hip length (no.5): dari inferior teardrop ke upper border lesser trochanter",
-  },
-  {
-    key: "headDiameter",
-    label: "Head-D",
-    shortLabel: "Diameter kepala femur",
-    activeClass: "text-pink-700",
-    detail:
-      "Diameter kepala femur: garis melalui titik terlebar kepala femur. Midpoint garis = Hip Rotation Centre (HRC/FRC). Nilai diameter digunakan untuk memilih ukuran kepala implan. Ditandai dengan crosshair (+) di titik tengah (HRC) dan tick mark di ujung.",
-    notice:
-      "Gambar garis dari tepi kepala femur satu sisi ke tepi sisi berlawanan, melewati titik terlebar. Titik tengah otomatis = HRC.",
-    image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
-    imageCaption: "Fig. 5 — FRC (Femoral Rotation Centre): pusat kepala femur, basis templating rotasi implan",
-  },
-  {
-    key: "femurAxis",
-    label: "Fem-Axis",
-    shortLabel: "Longitudinal axis femur proksimal",
-    activeClass: "text-indigo-700",
-    detail:
-      "Longitudinal axis femur proksimal: garis sepanjang sumbu shaft femur. Digunakan untuk menghitung femoral offset secara presisi — jarak tegak lurus dari HRC (titik tengah Head-D) ke axis ini. Ditandai dengan ujung panah di kedua arah.",
-    notice:
-      "Gambar garis sepanjang sumbu medullary canal femur proksimal. Gunakan bersama Head-D untuk kalkulasi femoral offset otomatis.",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    imageCaption: "Fig. 3 — Sumbu femur (no.2): longitudinal axis femur proksimal untuk referensi offset",
-  },
-];
-
-const HIP_FUNCTION_SUMMARY_BY_KEY = HIP_FUNCTION_SUMMARY_ITEMS.reduce(
-  (acc, item) => {
-    acc[item.key] = item;
-    return acc;
-  },
-  {},
-);
-
-// ── Hip Planning Wizard Steps ─────────────────────────────────────────────────
-const HIP_WIZARD_STEPS = [
-  {
-    key: "interteardrop",
-    shortLabel: "ITD",
-    label: "Interteardrop Line (ITD)",
-    instruction: "Tarik garis dari titik 6 kiri ke 6 kanan.\nIkuti garis I di gambar — baseline semua pengukuran.",
-    tip: "I = garis ITD · 6 = teardrop (titik awal & akhir)",
-    image: "/images/jurnal-scheerlinck/fig1-anatomical-landmarks.jpeg",
-    caption: "Fig. 1 — I: Garis horizontal melewati titik 6 (teardrop) kiri & kanan",
-    color: "#0d9488",
-    needCount: 1,
-    countType: "interteardrop",
-  },
-  {
-    key: "hipLength",
-    shortLabel: "H-Len",
-    label: "Hip Length — 2 Sisi (H-Len)",
-    instruction: "Tarik 2 garis vertikal mengikuti panah 5:\n① Dari garis ITD → ke titik 1 kanan\n② Dari garis ITD → ke titik 1 kiri\nSelisih = LLD (6R − 6L)",
-    tip: "1 = pusat caput · 5 = Hip Length · 6R/6L = LLD",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    caption: "Fig. 3 — 5: Hip Length dari ITD ke 1 (pusat caput femur), kiri & kanan",
-    color: "#0284c7",
-    needCount: 2,
-    countType: "hipLength",
-  },
-  {
-    key: "headDiameter",
-    shortLabel: "Head-D",
-    label: "Diameter Kepala Femur (Head-D)",
-    instruction: "Tarik garis dari tepi kiri ke tepi kanan kepala femur.\nMidpoint otomatis = HRC (Hip Rotation Centre).\nGambar di kedua sisi untuk perbandingan.",
-    tip: "FRC = titik tengah garis ini · panjang = diameter kepala",
-    image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
-    caption: "Fig. 5 — FRC: pusat kepala femur, otomatis terdeteksi dari midpoint garis Head-D",
-    color: "#ec4899",
-    needCount: 1,
-    countType: "headDiameter",
-  },
-  {
-    key: "femurAxis",
-    shortLabel: "Fem-Axis",
-    label: "Longitudinal Axis Femur (Fem-Axis)",
-    instruction: "Tarik garis sepanjang sumbu shaft femur.\nIkuti garis 2 di gambar — dari proksimal ke distal.\nF-Off = jarak tegak lurus HRC ke axis ini (otomatis).",
-    tip: "2 = sumbu shaft · F-Off dihitung otomatis dari HRC ke axis",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    caption: "Fig. 3 — 2: Longitudinal axis femur proksimal, referensi femoral offset presisi",
-    color: "#6366f1",
-    needCount: 1,
-    countType: "femurAxis",
-  },
-  {
-    key: "acetabularOffset",
-    shortLabel: "A-Off",
-    label: "Acetabular Offset (A-Off)",
-    instruction: "Tarik garis horizontal mengikuti panah 4:\nDari midline pelvis → ke titik 1 (pusat acetabulum).\nG-Off = F-Off (otomatis) + A-Off.",
-    tip: "4 = Acetabular Offset · dari midline ke 1 pusat acetabulum",
-    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-    caption: "Fig. 3 — 4: Acetabular Offset dari midline ke 1 (pusat acetabulum)",
-    color: "#d97706",
-    needCount: 1,
-    countType: "acetabularOffset",
-  },
-  {
-    key: "done",
-    shortLabel: "✓",
-    label: "Planning Selesai!",
-    instruction: "Semua line selesai!\nF-Off dihitung otomatis dari HRC → Fem-Axis.\nLLD, G-Off, & Head size tampil di panel.",
-    tip: "Geser ujung line → nilai kalkulasi update real-time",
-    image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
-    caption: "Fig. 5 — FRC & ARC: acuan templating posisi implan",
-    color: "#8b5cf6",
-    needCount: 0,
-    countType: null,
-    isDone: true,
-  },
-];
-
-function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, measurementUnit }) {
-  const [step, setStep] = useState(0);
-  const [showResults, setShowResults] = useState(false);
-
-  // ── helpers ────────────────────────────────────────────────────────────────
-  const getCount = (type) =>
-    type ? lines.filter((l) => l.type === type).length : 0;
-  const isStepComplete = (s) =>
-    s.isDone ? true : getCount(s.countType) >= s.needCount;
-
-  const fmtPx = (px) => {
-    if (px === null || px === undefined) return "—";
-    if (mmPerPixel) {
-      const mm = px * mmPerPixel;
-      return measurementUnit === "cm"
-        ? `${(mm / 10).toFixed(2)} cm`
-        : `${mm.toFixed(1)} mm`;
-    }
-    return `${Math.round(px)} px`;
-  };
-
-  // ── auto group center: pisah L/R berdasarkan x-midpoint ITD atau canvas ──
-  const byType = (type) => lines.filter((l) => l.type === type);
-  const itdLine = byType("interteardrop")[0];
-  const centerX = itdLine
-    ? (itdLine.x1 + itdLine.x2) / 2
-    : null;
-
-  const groupLR = (arr) => {
-    if (arr.length === 0) return { L: null, R: null, all: [] };
-    const sorted = [...arr].sort((a, b) => (a.x1 + a.x2) / 2 - (b.x1 + b.x2) / 2);
-    if (sorted.length === 1) {
-      const midX = (sorted[0].x1 + sorted[0].x2) / 2;
-      const side = centerX !== null
-        ? midX < centerX ? "L" : "R"
-        : "L";
-      return { L: side === "L" ? sorted[0] : null, R: side === "R" ? sorted[0] : null, all: sorted };
-    }
-    return { L: sorted[0], R: sorted[sorted.length - 1], all: sorted };
-  };
-
-  const hLen  = groupLR(byType("hipLength"));
-  const fOff  = groupLR(byType("femoralOffset"));
-  const aOff  = groupLR(byType("acetabularOffset"));
-  const gOff  = groupLR(byType("globalOffset"));
-
-  const hLenLpx = hLen.L ? getLineLength(hLen.L) : null;
-  const hLenRpx = hLen.R ? getLineLength(hLen.R) : null;
-  const lldPx   = hLenLpx !== null && hLenRpx !== null ? Math.abs(hLenRpx - hLenLpx) : null;
-  const lldSide  = hLenLpx !== null && hLenRpx !== null
-    ? hLenRpx > hLenLpx ? "R > L" : hLenRpx < hLenLpx ? "L > R" : "="
-    : null;
-
-  const gOffLpx = gOff.L ? getLineLength(gOff.L)
-    : (fOff.L && aOff.L ? getLineLength(fOff.L) + getLineLength(aOff.L) : null);
-  const gOffRpx = gOff.R ? getLineLength(gOff.R)
-    : (fOff.R && aOff.R ? getLineLength(fOff.R) + getLineLength(aOff.R) : null);
-  const deltaGOff = gOffLpx !== null && gOffRpx !== null ? Math.abs(gOffRpx - gOffLpx) : null;
-
-  const hasAnyLine = byType("interteardrop").length + byType("hipLength").length +
-    byType("femoralOffset").length + byType("acetabularOffset").length +
-    byType("globalOffset").length > 0;
-
-  // ── wizard state ──────────────────────────────────────────────────────────
-  const current = HIP_WIZARD_STEPS[step];
-  const currentDone = isStepComplete(current);
-  const allMeasurementsDone = HIP_WIZARD_STEPS.filter((s) => !s.isDone).every(isStepComplete);
-
-  useEffect(() => {
-    if (currentDone && !current.isDone && step < HIP_WIZARD_STEPS.length - 1) {
-      const t = setTimeout(() => setStep((s) => s + 1), 700);
-      return () => clearTimeout(t);
-    }
-  }, [currentDone, current.isDone, step]);
-
-  useEffect(() => {
-    const firstIncomplete = HIP_WIZARD_STEPS.findIndex(
-      (s) => !s.isDone && getCount(s.countType) < s.needCount,
-    );
-    if (firstIncomplete !== -1 && firstIncomplete < step) {
-      setStep(firstIncomplete);
-    }
-  }, [lines]);
-
-  // ── render ────────────────────────────────────────────────────────────────
-  const C = { itd:"#0d9488", hLen:"#0284c7", lld:"#ef4444", fOff:"#10b981", aOff:"#d97706", gOff:"#8b5cf6" };
-
-  const ResultRow = ({ label, color, value, note, highlight }) => (
-    <div className={`flex items-center justify-between gap-1 py-[2px] text-[9px] ${highlight ? "font-bold" : ""}`}>
-      <span className="flex items-center gap-1 text-slate-500">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
-        {label}
-        {note && <span className="text-[8px] text-slate-400">({note})</span>}
-      </span>
-      <span className="font-mono font-bold" style={{ color: highlight ? "#ef4444" : color }}>{value}</span>
-    </div>
-  );
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_8px_32px_rgba(15,23,42,0.16)]">
-      {/* Header */}
-      <div className="flex items-center justify-between bg-slate-900 px-3 py-2.5">
-        <div className="flex items-center gap-2 text-[10px] font-black tracking-wider text-white uppercase">
-          <Icon name="target" className="h-3.5 w-3.5 text-rose-400" />
-          Panduan Hip Planning
-        </div>
-        <button onClick={onClose} className="rounded p-0.5 text-slate-400 transition hover:text-white">
-          <Icon name="close" className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Progress bar */}
-      <div className="flex gap-1 px-3 pt-2.5 pb-1">
-        {HIP_WIZARD_STEPS.map((s, i) => (
-          <button
-            key={s.key}
-            title={s.label}
-            onClick={() => setStep(i)}
-            className="h-1.5 flex-1 rounded-full transition-all duration-300"
-            style={{
-              background: i === step ? current.color : isStepComplete(s) ? "#34d399" : "#e2e8f0",
-              transform: i === step ? "scaleY(1.5)" : "scaleY(1)",
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Gambar jurnal */}
-      <div className="mx-3 mt-2 overflow-hidden rounded-xl border border-slate-100">
-        <img src={current.image} alt={current.caption} className="max-h-44 w-full object-contain" />
-        <p className="bg-slate-50/80 px-2 py-1 text-[8px] italic leading-snug text-slate-400">
-          {current.caption}
-        </p>
-      </div>
-
-      {/* Konten step */}
-      <div className="px-3 pt-2.5">
-        <div className="flex items-start gap-2">
-          <span className="mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black text-white" style={{ background: current.color }}>
-            {step + 1}/{HIP_WIZARD_STEPS.length}
-          </span>
-          <div className="min-w-0">
-            <div className="text-[11px] font-extrabold leading-tight" style={{ color: current.color }}>
-              {current.label}
-            </div>
-            <p className="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-slate-600">
-              {current.instruction}
-            </p>
-          </div>
-        </div>
-
-        {/* Tip */}
-        <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[9px] leading-snug text-slate-500">
-          💡 {current.tip}
-        </div>
-
-        {/* Status line */}
-        {!current.isDone && (
-          <div className={`mt-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-colors duration-300 ${currentDone ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
-            <span>{currentDone ? "✅" : "⬜"}</span>
-            <span>
-              {currentDone
-                ? `${getCount(current.countType)} line ${current.shortLabel} sudah tergambar`
-                : `Butuh ${current.needCount} line ${current.shortLabel} — sekarang: ${getCount(current.countType)}`}
-            </span>
-          </div>
-        )}
-
-        {/* Ringkasan akhir */}
-        {current.isDone && (
-          <div className={`mt-1.5 rounded-lg px-2 py-1.5 text-[10px] font-semibold ${allMeasurementsDone ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-            {allMeasurementsDone
-              ? "✅ Semua pengukuran lengkap!"
-              : "⚠️ Ada langkah yang belum selesai."}
-          </div>
-        )}
-
-        {/* ── Hasil Panel (collapsible) ─────────────────────────────────── */}
-        {hasAnyLine && (
-          <div className="mt-2">
-            <button
-              onClick={() => setShowResults((v) => !v)}
-              className="flex w-full items-center justify-between rounded-lg bg-slate-100 px-2.5 py-1.5 text-[9px] font-bold text-slate-600 transition hover:bg-slate-200"
-            >
-              <span className="flex items-center gap-1.5">
-                <span>📊</span>
-                <span>Lihat Hasil</span>
-                {!mmPerPixel && <span className="rounded bg-amber-100 px-1 text-[7px] text-amber-600">px</span>}
-              </span>
-              <span>{showResults ? "▲" : "▼"}</span>
-            </button>
-
-            {showResults && (
-              <div className="mt-1.5 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/60 px-2.5 py-2">
-                {/* Auto group center — center dari ITD */}
-                {itdLine && (
-                  <div className="mb-1 rounded bg-teal-50 px-2 py-1 text-[8px] text-teal-700">
-                    ⊕ Center X dari ITD: {Math.round((itdLine.x1 + itdLine.x2) / 2)} px
-                    {" — "}kiri/kanan ditentukan otomatis
-                  </div>
-                )}
-
-                {/* ITD */}
-                {byType("interteardrop").map((l) => (
-                  <ResultRow key={l.id} label="ITD" color={C.itd} value={fmtPx(getLineLength(l))} />
-                ))}
-
-                {/* H-Len L / R + LLD */}
-                {(hLen.L || hLen.R) && (
-                  <div className="rounded-lg border border-sky-100 bg-sky-50/60 px-2 py-1.5">
-                    <div className="mb-1 text-[8px] font-extrabold text-sky-700 uppercase">Hip Length</div>
-                    {hLen.L && <ResultRow label="H-Len L" color={C.hLen} value={fmtPx(hLenLpx)} />}
-                    {hLen.R && <ResultRow label="H-Len R" color={C.hLen} value={fmtPx(hLenRpx)} />}
-                    {lldPx !== null && (
-                      <>
-                        <div className="my-1 border-t border-sky-200/60" />
-                        <ResultRow
-                          label="LLD"
-                          color={C.lld}
-                          value={fmtPx(lldPx)}
-                          note={lldSide}
-                          highlight={mmPerPixel ? lldPx * mmPerPixel > 10 : false}
-                        />
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* F-Off / A-Off / G-Off */}
-                {(fOff.L || fOff.R || aOff.L || aOff.R || gOff.L || gOff.R) && (
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-2 py-1.5">
-                    <div className="mb-1 text-[8px] font-extrabold text-emerald-700 uppercase">Offset</div>
-                    {fOff.L && <ResultRow label="F-Off L" color={C.fOff} value={fmtPx(getLineLength(fOff.L))} />}
-                    {fOff.R && <ResultRow label="F-Off R" color={C.fOff} value={fmtPx(getLineLength(fOff.R))} />}
-                    {aOff.L && <ResultRow label="A-Off L" color={C.aOff} value={fmtPx(getLineLength(aOff.L))} />}
-                    {aOff.R && <ResultRow label="A-Off R" color={C.aOff} value={fmtPx(getLineLength(aOff.R))} />}
-                    {(gOffLpx !== null || gOffRpx !== null) && (
-                      <>
-                        <div className="my-1 border-t border-emerald-200/60" />
-                        {gOffLpx !== null && <ResultRow label="G-Off L" color={C.gOff} value={fmtPx(gOffLpx)} note={!gOff.L ? "F+A" : undefined} />}
-                        {gOffRpx !== null && <ResultRow label="G-Off R" color={C.gOff} value={fmtPx(gOffRpx)} note={!gOff.R ? "F+A" : undefined} />}
-                        {deltaGOff !== null && (
-                          <ResultRow label="ΔG-Off" color={C.gOff} value={fmtPx(deltaGOff)} highlight={mmPerPixel ? deltaGOff * mmPerPixel > 5 : false} />
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Tombol aksi */}
-      <div className="flex items-center gap-1.5 px-3 pb-3 pt-2.5">
-        {!current.isDone && (
-          <button
-            onClick={() => onSelectPreset(current.key)}
-            className="flex-1 rounded-xl py-2 text-[10px] font-black text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
-            style={{ background: current.color }}
-          >
-            Gambar {current.shortLabel}
-          </button>
-        )}
-        {current.isDone && (
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-xl bg-violet-600 py-2 text-[10px] font-black text-white shadow-sm transition hover:bg-violet-700"
-          >
-            Tutup Panduan ✓
-          </button>
-        )}
-        <div className="flex shrink-0 gap-1">
-          {step > 0 && (
-            <button
-              onClick={() => setStep((s) => s - 1)}
-              className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
-            >
-              ◀
-            </button>
-          )}
-          {step < HIP_WIZARD_STEPS.length - 1 && (
-            <button
-              onClick={() => setStep((s) => Math.min(s + 1, HIP_WIZARD_STEPS.length - 1))}
-              className="rounded-xl px-3 py-2 text-[10px] font-bold text-white transition"
-              style={{ background: currentDone ? "#334155" : "#cbd5e1", cursor: currentDone ? "pointer" : "default" }}
-            >
-              {currentDone ? "Lanjut ▶" : "Lewati ▶"}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HipPlanningWizardButton({ lines, onSelectPreset, mmPerPixel, measurementUnit }) {
-  const [open, setOpen] = useState(false);
-
-  const doneCount = HIP_WIZARD_STEPS.filter(
-    (s) => !s.isDone && s.countType && lines.filter((l) => l.type === s.countType).length >= s.needCount,
-  ).length;
-  const totalSteps = HIP_WIZARD_STEPS.filter((s) => !s.isDone).length;
-
-  if (open) {
-    return (
-      <div className="mt-2">
-        <HipPlanningWizard
-          lines={lines}
-          onSelectPreset={onSelectPreset}
-          onClose={() => setOpen(false)}
-          mmPerPixel={mmPerPixel}
-          measurementUnit={measurementUnit}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <button
-      onClick={() => setOpen(true)}
-      className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border-2 border-dashed border-rose-300/70 bg-rose-50/60 px-3 py-2.5 text-left transition hover:border-rose-400 hover:bg-rose-50 active:scale-[0.99]"
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-xl leading-none">📋</span>
-        <div>
-          <div className="text-[10px] font-black text-rose-800">
-            Panduan Step-by-Step
-          </div>
-          <div className="text-[9px] text-rose-500">
-            Ikuti langkah berdasarkan jurnal Scheerlinck 2010
-          </div>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <div
-          className={`rounded-full px-1.5 py-0.5 text-[8px] font-black text-white ${
-            doneCount === totalSteps ? "bg-emerald-500" : "bg-rose-500"
-          }`}
-        >
-          {doneCount}/{totalSteps}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function HipFunctionSummaryPanel({
-  className = "",
-  compact = false,
-  defaultExpanded = false,
-  title = "Ringkasan Fungsi HIP",
-}) {
-  const [isOpen, setIsOpen] = useState(defaultExpanded);
-  const [openItemKey, setOpenItemKey] = useState(null);
-
-  return (
-    <details
-      className={`${SOFT_INSET_CLASS} px-3 py-2 text-slate-700 ${className}`}
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[10px] font-extrabold tracking-wide text-slate-700 uppercase [&::-webkit-details-marker]:hidden">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <Icon name="target" className="h-3.5 w-3.5 shrink-0 text-cyan-700" />
-          <span className="truncate">{title}</span>
-        </span>
-        <span className={`${SOFT_RAISED_CLASS} shrink-0 px-2 py-1 text-[9px] font-bold text-cyan-700`}>
-          Info
-        </span>
-      </summary>
-      <div
-        className={`mt-2 grid gap-1.5 ${
-          compact ? "grid-cols-1" : "sm:grid-cols-2"
-        }`}
-      >
-        {HIP_FUNCTION_SUMMARY_ITEMS.map((item) => {
-          const itemOpen = openItemKey === item.key;
-          return (
-            <div
-              key={`hip-summary-${item.key}`}
-              className={`${SOFT_SURFACE_CLASS} overflow-hidden px-2.5 py-2`}
-            >
-              <button
-                type="button"
-                onClick={() => setOpenItemKey(itemOpen ? null : item.key)}
-                className="flex w-full items-center justify-between gap-2 text-left"
-              >
-                <span className={`text-[10px] font-extrabold ${item.activeClass}`}>
-                  {item.label}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="truncate text-[9px] font-bold text-slate-500">
-                    {item.shortLabel}
-                  </span>
-                  <span className={`shrink-0 text-[8px] font-black transition-transform duration-200 ${itemOpen ? "rotate-180" : ""} text-slate-400`}>
-                    ▾
-                  </span>
-                </span>
-              </button>
-              {itemOpen && (
-                <div className="mt-1.5 border-t border-slate-200/60 pt-1.5 space-y-2">
-                  <p className="text-[10px] leading-4 text-slate-600">
-                    {item.detail}
-                  </p>
-                  {item.image && (
-                    <div className="overflow-hidden rounded-lg border border-slate-200/70">
-                      <img
-                        src={item.image}
-                        alt={item.imageCaption || item.shortLabel}
-                        className="w-full object-contain"
-                        loading="lazy"
-                      />
-                      {item.imageCaption && (
-                        <p className="bg-slate-50 px-2 py-1 text-[9px] leading-3.5 text-slate-500 italic">
-                          {item.imageCaption}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  <p className="text-[9px] font-semibold text-slate-400 italic">
-                    💡 {item.notice}
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </details>
-  );
-}
-
-function getSoftToneClass(tone = "slate", active = false) {
-  const toneClass =
-    tone === "emerald"
-      ? active
-        ? "text-emerald-700"
-        : "text-emerald-600 hover:text-emerald-700"
-      : tone === "rose"
-        ? active
-          ? "text-rose-700"
-          : "text-rose-600 hover:text-rose-700"
-        : tone === "amber"
-          ? active
-            ? "text-amber-700"
-            : "text-amber-600 hover:text-amber-700"
-          : active
-            ? "text-slate-800"
-            : "text-slate-500 hover:text-slate-700";
-
-  return `${active ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} ${toneClass}`;
-}
-
-function IconButton({
-  icon,
-  label,
-  onClick,
-  active = false,
-  disabled = false,
-  tone = "slate",
-  className = "",
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      onPointerDown={() => {
-        if (!disabled) triggerMobileHaptic();
-      }}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      whileHover={disabled ? undefined : BUTTON_HOVER}
-      whileTap={disabled ? undefined : BUTTON_TAP}
-      transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-10 w-10 items-center justify-center transition sm:h-9 sm:w-9 ${getSoftToneClass(
-        tone,
-        active,
-      )} disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
-    >
-      <Icon name={icon} className="h-[18px] w-[18px]" />
-    </motion.button>
-  );
-}
-
-function LayerToolbarActionButton({
-  icon,
-  label,
-  onClick,
-  active = false,
-  className = "",
-  iconClassName = "h-4 w-4",
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      onPointerDown={() => triggerMobileHaptic()}
-      aria-label={label}
-      title={label}
-      whileHover={BUTTON_HOVER}
-      whileTap={BUTTON_TAP}
-      transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-8 w-8 items-center justify-center transition ${getSoftToneClass(
-        "slate",
-        active,
-      )} ${className}`}
-    >
-    <Icon name={icon} className={iconClassName} />
-  </motion.button>
-  );
-}
-
-const TOOL_ICON_COMPONENTS = {
-  draw: PencilLine,
-  freeLine: SplinePointer,
-  pan: HandGrab,
-  cut: Slice,
-  brush: Paintbrush,
-  centerFinder: Target,
-  axisBuilder: Bone,
-  guideBuilder: RulerDimensionLine,
-  annotation: MessageSquare,
-  angle: DraftingCompass,
-  circle: CircleDot,
-  hka: ChartSpline,
-  zoomIn: ZoomIn,
-  zoomOut: ZoomOut,
-  fit: Maximize2,
-  undo: Undo2,
-  redo: Redo2,
-};
-
-function ToolIconButton({
-  icon,
-  label,
-  onClick,
-  active = false,
-  disabled = false,
-  className = "",
-}) {
-  const ToolIcon = TOOL_ICON_COMPONENTS[icon];
-
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      onPointerDown={() => {
-        if (!disabled) triggerMobileHaptic();
-      }}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      whileHover={disabled ? undefined : BUTTON_HOVER}
-      whileTap={disabled ? undefined : BUTTON_TAP}
-      transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-10 w-10 items-center justify-center transition sm:h-9 sm:w-9 ${getSoftToneClass(
-        "slate",
-        active,
-      )} disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
-    >
-      {ToolIcon ? (
-        <ToolIcon className="h-4 w-4" strokeWidth={2} />
-      ) : (
-        <Icon name={icon} />
-      )}
-    </motion.button>
-  );
-}
-
-function ColorSwatchButton({
-  color,
-  active = false,
-  onClick,
-  label = "Pilih warna",
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      onPointerDown={() => triggerMobileHaptic()}
-      aria-label={label}
-      title={label}
-      whileHover={BUTTON_HOVER}
-      whileTap={BUTTON_TAP}
-      transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-8 w-8 items-center justify-center border-0 transition ${
-        active ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS
-      }`}
-    >
-      <span
-        className="h-[18px] w-[18px] rounded-full border border-white/70"
-        style={{ backgroundColor: color }}
-      />
-    </motion.button>
-  );
-}
-
-function CompactSliderField({
-  label,
-  valueText,
-  min,
-  max,
-  step = 1,
-  value,
-  onChange,
-  onDecrease,
-  onIncrease,
-  decreaseIcon = "minus",
-  increaseIcon = "plus",
-  disabled = false,
-  controlStyle = "knob",
-}) {
-  const knobRef = useRef(null);
-  const [isKnobDragging, setIsKnobDragging] = useState(false);
-  const [canUseMobilePreview, setCanUseMobilePreview] = useState(false);
-  const [isPreviewOverlayForced, setIsPreviewOverlayForced] = useState(false);
-  const previewOverlayTimeoutRef = useRef(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const mediaQuery = window.matchMedia(
-      "(max-width: 1023px) and (pointer: coarse)",
-    );
-    const update = () => setCanUseMobilePreview(mediaQuery.matches);
-    update();
-    mediaQuery.addEventListener("change", update);
-    return () => mediaQuery.removeEventListener("change", update);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (previewOverlayTimeoutRef.current !== null) {
-        window.clearTimeout(previewOverlayTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
-  const forcePreviewOverlay = useCallback(
-    (durationMs = 120) => {
-      if (!canUseMobilePreview || typeof window === "undefined") return;
-      if (previewOverlayTimeoutRef.current !== null) {
-        window.clearTimeout(previewOverlayTimeoutRef.current);
-      }
-      setMobilePanelPreview(true, durationMs);
-      setIsPreviewOverlayForced(true);
-      previewOverlayTimeoutRef.current = window.setTimeout(() => {
-        setIsPreviewOverlayForced(false);
-        previewOverlayTimeoutRef.current = null;
-      }, durationMs);
-    },
-    [canUseMobilePreview],
-  );
-
-  const emitValueChange = useCallback(
-    (nextValue) => {
-      onChange?.({
-        target: {
-          value: String(nextValue),
-        },
-      });
-    },
-    [onChange],
-  );
-
-  const updateKnobValueFromPoint = useCallback(
-    (clientX, clientY) => {
-      if (!knobRef.current || disabled) return;
-      const rect = knobRef.current.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const dx = clientX - centerX;
-      const dy = clientY - centerY;
-      const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
-      const normalizedAngle = (angleDeg + 360) % 360;
-      const relative = (normalizedAngle - KNOB_START_DEG + 360) % 360;
-      const clampedRelative =
-        relative <= KNOB_SWEEP_DEG
-          ? relative
-          : 360 - relative < relative - KNOB_SWEEP_DEG
-            ? 0
-            : KNOB_SWEEP_DEG;
-      const ratio = clamp(clampedRelative / KNOB_SWEEP_DEG, 0, 1);
-      const rawValue = min + ratio * (max - min);
-      const snappedValue = min + Math.round((rawValue - min) / step) * step;
-      const safeValue = clamp(Number(snappedValue.toFixed(4)), min, max);
-      emitValueChange(safeValue);
-    },
-    [disabled, emitValueChange, max, min, step],
-  );
-
-  useEffect(() => {
-    if (!isKnobDragging) return undefined;
-
-    const handlePointerMove = (event) => {
-      updateKnobValueFromPoint(event.clientX, event.clientY);
-    };
-
-    const handlePointerUp = () => {
-      setIsKnobDragging(false);
-      setMobilePanelPreview(false);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [isKnobDragging, updateKnobValueFromPoint]);
-
-  const knobRatio = clamp(
-    (Number(value) - min) / Math.max(max - min, 0.0001),
-    0,
-    1,
-  );
-  const knobAngle = KNOB_START_DEG + knobRatio * KNOB_SWEEP_DEG;
-  const knobRad = (knobAngle * Math.PI) / 180;
-  const knobDotRadius = 18;
-  const knobDotX = 44 + Math.cos(knobRad) * knobDotRadius;
-  const knobDotY = 44 + Math.sin(knobRad) * knobDotRadius;
-  const showPreviewOverlay =
-    canUseMobilePreview && (isKnobDragging || isPreviewOverlayForced);
-
-  const handleStepDecrease = useCallback(() => {
-    if (disabled) return;
-    onDecrease?.();
-    forcePreviewOverlay();
-  }, [disabled, forcePreviewOverlay, onDecrease]);
-
-  const handleStepIncrease = useCallback(() => {
-    if (disabled) return;
-    onIncrease?.();
-    forcePreviewOverlay();
-  }, [disabled, forcePreviewOverlay, onIncrease]);
-
-  const controlContent = (
-    <div
-      className={`px-3 py-2.5 ${
-        showPreviewOverlay
-          ? "rounded-[24px] border border-white/20 bg-[linear-gradient(180deg,rgba(248,250,252,0.34)_0%,rgba(237,242,247,0.26)_100%)] shadow-[0_10px_24px_rgba(15,23,42,0.16)] backdrop-blur-xl"
-          : SOFT_SURFACE_CLASS
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2 text-[12px] text-slate-700">
-        <span className="font-medium">{label}</span>
-        <span className="text-slate-500">{valueText}</span>
-      </div>
-      {controlStyle === "knob" ? (
-        <div className="mt-3 grid grid-cols-[auto_1fr_auto] items-end gap-3">
-          <div className="flex items-center gap-2 pb-1">
-            <IconButton
-              icon={decreaseIcon}
-              label={`${label} kurang`}
-              onClick={handleStepDecrease}
-              disabled={disabled}
-              className="h-10 w-10 shrink-0"
-            />
-            <IconButton
-              icon={increaseIcon}
-              label={`${label} tambah`}
-              onClick={handleStepIncrease}
-              disabled={disabled}
-              className="h-10 w-10 shrink-0"
-            />
-          </div>
-          <div />
-          <div
-            ref={knobRef}
-            onPointerDown={(event) => {
-              if (disabled) return;
-              event.preventDefault();
-              setMobilePanelPreview(true);
-              setIsKnobDragging(true);
-              updateKnobValueFromPoint(event.clientX, event.clientY);
-            }}
-            className={`relative h-[88px] w-[88px] shrink-0 touch-none ${
-              disabled
-                ? "cursor-not-allowed opacity-45"
-                : "cursor-grab active:cursor-grabbing"
-            }`}
-            role="slider"
-            aria-label={label}
-            aria-valuemin={min}
-            aria-valuemax={max}
-            aria-valuenow={Number(value)}
-            tabIndex={disabled ? -1 : 0}
-          >
-            {Array.from({ length: 16 }).map((_, index) => {
-              const ratio = index / 15;
-              const tickAngle =
-                (KNOB_START_DEG + ratio * KNOB_SWEEP_DEG) * (Math.PI / 180);
-              const tickX = 44 + Math.cos(tickAngle) * 42;
-              const tickY = 44 + Math.sin(tickAngle) * 42;
-              return (
-                <span
-                  key={`${label}-tick-${index}`}
-                  className="absolute h-3 w-px rounded-full bg-slate-300/80"
-                  style={{
-                    left: tickX,
-                    top: tickY,
-                    transform: `translate(-50%, -50%) rotate(${KNOB_START_DEG + ratio * KNOB_SWEEP_DEG + 90}deg)`,
-                    opacity: index % 5 === 0 ? 1 : 0.7,
-                  }}
-                />
-              );
-            })}
-            <div
-              className={`absolute inset-0 rounded-full ${SOFT_RAISED_CLASS}`}
-            />
-            <div
-              className={`absolute inset-[8px] rounded-full ${SOFT_INSET_CLASS}`}
-            />
-            <div
-              className={`absolute inset-[16px] rounded-full ${SOFT_SURFACE_CLASS}`}
-            />
-            <span
-              className={`absolute h-6 w-6 rounded-full border border-slate-300/70 ${SOFT_RAISED_CLASS}`}
-              style={{
-                left: knobDotX,
-                top: knobDotY,
-                transform: "translate(-50%, -50%)",
-              }}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="mt-2 flex items-center gap-2">
-          <IconButton
-            icon={decreaseIcon}
-            label={`${label} kurang`}
-            onClick={handleStepDecrease}
-            disabled={disabled}
-            className="h-10 w-10 shrink-0"
-          />
-          <div className={`${SOFT_INSET_CLASS} flex min-w-0 flex-1 px-2 py-2`}>
-            <input
-              type="range"
-              min={min}
-              max={max}
-              step={step}
-              value={value}
-              onChange={onChange}
-              disabled={disabled}
-              className="min-w-0 flex-1 accent-slate-400 disabled:cursor-not-allowed disabled:opacity-45"
-            />
-          </div>
-          <IconButton
-            icon={increaseIcon}
-            label={`${label} tambah`}
-            onClick={handleStepIncrease}
-            disabled={disabled}
-            className="h-10 w-10 shrink-0"
-          />
-        </div>
-      )}
-    </div>
-  );
-
-  if (showPreviewOverlay && typeof document !== "undefined") {
-    return createPortal(
-      <div className="fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+116px)] left-3 z-[85]">
-        {controlContent}
-      </div>,
-      document.body,
-    );
-  }
-
-  return controlContent;
-}
-
-// ─── Cup Assessment Inline Component ─────────────────────────────────────────
-
-const LEWINNEK_ZONE = { abdMin: 30, abdMax: 50, antMin: 5, antMax: 25 };
-const CALLANAN_ZONE = { abdMin: 30, abdMax: 45, antMin: 10, antMax: 25 };
-
-function cupZoneStatus(abd, ant) {
-  const inC = abd >= CALLANAN_ZONE.abdMin && abd <= CALLANAN_ZONE.abdMax && ant >= CALLANAN_ZONE.antMin && ant <= CALLANAN_ZONE.antMax;
-  const inL = abd >= LEWINNEK_ZONE.abdMin && abd <= LEWINNEK_ZONE.abdMax && ant >= LEWINNEK_ZONE.antMin && ant <= LEWINNEK_ZONE.antMax;
-  if (inC) return { label: "✓ Safe Zone Optimal", color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" };
-  if (inL) return { label: "~ Safe Zone Lewinnek", color: "#d97706", bg: "#fffbeb", border: "#fde68a" };
-  return { label: "⚠ Di Luar Safe Zone", color: "#dc2626", bg: "#fef2f2", border: "#fecaca" };
-}
-
-// Dial kecil untuk atur rotasi cup langsung — drag memutar, scroll untuk nudge halus
-function CupAngleDial({ angleDeg, onChange, size = 26 }) {
-  const knobRef = useRef(null);
-  const draggingRef = useRef(false);
-
-  const updateFromPointer = (e) => {
-    const rect = knobRef.current.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = e.clientX - cx;
-    const dy = e.clientY - cy;
-    let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-    deg = ((deg % 360) + 360) % 360;
-    onChange(deg);
-  };
-
-  const handlePointerDown = (e) => {
-    draggingRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    updateFromPointer(e);
-  };
-  const handlePointerMove = (e) => {
-    if (!draggingRef.current) return;
-    updateFromPointer(e);
-  };
-  const handlePointerUp = (e) => {
-    draggingRef.current = false;
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-  };
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -1 : 1;
-    onChange(((angleDeg + delta) % 360 + 360) % 360);
-  };
-
-  const r = size / 2 - 3;
-  return (
-    <div
-      ref={knobRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onWheel={handleWheel}
-      title="Drag atau scroll untuk atur rotasi cup"
-      style={{
-        width: size, height: size, borderRadius: "50%",
-        background: "radial-gradient(circle at 35% 30%, #1e293b, #0f172a)",
-        border: "1.5px solid rgba(56,189,248,0.45)",
-        position: "relative", cursor: "grab", flexShrink: 0, touchAction: "none",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute", top: "50%", left: "50%",
-          width: 2, height: r,
-          background: "#38bdf8",
-          transformOrigin: "50% 100%",
-          transform: `translate(-50%,-100%) rotate(${angleDeg}deg)`,
-        }}
-      />
-      <div style={{ position: "absolute", top: "50%", left: "50%", width: 4, height: 4, borderRadius: "50%", background: "#7dd3fc", transform: "translate(-50%,-50%)" }} />
-    </div>
-  );
-}
-
-// Label with bg pill rendered in SVG
-function SvgLabel(React, x, y, text, color, anchor = "middle") {
-  const pad = 5, h = 18, w = text.length * 6.5 + pad * 2;
-  const bx = anchor === "middle" ? x - w / 2 : anchor === "end" ? x - w - 4 : x + 4;
-  return React.createElement(React.Fragment, { key: text },
-    React.createElement("rect", { x: bx, y: y - h + 4, width: w, height: h, rx: 5, fill: "rgba(0,0,0,0.62)" }),
-    React.createElement("text", { x: anchor === "middle" ? x : anchor === "end" ? x - 8 : x + 8, y: y, textAnchor: anchor, fill: color, fontSize: 11, fontWeight: "bold", fontFamily: "monospace" }, text),
-  );
-}
-
-function CupAssessmentOverlayInline({ onClose, onSave, savedData }) {
-  const React = require("react");
-  const { useState, useRef, useCallback, useMemo } = React;
-
-  const svgRef = useRef(null);
-  const [dragging, setDragging] = useState(null);
-  const [handleSize, setHandleSize] = useState("small"); // "small" | "normal"
-  const [minimized, setMinimized] = useState(false);
-  const [side, setSide] = useState("right"); // "left" | "right" hip
-  const [justSaved, setJustSaved] = useState(false);
-
-  const W = typeof window !== "undefined" ? window.innerWidth : 800;
-  const H = typeof window !== "undefined" ? window.innerHeight : 600;
-
-  const [cx, setCx] = useState(W * 0.35);
-  const [cy, setCy] = useState(H * 0.45);
-  const initA = Math.min(W, H) * 0.16;
-  const [a, setA] = useState(initA);
-  // b = a × sin(15°) → anteversion default ~15°
-  const [b, setB] = useState(initA * 0.259);
-  const [angle, setAngle] = useState((40 * Math.PI) / 180);
-
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const handles = {
-    top:    { x: cx - a * cos, y: cy - a * sin },
-    bottom: { x: cx + a * cos, y: cy + a * sin },
-    left:   { x: cx + b * sin, y: cy - b * cos },
-    right:  { x: cx - b * sin, y: cy + b * cos },
-    center: { x: cx, y: cy },
-  };
-
-  const svgPt = useCallback((e) => {
-    const svg = svgRef.current;
-    if (!svg) return { x: e.clientX, y: e.clientY };
-    const r = svg.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
-  }, [W, H]);
-
-  const onPD = useCallback((id) => (e) => {
-    e.stopPropagation();
-    e.target.setPointerCapture(e.pointerId);
-    setDragging(id);
-  }, []);
-
-  const onPM = useCallback((e) => {
-    if (!dragging) return;
-    e.preventDefault();
-    const p = svgPt(e);
-    if (dragging === "center") { setCx(p.x); setCy(p.y); return; }
-    if (dragging === "top" || dragging === "bottom") {
-      const dx = p.x - cx, dy = p.y - cy;
-      const newA = Math.max(12, Math.sqrt(dx * dx + dy * dy));
-      setA(newA);
-      // jika a mengecil sampai di bawah b, ikut kecilkan b agar rasio tetap valid
-      setB(prev => Math.min(prev, newA * 0.9));
-      setAngle(dragging === "top" ? Math.atan2(dy, dx) + Math.PI : Math.atan2(dy, dx));
-      return;
-    }
-    if (dragging === "left" || dragging === "right") {
-      const dx = p.x - cx, dy = p.y - cy;
-      const proj = Math.abs(dx * sin - dy * cos);
-      // cap b di 90% dari a supaya anteversion max ~64°, tidak mentok 89°
-      setB(Math.max(4, Math.min(a * 0.9, proj)));
-    }
-  }, [dragging, cx, cy, a, cos, sin, svgPt]);
-
-  const onPU = useCallback(() => setDragging(null), []);
-
-  // Ellipse path
-  const ePath = useMemo(() => {
-    const pts = Array.from({ length: 64 }, (_, i) => {
-      const t = (i / 64) * 2 * Math.PI;
-      const ex = a * Math.cos(t), ey = b * Math.sin(t);
-      return { x: cx + ex * cos - ey * sin, y: cy + ex * sin + ey * cos };
-    });
-    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z";
-  }, [cx, cy, a, b, cos, sin]);
-
-  const ePathInner = useMemo(() => {
-    const pts = Array.from({ length: 64 }, (_, i) => {
-      const t = (i / 64) * 2 * Math.PI;
-      const ex = a * 0.82 * Math.cos(t), ey = b * 0.82 * Math.sin(t);
-      return { x: cx + ex * cos - ey * sin, y: cy + ex * sin + ey * cos };
-    });
-    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z";
-  }, [cx, cy, a, b, cos, sin]);
-
-
-  // Inclination: angle of major axis vs horizontal, normalised 0–90°
-  const rawDeg = ((angle * 180) / Math.PI % 180 + 180) % 180;
-  const inclination = rawDeg > 90 ? 180 - rawDeg : rawDeg;
-  // Anteversion: radiographic arcsin(b/a), capped < 90° for display
-  const ratio = a > 0 ? Math.min(0.9999, Math.abs(b / a)) : 0;
-  const anteversion = (Math.asin(ratio) * 180) / Math.PI;
-  const zone = cupZoneStatus(inclination, anteversion);
-
-  // Handle radius based on size toggle
-  const HR  = handleSize === "small" ? 5  : 9;   // handle radius
-  const HBG = handleSize === "small" ? 9  : 14;  // halo radius
-  const CS  = handleSize === "small" ? 6  : 10;  // center circle radius
-  const CL  = handleSize === "small" ? 4  : 6;   // center crosshair half-length
-
-  // Label positions — outside ellipse, offset from handles
-  const incLabelX = handles.bottom.x + 16 * cos + 8;
-  const incLabelY = handles.bottom.y + 16 * sin + 8;
-  const avLabelX  = handles.right.x - 16 * sin - 8;
-  const avLabelY  = handles.right.y + 16 * cos + 8;
-
-  // ── Minimized chip — shows only INC/AV values, SVG non-interactive ──
-  if (minimized) {
-    return React.createElement("div", { style: { position: "absolute", inset: 0, zIndex: 80, pointerEvents: "none" } },
-      // Dim ellipse still visible but non-interactive
-      React.createElement("svg", {
-        ref: svgRef, width: W, height: H, viewBox: `0 0 ${W} ${H}`,
-        style: { position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.35 },
-      },
-        React.createElement("line", { x1: 0, y1: cy, x2: W, y2: cy, stroke: "#facc15", strokeWidth: 1, strokeDasharray: "10 5" }),
-        React.createElement("path", { d: ePath, fill: "none", stroke: "#f97316", strokeWidth: 2 }),
-        React.createElement("path", { d: ePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.5, strokeDasharray: "4 2" }),
-      ),
-      // Floating chip (bottom-left, above toolbar)
-      React.createElement("div", {
-        style: {
-          position: "fixed", bottom: 96, left: 16, zIndex: 85,
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 14px", borderRadius: 24,
-          background: "rgba(15,23,42,0.88)", backdropFilter: "blur(10px)",
-          border: `1.5px solid ${zone.border}`,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.28)",
-          pointerEvents: "auto", cursor: "default",
-          fontFamily: "system-ui,sans-serif",
-        }
-      },
-        // Ellipse icon
-        React.createElement("svg", { viewBox: "0 0 24 24", style: { width: 14, height: 14, flexShrink: 0 }, fill: "none", stroke: "#f97316", strokeWidth: 2 },
-          React.createElement("ellipse", { cx: 12, cy: 12, rx: 9, ry: 5, strokeDasharray: "3 1.5" }),
-        ),
-        React.createElement("span", { style: { fontSize: 9, fontWeight: 900, padding: "1px 6px", borderRadius: 6, background: side === "left" ? "rgba(14,165,233,0.2)" : "rgba(249,115,22,0.2)", color: side === "left" ? "#38bdf8" : "#fb923c" } }, side === "left" ? "KIRI" : "KANAN"),
-        // Values
-        React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: inclination >= 30 && inclination <= 50 ? "#4ade80" : "#f87171", letterSpacing: "0.02em" } },
-          `INC ${inclination.toFixed(1)}°`),
-        React.createElement("span", { style: { width: 1, height: 12, background: "rgba(255,255,255,0.2)", flexShrink: 0 } }),
-        React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: anteversion >= 5 && anteversion <= 25 ? "#22d3ee" : "#f87171", letterSpacing: "0.02em" } },
-          `AV ${anteversion.toFixed(1)}°`),
-        // Restore button
-        React.createElement("button", {
-          onClick: () => setMinimized(false),
-          style: { marginLeft: 4, background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 8, padding: "2px 7px", fontSize: 9, fontWeight: 900, color: "white", cursor: "pointer", letterSpacing: "0.05em" }
-        }, "BUKA"),
-        // Close button
-        React.createElement("button", {
-          onClick: onClose,
-          style: { background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 14, fontWeight: 900, padding: "0 2px", lineHeight: 1 }
-        }, "✕"),
-      ),
-    );
-  }
-
-  return React.createElement("div", {
-    style: { position: "absolute", inset: 0, zIndex: 80, pointerEvents: "none" }
-  },
-    // ── SVG canvas ──
-    React.createElement("svg", {
-      ref: svgRef, width: W, height: H, viewBox: `0 0 ${W} ${H}`,
-      style: { position: "absolute", inset: 0, pointerEvents: "auto", touchAction: "none", cursor: dragging ? "grabbing" : "default" },
-      onPointerMove: onPM, onPointerUp: onPU, onPointerLeave: onPU,
-    },
-      // Horizontal reference line
-      React.createElement("line", { x1: 0, y1: cy, x2: W, y2: cy, stroke: "#facc15", strokeWidth: 1.5, strokeDasharray: "10 5", opacity: 0.55 }),
-
-      // Major axis extended line
-      React.createElement("line", { x1: handles.top.x - cos * 20, y1: handles.top.y - sin * 20, x2: handles.bottom.x + cos * 20, y2: handles.bottom.y + sin * 20, stroke: "#a3e635", strokeWidth: 1.5, strokeDasharray: "6 3", opacity: 0.7 }),
-      // Minor axis line
-      React.createElement("line", { x1: handles.left.x, y1: handles.left.y, x2: handles.right.x, y2: handles.right.y, stroke: "#22d3ee", strokeWidth: 1.5, opacity: 0.8 }),
-
-      // Outer cup ellipse (orange)
-      React.createElement("path", { d: ePath, fill: "rgba(249,115,22,0.08)", stroke: "#f97316", strokeWidth: 2.5 }),
-      // Inner liner ellipse (cyan dashed)
-      React.createElement("path", { d: ePathInner, fill: "none", stroke: "#22d3ee", strokeWidth: 1.8, strokeDasharray: "4 2" }),
-
-      // Inclination angle arc
-      React.createElement("path", {
-        d: `M ${cx + 44} ${cy} A 44 44 0 0 ${angle < 0 ? 1 : 0} ${cx + 44 * Math.cos(angle)} ${cy + 44 * Math.sin(angle)}`,
-        fill: "none", stroke: "#a3e635", strokeWidth: 1.8, strokeDasharray: "3 2"
-      }),
-
-      // ── Outside labels ──
-      SvgLabel(React, incLabelX, incLabelY, `INC ${inclination.toFixed(1)}°`, inclination >= 30 && inclination <= 50 ? "#4ade80" : "#f87171"),
-      SvgLabel(React, avLabelX, avLabelY, `AV ${anteversion.toFixed(1)}°`, anteversion >= 5 && anteversion <= 25 ? "#22d3ee" : "#f87171"),
-      SvgLabel(React, 60, cy - 8, "HORIZONTAL", "#fde047", "middle"),
-
-      // ── Drag handles ──
-      // Center
-      React.createElement("circle", { cx, cy, r: CS, fill: "rgba(109,40,217,0.25)", stroke: "#6d28d9", strokeWidth: 2, style: { cursor: "move", pointerEvents: "all" }, onPointerDown: onPD("center") }),
-      React.createElement("line", { x1: cx - CL, y1: cy, x2: cx + CL, y2: cy, stroke: "#6d28d9", strokeWidth: 1.5, style: { pointerEvents: "none" } }),
-      React.createElement("line", { x1: cx, y1: cy - CL, x2: cx, y2: cy + CL, stroke: "#6d28d9", strokeWidth: 1.5, style: { pointerEvents: "none" } }),
-
-      // Top/Bottom — inclination (yellow)
-      ...[
-        { id: "top",    hx: handles.top.x,   hy: handles.top.y   },
-        { id: "bottom", hx: handles.bottom.x, hy: handles.bottom.y },
-      ].flatMap(({ id, hx, hy }) => [
-        React.createElement("circle", { key: id + "_bg", cx: hx, cy: hy, r: HBG, fill: "rgba(250,204,21,0.15)", style: { pointerEvents: "none" } }),
-        React.createElement("circle", { key: id, cx: hx, cy: hy, r: HR, fill: "#facc15", stroke: "white", strokeWidth: 2, style: { cursor: "crosshair", pointerEvents: "all", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }, onPointerDown: onPD(id) }),
-      ]),
-
-      // Left/Right — anteversion (purple)
-      ...[
-        { id: "left",  hx: handles.left.x,  hy: handles.left.y  },
-        { id: "right", hx: handles.right.x, hy: handles.right.y },
-      ].flatMap(({ id, hx, hy }) => [
-        React.createElement("circle", { key: id + "_bg", cx: hx, cy: hy, r: HBG, fill: "rgba(109,40,217,0.15)", style: { pointerEvents: "none" } }),
-        React.createElement("circle", { key: id, cx: hx, cy: hy, r: HR, fill: "#7c3aed", stroke: "white", strokeWidth: 2, style: { cursor: "ew-resize", pointerEvents: "all", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }, onPointerDown: onPD(id) }),
-      ]),
-    ),
-
-    // ── Result card (top-right) ──
-    React.createElement("div", {
-      style: {
-        position: "absolute", top: 60, right: 12, width: 220, borderRadius: 18,
-        border: `2px solid ${zone.border}`, backgroundColor: zone.bg,
-        boxShadow: "0 12px 32px rgba(0,0,0,0.28)", overflow: "hidden", pointerEvents: "auto",
-        fontFamily: "system-ui, sans-serif",
-      }
-    },
-      // Header
-      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", borderBottom: "1px solid rgba(0,0,0,0.1)", background: "rgba(255,255,255,0.9)" } },
-        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-          React.createElement("span", { style: { fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: "#334155" } }, "⊙ Cup Assessment"),
-          React.createElement("span", { style: { fontSize: 9, fontWeight: 800, padding: "1px 7px", borderRadius: 8, background: side === "left" ? "#e0f2fe" : "#fff7ed", color: side === "left" ? "#0284c7" : "#ea580c" } }, side === "left" ? "KIRI" : "KANAN"),
-        ),
-        React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
-          // Minimize button
-          React.createElement("button", {
-            onClick: () => setMinimized(true),
-            title: "Minimize — tetap bisa gambar line",
-            style: { background: "rgba(241,245,249,1)", border: "1px solid #e2e8f0", borderRadius: 7, cursor: "pointer", color: "#64748b", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: "2px 7px" }
-          }, "—"),
-          React.createElement("button", { onClick: onClose, style: { background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16, fontWeight: 900, lineHeight: 1, padding: "0 2px" } }, "✕"),
-        ),
-      ),
-      React.createElement("div", { style: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } },
-        // Zone badge + Save button row
-        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-          React.createElement("div", { style: { flex: 1, padding: "6px 10px", borderRadius: 10, background: zone.bg, border: `1.5px solid ${zone.border}` } },
-            React.createElement("span", { style: { fontSize: 11, fontWeight: 900, color: zone.color } }, zone.label),
-          ),
-          // Save button
-          React.createElement("button", {
-            onClick: () => {
-              if (onSave) {
-                onSave({ inclination, anteversion, side, zone: zone.label });
-                setJustSaved(true);
-                setTimeout(() => setJustSaved(false), 2000);
-              }
-            },
-            title: "Simpan ke laporan pra-operasi",
-            style: {
-              flexShrink: 0,
-              background: justSaved ? "#dcfce7" : "linear-gradient(135deg,#22c55e,#16a34a)",
-              border: justSaved ? "1.5px solid #86efac" : "1.5px solid #15803d",
-              borderRadius: 8, cursor: "pointer",
-              color: justSaved ? "#15803d" : "#fff",
-              fontSize: 10, fontWeight: 800, lineHeight: 1,
-              padding: "5px 10px",
-              transition: "all 0.3s",
-              whiteSpace: "nowrap",
-            }
-          }, justSaved ? "✓ Tersimpan" : "💾 Simpan"),
-        ),
-        // Saved indicator
-        savedData && React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" } },
-          React.createElement("span", { style: { fontSize: 10, color: "#16a34a", fontWeight: 700 } }, "✓ Data tersimpan"),
-          React.createElement("span", { style: { fontSize: 9, color: "#15803d", marginLeft: "auto" } }, savedData.savedAt),
-        ),
-        // Side toggle — kiri / kanan
-        React.createElement("div", { style: { display: "flex", borderRadius: 12, overflow: "hidden", border: "1.5px solid #e2e8f0", background: "white" } },
-          ...[
-            { v: "left",  label: "◁ Kiri",  color: "#0ea5e9" },
-            { v: "right", label: "Kanan ▷", color: "#f97316" },
-          ].map(({ v, label, color }) =>
-            React.createElement("button", {
-              key: v,
-              onClick: () => setSide(v),
-              style: {
-                flex: 1, padding: "6px 0", border: "none", cursor: "pointer",
-                fontSize: 10, fontWeight: 900, letterSpacing: "0.04em",
-                transition: "all 0.15s",
-                background: side === v ? color : "transparent",
-                color: side === v ? "white" : "#94a3b8",
-                borderRight: v === "left" ? "1.5px solid #e2e8f0" : "none",
-              }
-            }, label)
-          ),
-        ),
-
-        // Handle size toggle
-        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: 10, background: "rgba(255,255,255,0.7)", border: "1px solid #e2e8f0" } },
-          React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: "#475569" } }, "Ukuran titik"),
-          React.createElement("div", { style: { display: "flex", gap: 4 } },
-            React.createElement("button", {
-              onClick: () => setHandleSize("small"),
-              style: { padding: "3px 8px", borderRadius: 8, border: "1.5px solid", fontSize: 9, fontWeight: 800, cursor: "pointer",
-                borderColor: handleSize === "small" ? "#f97316" : "#cbd5e1",
-                background: handleSize === "small" ? "#fff7ed" : "white",
-                color: handleSize === "small" ? "#ea580c" : "#94a3b8" }
-            }, "Kecil"),
-            React.createElement("button", {
-              onClick: () => setHandleSize("normal"),
-              style: { padding: "3px 8px", borderRadius: 8, border: "1.5px solid", fontSize: 9, fontWeight: 800, cursor: "pointer",
-                borderColor: handleSize === "normal" ? "#f97316" : "#cbd5e1",
-                background: handleSize === "normal" ? "#fff7ed" : "white",
-                color: handleSize === "normal" ? "#ea580c" : "#94a3b8" }
-            }, "Normal"),
-          ),
-        ),
-        // Big value display
-        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 } },
-          // Inclination
-          React.createElement("div", { style: { background: "rgba(255,255,255,0.8)", borderRadius: 12, padding: "8px 10px", border: "1.5px solid #a3e635" } },
-            React.createElement("div", { style: { fontSize: 8, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 } }, "Inclination"),
-            React.createElement("div", { style: { fontSize: 20, fontWeight: 900, color: inclination >= 30 && inclination <= 50 ? "#16a34a" : "#dc2626", lineHeight: 1 } }, `${inclination.toFixed(1)}°`),
-            React.createElement("div", { style: { fontSize: 8, color: "#94a3b8", marginTop: 2 } }, "Target 30–50°"),
-          ),
-          // Anteversion
-          React.createElement("div", { style: { background: "rgba(255,255,255,0.8)", borderRadius: 12, padding: "8px 10px", border: "1.5px solid #22d3ee" } },
-            React.createElement("div", { style: { fontSize: 8, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 } }, "Anteversion"),
-            React.createElement("div", { style: { fontSize: 20, fontWeight: 900, color: anteversion >= 5 && anteversion <= 25 ? "#16a34a" : "#dc2626", lineHeight: 1 } }, `${anteversion.toFixed(1)}°`),
-            React.createElement("div", { style: { fontSize: 8, color: "#94a3b8", marginTop: 2 } }, "Target 5–25°"),
-          ),
-        ),
-        // Legend
-        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, paddingTop: 6, borderTop: "1px solid rgba(0,0,0,0.07)" } },
-          [
-            ["#f97316", "Outer cup shell — drag ellipse"],
-            ["#22d3ee", "Liner inner surface"],
-            ["#a3e635", "Major axis (inclination)"],
-            ["#facc15", "Horizontal reference"],
-          ].map(([c, l]) =>
-            React.createElement("div", { key: l, style: { display: "flex", alignItems: "center", gap: 7 } },
-              React.createElement("span", { style: { flexShrink: 0, width: 14, height: 3, borderRadius: 2, backgroundColor: c, display: "inline-block" } }),
-              React.createElement("span", { style: { fontSize: 9, color: "#475569" } }, l),
-            )
-          ),
-        ),
-        // Handle legend
-        React.createElement("div", { style: { display: "flex", gap: 10, paddingTop: 4, borderTop: "1px solid rgba(0,0,0,0.07)" } },
-          React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } },
-            React.createElement("span", { style: { width: 12, height: 12, borderRadius: "50%", backgroundColor: "#facc15", border: "2px solid white", display: "inline-block", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" } }),
-            React.createElement("span", { style: { fontSize: 8, color: "#64748b" } }, "Atur Inclination"),
-          ),
-          React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } },
-            React.createElement("span", { style: { width: 12, height: 12, borderRadius: "50%", backgroundColor: "#7c3aed", border: "2px solid white", display: "inline-block", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" } }),
-            React.createElement("span", { style: { fontSize: 8, color: "#64748b" } }, "Atur Anteversion"),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-// ── Hip Planning Calculator ───────────────────────────────────────────────────
-function HipCalcRow({ label, color, value, badge, highlight, note }) {
-  return (
-    <div className={`flex items-center justify-between gap-2 py-[3px] text-[10px] ${highlight ? "font-bold" : ""}`}>
-      <span className="flex min-w-0 items-center gap-1.5">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-        <span className="truncate text-slate-600">{label}</span>
-        {note && <span className="shrink-0 text-[8px] text-slate-400">{note}</span>}
-        {badge && (
-          <span
-            className="shrink-0 rounded px-1 py-0.5 text-[8px] font-bold text-white"
-            style={{ background: color }}
-          >
-            {badge}
-          </span>
-        )}
-      </span>
-      <span
-        className="shrink-0 font-mono font-bold"
-        style={{ color: highlight ? "#ef4444" : color }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
-  const fmt = (mm) => {
-    if (mm === null || mm === undefined) return "—";
-    if (measurementUnit === "cm") return `${(mm / 10).toFixed(2)} cm`;
-    return `${mm.toFixed(1)} mm`;
-  };
-  const pxToMm = (px) => (mmPerPixel !== null ? px * mmPerPixel : px);
-  const fmtPx = (px) =>
-    mmPerPixel !== null ? fmt(pxToMm(px)) : `${Math.round(px)} px`;
-
-  const byType = (type) => lines.filter((l) => l.type === type);
-  const sortByX = (arr) =>
-    [...arr].sort((a, b) => (a.x1 + a.x2) / 2 - (b.x1 + b.x2) / 2);
-
-  const itdLines      = byType("interteardrop");
-  const hLenLines     = sortByX(byType("hipLength"));
-  const fOffLines     = sortByX(byType("femoralOffset"));
-  const aOffLines     = sortByX(byType("acetabularOffset"));
-  const gOffLines     = sortByX(byType("globalOffset"));
-  const lldLines      = byType("lld");
-  const offsetLines   = sortByX(byType("offset"));
-  const headDiamLines = sortByX(byType("headDiameter"));
-  const femurAxisLines = sortByX(byType("femurAxis"));
-
-  // Precision: HRC dari midpoint headDiameter, femoral offset = jarak tegak lurus HRC ke femurAxis
-  const pointToLinePx = (px, py, lx1, ly1, lx2, ly2) => {
-    const num = Math.abs((ly2 - ly1) * px - (lx2 - lx1) * py + lx2 * ly1 - ly2 * lx1);
-    const den = Math.hypot(ly2 - ly1, lx2 - lx1);
-    return den > 0 ? num / den : 0;
-  };
-  const precisionFOffResults = headDiamLines.map((hd) => {
-    const hrcX = (hd.x1 + hd.x2) / 2;
-    const hrcY = (hd.y1 + hd.y2) / 2;
-    const axis = femurAxisLines.find((a) => {
-      const midAX = (a.x1 + a.x2) / 2;
-      const midHX = hrcX;
-      return Math.abs(midAX - midHX) < Math.abs((hd.x2 - hd.x1) * 2);
-    }) || femurAxisLines[0];
-    if (!axis) return null;
-    return {
-      headDPx: getLineLength(hd),
-      hrcX, hrcY,
-      fOffPx: pointToLinePx(hrcX, hrcY, axis.x1, axis.y1, axis.x2, axis.y2),
-      side: (hrcX < (axis.x1 + axis.x2) / 2) ? "L" : "R",
-    };
-  }).filter(Boolean);
-
-  const hasAny = [itdLines, hLenLines, fOffLines, aOffLines, gOffLines, lldLines, offsetLines, headDiamLines, femurAxisLines]
-    .some((arr) => arr.length > 0);
-
-  if (!hasAny) {
-    return (
-      <div className="mt-2 rounded-xl border border-dashed border-slate-300/80 px-3 py-3 text-center text-[9px] leading-relaxed text-slate-400">
-        Gambar line <span className="font-bold text-teal-600">ITD</span>,{" "}
-        <span className="font-bold text-sky-600">H-Len</span>,{" "}
-        <span className="font-bold text-emerald-600">F-Off</span>, atau{" "}
-        <span className="font-bold text-amber-600">A-Off</span> untuk kalkulasi otomatis
-      </div>
-    );
-  }
-
-  // Derived: LLD from H-Len lines
-  const hLenPx = hLenLines.map((l) => getLineLength(l));
-  const lldFromHLen =
-    hLenPx.length >= 2 ? Math.abs(hLenPx[1] - hLenPx[0]) : null;
-  const lldSign =
-    hLenPx.length >= 2
-      ? hLenPx[1] - hLenPx[0] > 0
-        ? "R > L"
-        : hLenPx[1] - hLenPx[0] < 0
-          ? "L > R"
-          : "Sama"
-      : null;
-
-  // Derived: Global Offset = F-Off + A-Off per sisi (jika tidak ada garis globalOffset)
-  const derivedGOff = [0, 1].map((i) => {
-    const fo = fOffLines[i] ? getLineLength(fOffLines[i]) : null;
-    const ao = aOffLines[i] ? getLineLength(aOffLines[i]) : null;
-    return fo !== null && ao !== null ? fo + ao : null;
-  });
-
-  const COLORS = {
-    itd: "#0d9488",
-    hLen: "#0284c7",
-    lld: "#ef4444",
-    fOff: "#10b981",
-    aOff: "#d97706",
-    gOff: "#8b5cf6",
-    offset: "#f43f5e",
-  };
-
-  const sideLabel = (i, arr) => (arr.length > 1 ? (i === 0 ? " L" : " R") : "");
-
-  return (
-    <div className="mt-2 space-y-1.5">
-      {!mmPerPixel && (
-        <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-[9px] text-amber-700">
-          ⚠️ Kalibrasi belum aktif — nilai dalam piksel
-        </div>
-      )}
-
-      {/* ITD */}
-      {itdLines.map((l, i) => (
-        <HipCalcRow
-          key={l.id}
-          label={`ITD${sideLabel(i, itdLines)}`}
-          color={COLORS.itd}
-          value={fmtPx(getLineLength(l))}
-        />
-      ))}
-
-      {/* Hip Length + LLD */}
-      {hLenLines.length > 0 && (
-        <div className="rounded-xl border border-sky-200/60 bg-sky-50/50 px-2.5 py-2">
-          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-sky-700 uppercase">
-            Hip Length
-          </div>
-          {hLenLines.map((l, i) => (
-            <HipCalcRow
-              key={l.id}
-              label={`H-Len${sideLabel(i, hLenLines)}`}
-              color={COLORS.hLen}
-              value={fmtPx(getLineLength(l))}
-            />
-          ))}
-          {lldFromHLen !== null && (
-            <>
-              <div className="my-1 border-t border-sky-200/80" />
-              <HipCalcRow
-                label="LLD"
-                color={COLORS.lld}
-                value={fmtPx(lldFromHLen)}
-                badge={lldSign}
-                highlight={mmPerPixel ? pxToMm(lldFromHLen) > 10 : false}
-                note="= |H-Len R − H-Len L|"
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Offset section */}
-      {(fOffLines.length > 0 || aOffLines.length > 0 || gOffLines.length > 0) && (
-        <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/50 px-2.5 py-2">
-          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-emerald-700 uppercase">
-            Offset
-          </div>
-          {fOffLines.map((l, i) => (
-            <HipCalcRow
-              key={l.id}
-              label={`F-Off${sideLabel(i, fOffLines)}`}
-              color={COLORS.fOff}
-              value={fmtPx(getLineLength(l))}
-            />
-          ))}
-          {aOffLines.map((l, i) => (
-            <HipCalcRow
-              key={l.id}
-              label={`A-Off${sideLabel(i, aOffLines)}`}
-              color={COLORS.aOff}
-              value={fmtPx(getLineLength(l))}
-            />
-          ))}
-
-          {/* Global Offset: pakai garis eksplisit, atau hitung F-Off + A-Off */}
-          {gOffLines.length > 0
-            ? gOffLines.map((l, i) => (
-                <HipCalcRow
-                  key={l.id}
-                  label={`G-Off${sideLabel(i, gOffLines)}`}
-                  color={COLORS.gOff}
-                  value={fmtPx(getLineLength(l))}
-                />
-              ))
-            : derivedGOff.map(
-                (px, i) =>
-                  px !== null && (
-                    <HipCalcRow
-                      key={i}
-                      label={`G-Off${fOffLines.length > 1 || aOffLines.length > 1 ? (i === 0 ? " L" : " R") : ""}`}
-                      color={COLORS.gOff}
-                      value={fmtPx(px)}
-                      note="= F-Off + A-Off"
-                    />
-                  ),
-              )}
-
-          {/* Perbedaan G-Off antar sisi */}
-          {(gOffLines.length >= 2 || derivedGOff.filter(Boolean).length >= 2) && (() => {
-            const leftPx = gOffLines.length >= 2
-              ? getLineLength(gOffLines[0])
-              : derivedGOff[0];
-            const rightPx = gOffLines.length >= 2
-              ? getLineLength(gOffLines[1])
-              : derivedGOff[1];
-            if (leftPx === null || rightPx === null) return null;
-            const diff = Math.abs(rightPx - leftPx);
-            return (
-              <>
-                <div className="my-1 border-t border-emerald-200/80" />
-                <HipCalcRow
-                  label="ΔG-Off"
-                  color={COLORS.gOff}
-                  value={fmtPx(diff)}
-                  note="perbedaan G-Off"
-                />
-              </>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Offset umum */}
-      {offsetLines.map((l, i) => (
-        <HipCalcRow
-          key={l.id}
-          label={`Offset${sideLabel(i, offsetLines)}`}
-          color={COLORS.offset}
-          value={fmtPx(getLineLength(l))}
-        />
-      ))}
-
-      {/* Explicit LLD line */}
-      {lldLines.map((l, i) => (
-        <HipCalcRow
-          key={l.id}
-          label={`LLD${sideLabel(i, lldLines)}`}
-          color={COLORS.lld}
-          value={fmtPx(getLineLength(l))}
-        />
-      ))}
-
-      {/* ── Precision: Head Diameter + Femoral Axis ───────────────────── */}
-      {(headDiamLines.length > 0 || femurAxisLines.length > 0) && (
-        <div className="rounded-xl border border-pink-200/60 bg-pink-50/50 px-2.5 py-2">
-          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-pink-700 uppercase">
-            Presisi — Head & Axis
-          </div>
-          {headDiamLines.map((l, i) => (
-            <HipCalcRow
-              key={l.id}
-              label={`Head-D ${i === 0 && headDiamLines.length > 1 ? "L" : headDiamLines.length > 1 ? "R" : ""}`}
-              color="#ec4899"
-              value={fmtPx(getLineLength(l))}
-              note="diameter"
-            />
-          ))}
-          {femurAxisLines.map((l, i) => (
-            <HipCalcRow
-              key={l.id}
-              label={`Fem-Axis ${femurAxisLines.length > 1 ? (i === 0 ? "L" : "R") : ""}`}
-              color="#6366f1"
-              value={fmtPx(getLineLength(l))}
-              note="axis"
-            />
-          ))}
-          {precisionFOffResults.length > 0 && (
-            <>
-              <div className="my-1 border-t border-pink-200/60" />
-              {precisionFOffResults.map((r, i) => (
-                <HipCalcRow
-                  key={i}
-                  label={`F-Off ${r.side} (HRC→Axis)`}
-                  color="#ec4899"
-                  value={fmtPx(r.fOffPx)}
-                  note="presisi"
-                />
-              ))}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function XrayCalibrationWorkspace({
   simpleUiMode = false,
@@ -5828,6 +654,9 @@ export default function XrayCalibrationWorkspace({
     useState(null);
   const [toolConfigModal, setToolConfigModal] = useState(null);
   const [layerSettingsTab, setLayerSettingsTab] = useState("transform");
+  const [layerSettingsTargetLayerId, setLayerSettingsTargetLayerId] =
+    useState(null);
+  const [simpleLayerBendOpen, setSimpleLayerBendOpen] = useState(false);
   const [hkaSets, setHkaSets] = useState([]);
   const [draftHkaPoints, setDraftHkaPoints] = useState([]);
   const [draftCut, setDraftCut] = useState(null);
@@ -5863,6 +692,8 @@ export default function XrayCalibrationWorkspace({
   const [selectedCutLayerExtraIds, setSelectedCutLayerExtraIds] = useState([]);
   const [selectedFreeLinePointIndex, setSelectedFreeLinePointIndex] =
     useState(null);
+  const [addAnchorPointMode, setAddAnchorPointMode] = useState(false);
+  const [showPresetPicker, setShowPresetPicker] = useState(false);
   const [selectedLineId, setSelectedLineId] = useState(null);
   const [selectedAngleId, setSelectedAngleId] = useState(null);
   const [selectedCircleId, setSelectedCircleId] = useState(null);
@@ -5871,10 +702,14 @@ export default function XrayCalibrationWorkspace({
   const [lockedLineIds, setLockedLineIds] = useState(new Set());
   const [mmPerPixel, setMmPerPixel] = useState(null);
   const [calibrationMode, setCalibrationMode] = useState("line");
+  const calibrationModeRef = useRef("line");
+  calibrationModeRef.current = calibrationMode;
   const [sourceZoomPercent, setSourceZoomPercent] = useState("100");
   const [mmPerPixelAt100Input, setMmPerPixelAt100Input] = useState("0.63");
   const [actualMmInput, setActualMmInput] = useState("10");
   const [actualUnit, setActualUnit] = useState("cm");
+  const [magnificationFactorInput, setMagnificationFactorInput] = useState("115");
+  const [anatomicalRefSizeMm, setAnatomicalRefSizeMm] = useState("46");
   const [calibrationDraftStrokeWidth, setCalibrationDraftStrokeWidth] =
     useState(DEFAULT_LINE_STROKE_WIDTH);
   const [templateRealSizeInput, setTemplateRealSizeInput] = useState("");
@@ -6046,6 +881,7 @@ export default function XrayCalibrationWorkspace({
   const [jlaGuideModalOpen, setJlaGuideModalOpen] = useState(false);
   const [preOpSummaryOpen, setPreOpSummaryOpen] = useState(false);
   const [hkaInfoBubble, setHkaInfoBubble] = useState(null);
+  const [hkaResultPanelOpen, setHkaResultPanelOpen] = useState(false);
   const [hoveredMetricKey, setHoveredMetricKey] = useState(null);
   const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
@@ -6095,6 +931,8 @@ export default function XrayCalibrationWorkspace({
   const [wsAnalyticsOpen, setWsAnalyticsOpen] = useState(false);
   const [wsAnalyticsCases, setWsAnalyticsCases] = useState([]);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
+  const [traumaPlanningOpen, setTraumaPlanningOpen] = useState(false);
+  const [landmarkAnnotationOpen, setLandmarkAnnotationOpen] = useState(false);
   const [driveLibraryOpen, setDriveLibraryOpen] = useState(false);
   const [brushMode, setBrushMode] = useState("erase");
   const [brushSize, setBrushSize] = useState(40);
@@ -6814,6 +1652,8 @@ export default function XrayCalibrationWorkspace({
     (layerId = selectedCutLayerId, tab = "transform") => {
       if (!layerId) return;
       focusLayerSettings(layerId);
+      setLayerSettingsTargetLayerId(layerId);
+      setSimpleLayerBendOpen(false);
       setLayerSettingsTab(tab);
       setToolConfigModal("layerSettings");
     },
@@ -6845,7 +1685,12 @@ export default function XrayCalibrationWorkspace({
   );
 
   useEffect(() => {
-    if (!selectedCutLayer || selectedCutLayer.kind !== "free-line") {
+    // Izinkan selection anchor untuk free-line DAN free-cut (keduanya mendukung warp overlay)
+    const isMaskEditable =
+      selectedCutLayer &&
+      (selectedCutLayer.kind === "free-line" || selectedCutLayer.kind === "free-cut");
+
+    if (!isMaskEditable) {
       if (selectedFreeLinePointIndex !== null) {
         setSelectedFreeLinePointIndex(null);
       }
@@ -7880,6 +2725,34 @@ export default function XrayCalibrationWorkspace({
       };
     }
 
+    if (calibrationMode === "magnification") {
+      const magFactor = Number(magnificationFactorInput);
+      const realSizeMm = Number(anatomicalRefSizeMm);
+      if (!Number.isFinite(magFactor) || magFactor <= 0) {
+        return { status: "bad", title: "QC: Faktor magnifikasi", detail: "Isi faktor magnifikasi (%) dengan angka valid." };
+      }
+      if (!Number.isFinite(realSizeMm) || realSizeMm <= 0) {
+        return { status: "bad", title: "QC: Ukuran anatomi", detail: "Isi estimasi ukuran anatomi (mm) dengan angka valid." };
+      }
+      const referenceMagLine = calibrationReferenceLine;
+      if (!referenceMagLine) {
+        return { status: "bad", title: "QC: Garis anatomi", detail: "Gambar garis di atas struktur anatomi (caput femur dll) lalu simpan." };
+      }
+      const lineLenPx = getLineLength(referenceMagLine);
+      if (!Number.isFinite(lineLenPx) || lineLenPx <= 0) {
+        return { status: "bad", title: "QC: Garis tidak valid", detail: "Ulangi gambar garis." };
+      }
+      const apparentMm = realSizeMm * (magFactor / 100);
+      const endpointTolPx = 2;
+      const errPct = (endpointTolPx / lineLenPx) * 100;
+      const status = errPct > 3.5 ? "bad" : errPct > 1.8 ? "warn" : "good";
+      return {
+        status,
+        title: `QC: Magnifikasi ${magFactor}%`,
+        detail: `Real: ${realSizeMm}mm → Tampak: ≈${apparentMm.toFixed(1)}mm. Error endpoint ±${errPct.toFixed(2)}%. Akurasi bergantung estimasi ukuran anatomi.`,
+      };
+    }
+
     const referenceLine = calibrationReferenceLine;
     if (!referenceLine) {
       return {
@@ -7937,6 +2810,8 @@ export default function XrayCalibrationWorkspace({
     lines,
     mmPerPixel,
     mmPerPixelAt100Input,
+    magnificationFactorInput,
+    anatomicalRefSizeMm,
     selectedLine,
     sourceZoomPercent,
   ]);
@@ -8834,6 +3709,381 @@ export default function XrayCalibrationWorkspace({
     [modelHeight, modelWidth],
   );
 
+  // ── Free Warp Overlay data & handlers ──────────────────────────────────────
+  const warpVertexScreenPts = useMemo(() => {
+    if (!selectedCutLayer || !isEditableMaskLayer(selectedCutLayer)) return [];
+    return getFreeLineVertexPoints(selectedCutLayer).map((pt) => {
+      const sc = imageToScreenPoint(pt.x, pt.y);
+      return { ...pt, screenX: sc.x, screenY: sc.y };
+    });
+  }, [selectedCutLayer, imageToScreenPoint]);
+
+  const warpCurveHandleScreenPts = useMemo(() => {
+    if (!selectedCutLayer || !isEditableMaskLayer(selectedCutLayer) || selectedFreeLinePointIndex === null) return [];
+    return getFreeLineCurveHandles(selectedCutLayer, selectedFreeLinePointIndex).map((h) => {
+      const sc = imageToScreenPoint(h.x, h.y);
+      const asc = imageToScreenPoint(h.anchorX, h.anchorY);
+      return { ...h, screenX: sc.x, screenY: sc.y, anchorScreenX: asc.x, anchorScreenY: asc.y };
+    });
+  }, [selectedCutLayer, selectedFreeLinePointIndex, imageToScreenPoint]);
+
+  const implantWarpVertexScreenPts = useMemo(() => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer) || !isImplantWarpEnabled(selectedCutLayer)) return [];
+    return getImplantWarpWorldPoints(selectedCutLayer).map((pt) => {
+      const sc = imageToScreenPoint(pt.x, pt.y);
+      return { ...pt, screenX: sc.x, screenY: sc.y };
+    });
+  }, [selectedCutLayer, imageToScreenPoint]);
+
+  const enableImplantWarpForSelectedLayer = useCallback(() => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer)) {
+      setNotice("Pilih layer implant/template terlebih dahulu.");
+      return;
+    }
+    setCutLayers((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id) return layer;
+        return {
+          ...layer,
+          implantWarp: {
+            enabled: true,
+            strength: Number(layer.implantWarp?.strength ?? 0.9),
+            anchors: getImplantWarpAnchors(layer),
+          },
+        };
+      }),
+    );
+    setSelectedFreeLinePointIndex(1);
+    setNotice("Warp implant aktif. Geser anchor ungu mengikuti anatomi pasien.");
+  }, [selectedCutLayer, setCutLayers, setNotice]);
+
+  const resetImplantWarpForSelectedLayer = useCallback(() => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer)) return;
+    setCutLayers((prev) =>
+      prev.map((layer) =>
+        layer.id === selectedCutLayer.id
+          ? { ...layer, implantWarp: { enabled: false, strength: 0.9, anchors: getImplantWarpAnchors(layer) } }
+          : layer,
+      ),
+    );
+    setSelectedFreeLinePointIndex(null);
+    setNotice("Warp implant dinonaktifkan.");
+  }, [selectedCutLayer, setCutLayers, setNotice]);
+
+  const updateImplantWarpStrength = useCallback((nextStrength) => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer)) return;
+    const strength = clamp(Number(nextStrength), 0, 1.6);
+    setCutLayers((prev) =>
+      prev.map((layer) =>
+        layer.id === selectedCutLayer.id
+          ? {
+              ...layer,
+              implantWarp: {
+                enabled: true,
+                strength,
+                anchors: getImplantWarpAnchors(layer),
+              },
+            }
+          : layer,
+      ),
+    );
+  }, [selectedCutLayer, setCutLayers]);
+
+  const handleImplantWarpMoveAnchor = useCallback((pointIndex, imageX, imageY) => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer)) return;
+    const clampedPt = clampToImageBounds({ x: imageX, y: imageY });
+    scheduleCutLayersUpdate((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || !isWarpableImageLayer(layer)) return layer;
+        const size = getLayerDisplaySize(layer);
+        const local = toLayerShapeLocal(clampedPt, layer);
+        const nextLocal = {
+          x: clamp(local.x, -size.width / 2, size.width / 2),
+          y: clamp(local.y, -size.height / 2, size.height / 2),
+        };
+        const anchors = getImplantWarpAnchors(layer).map((point, index) =>
+          index === pointIndex ? nextLocal : point,
+        );
+        return {
+          ...layer,
+          implantWarp: {
+            enabled: true,
+            strength: Number(layer.implantWarp?.strength ?? 0.9),
+            anchors,
+          },
+        };
+      }),
+    );
+  }, [selectedCutLayer, clampToImageBounds, scheduleCutLayersUpdate]);
+
+  const addImplantWarpAnchor = useCallback(() => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer)) return;
+    let nextSelectedIndex = 0;
+    setCutLayers((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || !isWarpableImageLayer(layer)) return layer;
+        const anchors = getImplantWarpAnchors(layer);
+        const baseIndex =
+          selectedFreeLinePointIndex !== null
+            ? clamp(selectedFreeLinePointIndex, 0, anchors.length - 1)
+            : Math.max(0, Math.floor(anchors.length / 2) - 1);
+        const insertAt = Math.min(baseIndex + 1, anchors.length);
+        const before = anchors[baseIndex] || anchors[0];
+        const after = anchors[insertAt] || anchors[anchors.length - 1];
+        const nextPoint = {
+          x: ((before?.x || 0) + (after?.x || 0)) / 2,
+          y: ((before?.y || 0) + (after?.y || 0)) / 2,
+        };
+        nextSelectedIndex = insertAt;
+        return {
+          ...layer,
+          implantWarp: {
+            enabled: true,
+            strength: Number(layer.implantWarp?.strength ?? 0.9),
+            anchors: [...anchors.slice(0, insertAt), nextPoint, ...anchors.slice(insertAt)],
+          },
+        };
+      }),
+    );
+    setSelectedFreeLinePointIndex(nextSelectedIndex);
+    setNotice("Anchor warp implant ditambahkan.");
+  }, [selectedCutLayer, selectedFreeLinePointIndex, setCutLayers, setNotice]);
+
+  const deleteImplantWarpAnchor = useCallback(() => {
+    if (!selectedCutLayer || !isWarpableImageLayer(selectedCutLayer) || selectedFreeLinePointIndex === null) return;
+    const deleteIndex = selectedFreeLinePointIndex;
+    setCutLayers((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || !isWarpableImageLayer(layer)) return layer;
+        const anchors = getImplantWarpAnchors(layer);
+        if (anchors.length <= 2) return layer;
+        return {
+          ...layer,
+          implantWarp: {
+            enabled: true,
+            strength: Number(layer.implantWarp?.strength ?? 0.9),
+            anchors: anchors.filter((_, index) => index !== deleteIndex),
+          },
+        };
+      }),
+    );
+    setSelectedFreeLinePointIndex((prev) => (prev === null ? null : Math.max(0, prev - 1)));
+    setNotice("Anchor warp implant dihapus.");
+  }, [selectedCutLayer, selectedFreeLinePointIndex, setCutLayers, setNotice]);
+
+  // Dipanggil SEKALI saat drag dimulai (bukan per-move)
+  const handleWarpDragStart = useCallback((pointIndex) => {
+    setHistoryPaused(true);
+    if (pointIndex !== undefined) setSelectedFreeLinePointIndex(pointIndex);
+  }, [setHistoryPaused]);
+
+  const handleWarpMoveAnchor = useCallback((pointIndex, imageX, imageY) => {
+    if (!selectedCutLayer || !isEditableMaskLayer(selectedCutLayer)) return;
+    const clampedPt = clampToImageBounds({ x: imageX, y: imageY });
+    scheduleCutLayersUpdate((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || !isEditableMaskLayer(layer)) return layer;
+        const nextMp = toLayerMaskPoint(clampedPt, layer, { clampToBounds: false });
+        const nextMaskPoints = (layer.maskPoints || []).map((pt, idx) => {
+          if (idx !== pointIndex) return pt;
+          const dx = nextMp.x - (Number(pt.x) || 0);
+          const dy = nextMp.y - (Number(pt.y) || 0);
+          return {
+            ...pt,
+            x: nextMp.x,
+            y: nextMp.y,
+            handleInX: Number.isFinite(pt.handleInX) ? pt.handleInX + dx : pt.handleInX,
+            handleInY: Number.isFinite(pt.handleInY) ? pt.handleInY + dy : pt.handleInY,
+            handleOutX: Number.isFinite(pt.handleOutX) ? pt.handleOutX + dx : pt.handleOutX,
+            handleOutY: Number.isFinite(pt.handleOutY) ? pt.handleOutY + dy : pt.handleOutY,
+          };
+        });
+        const next = { ...layer, maskPoints: nextMaskPoints };
+        return layer.kind === "free-line" ? normalizeFreeLineLayerBounds(next) : next;
+      }),
+    );
+  }, [selectedCutLayer, clampToImageBounds, scheduleCutLayersUpdate]);
+
+  const handleWarpMoveHandle = useCallback((pointIndex, handleKey, imageX, imageY) => {
+    if (!selectedCutLayer || !isEditableMaskLayer(selectedCutLayer)) return;
+    const clampedPt = clampToImageBounds({ x: imageX, y: imageY });
+    scheduleCutLayersUpdate((prev) =>
+      prev.map((layer) => {
+        if (layer.id !== selectedCutLayer.id || !isEditableMaskLayer(layer)) return layer;
+        const nextMaskPoints = (layer.maskPoints || []).map((pt, idx) => {
+          if (idx !== pointIndex) return pt;
+          const anchorX = Number(pt.x) || 0;
+          const anchorY = Number(pt.y) || 0;
+          const hp = toLayerMaskPoint(clampedPt, layer, { clampToBounds: false });
+          const vx = hp.x - anchorX;
+          const vy = hp.y - anchorY;
+          const next = { ...pt };
+          if (handleKey === "in") {
+            next.handleInX = hp.x;
+            next.handleInY = hp.y;
+            next.handleOutX = anchorX - vx;
+            next.handleOutY = anchorY - vy;
+          } else {
+            next.handleOutX = hp.x;
+            next.handleOutY = hp.y;
+            next.handleInX = anchorX - vx;
+            next.handleInY = anchorY - vy;
+          }
+          return next;
+        });
+        return { ...layer, maskPoints: nextMaskPoints };
+      }),
+    );
+  }, [selectedCutLayer, clampToImageBounds, scheduleCutLayersUpdate]);
+
+  const handleWarpDragEnd = useCallback(() => {
+    setHistoryPaused(false);
+  }, [setHistoryPaused]);
+
+  const handleWarpAddPoint = useCallback((imageX, imageY) => {
+    if (!selectedCutLayer || !isEditableMaskLayer(selectedCutLayer)) return;
+    const clampedPt = clampToImageBounds({ x: imageX, y: imageY });
+    const newMp = toLayerMaskPoint(clampedPt, selectedCutLayer, { clampToBounds: false });
+    const vertices = getFreeLineVertexPoints(selectedCutLayer);
+    let nearestIdx = 0;
+    let bestDist = Infinity;
+    for (const v of vertices) {
+      const d = Math.hypot(v.x - clampedPt.x, v.y - clampedPt.y);
+      if (d < bestDist) { bestDist = d; nearestIdx = v.pointIndex; }
+    }
+    const insertAt = (nearestIdx + 1) % (selectedCutLayer.maskPoints?.length || 1);
+    const maskPoints = selectedCutLayer.maskPoints || [];
+    const nextMaskPoints = [
+      ...maskPoints.slice(0, insertAt),
+      { x: newMp.x, y: newMp.y },
+      ...maskPoints.slice(insertAt),
+    ];
+    setCutLayers((prev) =>
+      prev.map((l) =>
+        l.id === selectedCutLayer.id ? { ...l, maskPoints: nextMaskPoints } : l,
+      ),
+    );
+    setSelectedFreeLinePointIndex(insertAt);
+    setAddAnchorPointMode(false);
+    setNotice("Anchor point disisipkan. Geser untuk posisikan.");
+  }, [selectedCutLayer, clampToImageBounds, setCutLayers, setNotice]);
+
+  const handleWarpDeletePoint = useCallback(() => {
+    if (!selectedCutLayer || !isEditableMaskLayer(selectedCutLayer) || selectedFreeLinePointIndex === null) return;
+    const maskPoints = selectedCutLayer.maskPoints || [];
+    if (maskPoints.length <= 3) {
+      setNotice("Minimal 3 anchor diperlukan.");
+      return;
+    }
+    const nextMaskPoints = maskPoints.filter((_, i) => i !== selectedFreeLinePointIndex);
+    setCutLayers((prev) =>
+      prev.map((l) =>
+        l.id === selectedCutLayer.id ? { ...l, maskPoints: nextMaskPoints } : l,
+      ),
+    );
+    setSelectedFreeLinePointIndex((prev) =>
+      prev !== null ? Math.max(0, Math.min(prev, nextMaskPoints.length - 1)) : null,
+    );
+    setNotice("Anchor point dihapus.");
+  }, [selectedCutLayer, selectedFreeLinePointIndex, setCutLayers, setNotice]);
+
+  const handleWarpExportJson = useCallback(() => {
+    if (!selectedCutLayer) return;
+    const data = {
+      id: selectedCutLayer.id,
+      kind: selectedCutLayer.kind,
+      name: selectedCutLayer.name,
+      maskPoints: selectedCutLayer.maskPoints || [],
+      centerX: selectedCutLayer.centerX,
+      centerY: selectedCutLayer.centerY,
+      width: selectedCutLayer.width,
+      height: selectedCutLayer.height,
+      rotation: selectedCutLayer.rotation || 0,
+      scaleX: selectedCutLayer.scaleX ?? 1,
+      scaleY: selectedCutLayer.scaleY ?? 1,
+      curveStrength: selectedCutLayer.curveStrength ?? 0,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `warp-${selectedCutLayer.name || selectedCutLayer.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [selectedCutLayer]);
+
+  const handleApplyPreset = useCallback(
+    (preset) => {
+      if (!preset || !Array.isArray(preset.points) || preset.points.length < 3) return;
+      if (imageWidth <= 0 || imageHeight <= 0) {
+        setNotice("Tidak ada gambar. Muat X-ray terlebih dahulu.");
+        return;
+      }
+
+      // Scale normalized coords to absolute image-space coords
+      const absPoints = preset.points.map((p) => ({
+        x: p.rx * imageWidth,
+        y: p.ry * imageHeight,
+      }));
+
+      const xs = absPoints.map((p) => p.x);
+      const ys = absPoints.map((p) => p.y);
+      const xMin = Math.min(...xs);
+      const xMax = Math.max(...xs);
+      const yMin = Math.min(...ys);
+      const yMax = Math.max(...ys);
+
+      // Ensure minimum bounding box so layer renders
+      const bboxW = Math.max(xMax - xMin, 20);
+      const bboxH = Math.max(yMax - yMin, 20);
+      const centerX = (xMin + xMax) / 2;
+      const centerY = (yMin + yMax) / 2;
+
+      const maskPoints = absPoints.map((p) => ({
+        x: p.x - centerX,
+        y: p.y - centerY,
+      }));
+
+      const layerId = nextCutLayerIdRef.current;
+      const newLayer = {
+        id: layerId,
+        kind: preset.kind || "free-line",
+        name: preset.name || `Template ${layerId}`,
+        sourceX: 0,
+        sourceY: 0,
+        sourceWidth: bboxW,
+        sourceHeight: bboxH,
+        displayWidth: bboxW,
+        displayHeight: bboxH,
+        centerX,
+        centerY,
+        rotation: 0,
+        flipX: false,
+        flipY: false,
+        opacity: 0.85,
+        contrast: 100,
+        level: 100,
+        lockScale: false,
+        hidden: false,
+        fillColor: DEFAULT_FREE_LINE_COLOR,
+        drawMode: "point",
+        curveStrength: Number.isFinite(preset.curveStrength)
+          ? preset.curveStrength
+          : DEFAULT_FREE_LINE_CURVE_POINT,
+        maskPoints,
+      };
+
+      nextCutLayerIdRef.current += 1;
+      setCutLayers((prev) => [...prev, newLayer]);
+      focusLayerSettings(layerId);
+      setSelectedFreeLinePointIndex(0);
+      setShowPresetPicker(false);
+      setNotice(`Template "${preset.name}" diterapkan. Geser titik anchor untuk menyesuaikan posisi.`);
+    },
+    [imageWidth, imageHeight, setCutLayers, focusLayerSettings, setNotice],
+  );
+  // ────────────────────────────────────────────────────────────────────────────
+
   const fitImageToViewport = useCallback(() => {
     if (
       !orientedSize.width ||
@@ -8844,8 +4094,13 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
+    // On mobile simple UI, reserve space for the fixed bottom MobileNavigation
+    // (~96px nav height + 10px gap + ~14px buffer = 120px, excluding safe-area-inset)
+    const mobileNavInset = isMobileViewport && isSimpleUiMode ? 120 : 0;
+    const visibleHeight = viewport.height - mobileNavInset;
+
     const safeWidth = Math.max(viewport.width - 40, 80);
-    const safeHeight = Math.max(viewport.height - 40, 80);
+    const safeHeight = Math.max(visibleHeight - 40, 80);
     const fittedScale = Math.min(
       safeWidth / orientedSize.width,
       safeHeight / orientedSize.height,
@@ -8855,9 +4110,11 @@ export default function XrayCalibrationWorkspace({
     setView({
       scale: nextScale,
       x: (viewport.width - orientedSize.width * nextScale) / 2,
-      y: (viewport.height - orientedSize.height * nextScale) / 2,
+      y: (visibleHeight - orientedSize.height * nextScale) / 2,
     });
   }, [
+    isSimpleUiMode,
+    isMobileViewport,
     orientedSize.height,
     orientedSize.width,
     viewport.height,
@@ -9188,7 +4445,7 @@ export default function XrayCalibrationWorkspace({
       setShowLeftSidebar(true);
       setMobileControlsOpen(true);
       setMobilePanelMode("setup");
-      setCalibrationMode("line");
+      setCalibrationMode((prev) => prev === "magnification" ? "magnification" : "line");
       setTool(getIdleTool());
       setNotice(message);
       setHighlightCalibrationPanel(true);
@@ -9225,11 +4482,12 @@ export default function XrayCalibrationWorkspace({
       message = "Kalibrasi line wajib untuk measurement akurat. Buat atau pilih garis referensi, isi ukuran real, lalu simpan kalibrasi.",
     ) => {
       setShowStartupCalibrationAlert(false);
-      setCalibrationMode("line");
+      setCalibrationMode((prev) => prev === "magnification" ? "magnification" : "line");
       setSimpleCalibrationModalOpen(true);
+      if (!isMobileViewport) setSimpleQuickPanelMinimized(true);
       setNotice(message);
     },
-    [],
+    [isMobileViewport],
   );
 
   const detectCalibrationMarker = useCallback(() => {
@@ -9485,6 +4743,7 @@ export default function XrayCalibrationWorkspace({
       resetMobileLineTapTarget();
       clearMobileHandleAssist();
       clearMobilePlanningGuideHandleAssist();
+      setHkaResultPanelOpen(false);
       if (nextTool !== "cut") {
         setDraftCut(null);
         setHistoryPaused(false);
@@ -10106,6 +5365,25 @@ export default function XrayCalibrationWorkspace({
     }, 60);
     return () => window.clearTimeout(timeoutId);
   }, [activeRightPanel, selectedCutLayerId]);
+
+  useEffect(() => {
+    if (
+      !isSimpleUiMode ||
+      toolConfigModal !== "layerSettings" ||
+      layerSettingsTargetLayerId === null
+    ) {
+      return;
+    }
+    if (selectedCutLayerId !== layerSettingsTargetLayerId) {
+      setToolConfigModal(null);
+      setLayerSettingsTargetLayerId(null);
+    }
+  }, [
+    isSimpleUiMode,
+    layerSettingsTargetLayerId,
+    selectedCutLayerId,
+    toolConfigModal,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -10856,6 +6134,8 @@ export default function XrayCalibrationWorkspace({
       mmPerPixelAt100Input,
       actualMmInput,
       actualUnit,
+      magnificationFactorInput,
+      anatomicalRefSizeMm,
       calibrationDraftStrokeWidth,
       measurementUnit,
       linePreset,
@@ -10904,6 +6184,8 @@ export default function XrayCalibrationWorkspace({
       measurementUnit,
       mmPerPixel,
       mmPerPixelAt100Input,
+      magnificationFactorInput,
+      anatomicalRefSizeMm,
       rotation,
       sourceZoomPercent,
       snapToLandmarks,
@@ -10982,6 +6264,8 @@ export default function XrayCalibrationWorkspace({
     setMmPerPixelAt100Input(snapshot.mmPerPixelAt100Input || "0.63");
     setActualMmInput(snapshot.actualMmInput);
     setActualUnit(snapshot.actualUnit);
+    if (snapshot.magnificationFactorInput) setMagnificationFactorInput(snapshot.magnificationFactorInput);
+    if (snapshot.anatomicalRefSizeMm) setAnatomicalRefSizeMm(snapshot.anatomicalRefSizeMm);
     setCalibrationDraftStrokeWidth(
       clamp(
         Number(snapshot.calibrationDraftStrokeWidth) ||
@@ -12235,17 +7519,30 @@ export default function XrayCalibrationWorkspace({
             );
             imageCtx.clip();
           }
-          imageCtx.drawImage(
+          const didDrawWarped = drawWarpedImageLayer(
+            imageCtx,
+            layer,
             sourceImage,
             srcX,
             srcY,
             layer.sourceWidth,
             layer.sourceHeight,
-            -displaySize.width / 2,
-            -displaySize.height / 2,
             displaySize.width,
             displaySize.height,
           );
+          if (!didDrawWarped) {
+            imageCtx.drawImage(
+              sourceImage,
+              srcX,
+              srcY,
+              layer.sourceWidth,
+              layer.sourceHeight,
+              -displaySize.width / 2,
+              -displaySize.height / 2,
+              displaySize.width,
+              displaySize.height,
+            );
+          }
         }
 
         if (selectedCutLayerIdsSet.has(layer.id)) {
@@ -12421,7 +7718,7 @@ export default function XrayCalibrationWorkspace({
           const uy = dy / length;
           const nx = -uy;
           const ny = ux;
-          const tickCount = clamp(Math.round(line.presetMm / 10), 5, 15);
+          const tickCount = clamp(Math.round(line.presetMm / 10), 5, 100);
           overlayCtx.strokeStyle = opts.color;
           overlayCtx.lineWidth = Math.max(1, (opts.width || 2) * 0.7);
           overlayCtx.beginPath();
@@ -14713,6 +10010,7 @@ export default function XrayCalibrationWorkspace({
       physicalWidthMm = null,
       physicalHeightMm = null,
       transparentWhiteBackground = false,
+      implantViewMode = null,
     }) => {
       if (!image || !modelWidth || !modelHeight) {
         setNotice(
@@ -14907,6 +10205,7 @@ export default function XrayCalibrationWorkspace({
         physicalWidthMm: physicalTemplateSize?.widthMm || null,
         physicalHeightMm: physicalTemplateSize?.heightMm || null,
         transparentWhiteBackground: Boolean(transparentWhiteBackground),
+        implantViewMode,
       };
 
       nextCutLayerIdRef.current += 1;
@@ -14957,31 +10256,38 @@ export default function XrayCalibrationWorkspace({
     ],
   );
 
+  // Derived key: only changes when physical-scaling-relevant properties change on
+  // image-backed layers.  Free-line / free-cut warp layers are excluded because
+  // normalizeFreeLineLayerBounds mutates sourceWidth/sourceHeight on every drag
+  // frame, which would cause the effect below to call setCutLayers on every frame,
+  // stacking up renders until React throws "Maximum update depth exceeded".
+  const physicalScaleTrigger = useMemo(
+    () =>
+      cutLayers
+        .filter((layer) => {
+          if (!layer.autoScaleFromCalibration || layer.lockScale) return false;
+          if (layer.kind === "free-line" || layer.kind === "free-cut") return false;
+          const rulerPxPerMm = Number(layer.rulerPxPerMm);
+          const hasRulerScale = Number.isFinite(rulerPxPerMm) && rulerPxPerMm > 0;
+          const hasPhysicalSize =
+            Number.isFinite(Number(layer.physicalWidthMm)) &&
+            Number(layer.physicalWidthMm) > 0 &&
+            Number.isFinite(Number(layer.physicalHeightMm)) &&
+            Number(layer.physicalHeightMm) > 0;
+          return hasRulerScale || hasPhysicalSize;
+        })
+        .map(
+          (layer) =>
+            `${layer.id}:${layer.rulerPxPerMm}:${layer.physicalWidthMm}:${layer.physicalHeightMm}:${layer.sourceWidth}:${layer.sourceHeight}:${layer.lockScale}`,
+        )
+        .join("|"),
+    [cutLayers],
+  );
+
   useEffect(() => {
-    if (mmPerPixel === null || !modelWidth || !modelHeight) return;
+    if (!physicalScaleTrigger || mmPerPixel === null || !modelWidth || !modelHeight) return;
 
-    const scalableLayers = cutLayers
-      .filter((layer) => {
-        if (!layer.autoScaleFromCalibration || layer.lockScale) return false;
-        const rulerPxPerMm = Number(layer.rulerPxPerMm);
-        const hasRulerScale =
-          Number.isFinite(rulerPxPerMm) && rulerPxPerMm > 0;
-        const hasPhysicalSize =
-          Number.isFinite(Number(layer.physicalWidthMm)) &&
-          Number(layer.physicalWidthMm) > 0 &&
-          Number.isFinite(Number(layer.physicalHeightMm)) &&
-          Number(layer.physicalHeightMm) > 0;
-        return hasRulerScale || hasPhysicalSize;
-      })
-      .map(
-        (layer) =>
-          `${layer.id}:${layer.rulerPxPerMm}:${layer.physicalWidthMm}:${layer.physicalHeightMm}:${layer.sourceWidth}:${layer.sourceHeight}:${layer.lockScale}`,
-      )
-      .join("|");
-
-    if (!scalableLayers) return;
-
-    const signature = `${mmPerPixel}:${modelWidth}:${modelHeight}:${scalableLayers}`;
+    const signature = `${mmPerPixel}:${modelWidth}:${modelHeight}:${physicalScaleTrigger}`;
     if (physicalTemplateScaleSignatureRef.current === signature) return;
     physicalTemplateScaleSignatureRef.current = signature;
 
@@ -15048,7 +10354,7 @@ export default function XrayCalibrationWorkspace({
       });
       return changed ? nextLayers : prev;
     });
-  }, [cutLayers, mmPerPixel, modelHeight, modelWidth]);
+  }, [physicalScaleTrigger, mmPerPixel, modelHeight, modelWidth]);
 
   const useSheetImageAsMain = useCallback(
     async (imageItem) => {
@@ -15823,6 +11129,10 @@ export default function XrayCalibrationWorkspace({
           setSelectedPlanningGuideId(null);
           triggerSelectionPulse("line", hitLineId);
           clearMobileHandleAssist();
+          if (isSimpleUiMode && hitLineId === calibrationLineId) {
+            openSimpleCalibrationModal();
+            return;
+          }
           if (isLineLocked(hitLineId)) {
             setNotice("Garis ini terkunci. Unlock dulu sebelum dipindah.");
             return;
@@ -16908,6 +12218,7 @@ export default function XrayCalibrationWorkspace({
       ) {
         clearActiveCanvasSelection();
       }
+      setHkaResultPanelOpen(false);
 
         if (tool === "pan") {
           if (
@@ -18557,6 +13868,10 @@ export default function XrayCalibrationWorkspace({
           interactionRef.current;
         const dx = point.x - startX;
         const dy = point.y - startY;
+        if (!interactionRef.current.hasMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+          interactionRef.current.hasMoved = true;
+          setHkaResultPanelOpen(false);
+        }
         scheduleHkaUpdate((prev) =>
           prev.map((item) =>
             item.id === hkaId
@@ -18841,7 +14156,9 @@ export default function XrayCalibrationWorkspace({
         }
         if (!hasCalibration) {
           const calibrationMessage =
-            'Garis dibuat. Buka menu "Kalibrasi", pakai tab "Garis Real", isi nilai referensi, lalu tekan "Simpan Kalibrasi".';
+            calibrationModeRef.current === "magnification"
+              ? 'Garis siap. Tekan "Terapkan Kalibrasi" di panel Magnifikasi untuk menerapkan.'
+              : 'Garis dibuat. Buka menu "Kalibrasi", pakai tab "Garis Real", isi nilai referensi, lalu tekan "Simpan Kalibrasi".';
           setActionToast({
             id: Date.now(),
             type: "success",
@@ -18924,6 +14241,9 @@ export default function XrayCalibrationWorkspace({
       setView((prev) => clampViewToViewport(prev, { relaxed: true }));
     }
 
+    if (completedInteractionMode === "move-hka-label" && !interactionRef.current.hasMoved && isSimpleUiMode) {
+      setHkaResultPanelOpen(true);
+    }
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     interactionStartedAtRef.current = 0;
     interactionCanvasRectRef.current = null;
@@ -19138,14 +14458,14 @@ export default function XrayCalibrationWorkspace({
     const zoomPercent = Number(sourceZoomPercent);
     if (!Number.isFinite(zoomPercent) || zoomPercent <= 0) {
       setNotice("Zoom source harus angka > 0.");
-      return;
+      return false;
     }
 
     if (calibrationMode === "zoom") {
       const baseFactorAt100 = Number(mmPerPixelAt100Input);
       if (!Number.isFinite(baseFactorAt100) || baseFactorAt100 <= 0) {
         setNotice("Isi nilai mm/px pada zoom 100% dengan angka valid.");
-        return;
+        return false;
       }
       const factorFromZoom = baseFactorAt100 * (100 / zoomPercent);
       setMmPerPixel(factorFromZoom);
@@ -19153,24 +14473,62 @@ export default function XrayCalibrationWorkspace({
       setNotice(
         `Kalibrasi zoom aktif (${zoomPercent.toFixed(2)}%). Faktor: ${factorFromZoom.toFixed(6)} mm/px. QC: verifikasi lagi dengan ruler jika tersedia.`,
       );
-      return;
+      return true;
+    }
+
+    if (calibrationMode === "magnification") {
+      const referenceMagLine =
+        selectedLine ||
+        lines.find((line) => line.id === calibrationLineId) ||
+        null;
+      if (!referenceMagLine) {
+        setNotice("Gambar garis di atas struktur anatomi (caput femur, dll) lalu simpan.");
+        return false;
+      }
+      const magFactor = Number(magnificationFactorInput);
+      const realSizeMm = Number(anatomicalRefSizeMm);
+      if (!Number.isFinite(magFactor) || magFactor <= 0) {
+        setNotice("Isi faktor magnifikasi (%) dengan angka valid.");
+        return false;
+      }
+      if (!Number.isFinite(realSizeMm) || realSizeMm <= 0) {
+        setNotice("Isi estimasi ukuran anatomi (mm) dengan angka valid.");
+        return false;
+      }
+      const lenPx = getLineLength(referenceMagLine);
+      if (!Number.isFinite(lenPx) || lenPx <= 0) {
+        setNotice("Garis referensi tidak valid.");
+        return false;
+      }
+      const apparentSizeMm = realSizeMm * (magFactor / 100);
+      const factor = apparentSizeMm / lenPx;
+      const normalizedAt100Mag = factor * (Number(sourceZoomPercent) / 100);
+      setMmPerPixel(factor);
+      setCalibrationLineId(referenceMagLine.id);
+      if (Number.isFinite(normalizedAt100Mag) && normalizedAt100Mag > 0) {
+        setMmPerPixelAt100Input(normalizedAt100Mag.toFixed(6));
+      }
+      setNotice(
+        `Kalibrasi magnifikasi ${magFactor}% aktif. Real: ${realSizeMm}mm → Tampak: ${apparentSizeMm.toFixed(1)}mm. Faktor: ${factor.toFixed(6)} mm/px.`,
+      );
+      return true;
     }
 
     if (!referenceLine) {
       setNotice("Pilih satu garis dulu untuk dijadikan referensi kalibrasi.");
-      return;
+      return false;
     }
 
     const actualMm = Number(actualMmInput);
     if (!Number.isFinite(actualMm) || actualMm <= 0) {
       setNotice("Nilai referensi harus angka positif.");
-      return;
+      return false;
     }
 
     const lengthPx = getLineLength(referenceLine);
     if (lengthPx <= 0) {
       setNotice("Garis referensi tidak valid.");
-      return;
+      return false;
     }
 
     const actualMmValue = actualUnit === "cm" ? actualMm * 10 : actualMm;
@@ -19193,6 +14551,7 @@ export default function XrayCalibrationWorkspace({
     setNotice(
       `Kalibrasi garis berhasil (zoom source ${zoomPercent.toFixed(2)}%). ${qcText}: estimasi error ±${estimatedErrorPct.toFixed(2)}%.`,
     );
+    return true;
   }, [
     actualMmInput,
     actualUnit,
@@ -19200,6 +14559,8 @@ export default function XrayCalibrationWorkspace({
     calibrationLineId,
     lines,
     mmPerPixelAt100Input,
+    magnificationFactorInput,
+    anatomicalRefSizeMm,
     selectedLine,
     sourceZoomPercent,
   ]);
@@ -20589,6 +15950,7 @@ export default function XrayCalibrationWorkspace({
           transparentWhiteBackground: Boolean(
             template.transparentWhiteBackground,
           ),
+          implantViewMode: template.implantViewMode || null,
         });
       } catch {
         setNotice("Gagal load template dari library.");
@@ -20653,6 +16015,30 @@ export default function XrayCalibrationWorkspace({
     openSimpleCalibrationModal,
     selectedImplantLibraryItem,
   ]);
+
+  const handleAddTraumaLayer = useCallback(
+    ({ imageSrc, name, physicalWidthMm, physicalHeightMm, viewKey }) => {
+      void addTemplateToCanvas({
+        id: `trauma-${Date.now()}`,
+        name: name || "Trauma Implant",
+        imageSrc,
+        sourceWidth: 0,
+        sourceHeight: 0,
+        autoScaleFromCalibration: Boolean(physicalWidthMm || physicalHeightMm),
+        physicalSize: null,
+        physicalWidthMm: physicalWidthMm ?? null,
+        physicalHeightMm: physicalHeightMm ?? null,
+        transparentWhiteBackground: false,
+        implantViewMode: viewKey || "ap",
+      }).then((added) => {
+        if (!added || mmPerPixel !== null) return;
+        const msg = `Template "${name}" ditambahkan. Klik Calib/Ruler dan buat garis kalibrasi agar ukuran implant otomatis menyesuaikan X-ray.`;
+        if (isSimpleUiMode) { openSimpleCalibrationModal(msg); return; }
+        focusCalibrationStep(msg);
+      });
+    },
+    [addTemplateToCanvas, focusCalibrationStep, isSimpleUiMode, mmPerPixel, openSimpleCalibrationModal],
+  );
 
   const replaceSelectedLayerWithSelectedImplant = useCallback(async () => {
     if (!selectedCutLayer) {
@@ -21294,7 +16680,7 @@ export default function XrayCalibrationWorkspace({
     }
 
     const outCanvas = createReportCanvasSnapshot("export PNG", {
-      exportScale: 2,
+      exportScale: 3,
       sharpen: true,
     });
     if (!outCanvas) return;
@@ -21312,7 +16698,7 @@ export default function XrayCalibrationWorkspace({
         link.download = `${baseName}-report-sharp.png`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1200);
-        setNotice("Report PNG 2x sharp berhasil diunduh.");
+        setNotice("Report PNG 3x sharp berhasil diunduh.");
       }, "image/png");
     } catch {
       setNotice(
@@ -21334,7 +16720,7 @@ export default function XrayCalibrationWorkspace({
     }
 
     const outCanvas = createReportCanvasSnapshot("export JPEG", {
-      exportScale: 2,
+      exportScale: 3,
       sharpen: true,
       background: "#020617",
     });
@@ -21354,7 +16740,7 @@ export default function XrayCalibrationWorkspace({
           link.download = `${baseName}-report-highest.jpg`;
           link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1200);
-          setNotice("Report JPEG highest 2x sharp berhasil diunduh.");
+          setNotice("Report JPEG highest 3x sharp berhasil diunduh.");
         },
         "image/jpeg",
         1,
@@ -21378,7 +16764,10 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
-    const outCanvas = createReportCanvasSnapshot("export PDF");
+    const outCanvas = createReportCanvasSnapshot("export PDF", {
+      exportScale: 2,
+      sharpen: true,
+    });
     if (!outCanvas) return;
 
     let imageData = "";
@@ -22538,6 +17927,12 @@ export default function XrayCalibrationWorkspace({
         ? simpleMobilePanel === "export"
         : mobileWorkspacePanelVisible && activeRightPanel === "planning",
     },
+    {
+      id: "annotate",
+      label: "Anotasi",
+      onClick: () => setLandmarkAnnotationOpen(true),
+      active: landmarkAnnotationOpen,
+    },
   ];
   return (
     <div
@@ -23107,6 +18502,163 @@ export default function XrayCalibrationWorkspace({
             </motion.div>
           </motion.div>
         ) : null}
+      </AnimatePresence>
+
+      {/* ── HKA/FTA/JLA Result Panel ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {isSimpleUiMode && hkaResultPanelOpen && selectedHka ? (() => {
+          const result = getHkaMeasurementResult(selectedHka);
+          const modeKey = selectedHka.mode || "full";
+          const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
+          const accentColor = modeColors[modeKey] || "#0891b2";
+
+          const statusBadge = (() => {
+            if (modeKey === "fta") {
+              if (!result.fta) return { label: "Belum lengkap", bg: "#fee2e2", color: "#dc2626" };
+              const hka = result.predictedHka;
+              if (hka === null) return { label: "—", bg: "#f1f5f9", color: "#64748b" };
+              if (Math.abs(hka) <= 3) return { label: "Normal", bg: "#dcfce7", color: "#16a34a" };
+              return hka > 0 ? { label: "Varus", bg: "#fee2e2", color: "#dc2626" } : { label: "Valgus", bg: "#dbeafe", color: "#2563eb" };
+            }
+            if (modeKey === "jla") {
+              if (!result.jla) return { label: "Belum lengkap", bg: "#fee2e2", color: "#dc2626" };
+              return { label: result.jla.cpakType || "JLA", bg: "#ede9fe", color: "#7c3aed" };
+            }
+            if (result.absoluteDeviation === null) return { label: "Belum lengkap", bg: "#fee2e2", color: "#dc2626" };
+            const dev = result.absoluteDeviation;
+            if (dev <= 3) return { label: "Normal", bg: "#dcfce7", color: "#16a34a" };
+            return dev > 0 ? { label: "Varus", bg: "#fee2e2", color: "#dc2626" } : { label: "Valgus", bg: "#dbeafe", color: "#2563eb" };
+          })();
+
+          return (
+            <motion.div
+              key="hka-result-panel"
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.97 }}
+              transition={PANEL_SPRING}
+              className="pointer-events-none fixed inset-x-0 bottom-0 z-[88] flex items-end justify-center p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 sm:items-center sm:p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={PANEL_SPRING}
+                className="pointer-events-auto w-full max-w-[min(100%,520px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between gap-2 px-4 py-3" style={{ background: `linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%)` }}>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black tracking-widest text-white/70 uppercase">Hasil Pengukuran</p>
+                    <h2 className="text-lg font-black text-white leading-tight">
+                      {modeKey === "full" ? "HKA — Hip-Knee-Ankle" : modeKey === "fta" ? "FTA — Femorotibial Angle" : "JLA — Joint Line Analysis"}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full px-2.5 py-1 text-[10px] font-black" style={{ background: statusBadge.bg, color: statusBadge.color }}>
+                      {statusBadge.label}
+                    </span>
+                    <button type="button" onClick={() => setHkaResultPanelOpen(false)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="max-h-[60vh] overflow-y-auto p-4 space-y-3">
+                  {/* Values grid */}
+                  {modeKey === "full" && result.absoluteDeviation !== null && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "HKA", value: `${result.absoluteDeviation.toFixed(1)}°`, sub: result.absoluteDeviation > 0 ? "Varus" : result.absoluteDeviation < 0 ? "Valgus" : "Netral", color: accentColor },
+                        { label: "Normal", value: "0° ± 3°", sub: "Target alignment", color: "#16a34a" },
+                        { label: "Side", value: (selectedHka.side || "right").charAt(0).toUpperCase() + (selectedHka.side || "right").slice(1), sub: "Kaki", color: "#64748b" },
+                        { label: "Target", value: "+2° s.d. +3°", sub: "HTO/DFO koreksi", color: "#7c3aed" },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-[16px] border border-white/70 bg-white/50 p-2.5 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                          <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: item.color }}>{item.label}</p>
+                          <p className="mt-0.5 text-base font-black leading-none" style={{ color: item.color }}>{item.value}</p>
+                          <p className="mt-0.5 text-[8px] text-slate-400">{item.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {modeKey === "fta" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "FTA", value: result.fta !== null ? `${result.fta.toFixed(1)}°` : "—", sub: "Normal 174°–176°", color: accentColor },
+                        { label: "Prediksi HKA", value: result.predictedHka !== null ? `${result.predictedHka.toFixed(1)}°` : "—", sub: "FTA − 6° (±2°)", color: "#7c3aed" },
+                        { label: "Normal FTA", value: "174°–176°", sub: "Valgus fisiologis 5°–6°", color: "#16a34a" },
+                        { label: "Akurasi", value: "±2°", sub: "Estimasi individual", color: "#f59e0b" },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-[16px] border border-white/70 bg-white/50 p-2.5 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                          <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: item.color }}>{item.label}</p>
+                          <p className="mt-0.5 text-base font-black leading-none" style={{ color: item.color }}>{item.value}</p>
+                          <p className="mt-0.5 text-[8px] text-slate-400">{item.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {modeKey === "jla" && result.jla && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "LDFA", value: `${result.jla.LDFA}°`, sub: "Normal 87° ±3°", color: "#1d4ed8" },
+                        { label: "MPTA", value: `${result.jla.MPTA}°`, sub: "Normal 87° ±3°", color: "#065f46" },
+                        { label: "JLCA", value: `${result.jla.JLCA}°`, sub: "Normal 0° ±2°", color: "#6b21a8" },
+                        { label: "JLO", value: result.jla.JLO_hsu !== undefined ? `${result.jla.JLO_hsu}°` : "—", sub: "Normal ≤ 3° (Hsu)", color: "#92400e" },
+                        { label: "HKA", value: result.jla.cpakHKA !== undefined ? `${result.jla.cpakHKA}°` : "—", sub: "Alignment mekanis", color: "#0891b2" },
+                        { label: "CPAK", value: result.jla.cpakType || "—", sub: "Fenotipe biomekanik", color: "#4338ca" },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-[16px] border border-white/70 bg-white/50 p-2.5 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                          <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: item.color }}>{item.label}</p>
+                          <p className="mt-0.5 text-base font-black leading-none" style={{ color: item.color }}>{item.value}</p>
+                          <p className="mt-0.5 text-[8px] text-slate-400">{item.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {result.absoluteDeviation === null && modeKey !== "jla" && modeKey !== "fta" && (
+                    <p className="text-center text-sm text-slate-400">Pengukuran belum lengkap.</p>
+                  )}
+
+                  {/* Clinical note */}
+                  {(() => {
+                    const info = HKA_INFO_BUBBLES[modeKey];
+                    if (!info) return null;
+                    return (
+                      <div className="rounded-[18px] border border-white/70 bg-white/40 px-3 py-2.5 shadow-[inset_3px_3px_7px_rgba(100,116,139,0.12)]">
+                        <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest" style={{ color: accentColor }}>Kegunaan Klinis</p>
+                        <ul className="space-y-1">
+                          {info.clinical.map((line, i) => (
+                            <li key={i} className="flex items-start gap-1.5 text-[10px] leading-snug text-slate-600">
+                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accentColor }} />
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-2 text-[8px] text-slate-400 border-t border-slate-200/60 pt-1.5">Ref: {info.ref}</p>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Actions */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => { setHkaResultPanelOpen(false); setHkaInfoBubble(modeKey); }}
+                      className="min-h-10 rounded-[16px] border border-white/80 bg-[#e9eef5] px-3 py-2 text-[10px] font-extrabold text-slate-600 shadow-[4px_4px_10px_rgba(100,116,139,0.18),-4px_-4px_10px_rgba(255,255,255,0.72)]">
+                      Detail Info ⓘ
+                    </button>
+                    <button type="button" onClick={() => { setHkaResultPanelOpen(false); handleToolChange("hkaAuto", { skipHkaSidePrompt: true }); }}
+                      className="min-h-10 rounded-[16px] border border-white/80 px-3 py-2 text-[10px] font-extrabold text-white shadow-[4px_4px_10px_rgba(8,145,178,0.22)]"
+                      style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}bb)` }}>
+                      Ukur Ulang
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })() : null}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -24077,7 +19629,7 @@ export default function XrayCalibrationWorkspace({
               className={
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
-                    ? "pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(92vw,360px)] overflow-y-auto rounded-[28px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] backdrop-blur-xl"
+                    ? "simple-layer-settings-modal pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(94vw,420px)] overflow-y-auto rounded-[24px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-3 [color:var(--soft-text)] shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl"
                     : "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-5 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
@@ -24117,7 +19669,7 @@ export default function XrayCalibrationWorkspace({
                     className={
                       toolConfigModal === "layerSettings"
                         ? isSimpleUiMode
-                          ? "h-4 w-4 text-cyan-800"
+                          ? "h-4 w-4 text-cyan-500"
                           : "h-5 w-5 text-cyan-800"
                         : "h-4 w-4 text-cyan-700"
                     }
@@ -24126,7 +19678,7 @@ export default function XrayCalibrationWorkspace({
                     className={
                       toolConfigModal === "layerSettings"
                         ? isSimpleUiMode
-                          ? "text-sm font-extrabold text-slate-950"
+                          ? "text-sm font-extrabold text-[var(--soft-text-hi)]"
                           : "text-lg font-extrabold text-slate-950"
                         : "text-sm font-semibold text-slate-900"
                     }
@@ -24147,11 +19699,14 @@ export default function XrayCalibrationWorkspace({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setToolConfigModal(null)}
+                  onClick={() => {
+                    setToolConfigModal(null);
+                    setLayerSettingsTargetLayerId(null);
+                  }}
                   className={
                     toolConfigModal === "layerSettings"
                       ? isSimpleUiMode
-                        ? "rounded-full border border-white/70 bg-[#eef2f7] px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-[3px_3px_8px_rgba(148,163,184,0.3),-3px_-3px_8px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
+                        ? "rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-3 py-1.5 text-[11px] font-bold text-[var(--soft-text)] shadow-[var(--soft-shadow-raised)] transition hover:text-[var(--soft-text-hi)]"
                         : "rounded-full border border-white/70 bg-[#eef2f7] px-5 py-2 text-xs font-semibold text-slate-700 shadow-[4px_4px_10px_rgba(148,163,184,0.42),-4px_-4px_10px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
                       : `${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`
                   }
@@ -24249,41 +19804,36 @@ export default function XrayCalibrationWorkspace({
 
               {toolConfigModal === "layerSettings" ? (
                 isSimpleUiMode ? (
-                <div className="flex flex-col gap-2.5">
+                <div className="flex flex-col gap-3">
                   {!selectedCutLayer || !selectedLayerMetrics ? (
-                    <div className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}>
+                    <div className="rounded-2xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-3 text-xs text-[var(--soft-text)]">
                       Pilih satu layer dulu dari daftar layer.
                     </div>
                   ) : (
                     <>
-                      <div className="rounded-[20px] border border-white/75 bg-[#eef2f7] px-3 py-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.22),inset_-3px_-3px_8px_rgba(255,255,255,0.84)]">
-                        <div className="text-[9px] font-black tracking-widest text-cyan-800 uppercase">
-                          Active Target
-                        </div>
-                        <div className="mt-1 flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate text-xs font-black text-slate-900">
-                            {selectedCutLayer.name ||
-                              getLayerDefaultName(selectedCutLayer)}
+                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[9px] font-black tracking-widest text-cyan-500 uppercase">
+                              Layer Aktif
+                            </div>
+                            <div className="mt-1 truncate text-sm font-black text-[var(--soft-text-hi)]">
+                              {selectedCutLayer.name ||
+                                getLayerDefaultName(selectedCutLayer)}
+                            </div>
+                            <div className="mt-1 text-[11px] font-semibold text-[var(--soft-text)] opacity-70">
+                              W {formatTemplateLayerRealSize(selectedLayerMetrics.widthMm)} · H {formatTemplateLayerRealSize(selectedLayerMetrics.heightMm)}
+                            </div>
                           </div>
-                          <div className="shrink-0 rounded-full border border-white/75 bg-white/45 px-2 py-0.5 font-mono text-[9px] font-bold text-slate-500">
+                          <div className="shrink-0 rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--soft-text)]">
                             {selectedCutLayerIndex + 1}/{cutLayers.length}
                           </div>
-                        </div>
-                        <div className="mt-1 text-[10px] font-semibold text-slate-500">
-                          W{" "}
-                          {formatTemplateLayerRealSize(
-                            selectedLayerMetrics.widthMm,
-                          )}{" "}
-                          | H{" "}
-                          {formatTemplateLayerRealSize(
-                            selectedLayerMetrics.heightMm,
-                          )}
                         </div>
                       </div>
 
                       {selectedCutLayer.kind === "free-line" ? (
-                        <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[3px_3px_8px_rgba(148,163,184,0.18),-3px_-3px_8px_rgba(255,255,255,0.76)]">
-                          <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                        <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                          <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                             Shape
                           </div>
                           <input
@@ -24297,7 +19847,7 @@ export default function XrayCalibrationWorkspace({
                                 name: event.target.value,
                               })
                             }
-                            className="mb-2 w-full rounded-xl border border-white/90 bg-[#edf1f6] px-3 py-2 text-xs font-bold text-slate-800 outline-none shadow-[inset_2px_2px_4px_rgba(196,207,220,0.7),inset_-2px_-2px_4px_#ffffff]"
+                            className="mb-2 w-full rounded-xl border border-[var(--soft-border)] [background:var(--soft-inset-bg)] px-3 py-2 text-xs font-bold text-[var(--soft-text-hi)] outline-none focus:border-cyan-400"
                             placeholder="Nama layer"
                           />
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -24321,17 +19871,89 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
 
-                      <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
-                        <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
-                          Fungsi
+                      {isWarpableImageLayer(selectedCutLayer) ? (
+                        <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() => setSimpleLayerBendOpen((value) => !value)}
+                            className="flex w-full items-center justify-between gap-2 text-left"
+                          >
+                            <div>
+                              <div className="text-[9px] font-black tracking-widest text-violet-500 uppercase">
+                                Bend Implant
+                              </div>
+                              <div className="text-[10px] font-semibold text-[var(--soft-text)] opacity-70">
+                                Untuk plate/nail mengikuti kurva anatomi
+                              </div>
+                            </div>
+                            <span className="rounded-full border border-[var(--soft-border)] px-2 py-1 text-[10px] font-black text-violet-500">
+                              {simpleLayerBendOpen ? "Tutup" : isImplantWarpEnabled(selectedCutLayer) ? "Aktif" : "Buka"}
+                            </span>
+                          </button>
+                          {simpleLayerBendOpen ? (
+                            <div className="mt-3">
+                              <div className="mb-2 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={isImplantWarpEnabled(selectedCutLayer) ? resetImplantWarpForSelectedLayer : enableImplantWarpForSelectedLayer}
+                                  className={`rounded-full px-3 py-1.5 text-[10px] font-black transition ${
+                                    isImplantWarpEnabled(selectedCutLayer)
+                                      ? "bg-violet-600 text-white"
+                                      : "border border-violet-300/45 [background:var(--soft-raised-bg)] text-violet-500"
+                                  }`}
+                                >
+                                  {isImplantWarpEnabled(selectedCutLayer) ? "Nonaktifkan" : "Aktifkan"}
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-[1fr_44px] items-center gap-2">
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={160}
+                                  step={1}
+                                  disabled={!isImplantWarpEnabled(selectedCutLayer)}
+                                  value={Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}
+                                  onChange={(event) => updateImplantWarpStrength(Number(event.target.value) / 100)}
+                                  className="h-2 w-full accent-violet-600 disabled:opacity-40"
+                                />
+                                <span className="text-right text-[10px] font-black text-violet-500">
+                                  {Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}%
+                                </span>
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={addImplantWarpAnchor}
+                                  disabled={!isImplantWarpEnabled(selectedCutLayer)}
+                                  className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-black text-violet-500 disabled:opacity-40"
+                                >
+                                  + Titik Anchor
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={deleteImplantWarpAnchor}
+                                  disabled={!isImplantWarpEnabled(selectedCutLayer) || selectedFreeLinePointIndex === null || getImplantWarpAnchors(selectedCutLayer).length <= 2}
+                                  className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-black text-rose-500 disabled:opacity-40"
+                                >
+                                  Hapus Anchor
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                        <div className="grid grid-cols-4 gap-1.5">
+                      ) : null}
+
+                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                        <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
+                          Aksi Cepat
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
                           {[
                             {
                               key: "move",
                               icon: "pan",
                               label: "Move",
-                              tone: "text-cyan-700",
+                              tone: "text-cyan-500",
                               onClick: () => {
                                 handleToolChange("pan");
                                 focusLayerCanvas(selectedCutLayer.id, {
@@ -24343,7 +19965,7 @@ export default function XrayCalibrationWorkspace({
                               key: "center",
                               icon: "fit",
                               label: "Center",
-                              tone: "text-blue-700",
+                              tone: "text-blue-500",
                               disabled: !modelWidth || !modelHeight,
                               onClick: () =>
                                 updateLayerById(selectedCutLayer.id, {
@@ -24355,14 +19977,14 @@ export default function XrayCalibrationWorkspace({
                               key: "duplicate",
                               icon: "layers",
                               label: "Copy",
-                              tone: "text-indigo-700",
+                              tone: "text-indigo-500",
                               onClick: duplicateSelectedCutLayer,
                             },
                             {
                               key: "visibility",
                               icon: selectedCutLayer.hidden ? "eyeOff" : "eye",
                               label: selectedCutLayer.hidden ? "Show" : "Hide",
-                              tone: "text-slate-700",
+                              tone: "text-[var(--soft-text)]",
                               onClick: () =>
                                 toggleCutLayerVisibility(selectedCutLayer.id),
                             },
@@ -24370,7 +19992,7 @@ export default function XrayCalibrationWorkspace({
                               key: "lock",
                               icon: selectedCutLayer.lockScale ? "lock" : "unlock",
                               label: selectedCutLayer.lockScale ? "Unlock" : "Lock",
-                              tone: "text-amber-700",
+                              tone: "text-amber-500",
                               onClick: () =>
                                 updateLayerById(selectedCutLayer.id, (item) => ({
                                   ...item,
@@ -24381,7 +20003,7 @@ export default function XrayCalibrationWorkspace({
                               key: "default",
                               icon: "reset",
                               label: "Default",
-                              tone: "text-emerald-700",
+                              tone: "text-emerald-500",
                               onClick: () =>
                                 updateLayerById(selectedCutLayer.id, {
                                   contrast: 100,
@@ -24396,7 +20018,7 @@ export default function XrayCalibrationWorkspace({
                               key: "flip-h",
                               icon: "flipH",
                               label: "Flip H",
-                              tone: "text-slate-700",
+                              tone: "text-[var(--soft-text)]",
                               onClick: () =>
                                 updateLayerById(selectedCutLayer.id, (item) => ({
                                   ...item,
@@ -24416,7 +20038,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={action.onClick}
                               disabled={action.disabled}
-                              className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl border border-white/70 bg-[#eef2f7] px-1.5 py-2 text-[9px] font-black shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.tone}`}
+                              className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-1.5 py-2 text-[9px] font-black shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.tone}`}
                             >
                               <Icon name={action.icon} className="h-4 w-4" />
                               <span>{action.label}</span>
@@ -24425,11 +20047,11 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       </div>
 
-                      <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
-                        <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                        <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                           Susunan
                         </div>
-                        <div className="grid grid-cols-4 gap-1.5">
+                        <div className="grid grid-cols-4 gap-2">
                           {[
                             ["back", "moveDown", "Bawah"],
                             ["down", "moveDown", "Turun"],
@@ -24441,7 +20063,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={() => moveSelectedCutLayersInStack(direction)}
                               disabled={!selectedCutLayerIds.length}
-                              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border border-white/70 bg-[#eef2f7] px-1.5 py-2 text-[9px] font-black text-slate-700 shadow-[2px_2px_5px_rgba(148,163,184,0.24),-2px_-2px_5px_rgba(255,255,255,0.8)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-1.5 py-2 text-[9px] font-black text-[var(--soft-text)] shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Icon name={icon} className="h-4 w-4" />
                               <span>{label}</span>
@@ -24451,16 +20073,16 @@ export default function XrayCalibrationWorkspace({
                       </div>
 
                       {isImageBackedLayerKind(selectedCutLayer.kind) ? (
-                        <div className="rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[3px_3px_8px_rgba(148,163,184,0.18),-3px_-3px_8px_rgba(255,255,255,0.76)]">
-                          <div className="mb-2 text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                        <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                          <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                             Ruler & Scale
                           </div>
-                          <div className="grid grid-cols-3 gap-1.5">
+                          <div className="grid grid-cols-3 gap-2">
                             <button
                               type="button"
                               onClick={trimSelectedTemplateLayer}
                               disabled={!selectedLayerCanTrim}
-                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                              className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Trim
                             </button>
@@ -24468,7 +20090,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={applyTemplateRulerScale}
                               disabled={!selectedLayerCanApplyRulerScale}
-                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                              className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Ruler
                             </button>
@@ -24476,7 +20098,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={applyTemplateRealSize}
                               disabled={!selectedLayerCanApplyRealSize}
-                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-45`}
+                              className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Scale
                             </button>
@@ -24484,7 +20106,11 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
 
-                      <div className="space-y-2 rounded-[20px] border border-white/70 bg-[#eef2f7] p-2.5 shadow-[inset_3px_3px_8px_rgba(148,163,184,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]">
+                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                        <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
+                          Transform & Tampilan
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
                         {[
                           {
                             key: "size",
@@ -24571,7 +20197,7 @@ export default function XrayCalibrationWorkspace({
                         ].map((control) => (
                           <label
                             key={control.key}
-                            className="block rounded-2xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-2"
+                            className="block rounded-2xl border border-[var(--soft-border)] [background:var(--soft-inset-bg)] px-3 py-2"
                           >
                             <span className="flex items-center justify-between gap-3 text-[10px] font-black text-[var(--soft-text)]">
                               <span>{control.label}</span>
@@ -24589,10 +20215,11 @@ export default function XrayCalibrationWorkspace({
                               onChange={(event) =>
                                 control.onChange(Number(event.target.value))
                               }
-                              className="mt-2 h-2 w-full cursor-pointer accent-cyan-400 disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-2 h-2 w-full cursor-pointer accent-cyan-500 disabled:cursor-not-allowed disabled:opacity-45"
                             />
                           </label>
                         ))}
+                        </div>
                       </div>
                     </>
                   )}
@@ -26087,7 +21714,11 @@ export default function XrayCalibrationWorkspace({
       </AnimatePresence>
       <CalibrationWizard
         open={isSimpleUiMode && simpleCalibrationModalOpen}
-        onClose={() => setSimpleCalibrationModalOpen(false)}
+        isMobile={isMobileViewport}
+        onClose={() => {
+          setSimpleCalibrationModalOpen(false);
+          setSimpleQuickPanelMinimized(false);
+        }}
         calibrationMode={calibrationMode}
         onCalibrationModeChange={setCalibrationMode}
         calibrationReferenceLine={calibrationReferenceLine}
@@ -26110,12 +21741,11 @@ export default function XrayCalibrationWorkspace({
         onCreatePresetFromInput={createCalibrationPresetLineFromInput}
         onCreatePresetLine={(mm) => {
           createCalibrationPresetLine(mm);
-          setSimpleCalibrationModalOpen(false);
-          setCalibAdjustFloating(true);
+          // Modal tetap terbuka — user drag/sesuaikan line dulu, lalu simpan sendiri
         }}
         onManualDraw={() => {
-          setSimpleCalibrationModalOpen(false);
           handleToolChange("draw");
+          // Modal tetap terbuka — backdrop pointer-events-none jadi canvas tetap interaktif
         }}
         lineStrokeWidth={
           calibrationReferenceLine &&
@@ -26134,11 +21764,34 @@ export default function XrayCalibrationWorkspace({
             ),
           );
         }}
-        onSave={applyCalibration}
-        canSave={calibrationMode === "line" ? Boolean(calibrationReferenceLine) : true}
+        magnificationFactor={magnificationFactorInput}
+        onMagnificationFactorChange={setMagnificationFactorInput}
+        anatomicalRefSizeMm={anatomicalRefSizeMm}
+        onAnatomicalRefSizeMmChange={setAnatomicalRefSizeMm}
+        onSave={() => {
+          const ok = applyCalibration();
+          if (ok) {
+            setSimpleCalibrationModalOpen(false);
+            setSimpleQuickPanelMinimized(false);
+          }
+          return ok;
+        }}
+        canSave={
+          calibrationMode === "line"
+            ? Boolean(calibrationReferenceLine)
+            : calibrationMode === "magnification"
+              ? Boolean(calibrationReferenceLine) &&
+                Number(magnificationFactorInput) > 0 &&
+                Number(anatomicalRefSizeMm) > 0
+              : true
+        }
         hasCalibration={hasCalibration}
         measurementUnit={measurementUnit}
-        onStartTemplating={() => { setSimpleCalibrationModalOpen(false); openTemplatingWizard(true); }}
+        onStartTemplating={() => {
+          setSimpleCalibrationModalOpen(false);
+          setSimpleQuickPanelMinimized(false);
+          openTemplatingWizard(true);
+        }}
       />
 
       {/* ── Floating pill: ruler adjustment mode ── */}
@@ -26162,7 +21815,7 @@ export default function XrayCalibrationWorkspace({
               </div>
               <button
                 type="button"
-                onClick={() => { setCalibAdjustFloating(false); setSimpleCalibrationModalOpen(true); }}
+                onClick={() => { setCalibAdjustFloating(false); setSimpleCalibrationModalOpen(true); if (!isMobileViewport) setSimpleQuickPanelMinimized(true); }}
                 className="shrink-0 flex items-center gap-1 rounded-[14px] bg-white px-3 py-2 text-[10px] font-black text-cyan-700 shadow-sm"
               >
                 Selesai →
@@ -27091,265 +22744,227 @@ export default function XrayCalibrationWorkspace({
               <div className="max-h-[calc(92dvh-68px)] space-y-3 overflow-y-auto px-4 py-4 sm:max-h-[calc(92vh-82px)] sm:px-5 sm:py-5">
                 {simplePlanningModal === "tka" ? (
                   <>
-                    <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
-                      <div className="text-sm font-extrabold text-slate-700">
-                        Acuan Planning
-                      </div>
-                      <div
-                        className={`mt-1 text-xs font-semibold ${
-                          selectedLine ? "text-slate-600" : "text-rose-500"
-                        }`}
-                      >
-                        {selectedLine
-                          ? `Line #${selectedLine.id} | ${lineTypeLabel(selectedLine.type)}${
-                              mmPerPixel !== null
-                                ? ` | ${formatMeasurementFromPx(getLineLength(selectedLine))}`
-                                : ""
-                            }`
-                          : "Pilih satu line di canvas terlebih dahulu."}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-1.5 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.14),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+                    {/* ── Ringkasan parameter aktif ── */}
+                    <div className="grid grid-cols-3 gap-1.5 text-center">
                       {[
-                        { id: "valgusCut", label: "Distal Cut" },
-                        { id: "tibialSlope", label: "Tibial Slope" },
-                        { id: "tibialCut", label: "Tibial Cut" },
-                      ].map((mode) => {
-                        const isActive = planningGuideMode === mode.id;
-                        return (
-                          <button
-                            key={`simple-plan-${mode.id}`}
-                            type="button"
-                            onClick={() => setPlanningGuideMode(mode.id)}
-                            className={`rounded-[18px] px-2 py-2.5 text-xs font-extrabold transition ${
-                              isActive
-                                ? "border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] text-white shadow-[inset_3px_3px_7px_rgba(0,0,0,0.25),5px_5px_14px_rgba(51,65,85,0.38)]"
-                                : "border border-white/82 bg-[#e9eef5] text-slate-600 shadow-[5px_5px_12px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.74)]"
-                            }`}
-                          >
-                            {mode.label}
+                        { label: "Distal Cut", value: `${valgusCutAngleDeg}°`, sub: valgusCutSide, color: "#7c3aed", mode: "valgusCut" },
+                        { label: "Tibial Slope", value: `${tibialSlopeDeg}°`, sub: tibialPosteriorSide, color: "#059669", mode: "tibialSlope" },
+                        { label: "Tibial Cut", value: `${tibialCutAngleDeg}°`, sub: tibialCutDirection, color: "#dc2626", mode: "tibialCut" },
+                      ].map((item) => (
+                        <button key={item.label} type="button" onClick={() => setPlanningGuideMode(item.mode)}
+                          className={`rounded-[16px] border p-2 transition ${planningGuideMode === item.mode ? "border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)]" : "border-white/70 bg-white/40 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.70)]"}`}>
+                          <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: planningGuideMode === item.mode ? "#fff" : item.color }}>{item.label}</p>
+                          <p className="mt-0.5 text-base font-black leading-none" style={{ color: planningGuideMode === item.mode ? "#fff" : item.color }}>{item.value}</p>
+                          <p className="mt-0.5 truncate text-[8px]" style={{ color: planningGuideMode === item.mode ? "rgba(255,255,255,0.6)" : "#94a3b8" }}>{item.sub}</p>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ── LANGKAH 1: Pilih jenis potongan ── */}
+                    <div>
+                      <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[8px] font-black text-white">1</span>
+                        Pilih Jenis Potongan
+                      </div>
+                      <div className="grid gap-1.5">
+                        {[
+                          { id: "valgusCut", label: "Distal Femoral Cut", desc: "Potongan distal femur dengan sudut valgus", color: "#7c3aed" },
+                          { id: "tibialSlope", label: "Tibial Slope", desc: "Kemiringan posterior plateau tibia (3°–7°)", color: "#059669" },
+                          { id: "tibialCut", label: "Tibial Cut", desc: "Potongan tibia tegak lurus mechanical axis", color: "#dc2626" },
+                        ].map((mode) => {
+                          const isActive = planningGuideMode === mode.id;
+                          return (
+                            <button key={`tka-mode-${mode.id}`} type="button"
+                              onClick={() => setPlanningGuideMode(mode.id)}
+                              className={`flex items-center gap-2.5 rounded-[16px] border px-3 py-2.5 text-left transition ${isActive ? "border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] shadow-[inset_3px_3px_7px_rgba(0,0,0,0.25)]" : "border-white/82 bg-[#e9eef5] shadow-[5px_5px_12px_rgba(100,116,139,0.2),-4px_-4px_10px_rgba(255,255,255,0.72)]"}`}>
+                              <div className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: mode.color }} />
+                              <div className="min-w-0 flex-1">
+                                <div className={`text-[11px] font-black ${isActive ? "text-white" : "text-slate-700"}`}>{mode.label}</div>
+                                <div className={`text-[9px] font-semibold ${isActive ? "text-white/60" : "text-slate-400"}`}>{mode.desc}</div>
+                              </div>
+                              {isActive && <span className="shrink-0 text-[11px] font-black text-white">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* ── LANGKAH 2: Atur parameter sudut ── */}
+                    <div>
+                      <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[8px] font-black text-white">2</span>
+                        Atur Sudut & Sisi
+                      </div>
+                      <div className="rounded-[20px] border border-white/78 bg-[#e9eef5] p-3 shadow-[8px_8px_18px_rgba(100,116,139,0.16),-6px_-6px_16px_rgba(255,255,255,0.72)]">
+                        {planningGuideMode === "valgusCut" && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                              <label>Sudut Valgus (°)
+                                <input type="number" min="0" max="15" step="0.5" value={valgusCutAngleDeg} onChange={(e) => setValgusCutAngleDeg(Number(e.target.value) || 0)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} />
+                              </label>
+                              <label>Sisi Kaki
+                                <select value={valgusCutSide} onChange={(e) => setValgusCutSide(e.target.value)} className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}>
+                                  <option value="Right">Kanan</option>
+                                  <option value="Left">Kiri</option>
+                                </select>
+                              </label>
+                            </div>
+                            <div className="mt-2 rounded-[10px] bg-violet-50 px-2.5 py-1.5 text-[10px] text-violet-700">
+                              Target: 5°–7° valgus dari anatomic axis. Restorasi mechanical axis mendekati 0°.
+                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer select-none text-[10px] font-semibold text-slate-400">Posisi guide ▸</summary>
+                              <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                                <label>Offset (px)<input type="number" min="0" max="400" step="1" value={valgusCutOffsetPx} onChange={(e) => setValgusCutOffsetPx(Number(e.target.value) || 0)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} /></label>
+                                <label>Panjang (px)<input type="number" min="20" max="800" step="5" value={valgusCutLineLengthPx} onChange={(e) => setValgusCutLineLengthPx(Number(e.target.value) || 20)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} /></label>
+                              </div>
+                            </details>
+                          </>
+                        )}
+                        {planningGuideMode === "tibialSlope" && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                              <label>Posterior Slope (°)
+                                <input type="number" min="0" max="20" step="0.5" value={tibialSlopeDeg} onChange={(e) => setTibialSlopeDeg(Number(e.target.value) || 0)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} />
+                              </label>
+                              <label>Sisi Kaki
+                                <select value={tibialPosteriorSide} onChange={(e) => setTibialPosteriorSide(e.target.value)} className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}>
+                                  <option value="Right">Kanan</option>
+                                  <option value="Left">Kiri</option>
+                                </select>
+                              </label>
+                            </div>
+                            <div className="mt-2 rounded-[10px] bg-emerald-50 px-2.5 py-1.5 text-[10px] text-emerald-700">
+                              Normal: 3°–7° posterior slope. Slope berlebih meningkatkan risiko subluksasi.
+                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer select-none text-[10px] font-semibold text-slate-400">Posisi guide ▸</summary>
+                              <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                                <label>Offset (px)<input type="number" min="0" max="400" step="1" value={tibialSlopeOffsetPx} onChange={(e) => setTibialSlopeOffsetPx(Number(e.target.value) || 0)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} /></label>
+                                <label>Panjang (px)<input type="number" min="20" max="800" step="5" value={tibialSlopeLineLengthPx} onChange={(e) => setTibialSlopeLineLengthPx(Number(e.target.value) || 20)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} /></label>
+                              </div>
+                            </details>
+                          </>
+                        )}
+                        {planningGuideMode === "tibialCut" && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                              <label>Sudut Potongan (°)
+                                <input type="number" min="0" max="20" step="0.5" value={tibialCutAngleDeg} onChange={(e) => setTibialCutAngleDeg(Number(e.target.value) || 0)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} />
+                              </label>
+                              <label>Arah Koreksi
+                                <select value={tibialCutDirection} onChange={(e) => setTibialCutDirection(e.target.value)} className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}>
+                                  <option value="Valgus">Valgus</option>
+                                  <option value="Varus">Varus</option>
+                                </select>
+                              </label>
+                            </div>
+                            <div className="mt-2 rounded-[10px] bg-rose-50 px-2.5 py-1.5 text-[10px] text-rose-700">
+                              Tibial cut tegak lurus mechanical axis. Koreksi koronal sesuai deformitas varus/valgus.
+                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer select-none text-[10px] font-semibold text-slate-400">Posisi guide ▸</summary>
+                              <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                                <label>Offset (px)<input type="number" min="0" max="400" step="1" value={tibialCutOffsetPx} onChange={(e) => setTibialCutOffsetPx(Number(e.target.value) || 0)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} /></label>
+                                <label>Panjang (px)<input type="number" min="20" max="800" step="5" value={tibialCutLineLengthPx} onChange={(e) => setTibialCutLineLengthPx(Number(e.target.value) || 20)} className={`mt-1 w-full ${SOFT_INPUT_CLASS}`} /></label>
+                              </div>
+                            </details>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── LANGKAH 3: Pilih line acuan ── */}
+                    <div>
+                      <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-black text-white ${selectedLine ? "bg-emerald-500" : "bg-amber-500"}`}>
+                          {selectedLine ? "✓" : "3"}
+                        </span>
+                        Line Acuan di Canvas
+                      </div>
+                      {selectedLine ? (
+                        <div className="flex items-center gap-2.5 rounded-[16px] border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                          <span className="text-base text-emerald-500">✓</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] font-black text-emerald-700">Line #{selectedLine.id} terpilih</div>
+                            <div className="truncate text-[9px] text-emerald-600">
+                              {lineTypeLabel(selectedLine.type)}{mmPerPixel !== null ? ` · ${formatMeasurementFromPx(getLineLength(selectedLine))}` : ""}
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => setSimplePlanningModal(null)}
+                            className="shrink-0 rounded-[10px] border border-emerald-200 bg-white px-2 py-1 text-[9px] font-extrabold text-emerald-700">
+                            Ganti
                           </button>
-                        );
-                      })}
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <div className="rounded-[16px] border border-amber-200 bg-amber-50 px-3 py-2.5">
+                            <div className="text-[11px] font-black text-amber-700">Belum ada line dipilih</div>
+                            <div className="mt-0.5 text-[9px] text-amber-600">Buat atau tap line di X-ray sebagai acuan posisi guide</div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button type="button"
+                              onClick={() => { setSimplePlanningModal(null); handleToolChange("draw"); }}
+                              className="rounded-[14px] border border-white/82 bg-[#e9eef5] py-2.5 text-[10px] font-extrabold text-slate-600 shadow-[4px_4px_10px_rgba(100,116,139,0.18),-3px_-3px_8px_rgba(255,255,255,0.72)]">
+                              + Buat Line Baru
+                            </button>
+                            <button type="button"
+                              onClick={() => setSimplePlanningModal(null)}
+                              className="rounded-[14px] border border-white/82 bg-[#e9eef5] py-2.5 text-[10px] font-extrabold text-slate-600 shadow-[4px_4px_10px_rgba(100,116,139,0.18),-3px_-3px_8px_rgba(255,255,255,0.72)]">
+                              Pilih di Canvas
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-3 text-xs font-semibold text-slate-600 shadow-[8px_8px_18px_rgba(100,116,139,0.18),-6px_-6px_16px_rgba(255,255,255,0.72)] sm:p-4">
-                      {planningGuideMode === "valgusCut" ? (
-                        <>
-                          <label>
-                            Angle
-                            <input
-                              type="number"
-                              min="0"
-                              max="15"
-                              step="0.5"
-                              value={valgusCutAngleDeg}
-                              onChange={(event) =>
-                                setValgusCutAngleDeg(
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                          <label>
-                            Side
-                            <select
-                              value={valgusCutSide}
-                              onChange={(event) =>
-                                setValgusCutSide(event.target.value)
-                              }
-                              className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
-                            >
-                              <option value="Right">Right</option>
-                              <option value="Left">Left</option>
-                            </select>
-                          </label>
-                          <label>
-                            Offset
-                            <input
-                              type="number"
-                              min="0"
-                              max="400"
-                              step="1"
-                              value={valgusCutOffsetPx}
-                              onChange={(event) =>
-                                setValgusCutOffsetPx(
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                          <label>
-                            Length
-                            <input
-                              type="number"
-                              min="20"
-                              max="800"
-                              step="5"
-                              value={valgusCutLineLengthPx}
-                              onChange={(event) =>
-                                setValgusCutLineLengthPx(
-                                  Number(event.target.value) || 20,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                      {planningGuideMode === "tibialSlope" ? (
-                        <>
-                          <label>
-                            Slope
-                            <input
-                              type="number"
-                              min="0"
-                              max="20"
-                              step="0.5"
-                              value={tibialSlopeDeg}
-                              onChange={(event) =>
-                                setTibialSlopeDeg(
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                          <label>
-                            Posterior
-                            <select
-                              value={tibialPosteriorSide}
-                              onChange={(event) =>
-                                setTibialPosteriorSide(event.target.value)
-                              }
-                              className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
-                            >
-                              <option value="Right">Right</option>
-                              <option value="Left">Left</option>
-                            </select>
-                          </label>
-                          <label>
-                            Offset
-                            <input
-                              type="number"
-                              min="0"
-                              max="400"
-                              step="1"
-                              value={tibialSlopeOffsetPx}
-                              onChange={(event) =>
-                                setTibialSlopeOffsetPx(
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                          <label>
-                            Length
-                            <input
-                              type="number"
-                              min="20"
-                              max="800"
-                              step="5"
-                              value={tibialSlopeLineLengthPx}
-                              onChange={(event) =>
-                                setTibialSlopeLineLengthPx(
-                                  Number(event.target.value) || 20,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                      {planningGuideMode === "tibialCut" ? (
-                        <>
-                          <label>
-                            Angle
-                            <input
-                              type="number"
-                              min="0"
-                              max="20"
-                              step="0.5"
-                              value={tibialCutAngleDeg}
-                              onChange={(event) =>
-                                setTibialCutAngleDeg(
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                          <label>
-                            Direction
-                            <select
-                              value={tibialCutDirection}
-                              onChange={(event) =>
-                                setTibialCutDirection(event.target.value)
-                              }
-                              className={`mt-1 w-full ${SOFT_SELECT_CLASS}`}
-                            >
-                              <option value="Valgus">Valgus</option>
-                              <option value="Varus">Varus</option>
-                            </select>
-                          </label>
-                          <label>
-                            Offset
-                            <input
-                              type="number"
-                              min="0"
-                              max="400"
-                              step="1"
-                              value={tibialCutOffsetPx}
-                              onChange={(event) =>
-                                setTibialCutOffsetPx(
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                          <label>
-                            Length
-                            <input
-                              type="number"
-                              min="20"
-                              max="800"
-                              step="5"
-                              value={tibialCutLineLengthPx}
-                              onChange={(event) =>
-                                setTibialCutLineLengthPx(
-                                  Number(event.target.value) || 20,
-                                )
-                              }
-                              className={`mt-1 w-full ${SOFT_INPUT_CLASS}`}
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </div>
+                    {/* ── Tombol utama ── */}
+                    <button
+                      type="button"
+                      onClick={selectedPlanningGuide ? () => updateSelectedPlanningGuide() : addPlanningGuideFromSelectedLine}
+                      disabled={!selectedPlanningGuide && !selectedLine}
+                      className="w-full min-h-12 rounded-[20px] border border-[#6d28d9]/30 bg-[linear-gradient(180deg,#7c3aed_0%,#5b21b6_100%)] px-4 py-3 text-sm font-extrabold text-white shadow-[0_6px_20px_rgba(109,40,217,0.32)] transition disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {selectedPlanningGuide
+                        ? "Update Guide di Canvas"
+                        : selectedLine
+                          ? "Buat Guide di Canvas →"
+                          : "← Pilih line dulu (Langkah 3)"}
+                    </button>
 
+                    {/* ── Aksi sekunder ── */}
                     <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={selectedPlanningGuide ? () => updateSelectedPlanningGuide() : addPlanningGuideFromSelectedLine}
-                        disabled={!selectedPlanningGuide && !selectedLine}
-                        className="min-h-11 rounded-[18px] border border-white/80 bg-[linear-gradient(180deg,#ff7770_0%,#fb5f58_100%)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[4px_4px_10px_rgba(248,113,113,0.22)] transition disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        {selectedPlanningGuide ? "Update Guide" : "Buat dari Line"}
-                      </button>
-                      <button
-                        type="button"
+                      <button type="button"
                         onClick={() => { setPlanningGuides([]); setSelectedPlanningGuideId(null); setNotice("Semua planning guide dihapus."); }}
                         disabled={planningGuides.length === 0}
-                        className="min-h-11 rounded-[18px] border border-white/82 bg-[#e9eef5] px-3 py-2.5 text-xs font-extrabold text-slate-500 shadow-[4px_4px_10px_rgba(100,116,139,0.18)] transition disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        Clear Guide
+                        className="rounded-[16px] border border-white/82 bg-[#e9eef5] py-2.5 text-[11px] font-extrabold text-slate-500 shadow-[4px_4px_10px_rgba(100,116,139,0.16)] disabled:opacity-40">
+                        Hapus Semua Guide
+                      </button>
+                      <button type="button"
+                        onClick={() => { setSimplePlanningModal(null); handleToolChange("pan"); }}
+                        className="rounded-[16px] border border-white/82 bg-[#e9eef5] py-2.5 text-[11px] font-extrabold text-slate-600 shadow-[4px_4px_10px_rgba(100,116,139,0.16)]">
+                        Geser Canvas
                       </button>
                     </div>
+
+                    {/* ── Referensi TKA Planning ── */}
+                    <TkaSummaryPanel />
+
+                    {/* ── Preset tipe line ukur ── */}
+                    <details>
+                      <summary className="cursor-pointer select-none text-[10px] font-semibold text-slate-400">Preset Tipe Line Ukur ▸</summary>
+                      <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+                        {TKA_PLANNING_ITEMS.map((item) => (
+                          <button key={`simple-tka-${item.key}`} type="button" title={item.detail}
+                            onClick={() => { setSimplePlanningModal(null); handleLinePresetChange(item.key); }}
+                            className={`rounded-[14px] border px-3 py-2.5 text-xs font-extrabold shadow-[5px_5px_12px_rgba(100,116,139,0.2),-4px_-4px_10px_rgba(255,255,255,0.72)] transition ${linePreset === item.key ? "border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] text-white" : "border-white/82 bg-[#e9eef5] text-slate-600"}`}
+                            style={linePreset === item.key ? {} : { borderLeftColor: item.color, borderLeftWidth: 3 }}>
+                            <span className="block text-[10px] font-black" style={{ color: linePreset === item.key ? "white" : item.color }}>{item.label}</span>
+                            <span className="block text-[9px] font-semibold opacity-70">{item.shortLabel}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </details>
                   </>
                 ) : (
                   <>
@@ -29285,6 +24900,32 @@ export default function XrayCalibrationWorkspace({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
                 {!isLeftSidebarCompact && <span className="truncate">Estimator Implan</span>}
+              </button>
+
+              {/* Trauma Planning */}
+              <button
+                type="button"
+                onClick={() => setTraumaPlanningOpen(true)}
+                className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100 active:scale-[0.98]"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-4M9 3v18M9 3l6 6" />
+                </svg>
+                {!isLeftSidebarCompact && <span className="truncate">Trauma Planning</span>}
+              </button>
+
+              {/* Landmark Annotation */}
+              <button
+                type="button"
+                onClick={() => setLandmarkAnnotationOpen(true)}
+                disabled={!image}
+                className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden rounded-2xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 transition hover:bg-violet-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="3" strokeWidth={2}/>
+                  <path strokeLinecap="round" strokeWidth={2} d="M12 3v2M12 19v2M3 12h2M19 12h2"/>
+                </svg>
+                {!isLeftSidebarCompact && <span className="truncate">Anotasi Landmark</span>}
               </button>
 
               {/* Library Implant Drive */}
@@ -35055,9 +30696,11 @@ export default function XrayCalibrationWorkspace({
                       }
                       canCreateLayer={Boolean(image && modelWidth && modelHeight)}
                       onGuide={() => setSimpleGuideModalOpen(true)}
-                        onMove={() => handleToolChange("pan")}
+                      onMove={() => handleToolChange("pan")}
                       onOpenTka={() => openSimplePlanningModal("tka")}
                       onOpenHip={() => openSimplePlanningModal("hip")}
+                      onTraumaPlanning={() => setTraumaPlanningOpen(true)}
+                      onLandmarkAnnotation={() => setLandmarkAnnotationOpen(true)}
                       onHistory={undoHistory}
                       canHistory={historyState.undo > 0}
                       onReset={() => resetWorkspaceState()}
@@ -35435,6 +31078,16 @@ export default function XrayCalibrationWorkspace({
                               </button>
                               <button
                                 type="button"
+                                onClick={() => { setSimpleMobilePanel(null); setTraumaPlanningOpen(true); }}
+                                className="col-span-2 flex items-center justify-center gap-1.5 min-h-11 rounded-2xl border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-black text-orange-700"
+                              >
+                                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-4M9 3v18M9 3l6 6" />
+                                </svg>
+                                Trauma Planning
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => { setSimpleMobilePanel(null); setDriveLibraryOpen(true); }}
                                 className="col-span-2 flex items-center justify-center gap-1.5 min-h-11 rounded-2xl border border-sky-200 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700"
                               >
@@ -35579,21 +31232,35 @@ export default function XrayCalibrationWorkspace({
                             const isActive = tool === "hkaAuto" && hkaInputMode === modeItem.key;
                             const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
                             return (
-                              <button key={modeItem.key} type="button"
-                                onClick={() => { handleHkaModeChange(modeItem.key); handleToolChange("hkaAuto", { skipHkaSidePrompt: true }); setSimpleMobilePanel(null); setMobileCanvasMode("edit"); }}
-                                className={`flex w-full items-center gap-2 rounded-[14px] border px-2.5 py-2 text-left transition ${
-                                  isActive ? "border-cyan-300 bg-cyan-50/90 text-cyan-900" : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"}`}
-                              >
-                                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black text-white"
-                                  style={{ background: isActive ? modeColors[modeItem.key] : "#94a3b8" }}>
-                                  {modeItem.key === "full" ? "H" : modeItem.key === "fta" ? "F" : "J"}
-                                </span>
-                                <span className="flex-1 leading-tight">
-                                  <span className="block text-[10px] font-black">{modeItem.label}</span>
-                                  <span className="block text-[8px] opacity-60">{modeItem.modeLabel}</span>
-                                </span>
-                                {isActive && <span className="text-[9px] font-black text-cyan-600">●</span>}
-                              </button>
+                              <div key={modeItem.key} className="flex items-center gap-1">
+                                <button type="button"
+                                  onClick={() => { handleHkaModeChange(modeItem.key); handleToolChange("hkaAuto", { skipHkaSidePrompt: true }); setSimpleMobilePanel(null); setMobileCanvasMode("edit"); }}
+                                  className={`flex flex-1 items-center gap-2 rounded-[14px] border px-2.5 py-2 text-left transition ${
+                                    isActive ? "border-cyan-300 bg-cyan-50/90 text-cyan-900" : "border-white/70 bg-[#eef2f7] text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"}`}
+                                >
+                                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-black text-white"
+                                    style={{ background: isActive ? modeColors[modeItem.key] : "#94a3b8" }}>
+                                    {modeItem.key === "full" ? "H" : modeItem.key === "fta" ? "F" : "J"}
+                                  </span>
+                                  <span className="flex-1 leading-tight">
+                                    <span className="block text-[10px] font-black">{modeItem.label}</span>
+                                    <span className="block text-[8px] opacity-60">{modeItem.modeLabel}</span>
+                                  </span>
+                                  {isActive && <span className="text-[9px] font-black text-cyan-600">●</span>}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setHkaInfoBubble((prev) => prev === modeItem.key ? null : modeItem.key); }}
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] border text-[11px] font-black transition ${
+                                    hkaInfoBubble === modeItem.key
+                                      ? "border-indigo-300 bg-indigo-100 text-indigo-700"
+                                      : "border-white/70 bg-[#eef2f7] text-indigo-400 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"
+                                  }`}
+                                  title={`Info ${modeItem.label}`}
+                                >
+                                  ⓘ
+                                </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -35634,7 +31301,7 @@ export default function XrayCalibrationWorkspace({
                   )}
                 </AnimatePresence>
               {isSimpleUiMode && !image && !workflowOverlayDismissed ? (
-                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
+                <div className={`pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-center p-4 ${isMobileViewport ? "bottom-[120px]" : "inset-y-0"}`}>
                   <div className={`pointer-events-auto w-full rounded-[24px] border border-white/80 bg-[#eef2f7]/96 shadow-[4px_4px_14px_rgba(148,163,184,0.28),-4px_-4px_14px_rgba(255,255,255,0.82)] backdrop-blur-xl ${isMobileViewport ? "max-w-[min(100%,320px)] px-3 py-3" : "max-w-[min(100%,360px)] px-4 py-4"}`}>
                     <div className={`font-black tracking-widest text-slate-400 uppercase mb-2.5 ${isMobileViewport ? "text-[9px]" : "text-[9px]"}`}>Alur Kerja Digital Templating</div>
                     <div className={`flex flex-col ${isMobileViewport ? "gap-1.5" : "gap-2"}`}>
@@ -36361,6 +32028,41 @@ export default function XrayCalibrationWorkspace({
                             }))
                           }
                         />
+                      ) : null}
+                      {isWarpableImageLayer(selectedCutLayer) ? (
+                        <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-2">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                              Implant Bend / Warp
+                            </span>
+                            <button
+                              type="button"
+                              onClick={isImplantWarpEnabled(selectedCutLayer) ? resetImplantWarpForSelectedLayer : enableImplantWarpForSelectedLayer}
+                              className={`rounded-full px-2 py-1 text-[9px] font-black ${
+                                isImplantWarpEnabled(selectedCutLayer)
+                                  ? "bg-violet-600 text-white"
+                                  : "border border-white/70 bg-[#eef2f7] text-violet-700"
+                              }`}
+                            >
+                              {isImplantWarpEnabled(selectedCutLayer) ? "Aktif" : "Aktifkan"}
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-[1fr_40px] items-center gap-2">
+                            <input
+                              type="range"
+                              min={0}
+                              max={160}
+                              step={1}
+                              disabled={!isImplantWarpEnabled(selectedCutLayer)}
+                              value={Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}
+                              onChange={(event) => updateImplantWarpStrength(Number(event.target.value) / 100)}
+                              className="h-2 w-full accent-violet-600 disabled:opacity-40"
+                            />
+                            <span className="text-right text-[10px] font-black text-slate-500">
+                              {Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}%
+                            </span>
+                          </div>
+                        </div>
                       ) : null}
                       <div className="grid grid-cols-5 gap-2">
                         <button
@@ -37205,6 +32907,212 @@ export default function XrayCalibrationWorkspace({
                 </svg>
               )}
 
+              {/* ── Free Warp SVG Overlay ───────────────────────────────────────── */}
+              {selectedCutLayer && isEditableMaskLayer(selectedCutLayer) && (
+                <FreeWarpOverlay
+                  vertexPoints={warpVertexScreenPts}
+                  curveHandles={warpCurveHandleScreenPts}
+                  selectedPointIndex={selectedFreeLinePointIndex}
+                  addPointMode={addAnchorPointMode}
+                  viewport={viewport}
+                  containerRef={containerRef}
+                  screenToImagePoint={screenToImagePoint}
+                  onSelectPoint={setSelectedFreeLinePointIndex}
+                  onDragStart={handleWarpDragStart}
+                  onMoveAnchor={handleWarpMoveAnchor}
+                  onMoveHandle={handleWarpMoveHandle}
+                  onAddPoint={handleWarpAddPoint}
+                  onDragEnd={handleWarpDragEnd}
+                />
+              )}
+
+              {selectedCutLayer && isWarpableImageLayer(selectedCutLayer) && isImplantWarpEnabled(selectedCutLayer) && (
+                <FreeWarpOverlay
+                  vertexPoints={implantWarpVertexScreenPts}
+                  curveHandles={[]}
+                  selectedPointIndex={selectedFreeLinePointIndex}
+                  addPointMode={false}
+                  viewport={viewport}
+                  containerRef={containerRef}
+                  screenToImagePoint={screenToImagePoint}
+                  onSelectPoint={setSelectedFreeLinePointIndex}
+                  onDragStart={handleWarpDragStart}
+                  onMoveAnchor={handleImplantWarpMoveAnchor}
+                  onDragEnd={handleWarpDragEnd}
+                />
+              )}
+
+              {selectedCutLayer && isWarpableImageLayer(selectedCutLayer) && (
+                <div
+                  className="pointer-events-auto absolute bottom-4 left-1/2 z-30 -translate-x-1/2"
+                  style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.18))" }}
+                >
+                  <div className="flex items-center gap-2 rounded-[20px] border border-white/70 bg-[#eef2f7]/92 px-3 py-2 backdrop-blur-sm"
+                    style={{ boxShadow: "4px 4px 14px rgba(148,163,184,0.28),-3px -3px 10px rgba(255,255,255,0.82)" }}>
+                    <span className="max-w-[92px] truncate text-[10px] font-black text-slate-600">
+                      Bend Implant
+                    </span>
+                    <button
+                      type="button"
+                      onClick={isImplantWarpEnabled(selectedCutLayer) ? resetImplantWarpForSelectedLayer : enableImplantWarpForSelectedLayer}
+                      className={`rounded-[12px] border px-2.5 py-1.5 text-[10px] font-black transition ${
+                        isImplantWarpEnabled(selectedCutLayer)
+                          ? "border-violet-400/70 bg-violet-500 text-white"
+                          : "border-white/70 bg-[#eef2f7] text-violet-700"
+                      }`}
+                    >
+                      {isImplantWarpEnabled(selectedCutLayer) ? "On" : "Aktifkan"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addImplantWarpAnchor}
+                      disabled={!isImplantWarpEnabled(selectedCutLayer)}
+                      className="rounded-[12px] border border-white/70 bg-[#eef2f7] px-2 py-1.5 text-[10px] font-black text-blue-700 disabled:opacity-40"
+                    >
+                      + Titik
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteImplantWarpAnchor}
+                      disabled={!isImplantWarpEnabled(selectedCutLayer) || selectedFreeLinePointIndex === null || getImplantWarpAnchors(selectedCutLayer).length <= 2}
+                      className="rounded-[12px] border border-white/70 bg-[#eef2f7] px-2 py-1.5 text-[10px] font-black text-rose-600 disabled:opacity-40"
+                    >
+                      Hapus
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={160}
+                      step={1}
+                      disabled={!isImplantWarpEnabled(selectedCutLayer)}
+                      value={Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}
+                      onChange={(event) => updateImplantWarpStrength(Number(event.target.value) / 100)}
+                      className="h-2 w-24 accent-violet-600 disabled:opacity-40"
+                      aria-label="Kekuatan bend implant"
+                    />
+                    <span className="w-8 text-right text-[10px] font-black text-slate-500">
+                      {Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}%
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Free Warp floating toolbar ──────────────────────────────────── */}
+              {selectedCutLayer && isEditableMaskLayer(selectedCutLayer) && (
+                <div
+                  className="pointer-events-auto absolute bottom-4 left-1/2 z-30 -translate-x-1/2"
+                  style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.22))" }}
+                >
+                  {/* ── Preset picker popup ─────────────────────────────────── */}
+                  {showPresetPicker && (
+                    <div
+                      className="mb-2 w-64 overflow-hidden rounded-[16px] border border-white/70 bg-[#eef2f7]/96 shadow-xl backdrop-blur-md"
+                      style={{ boxShadow: "4px 4px 18px rgba(100,120,160,0.22),-3px -3px 12px rgba(255,255,255,0.85)" }}
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-200/70 px-3 py-2">
+                        <span className="text-[10px] font-black tracking-widest text-slate-500 uppercase">Template Bentuk</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowPresetPicker(false)}
+                          className="text-[11px] font-black text-slate-400 hover:text-slate-600"
+                        >✕</button>
+                      </div>
+                      <div className="max-h-56 overflow-y-auto p-2 flex flex-col gap-1">
+                        {SHAPE_PRESETS.map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => handleApplyPreset(preset)}
+                            className="flex items-start gap-2 rounded-[10px] border border-white/60 bg-white/60 px-2.5 py-2 text-left transition-all hover:bg-violet-50 hover:border-violet-300"
+                            style={{ boxShadow: "1px 1px 3px rgba(148,163,184,0.2)" }}
+                          >
+                            <span className="mt-0.5 text-base leading-none">{preset.icon}</span>
+                            <div className="min-w-0">
+                              <div className="truncate text-[10px] font-black text-slate-700">{preset.name}</div>
+                              <div className="mt-0.5 text-[9px] leading-tight text-slate-400">{preset.description}</div>
+                              <div className="mt-1 flex gap-1">
+                                <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[8px] font-bold text-violet-600">
+                                  {preset.points.length} titik
+                                </span>
+                                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-bold text-slate-500">
+                                  kurva {Math.round(preset.curveStrength * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5 rounded-[20px] border border-white/70 bg-[#eef2f7]/92 px-3 py-2 backdrop-blur-sm"
+                    style={{ boxShadow: "4px 4px 14px rgba(148,163,184,0.28),-3px -3px 10px rgba(255,255,255,0.82)" }}>
+
+                    {/* label layer */}
+                    <span className="mr-1 max-w-[90px] truncate text-[10px] font-black text-slate-600">
+                      ✦ {selectedCutLayer.name || "Warp"}
+                    </span>
+
+                    <div className="mx-1 h-5 w-px bg-slate-300" />
+
+                    {/* Template preset picker */}
+                    <button
+                      type="button"
+                      onClick={() => setShowPresetPicker((v) => !v)}
+                      title="Pilih template bentuk anatomi"
+                      className={`flex items-center gap-1 rounded-[12px] border px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                        showPresetPicker
+                          ? "border-violet-400/70 bg-violet-500 text-white"
+                          : "border-white/70 bg-[#eef2f7] text-violet-700 hover:bg-violet-50"
+                      }`}
+                      style={{ boxShadow: showPresetPicker ? "inset 1px 1px 3px rgba(0,0,0,.2)" : "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
+                    >
+                      📐 Template
+                    </button>
+
+                    {/* Tambah anchor */}
+                    <button
+                      type="button"
+                      onClick={() => setAddAnchorPointMode((v) => !v)}
+                      title="Tambah anchor point (klik di canvas)"
+                      className={`flex items-center gap-1 rounded-[12px] border px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                        addAnchorPointMode
+                          ? "border-blue-400/70 bg-blue-500 text-white"
+                          : "border-white/70 bg-[#eef2f7] text-blue-700 hover:bg-blue-50"
+                      }`}
+                      style={{ boxShadow: addAnchorPointMode ? "inset 1px 1px 3px rgba(0,0,0,.2)" : "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
+                    >
+                      + Titik
+                    </button>
+
+                    {/* Hapus anchor terpilih */}
+                    <button
+                      type="button"
+                      onClick={handleWarpDeletePoint}
+                      disabled={selectedFreeLinePointIndex === null}
+                      title="Hapus anchor point terpilih"
+                      className="flex items-center gap-1 rounded-[12px] border border-white/70 bg-[#eef2f7] px-2.5 py-1.5 text-[10px] font-black text-rose-600 transition-all hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      style={{ boxShadow: "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
+                    >
+                      ✕ Hapus
+                    </button>
+
+                    <div className="mx-1 h-5 w-px bg-slate-300" />
+
+                    {/* Export JSON */}
+                    <button
+                      type="button"
+                      onClick={handleWarpExportJson}
+                      title="Export warp data sebagai JSON"
+                      className="flex items-center gap-1 rounded-[12px] border border-white/70 bg-[#eef2f7] px-2.5 py-1.5 text-[10px] font-black text-emerald-700 transition-all hover:bg-emerald-50"
+                      style={{ boxShadow: "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
+                    >
+                      ↓ JSON
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* ── Leader line placement hint ────────────────────────────────── */}
               {placingAnnotationPointer !== null && (
                 <div className="pointer-events-none absolute inset-x-0 top-14 z-50 flex justify-center">
@@ -37746,6 +33654,20 @@ export default function XrayCalibrationWorkspace({
           setImplantSizePanelOpen(false);
         }}
       />
+
+      <TraumaPlanningPanel
+        isOpen={traumaPlanningOpen}
+        onClose={() => setTraumaPlanningOpen(false)}
+        onAddTraumaLayer={handleAddTraumaLayer}
+      />
+
+      <LandmarkAnnotationPanel
+        isOpen={landmarkAnnotationOpen}
+        onClose={() => setLandmarkAnnotationOpen(false)}
+        imageSrc={mainImageSrc}
+        imageName={imageName}
+      />
+
 
       <DriveImplantLibraryPanel
         isOpen={driveLibraryOpen}

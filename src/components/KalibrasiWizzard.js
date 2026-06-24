@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Info,
   Minus,
   MousePointer2,
@@ -14,15 +17,30 @@ import {
   X,
 } from "lucide-react";
 
-const TOTAL_STEPS = 2;
+const SPRING = { type: "spring", damping: 26, stiffness: 320, mass: 0.9 };
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+const MAGN_PROTOCOLS = [
+  { label: "AP Hip", pct: "115" },
+  { label: "AP Knee", pct: "110" },
+  { label: "AP Femur", pct: "118" },
+  { label: "AP Ankle", pct: "108" },
+];
+
+const ANAT_REFS = [
+  { label: "Caput Femur", mm: "46" },
+  { label: "Asetabulum", mm: "52" },
+  { label: "Kondilus Femur", mm: "76" },
+  { label: "Tibia Proks", mm: "80" },
+];
+
 export default function CalibrationWizard({
   open = false,
   onClose,
+  isMobile = false,
   calibrationMode = "line",
   onCalibrationModeChange,
   calibrationReferenceLine = null,
@@ -48,13 +66,28 @@ export default function CalibrationWizard({
   hasCalibration = false,
   measurementUnit = "cm",
   onStartTemplating,
+  magnificationFactor = "115",
+  onMagnificationFactorChange,
+  anatomicalRefSizeMm = "46",
+  onAnatomicalRefSizeMmChange,
 } = {}) {
-  const [step, setStep] = useState(1);
   const [showQCDetail, setShowQCDetail] = useState(false);
+  const [strokeExpanded, setStrokeExpanded] = useState(false);
+  const [drawExpanded, setDrawExpanded] = useState(true);
+  const [showMagGuide, setShowMagGuide] = useState(false);
 
   const isLineMode = calibrationMode === "line";
+  const isMagMode = calibrationMode === "magnification";
   const strokeValue = Number.isFinite(Number(lineStrokeWidth)) ? Number(lineStrokeWidth) : 2;
-  const progressWidth = (step / TOTAL_STEPS) * 100;
+
+  const magFactorNum = Number(magnificationFactor);
+  const anatomicalSizeNum = Number(anatomicalRefSizeMm);
+  const apparentSizeMm =
+    Number.isFinite(magFactorNum) && magFactorNum > 0 &&
+    Number.isFinite(anatomicalSizeNum) && anatomicalSizeNum > 0
+      ? (anatomicalSizeNum * magFactorNum / 100).toFixed(1)
+      : null;
+
   const factorText =
     mmPerPixelValue !== null && Number.isFinite(mmPerPixelValue)
       ? `${mmPerPixelValue.toFixed(6)} mm/px`
@@ -62,339 +95,502 @@ export default function CalibrationWizard({
   const referenceLabel =
     isLineMode && calibrationReferenceLine
       ? `Line #${calibrationReferenceLine.id} | ${lineTypeLabel(calibrationReferenceLine.type)}`
-      : "Belum ada line terpilih";
+      : null;
+  const rulerPresetLabel =
+    calibrationReferenceLine?.presetMm && Number.isFinite(calibrationReferenceLine.presetMm)
+      ? calibrationReferenceLine.presetMm % 10 === 0
+        ? `${calibrationReferenceLine.presetMm / 10} cm`
+        : `${(calibrationReferenceLine.presetMm / 10).toFixed(1)} cm`
+      : null;
   const qcStatus = calibrationQuality?.status || "bad";
-  const qcTone =
-    qcStatus === "good"
-      ? "border-emerald-100 bg-emerald-50 text-emerald-800"
-      : qcStatus === "warn"
-        ? "border-amber-100 bg-amber-50 text-amber-800"
-        : "border-rose-100 bg-rose-50 text-rose-800";
+  const qcColor =
+    qcStatus === "good" ? "#10b981" : qcStatus === "warn" ? "#f59e0b" : "#ef4444";
+  const qcBg =
+    qcStatus === "good" ? "#d1fae5" : qcStatus === "warn" ? "#fef3c7" : "#fee2e2";
 
-  const stepLabels = ["Gambar Garis", "Nilai & Simpan"];
+  const hasLine = Boolean(calibrationReferenceLine);
 
   useEffect(() => {
-    if (open) {
-      setStep(calibrationReferenceLine ? TOTAL_STEPS : 1);
-      setShowQCDetail(false);
-    }
+    if (open) setShowQCDetail(false);
   }, [open]);
-
-  if (!open) return null;
 
   const updateStroke = (value) => {
     const nextValue = clamp(Number(value) || strokeValue, 0.5, 8);
     onLineStrokeWidthChange?.(nextValue);
   };
 
-  const goNext = () => setStep((s) => Math.min(TOTAL_STEPS, s + 1));
-  const goBack = () => setStep((s) => Math.max(1, s - 1));
-
-  const handleSave = () => { onSave?.(); };
+  const handleSave = () => onSave?.();
 
   return (
-    <div
-      className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/60 p-3 font-sans backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
-    >
+    <AnimatePresence>
+      {open && (
+    <>
       <style dangerouslySetInnerHTML={{ __html: `
-        /* ── Light mode ── */
-        .calib-neu-flat    { background: #eef2f7; box-shadow: 2px 2px 5px #cbd5e1, -2px -2px 5px #ffffff; }
-        .calib-neu-pressed { background: #eef2f7; box-shadow: inset 2px 2px 4px #cbd5e1, inset -2px -2px 4px #ffffff; }
-        .calib-neu-card    { background: #eef2f7; box-shadow: 4px 4px 10px rgba(148,163,184,0.40), -4px -4px 10px rgba(255,255,255,0.80); border: 1px solid rgba(255,255,255,0.8); }
-        .calib-neu-button  { background: #eef2f7; box-shadow: 2px 2px 4px #cbd5e1, -2px -2px 4px #ffffff; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.68); }
-        .calib-neu-button:active { box-shadow: inset 1px 1px 3px #cbd5e1, inset -1px -1px 3px #ffffff; transform: translateY(1px); }
-        .calib-neu-input   { background: #edf1f6; box-shadow: inset 2px 2px 4px #c4cfdc, inset -2px -2px 4px #ffffff; border: 1px solid white; }
-        .calib-active-blue { background: #3b82f6; color: white !important; box-shadow: inset 1px 1px 3px rgba(0,0,0,0.2); }
-
-        /* ── Dark mode ── */
-        [data-theme="dark"] .calib-neu-card    { background: #1a2438; box-shadow: 4px 4px 12px rgba(0,5,20,0.65), -2px -2px 6px rgba(50,75,130,0.18); border: 1px solid rgba(255,255,255,0.09); color: #c8d5e8; }
-        [data-theme="dark"] .calib-neu-flat    { background: #1e2840; box-shadow: 2px 2px 5px rgba(0,5,20,0.50), -1px -1px 4px rgba(50,75,130,0.16); }
-        [data-theme="dark"] .calib-neu-pressed { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,0.55), inset -1px -1px 3px rgba(50,75,130,0.14); }
-        [data-theme="dark"] .calib-neu-button  { background: #1e2840; box-shadow: 2px 2px 4px rgba(0,5,20,0.50), -1px -1px 3px rgba(50,75,130,0.16); border: 1px solid rgba(255,255,255,0.09); color: #94a3b8; }
-        [data-theme="dark"] .calib-neu-button:active { box-shadow: inset 1px 1px 3px rgba(0,5,20,0.55); color: #c8d5e8; }
-        [data-theme="dark"] .calib-neu-input   { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,0.55), inset -1px -1px 3px rgba(50,75,130,0.12); border: 1px solid rgba(255,255,255,0.08); color: #c8d5e8; }
-        [data-theme="dark"] .calib-active-blue { background: #2563eb; color: white !important; }
-
-        /* ── Text color overrides for dark ── */
-        [data-theme="dark"] .calib-neu-card h1,
-        [data-theme="dark"] .calib-neu-card .text-slate-800 { color: #c8d5e8 !important; }
-        [data-theme="dark"] .calib-neu-card .text-slate-700 { color: #94a3b8 !important; }
-        [data-theme="dark"] .calib-neu-card .text-slate-600 { color: #7f96b2 !important; }
-        [data-theme="dark"] .calib-neu-card .text-slate-500 { color: #64748b !important; }
-        [data-theme="dark"] .calib-neu-card .text-slate-400 { color: #4e6280 !important; }
-        [data-theme="dark"] .calib-neu-card .bg-slate-200  { background: #1e2840 !important; }
-        [data-theme="dark"] .calib-neu-card .bg-blue-50    { background: rgba(37,99,235,0.12) !important; }
-        [data-theme="dark"] .calib-neu-card .border-white\/60 { border-color: rgba(255,255,255,0.09) !important; }
+        .cw-card { background: #eef2f7; box-shadow: 6px 6px 18px rgba(148,163,184,0.36),-4px -4px 14px rgba(255,255,255,0.82); border: 1px solid rgba(255,255,255,0.85); }
+        .cw-flat  { background: #eef2f7; box-shadow: 2px 2px 5px #cbd5e1,-2px -2px 5px #ffffff; }
+        .cw-pressed { background: #edf1f6; box-shadow: inset 2px 2px 4px #cbd5e1,inset -2px -2px 4px #ffffff; }
+        .cw-btn   { background: #eef2f7; box-shadow: 2px 2px 4px #cbd5e1,-2px -2px 4px #ffffff; border: 1px solid rgba(255,255,255,0.7); transition: all .18s; }
+        .cw-btn:active { box-shadow: inset 1px 1px 3px #cbd5e1,inset -1px -1px 3px #ffffff; transform: translateY(1px); }
+        .cw-input { background: #edf1f6; box-shadow: inset 2px 2px 4px #c4cfdc,inset -2px -2px 4px #ffffff; border: 1px solid white; }
+        .cw-active { background: #3b82f6; color: white !important; box-shadow: inset 1px 1px 3px rgba(0,0,0,.2); }
+        [data-theme="dark"] .cw-card    { background: #1a2438; box-shadow: 6px 6px 18px rgba(0,5,20,.65),-2px -2px 6px rgba(50,75,130,.18); border: 1px solid rgba(255,255,255,.09); color: #c8d5e8; }
+        [data-theme="dark"] .cw-flat    { background: #1e2840; box-shadow: 2px 2px 5px rgba(0,5,20,.5),-1px -1px 4px rgba(50,75,130,.16); }
+        [data-theme="dark"] .cw-pressed { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,.55),inset -1px -1px 3px rgba(50,75,130,.14); }
+        [data-theme="dark"] .cw-btn     { background: #1e2840; box-shadow: 2px 2px 4px rgba(0,5,20,.5),-1px -1px 3px rgba(50,75,130,.16); border: 1px solid rgba(255,255,255,.09); color: #94a3b8; }
+        [data-theme="dark"] .cw-input   { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,.55),inset -1px -1px 3px rgba(50,75,130,.12); border: 1px solid rgba(255,255,255,.08); color: #c8d5e8; }
+        [data-theme="dark"] .cw-active  { background: #2563eb; color: white !important; }
+        [data-theme="dark"] .cw-card .text-slate-800 { color: #c8d5e8 !important; }
+        [data-theme="dark"] .cw-card .text-slate-700 { color: #94a3b8 !important; }
+        [data-theme="dark"] .cw-card .text-slate-600 { color: #7f96b2 !important; }
+        [data-theme="dark"] .cw-card .text-slate-500 { color: #64748b !important; }
+        [data-theme="dark"] .cw-card .text-slate-400 { color: #4e6280 !important; }
       ` }} />
 
-      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[32px] p-5 text-slate-800 calib-neu-card sm:p-6">
+      {/* Non-interactive layer — keeps panel above canvas without blocking interactions */}
+      <motion.div
+        key="cw-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="pointer-events-none fixed inset-0 z-[94]"
+        aria-hidden="true"
+      />
 
-        {/* ── Header ── */}
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-blue-600 calib-neu-flat">
-              <Scaling className="h-5 w-5" />
+      {/* Panel — bottom sheet on mobile, left-side float on desktop */}
+      <motion.div
+        key="cw-panel"
+        initial={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, x: -48, scale: 0.94 }}
+        animate={isMobile ? { opacity: 1, y: 0 } : { opacity: 1, x: 0, scale: 1 }}
+        exit={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, x: -36, scale: 0.96 }}
+        transition={isMobile ? { ...SPRING, damping: 32, stiffness: 340 } : SPRING}
+        className={
+          isMobile
+            ? "fixed bottom-0 left-0 right-0 z-[95] max-h-[88dvh] overflow-y-auto rounded-t-[28px] p-4 pb-[calc(env(safe-area-inset-bottom)+20px)] text-slate-800 cw-card font-sans"
+            : "fixed left-3 top-1/2 z-[95] w-[min(308px,calc(100vw-24px))] max-h-[min(92vh,640px)] -translate-y-1/2 overflow-y-auto rounded-[28px] p-4 text-slate-800 cw-card font-sans"
+        }
+        onClick={(e) => e.stopPropagation()}
+        style={{ scrollbarWidth: "none" }}
+      >
+        {/* Mobile drag handle */}
+        {isMobile && (
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300" />
+        )}
+
+        {/* Header */}
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] text-blue-600 cw-flat">
+              <Scaling className="h-4 w-4" />
             </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-black tracking-tight text-slate-800 uppercase">Calibration Wizard</h1>
-              <p className="text-[10px] font-bold text-slate-400 uppercase">
-                {hasCalibration ? `Aktif (${measurementUnit})` : "Belum aktif"}
+            <div>
+              <p className="text-[11px] font-black tracking-tight text-slate-800 uppercase">Kalibrasi</p>
+              <p className="text-[9px] font-bold text-slate-400 uppercase">
+                {hasCalibration ? `Aktif · ${measurementUnit}` : "Belum aktif"}
               </p>
             </div>
           </div>
           <button type="button" onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 calib-neu-button"
-            aria-label="Tutup" title="Tutup">
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 cw-btn"
+            aria-label="Tutup">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* ── Step pills ── */}
-        <div className="mb-4 flex gap-1.5">
-          {stepLabels.map((label, idx) => {
-            const s = idx + 1;
-            const done = s < step;
-            const active = s === step;
-            return (
-              <button key={label} type="button" onClick={() => setStep(s)}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-[10px] font-black transition-all ${
-                  active ? "bg-slate-900 text-white shadow-md"
-                  : done ? "bg-emerald-500 text-white"
-                  : "text-slate-400 calib-neu-button"}`}>
-                {done ? <Check className="h-3 w-3 stroke-[3px]" /> : <span className="text-[9px]">{s}</span>}
-                {label}
-              </button>
-            );
-          })}
+        {/* Method tabs */}
+        <div className="mb-3 grid grid-cols-3 gap-1 rounded-[16px] p-1 cw-pressed">
+          <button type="button" onClick={() => onCalibrationModeChange?.("line")}
+            className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isLineMode ? "cw-active" : "text-slate-500"}`}>
+            Garis Ruler
+          </button>
+          <button type="button" onClick={() => onCalibrationModeChange?.("magnification")}
+            className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isMagMode ? "cw-active" : "text-slate-500"}`}>
+            Magnifikasi
+          </button>
+          <button type="button" onClick={() => onCalibrationModeChange?.("zoom")}
+            className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${calibrationMode === "zoom" ? "cw-active" : "text-slate-500"}`}>
+            Zoom %
+          </button>
         </div>
 
-        {/* ── Progress bar ── */}
-        <div className="mb-5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 calib-neu-pressed">
-          <div className="h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] transition-all duration-500 ease-out"
-            style={{ width: `${progressWidth}%` }} />
-        </div>
-
-        <div className="min-h-[200px]">
-
-          {/* ════ STEP 1: Metode + Gambar Garis ════ */}
-          {step === 1 && (
-            <div className="space-y-4">
-              {/* Method selector */}
-              <div className="grid grid-cols-2 gap-4 rounded-2xl p-1.5 calib-neu-pressed">
-                <button type="button" onClick={() => onCalibrationModeChange?.("line")}
-                  className={`rounded-xl py-3 text-xs font-bold transition-all ${isLineMode ? "calib-active-blue" : "text-slate-500"}`}>
-                  Garis Real
-                </button>
-                <button type="button" onClick={() => onCalibrationModeChange?.("zoom")}
-                  className={`rounded-xl py-3 text-xs font-bold transition-all ${!isLineMode ? "calib-active-blue" : "text-slate-500"}`}>
-                  Zoom %
-                </button>
+        {isLineMode ? (
+          <div className="space-y-2.5">
+            {/* Draw / preset buttons — collapsible */}
+            <button type="button"
+              onClick={() => setDrawExpanded((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[14px] border border-white/60 px-3 py-2 text-[10px] font-black text-slate-600 cw-flat">
+              <span className="flex items-center gap-1.5">
+                <Ruler className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                1 · Gambar garis di ruler X-ray
+              </span>
+              <span className="flex items-center gap-1.5">
+                {hasLine && (
+                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+                    ✓ {rulerPresetLabel || "Manual"}
+                  </span>
+                )}
+                {drawExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </span>
+            </button>
+            {drawExpanded && (
+              <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button type="button" onClick={onManualDraw}
+                    className="col-span-3 min-h-10 rounded-[12px] bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase">
+                    <span className="flex items-center justify-center gap-1.5">
+                      <MousePointer2 className="h-3.5 w-3.5" /> Gambar Manual
+                    </span>
+                  </button>
+                  {[{ label: "10 cm", mm: 100 }, { label: "13 cm", mm: 130 }, { label: "15 cm", mm: 150 }].map(({ label, mm }) => (
+                    <button key={mm} type="button" onClick={() => onCreatePresetLine?.(mm)}
+                      className="min-h-9 rounded-[12px] text-[10px] font-black text-slate-600 cw-btn">
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {/* Line status */}
+                {hasLine ? (
+                  <div className="mt-2 rounded-[12px] border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Ruler className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                      <span className="text-[11px] font-black text-emerald-800">Penggaris Kalibrasi</span>
+                      <span className="ml-auto rounded-full bg-emerald-200 px-1.5 py-0.5 text-[9px] font-black text-emerald-800">
+                        #{calibrationReferenceLine.id}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-2 gap-1 text-[10px]">
+                      <div className="rounded-[8px] bg-white/70 px-2 py-1">
+                        <div className="font-bold text-slate-400 uppercase" style={{ fontSize: "8px", letterSpacing: "0.06em" }}>Target</div>
+                        <div className="font-black text-emerald-700">{rulerPresetLabel || "Manual"}</div>
+                      </div>
+                      <div className="rounded-[8px] bg-white/70 px-2 py-1">
+                        <div className="font-bold text-slate-400 uppercase" style={{ fontSize: "8px", letterSpacing: "0.06em" }}>Di Layar</div>
+                        <div className="font-black text-emerald-700">{selectedLengthText || "—"}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded-[10px] px-2.5 py-1.5 text-[10px] font-bold text-slate-500 cw-pressed">
+                    Belum ada garis. Gambar atau pilih preset.
+                  </div>
+                )}
               </div>
+            )}
 
-              {isLineMode ? (
-                <>
-                  {/* Stroke width */}
-                  <div className="space-y-3 rounded-2xl border border-white/60 p-4 calib-neu-flat">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-slate-700 uppercase">Ketebalan garis</span>
-                      <span className="font-mono text-xs font-black text-blue-600">{strokeValue.toFixed(1)}x</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button type="button" onClick={() => updateStroke(strokeValue - 0.1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 calib-neu-button">
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <input type="range" min="0.5" max="8" step="0.1" value={strokeValue}
-                        onChange={(e) => updateStroke(e.target.value)}
-                        className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-300 accent-blue-500" />
-                      <button type="button" onClick={() => updateStroke(strokeValue + 0.1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 calib-neu-button">
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[1.5, 2.5, 4].map((v) => (
-                        <button key={v} type="button" onClick={() => updateStroke(v)}
-                          className={`min-h-9 rounded-xl text-[10px] font-black ${Math.abs(strokeValue - v) < 0.05 ? "calib-active-blue" : "text-slate-600 calib-neu-button"}`}>
-                          {v}x
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+            {/* Stroke — collapsible */}
+            <button type="button"
+              onClick={() => setStrokeExpanded((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[14px] border border-white/60 px-3 py-2 text-[10px] font-black text-slate-600 cw-flat">
+              <span>Ketebalan garis · {strokeValue.toFixed(1)}x</span>
+              {strokeExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            {strokeExpanded && (
+              <div className="rounded-[16px] border border-white/60 p-3 cw-flat">
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => updateStroke(strokeValue - 0.1)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 cw-btn">
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <input type="range" min="0.5" max="8" step="0.1" value={strokeValue}
+                    onChange={(e) => updateStroke(e.target.value)}
+                    className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-300 accent-blue-500" />
+                  <button type="button" onClick={() => updateStroke(strokeValue + 0.1)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 cw-btn">
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  {[1.5, 2.5, 4].map((v) => (
+                    <button key={v} type="button" onClick={() => updateStroke(v)}
+                      className={`min-h-8 rounded-[10px] text-[10px] font-black ${Math.abs(strokeValue - v) < 0.05 ? "cw-active" : "text-slate-600 cw-btn"}`}>
+                      {v}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                  {/* Draw area */}
-                  <div className="space-y-3 rounded-2xl border border-white/60 p-4 text-center calib-neu-pressed">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-500">
-                      <MousePointer2 className="h-6 w-6 animate-bounce" />
+            {/* Value input */}
+            <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
+              <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
+                2 · Nilai referensi garis
+              </p>
+              <div className="flex gap-2">
+                <input type="number" min="0" step="0.01" value={actualValue}
+                  onChange={(e) => onActualValueChange?.(e.target.value)}
+                  placeholder="Contoh: 10"
+                  className="min-w-0 flex-1 rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
+                <select value={actualUnit} onChange={(e) => onActualUnitChange?.(e.target.value)}
+                  className="w-16 cursor-pointer appearance-none rounded-[12px] px-2 py-2 text-sm font-bold text-slate-700 outline-none cw-flat">
+                  <option value="cm">cm</option>
+                  <option value="mm">mm</option>
+                </select>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input type="number" min="1" step="0.1" value={sourceZoomPercent}
+                  onChange={(e) => onSourceZoomPercentChange?.(e.target.value)}
+                  placeholder="Zoom %"
+                  className="min-w-0 flex-1 rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
+                {["100", "90"].map((v) => (
+                  <button key={v} type="button" onClick={() => onSourceZoomPercentChange?.(v)}
+                    className="min-h-10 rounded-[12px] px-2.5 text-[10px] font-black text-slate-600 cw-btn">
+                    {v}%
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={onCreatePresetFromInput}
+                className="mt-2 min-h-9 w-full rounded-[12px] text-[10px] font-black text-slate-600 cw-btn">
+                Buat ruler dari nilai ini
+              </button>
+            </div>
+          </div>
+        ) : isMagMode ? (
+          /* Magnification mode */
+          <div className="space-y-2">
+
+            {/* Guide toggle */}
+            <button type="button" onClick={() => setShowMagGuide(v => !v)}
+              className="flex w-full items-center gap-2 rounded-[14px] border border-white/60 px-3 py-2 text-left cw-flat">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 text-[10px] font-black">?</div>
+              <span className="flex-1 text-[10px] font-black text-slate-600">
+                {showMagGuide ? "Sembunyikan panduan" : "Cara menggunakan kalibrasi ini"}
+              </span>
+              {showMagGuide ? <ChevronUp className="h-3 w-3 text-slate-400" /> : <ChevronDown className="h-3 w-3 text-slate-400" />}
+            </button>
+
+            {/* Collapsible guide */}
+            {showMagGuide && (
+              <div className="rounded-[16px] border border-amber-100 bg-amber-50 p-3 space-y-2.5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Panduan Kalibrasi Magnifikasi</p>
+                <p className="text-[9px] leading-relaxed text-amber-800">
+                  Foto X-ray di mesin radiologi memperbesar gambar secara proporsional — ini disebut <strong>faktor magnifikasi</strong>. Misalnya AP Hip 115% artinya caput femur yang sebenarnya 46mm akan tampak 52.9mm di foto.
+                </p>
+                <div className="space-y-1.5">
+                  {[
+                    { step: "1", text: "Pilih protokol sesuai jenis foto X-ray (AP Hip paling umum)" },
+                    { step: "2", text: "Pilih struktur anatomi yang terlihat jelas di foto" },
+                    { step: "3", text: "Perhatikan ukuran tampak yang dihitung otomatis" },
+                    { step: "4", text: "Seret garis tepat di atas tepi struktur tersebut di foto" },
+                    { step: "5", text: "Tekan \"Terapkan\" — kalibrasi aktif!" },
+                  ].map(({ step, text }) => (
+                    <div key={step} className="flex items-start gap-2">
+                      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[8px] font-black text-amber-700">{step}</div>
+                      <span className="text-[9px] text-amber-800 leading-relaxed">{text}</span>
                     </div>
-                    <p className="px-1 text-[11px] leading-relaxed font-medium text-slate-500">
-                      Tap atau drag 2 titik ujung marker/ruler pada kanvas.
-                    </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button type="button" onClick={onManualDraw}
-                        className="col-span-3 min-h-11 rounded-xl bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase">
-                        Gambar Manual
-                      </button>
-                      {[{ label: "10 cm", mm: 100 }, { label: "13 cm", mm: 130 }, { label: "15 cm", mm: 150 }].map(({ label, mm }) => (
-                        <button key={mm} type="button" onClick={() => onCreatePresetLine?.(mm)}
-                          className="min-h-10 rounded-xl text-[10px] font-black text-slate-600 calib-neu-button">
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-3 rounded-2xl border border-white/60 p-4 text-center calib-neu-pressed">
-                  <Ruler className="mx-auto h-8 w-8 text-blue-400" />
-                  <p className="text-[11px] leading-relaxed font-medium text-slate-500">
-                    Mode Zoom % — isi nilai mm/px @100% dan zoom source pada langkah berikutnya.
+                  ))}
+                </div>
+                <div className="rounded-[10px] border border-amber-200 bg-amber-100 px-2.5 py-2">
+                  <p className="text-[9px] font-black text-amber-700">💡 Tips akurasi</p>
+                  <p className="mt-0.5 text-[9px] text-amber-600 leading-relaxed">
+                    Gunakan struktur bulat yang batasnya jelas (caput femur ideal). Semakin panjang garis = semakin stabil. Jika ada ruler fisik di foto, gunakan tab "Garis Ruler" untuk akurasi lebih tinggi.
                   </p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Line status */}
-              <div className="rounded-2xl border border-white/70 px-3 py-2 text-[11px] font-bold text-slate-600 calib-neu-flat">
-                {calibrationReferenceLine
-                  ? `✓ ${referenceLabel} | ${selectedLengthText || "panjang belum terbaca"}`
-                  : "Belum ada line. Gambar dulu atau pilih preset di atas."}
+            {/* Card: Protocol + Anatomical ref */}
+            <div className="rounded-[18px] border border-white/60 cw-flat overflow-hidden">
+              <div className="p-3">
+                <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">Protokol X-ray</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {MAGN_PROTOCOLS.map(({ label, pct }) => (
+                    <button key={pct} type="button"
+                      onClick={() => onMagnificationFactorChange?.(pct)}
+                      className={`flex min-h-9 flex-col items-center justify-center rounded-[10px] text-[10px] font-black transition-all leading-tight ${
+                        magnificationFactor === pct ? "cw-active" : "text-slate-600 cw-btn"
+                      }`}>
+                      <span>{label}</span>
+                      <span className={`text-[8px] font-bold ${magnificationFactor === pct ? "opacity-80" : "text-slate-400"}`}>{pct}%</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
+                  <span className="text-[9px] font-black text-slate-400 shrink-0">Custom</span>
+                  <input type="number" min="100" max="200" step="0.5" value={magnificationFactor}
+                    onChange={(e) => onMagnificationFactorChange?.(e.target.value)}
+                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
+                    placeholder="115" />
+                  <span className="text-[11px] font-black text-slate-500 shrink-0">%</span>
+                </div>
+              </div>
+
+              <div className="mx-3 border-t border-slate-200/60" />
+
+              <div className="p-3">
+                <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">Struktur Anatomi</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {ANAT_REFS.map(({ label, mm }) => (
+                    <button key={mm} type="button"
+                      onClick={() => onAnatomicalRefSizeMmChange?.(mm)}
+                      className={`flex min-h-9 flex-col items-center justify-center rounded-[10px] text-[10px] font-black transition-all leading-tight ${
+                        anatomicalRefSizeMm === mm ? "cw-active" : "text-slate-600 cw-btn"
+                      }`}>
+                      <span className="text-center text-[9px] leading-snug">{label}</span>
+                      <span className={`text-[8px] font-bold ${anatomicalRefSizeMm === mm ? "opacity-80" : "text-slate-400"}`}>~{mm}mm</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
+                  <span className="text-[9px] font-black text-slate-400 shrink-0">Custom</span>
+                  <input type="number" min="1" step="0.5" value={anatomicalRefSizeMm}
+                    onChange={(e) => onAnatomicalRefSizeMmChange?.(e.target.value)}
+                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
+                    placeholder="46" />
+                  <span className="text-[11px] font-black text-slate-500 shrink-0">mm</span>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* ════ STEP 2: Nilai Referensi + QC + Simpan ════ */}
-          {step === 2 && (
-            <div className="space-y-4">
-              {/* Input nilai */}
-              <div className="space-y-4 rounded-2xl border border-white/60 p-4 calib-neu-flat">
-                <div className="flex gap-3">
-                  <div className="flex-1 space-y-1.5">
-                    <span className="ml-1 text-[9px] font-bold text-slate-400 uppercase">
-                      {isLineMode ? "Nilai referensi real" : "mm/px @100%"}
-                    </span>
-                    <input type="number" min="0" step={isLineMode ? "0.01" : "0.000001"}
-                      value={isLineMode ? actualValue : mmPerPixelAt100Value}
-                      onChange={(e) => isLineMode ? onActualValueChange?.(e.target.value) : onMmPerPixelAt100Change?.(e.target.value)}
-                      className="w-full rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 outline-none calib-neu-input" />
-                  </div>
-                  {isLineMode && (
-                    <div className="w-24 space-y-1.5">
-                      <span className="ml-1 text-[9px] font-bold text-slate-400 uppercase">Satuan</span>
-                      <select value={actualUnit} onChange={(e) => onActualUnitChange?.(e.target.value)}
-                        className="w-full cursor-pointer appearance-none rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 outline-none calib-neu-flat">
-                        <option value="cm">cm</option>
-                        <option value="mm">mm</option>
-                      </select>
+            {/* Apparent size result */}
+            {apparentSizeMm ? (
+              <div className="flex items-center gap-3 rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="text-[24px] font-black leading-none text-amber-700">≈{apparentSizeMm}</div>
+                <div>
+                  <div className="text-[8px] font-black uppercase tracking-widest text-amber-500">mm tampak di foto</div>
+                  <div className="text-[10px] font-bold text-amber-600">{anatomicalRefSizeMm}mm × {magnificationFactor}%</div>
+                </div>
+                <div className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                  <Check className="h-3.5 w-3.5 text-amber-600 stroke-[3]" />
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[12px] px-3 py-2 text-center text-[9px] text-slate-400 cw-pressed">
+                Pilih protokol &amp; struktur untuk melihat ukuran tampak
+              </div>
+            )}
+
+            {/* Draw + Apply — combined */}
+            <div className="rounded-[18px] border border-white/60 cw-flat overflow-hidden">
+              <div className="p-3">
+                <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
+                  Seret garis di foto
+                </p>
+                <button type="button" onClick={onManualDraw}
+                  className="flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-slate-900 text-[10px] font-black tracking-wider text-white uppercase">
+                  <MousePointer2 className="h-3.5 w-3.5" />
+                  Mulai Gambar Garis
+                </button>
+                {calibrationReferenceLine ? (
+                  <div className="mt-2 flex items-center gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
+                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
+                      <Check className="h-3 w-3 text-white stroke-[3]" />
                     </div>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="ml-1 text-[9px] font-bold text-slate-400 uppercase">Zoom source (%)</span>
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-                    <input type="number" min="1" step="0.1" value={sourceZoomPercent}
-                      onChange={(e) => onSourceZoomPercentChange?.(e.target.value)}
-                      className="min-w-0 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 outline-none calib-neu-input" />
-                    {["100", "90"].map((v) => (
-                      <button key={v} type="button" onClick={() => onSourceZoomPercentChange?.(v)}
-                        className="min-h-11 rounded-xl px-3 text-[10px] font-black text-slate-600 calib-neu-button">
-                        {v}%
-                      </button>
-                    ))}
+                    <span className="text-[10px] font-black text-emerald-800">Garis siap</span>
+                    <span className="ml-auto text-[10px] font-bold text-emerald-600">{selectedLengthText || "—"}</span>
                   </div>
-                </div>
-
-                {isLineMode && (
-                  <button type="button" onClick={onCreatePresetFromInput}
-                    className="min-h-11 w-full rounded-xl bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase">
-                    Buat ruler dari nilai referensi
-                  </button>
+                ) : (
+                  <div className="mt-2 rounded-[10px] px-2.5 py-1.5 text-center text-[9px] text-slate-400 cw-pressed">
+                    Seret garis tepat di tepi {ANAT_REFS.find(r => r.mm === anatomicalRefSizeMm)?.label || "struktur"} pada foto
+                  </div>
                 )}
               </div>
 
-              {/* Line / status */}
-              <div className="rounded-2xl border border-white/70 px-3 py-2 text-[11px] font-bold text-slate-600 calib-neu-flat">
-                {isLineMode
-                  ? calibrationReferenceLine
-                    ? `✓ ${referenceLabel} | ${selectedLengthText || "panjang belum terbaca"}`
-                    : "Belum ada line. Kembali ke langkah 1."
-                  : `Zoom source ${sourceZoomPercent || "-"}%.`}
-              </div>
-
-              {/* QC */}
-              <button type="button" onClick={() => setShowQCDetail((v) => !v)}
-                className={`flex w-full items-center justify-between rounded-2xl border p-3.5 transition-all active:scale-[0.99] ${qcTone}`}>
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-current/10">
-                    <Check className="h-4 w-4 stroke-[3px]" />
-                  </div>
-                  <span className="min-w-0 truncate text-[11px] font-black tracking-wide uppercase">
-                    {calibrationQuality?.title || "QC belum tersedia"} | {factorText}
-                  </span>
-                </div>
-                <Info className="h-4 w-4 shrink-0" />
-              </button>
-
-              {showQCDetail && (
-                <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-2xl">
-                  <div className="mb-2 flex items-center gap-2 text-emerald-400">
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span className="text-[10px] font-black uppercase">Detail QC</span>
-                  </div>
-                  <p className="text-[10px] leading-relaxed text-slate-300">
-                    {calibrationQuality?.detail || "Simpan kalibrasi untuk menghitung faktor aktif."}
-                  </p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 px-1 text-blue-600">
-                <Info className="h-3.5 w-3.5 shrink-0" />
-                <span className="text-[10px] font-bold">
-                  Isi nilai real marker/ruler. Contoh: 10 cm, 13 cm, atau sesuai marker X-ray.
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Footer ── */}
-        <div className="mt-6 flex items-center gap-3 border-t border-slate-300/30 pt-4">
-          {step > 1 && (
-            <button type="button" onClick={goBack}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-slate-500 calib-neu-button"
-              aria-label="Kembali">
-              ←
-            </button>
-          )}
-
-          {step < TOTAL_STEPS ? (
-            <button type="button" onClick={goNext}
-              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-900 py-3.5 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-colors hover:bg-blue-600">
-              Lanjut →
-            </button>
-          ) : (
-            <div className="flex flex-1 flex-col gap-2">
-              <button type="button" onClick={handleSave} disabled={!canSave}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 py-3.5 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45">
-                <Save className="h-4 w-4" /> Simpan Kalibrasi
-              </button>
-              {onStartTemplating && (
-                <button type="button" onClick={() => { onSave?.(); onStartTemplating(); }} disabled={!canSave}
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-600 to-cyan-700 py-3 text-xs font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45">
-                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <path d="M5 2h6l.8 2.5H4.2L5 2z"/>
-                    <rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/>
-                    <path d="M5 6 L4.5 14 M11 6 L11.5 14"/>
-                    <path d="M5 9.5 Q8 8.5 11 9.5"/>
-                  </svg>
-                  Simpan &amp; Mulai Templating
+              {/* Inline apply button */}
+              {calibrationReferenceLine && apparentSizeMm && (
+                <button type="button" onClick={handleSave}
+                  className="flex w-full items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3.5 text-[11px] font-black tracking-widest text-white uppercase transition-all active:brightness-90">
+                  <Save className="h-4 w-4" />
+                  Terapkan Kalibrasi
                 </button>
               )}
             </div>
+
+            {!calibrationReferenceLine && (
+              <div className="flex items-center gap-1.5 px-1">
+                <Info className="h-3 w-3 shrink-0 text-amber-400" />
+                <span className="text-[9px] text-slate-400 leading-snug">
+                  Gambar garis dulu, lalu tombol "Terapkan" muncul di sini.
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Zoom mode */
+          <div className="space-y-2.5">
+            <div className="rounded-[18px] border border-white/60 p-3 text-center cw-pressed">
+              <Ruler className="mx-auto mb-2 h-7 w-7 text-blue-400" />
+              <p className="text-[10px] leading-relaxed font-medium text-slate-500">
+                Mode Zoom % — isi nilai mm/px @100% di bawah.
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
+              <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-slate-400">mm/px @100%</p>
+              <input type="number" min="0" step="0.000001" value={mmPerPixelAt100Value}
+                onChange={(e) => onMmPerPixelAt100Change?.(e.target.value)}
+                className="w-full rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
+              <p className="mt-2 mb-1.5 text-[8px] font-black uppercase tracking-widest text-slate-400">Zoom source (%)</p>
+              <div className="flex gap-2">
+                <input type="number" min="1" step="0.1" value={sourceZoomPercent}
+                  onChange={(e) => onSourceZoomPercentChange?.(e.target.value)}
+                  className="min-w-0 flex-1 rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
+                {["100", "90"].map((v) => (
+                  <button key={v} type="button" onClick={() => onSourceZoomPercentChange?.(v)}
+                    className="min-h-10 rounded-[12px] px-2.5 text-[10px] font-black text-slate-600 cw-btn">
+                    {v}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* QC row — hidden in magnification mode */}
+        <div className={`mt-2.5${isMagMode ? " hidden" : ""}`}>
+          <button type="button" onClick={() => setShowQCDetail((v) => !v)}
+            className="flex w-full items-center justify-between rounded-[14px] border px-3 py-2 text-[10px] font-black transition-all"
+            style={{ background: qcBg, borderColor: `${qcColor}30`, color: qcColor }}>
+            <span className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 stroke-[3]" />
+              {calibrationQuality?.title || "QC belum tersedia"} · {factorText}
+            </span>
+            {showQCDetail ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+          {showQCDetail && (
+            <div className="mt-1.5 rounded-[14px] bg-slate-900 p-3 text-white shadow-lg">
+              <div className="mb-1.5 flex items-center gap-1.5 text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className="text-[9px] font-black uppercase">Detail QC</span>
+              </div>
+              <p className="text-[10px] leading-relaxed text-slate-300">
+                {calibrationQuality?.detail || "Simpan kalibrasi untuk menghitung faktor aktif."}
+              </p>
+            </div>
           )}
         </div>
-      </div>
-    </div>
+
+        {/* Save button — hidden in magnification mode (has inline apply button) */}
+        {!isMagMode && (
+          <div className="mt-3 flex flex-col gap-2">
+            <button type="button" onClick={handleSave} disabled={!canSave}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[18px] bg-gradient-to-r from-emerald-500 to-teal-600 py-3 text-[11px] font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45">
+              <Save className="h-4 w-4" /> Simpan Kalibrasi
+            </button>
+            {onStartTemplating && (
+              <button type="button" onClick={() => { const ok = onSave?.(); if (ok) onStartTemplating?.(); }} disabled={!canSave}
+                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-cyan-600 to-cyan-700 py-2.5 text-[10px] font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M5 2h6l.8 2.5H4.2L5 2z"/>
+                  <rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/>
+                  <path d="M5 6 L4.5 14 M11 6 L11.5 14"/>
+                  <path d="M5 9.5 Q8 8.5 11 9.5"/>
+                </svg>
+                Simpan &amp; Templating
+              </button>
+            )}
+          </div>
+        )}
+
+        {!isMagMode && (
+          <div className="mt-2 flex items-start gap-1.5 px-1">
+            <Info className="mt-0.5 h-3 w-3 shrink-0 text-blue-500" />
+            <span className="text-[9px] font-medium text-slate-400 leading-snug">
+              Isi nilai real marker/ruler X-ray. Contoh: 10 cm, 13 cm.
+            </span>
+          </div>
+        )}
+      </motion.div>
+    </>
+      )}
+    </AnimatePresence>
   );
 }
