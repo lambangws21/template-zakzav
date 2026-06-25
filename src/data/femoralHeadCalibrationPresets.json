@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "unit": "mm",
+  "name": "Asian femoral head calibration estimates",
+  "intendedUse": "Fallback estimate for X-ray calibration when no physical calibration marker is available.",
+  "warning": "Use a radiographic marker, ruler, calibration ball, DICOM PixelSpacing, or known implant diameter whenever available. Height-based femoral head size is an estimate and can be inaccurate for implant templating.",
+  "basis": [
+    "Field-oriented conservative presets for Asian/Indonesian adult AP hip templating.",
+    "Female femoral head estimates are generally smaller than male estimates.",
+    "38-39 mm is treated as extra-small and low-confidence, not a default adult preset."
+  ],
+  "quickSizesMm": [38, 40, 42, 44, 46, 48, 50, 52, 54],
+  "sexOptions": [
+    { "id": "female", "label": "Perempuan" },
+    { "id": "male", "label": "Laki-laki" }
+  ],
+  "heightBands": [
+    {
+      "id": "female-xs-135-144",
+      "sex": "female",
+      "label": "Perempuan sangat kecil",
+      "heightMinCm": 135,
+      "heightMaxCm": 144,
+      "headMm": 40,
+      "rangeMm": [38, 42],
+      "confidence": "low",
+      "note": "Pertimbangkan 38-39 mm hanya bila pasien sangat kecil dan bentuk caput pada X-ray mendukung."
+    },
+    {
+      "id": "female-small-145-152",
+      "sex": "female",
+      "label": "Perempuan kecil",
+      "heightMinCm": 145,
+      "heightMaxCm": 152,
+      "headMm": 42,
+      "rangeMm": [40, 44],
+      "confidence": "medium",
+      "note": "Ukuran awal konservatif untuk pasien perempuan Asia bertubuh kecil."
+    },
+    {
+      "id": "female-avg-153-160",
+      "sex": "female",
+      "label": "Perempuan rata-rata",
+      "heightMinCm": 153,
+      "heightMaxCm": 160,
+      "headMm": 44,
+      "rangeMm": [42, 46],
+      "confidence": "medium",
+      "note": "Preset awal yang cukup aman untuk banyak pasien perempuan Asia."
+    },
+    {
+      "id": "female-tall-161-168",
+      "sex": "female",
+      "label": "Perempuan tinggi",
+      "heightMinCm": 161,
+      "heightMaxCm": 168,
+      "headMm": 46,
+      "rangeMm": [44, 48],
+      "confidence": "medium",
+      "note": "Gunakan 46 mm sebagai titik awal, lalu verifikasi dengan sisi kontralateral."
+    },
+    {
+      "id": "female-xl-169-180",
+      "sex": "female",
+      "label": "Perempuan sangat tinggi",
+      "heightMinCm": 169,
+      "heightMaxCm": 180,
+      "headMm": 48,
+      "rangeMm": [46, 50],
+      "confidence": "low",
+      "note": "Lebih bervariasi; sebaiknya verifikasi dengan marker atau implant known size."
+    },
+    {
+      "id": "male-small-150-158",
+      "sex": "male",
+      "label": "Laki-laki kecil",
+      "heightMinCm": 150,
+      "heightMaxCm": 158,
+      "headMm": 46,
+      "rangeMm": [44, 48],
+      "confidence": "medium",
+      "note": "Preset awal untuk laki-laki Asia bertubuh kecil."
+    },
+    {
+      "id": "male-avg-low-159-166",
+      "sex": "male",
+      "label": "Laki-laki rata-rata kecil",
+      "heightMinCm": 159,
+      "heightMaxCm": 166,
+      "headMm": 48,
+      "rangeMm": [46, 50],
+      "confidence": "medium",
+      "note": "Mulai dari 48 mm bila tidak ada marker fisik."
+    },
+    {
+      "id": "male-avg-167-174",
+      "sex": "male",
+      "label": "Laki-laki rata-rata",
+      "heightMinCm": 167,
+      "heightMaxCm": 174,
+      "headMm": 50,
+      "rangeMm": [48, 52],
+      "confidence": "medium",
+      "note": "Preset awal umum untuk laki-laki Asia."
+    },
+    {
+      "id": "male-tall-175-182",
+      "sex": "male",
+      "label": "Laki-laki tinggi",
+      "heightMinCm": 175,
+      "heightMaxCm": 182,
+      "headMm": 52,
+      "rangeMm": [50, 54],
+      "confidence": "medium",
+      "note": "Verifikasi ulang bila templating cup/stem terasa tidak proporsional."
+    },
+    {
+      "id": "male-xl-183-195",
+      "sex": "male",
+      "label": "Laki-laki sangat tinggi",
+      "heightMinCm": 183,
+      "heightMaxCm": 195,
+      "headMm": 54,
+      "rangeMm": [52, 56],
+      "confidence": "low",
+      "note": "Variasi tinggi; marker fisik lebih disarankan."
+    }
+  ]
+}

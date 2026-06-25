@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -16,6 +16,7 @@ import {
   Scaling,
   X,
 } from "lucide-react";
+import femoralHeadCalibrationPresets from "../data/femoralHeadCalibrationPresets.json";
 
 const SPRING = { type: "spring", damping: 26, stiffness: 320, mass: 0.9 };
 
@@ -23,19 +24,32 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-const MAGN_PROTOCOLS = [
-  { label: "AP Hip", pct: "115" },
-  { label: "AP Knee", pct: "110" },
-  { label: "AP Femur", pct: "118" },
-  { label: "AP Ankle", pct: "108" },
-];
+const FEMORAL_HEAD_HEIGHT_BANDS = femoralHeadCalibrationPresets.heightBands || [];
+const FEMORAL_HEAD_SEX_OPTIONS = femoralHeadCalibrationPresets.sexOptions || [];
+const FEMORAL_HEAD_QUICK_SIZES = femoralHeadCalibrationPresets.quickSizesMm || [];
 
-const ANAT_REFS = [
-  { label: "Caput Femur", mm: "46" },
-  { label: "Asetabulum", mm: "52" },
-  { label: "Kondilus Femur", mm: "76" },
-  { label: "Tibia Proks", mm: "80" },
-];
+function getFemoralHeadHeightEstimate(sex, heightCm) {
+  const safeHeight = Number(heightCm);
+  const sameSexBands = FEMORAL_HEAD_HEIGHT_BANDS.filter((band) => band.sex === sex);
+  if (!sameSexBands.length) return null;
+
+  if (Number.isFinite(safeHeight) && safeHeight > 0) {
+    const exact = sameSexBands.find(
+      (band) => safeHeight >= band.heightMinCm && safeHeight <= band.heightMaxCm,
+    );
+    if (exact) return exact;
+
+    return sameSexBands.reduce((closest, band) => {
+      const closestEdge =
+        safeHeight < band.heightMinCm ? band.heightMinCm : band.heightMaxCm;
+      const distance = Math.abs(safeHeight - closestEdge);
+      const closestDistance = closest?._distance ?? Number.POSITIVE_INFINITY;
+      return distance < closestDistance ? { ...band, _distance: distance } : closest;
+    }, null);
+  }
+
+  return sameSexBands[Math.floor(sameSexBands.length / 2)] || null;
+}
 
 export default function CalibrationWizard({
   open = false,
@@ -75,6 +89,8 @@ export default function CalibrationWizard({
   const [strokeExpanded, setStrokeExpanded] = useState(false);
   const [drawExpanded, setDrawExpanded] = useState(true);
   const [showMagGuide, setShowMagGuide] = useState(false);
+  const [headEstimateSex, setHeadEstimateSex] = useState("female");
+  const [headEstimateHeightCm, setHeadEstimateHeightCm] = useState("155");
 
   const isLineMode = calibrationMode === "line";
   const isMagMode = calibrationMode === "magnification";
@@ -109,6 +125,15 @@ export default function CalibrationWizard({
     qcStatus === "good" ? "#d1fae5" : qcStatus === "warn" ? "#fef3c7" : "#fee2e2";
 
   const hasLine = Boolean(calibrationReferenceLine);
+  const femoralHeadEstimate = useMemo(
+    () => getFemoralHeadHeightEstimate(headEstimateSex, headEstimateHeightCm),
+    [headEstimateHeightCm, headEstimateSex],
+  );
+  const femoralHeadRangeLabel = femoralHeadEstimate?.rangeMm
+    ? `${femoralHeadEstimate.rangeMm[0]}-${femoralHeadEstimate.rangeMm[1]} mm`
+    : "-";
+  const femoralHeadConfidenceLabel =
+    femoralHeadEstimate?.confidence === "low" ? "Estimasi rendah" : "Estimasi sedang";
 
   useEffect(() => {
     if (open) setShowQCDetail(false);
@@ -367,11 +392,10 @@ export default function CalibrationWizard({
                 </p>
                 <div className="space-y-1.5">
                   {[
-                    { step: "1", text: "Pilih protokol sesuai jenis foto X-ray (AP Hip paling umum)" },
-                    { step: "2", text: "Pilih struktur anatomi yang terlihat jelas di foto" },
-                    { step: "3", text: "Perhatikan ukuran tampak yang dihitung otomatis" },
-                    { step: "4", text: "Seret garis tepat di atas tepi struktur tersebut di foto" },
-                    { step: "5", text: "Tekan \"Terapkan\" — kalibrasi aktif!" },
+                    { step: "1", text: "Isi jenis kelamin dan tinggi badan pasien." },
+                    { step: "2", text: "Pakai estimasi caput femur, atau isi ukuran manual bila sudah tahu." },
+                    { step: "3", text: "Seret garis tepat pada diameter caput femur di foto." },
+                    { step: "4", text: "Tekan \"Terapkan\" setelah garis sudah pas." },
                   ].map(({ step, text }) => (
                     <div key={step} className="flex items-start gap-2">
                       <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[8px] font-black text-amber-700">{step}</div>
@@ -388,56 +412,119 @@ export default function CalibrationWizard({
               </div>
             )}
 
-            {/* Card: Protocol + Anatomical ref */}
-            <div className="rounded-[18px] border border-white/60 cw-flat overflow-hidden">
-              <div className="p-3">
-                <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">Protokol X-ray</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {MAGN_PROTOCOLS.map(({ label, pct }) => (
-                    <button key={pct} type="button"
-                      onClick={() => onMagnificationFactorChange?.(pct)}
-                      className={`flex min-h-9 flex-col items-center justify-center rounded-[10px] text-[10px] font-black transition-all leading-tight ${
-                        magnificationFactor === pct ? "cw-active" : "text-slate-600 cw-btn"
-                      }`}>
-                      <span>{label}</span>
-                      <span className={`text-[8px] font-bold ${magnificationFactor === pct ? "opacity-80" : "text-slate-400"}`}>{pct}%</span>
-                    </button>
-                  ))}
+            <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">
+                    Ukuran caput femur
+                  </p>
+                  <p className="mt-0.5 text-[9px] font-bold leading-snug text-slate-500">
+                    Estimasi dari tinggi badan. Bisa diganti manual bila ukuran lapangan berbeda.
+                  </p>
                 </div>
-                <div className="mt-2 flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
-                  <span className="text-[9px] font-black text-slate-400 shrink-0">Custom</span>
-                  <input type="number" min="100" max="200" step="0.5" value={magnificationFactor}
-                    onChange={(e) => onMagnificationFactorChange?.(e.target.value)}
+                <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${
+                  femoralHeadEstimate?.confidence === "low"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  {femoralHeadConfidenceLabel}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                {FEMORAL_HEAD_SEX_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setHeadEstimateSex(option.id)}
+                    className={`min-h-9 rounded-[11px] text-[10px] font-black transition-all ${
+                      headEstimateSex === option.id ? "cw-active" : "text-slate-600 cw-btn"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <div className="flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
+                  <span className="shrink-0 text-[9px] font-black text-slate-400">Tinggi</span>
+                  <input
+                    type="number"
+                    min="120"
+                    max="210"
+                    step="1"
+                    value={headEstimateHeightCm}
+                    onChange={(e) => setHeadEstimateHeightCm(e.target.value)}
                     className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
-                    placeholder="115" />
-                  <span className="text-[11px] font-black text-slate-500 shrink-0">%</span>
+                    placeholder="155"
+                  />
+                  <span className="shrink-0 text-[11px] font-black text-slate-500">cm</span>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
+                  <span className="shrink-0 text-[9px] font-black text-slate-400">Caput</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    value={anatomicalRefSizeMm}
+                    onChange={(e) => onAnatomicalRefSizeMmChange?.(e.target.value)}
+                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
+                    placeholder="46"
+                  />
+                  <span className="shrink-0 text-[11px] font-black text-slate-500">mm</span>
                 </div>
               </div>
 
-              <div className="mx-3 border-t border-slate-200/60" />
+              <div className="mt-2 rounded-[14px] border border-white/60 px-3 py-2 cw-pressed">
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                      {femoralHeadEstimate?.label || "Estimasi belum tersedia"}
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-bold leading-snug text-slate-500">
+                      Range {femoralHeadRangeLabel}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[22px] font-black leading-none text-blue-600">
+                      {femoralHeadEstimate?.headMm || "-"}
+                    </div>
+                    <div className="text-[8px] font-black uppercase text-slate-400">mm</div>
+                  </div>
+                </div>
+                {femoralHeadEstimate?.note ? (
+                  <p className="mt-1.5 text-[9px] font-medium leading-snug text-slate-500">
+                    {femoralHeadEstimate.note}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!femoralHeadEstimate?.headMm) return;
+                    onAnatomicalRefSizeMmChange?.(String(femoralHeadEstimate.headMm));
+                  }}
+                  className="mt-2 min-h-9 w-full rounded-[12px] bg-blue-600 text-[10px] font-black uppercase tracking-wider text-white"
+                >
+                  Pakai estimasi {femoralHeadEstimate?.headMm || "-"} mm
+                </button>
+              </div>
 
-              <div className="p-3">
-                <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">Struktur Anatomi</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {ANAT_REFS.map(({ label, mm }) => (
-                    <button key={mm} type="button"
-                      onClick={() => onAnatomicalRefSizeMmChange?.(mm)}
-                      className={`flex min-h-9 flex-col items-center justify-center rounded-[10px] text-[10px] font-black transition-all leading-tight ${
-                        anatomicalRefSizeMm === mm ? "cw-active" : "text-slate-600 cw-btn"
-                      }`}>
-                      <span className="text-center text-[9px] leading-snug">{label}</span>
-                      <span className={`text-[8px] font-bold ${anatomicalRefSizeMm === mm ? "opacity-80" : "text-slate-400"}`}>~{mm}mm</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2 flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
-                  <span className="text-[9px] font-black text-slate-400 shrink-0">Custom</span>
-                  <input type="number" min="1" step="0.5" value={anatomicalRefSizeMm}
-                    onChange={(e) => onAnatomicalRefSizeMmChange?.(e.target.value)}
-                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
-                    placeholder="46" />
-                  <span className="text-[11px] font-black text-slate-500 shrink-0">mm</span>
-                </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {FEMORAL_HEAD_QUICK_SIZES.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => onAnatomicalRefSizeMmChange?.(String(size))}
+                    className={`min-h-7 rounded-full px-2.5 text-[9px] font-black ${
+                      String(anatomicalRefSizeMm) === String(size)
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 cw-btn"
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -447,7 +534,7 @@ export default function CalibrationWizard({
                 <div className="text-[24px] font-black leading-none text-amber-700">≈{apparentSizeMm}</div>
                 <div>
                   <div className="text-[8px] font-black uppercase tracking-widest text-amber-500">mm tampak di foto</div>
-                  <div className="text-[10px] font-bold text-amber-600">{anatomicalRefSizeMm}mm × {magnificationFactor}%</div>
+                  <div className="text-[10px] font-bold text-amber-600">Caput {anatomicalRefSizeMm}mm × magnifikasi</div>
                 </div>
                 <div className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100">
                   <Check className="h-3.5 w-3.5 text-amber-600 stroke-[3]" />
@@ -455,9 +542,20 @@ export default function CalibrationWizard({
               </div>
             ) : (
               <div className="rounded-[12px] px-3 py-2 text-center text-[9px] text-slate-400 cw-pressed">
-                Pilih protokol &amp; struktur untuk melihat ukuran tampak
+                Isi ukuran caput untuk melihat ukuran tampak
               </div>
             )}
+
+            <div className="flex items-center gap-1.5 rounded-[12px] border border-white/60 px-3 py-2 cw-flat">
+              <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                Magnifikasi
+              </span>
+              <input type="number" min="100" max="200" step="0.5" value={magnificationFactor}
+                onChange={(e) => onMagnificationFactorChange?.(e.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
+                placeholder="115" />
+              <span className="shrink-0 text-[11px] font-black text-slate-500">%</span>
+            </div>
 
             {/* Draw + Apply — combined */}
             <div className="rounded-[18px] border border-white/60 cw-flat overflow-hidden">
@@ -480,7 +578,7 @@ export default function CalibrationWizard({
                   </div>
                 ) : (
                   <div className="mt-2 rounded-[10px] px-2.5 py-1.5 text-center text-[9px] text-slate-400 cw-pressed">
-                    Seret garis tepat di tepi {ANAT_REFS.find(r => r.mm === anatomicalRefSizeMm)?.label || "struktur"} pada foto
+                    Seret garis tepat pada diameter caput femur di foto.
                   </div>
                 )}
               </div>

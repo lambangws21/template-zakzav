@@ -347,7 +347,7 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_8px_32px_rgba(15,23,42,0.16)]">
+    <div className="w-full overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_8px_32px_rgba(15,23,42,0.16)]">
       {/* Header */}
       <div className="flex items-center justify-between bg-slate-900 px-3 py-2.5">
         <div className="flex items-center gap-2 text-[10px] font-black tracking-wider text-white uppercase">
@@ -377,7 +377,7 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
 
       {/* Gambar jurnal */}
       <div className="mx-3 mt-2 overflow-hidden rounded-xl border border-slate-100">
-        <img src={current.image} alt={current.caption} className="max-h-44 w-full object-contain" />
+        <img src={current.image} alt={current.caption} className="max-h-[22rem] w-full object-contain" />
         <p className="bg-slate-50/80 px-2 py-1 text-[8px] italic leading-snug text-slate-400">
           {current.caption}
         </p>
@@ -722,4 +722,3 @@ export function TkaSummaryPanel({ className = "" }) {
     </details>
   );
 }
-

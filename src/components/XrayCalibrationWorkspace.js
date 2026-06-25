@@ -49,6 +49,7 @@ import {
   GitCompare,
   HandGrab,
   History,
+  Info,
   Layers,
   Moon,
   MoveLeft,
@@ -119,6 +120,7 @@ import FreeWarpOverlay from "./FreeWarpOverlay";
 import { SHAPE_PRESETS } from "../data/shapePresets";
 import LayerManager from "./LayerManager";
 import LineManager from "./LineManager";
+import DorrClassificationPanel from "./DorrClassificationPanel";
 import ManagerPanel from "./ManagerPanel";
 import ModalStarter from "./ModalStarter";
 import MobileNavigation from "./MobileNavigation";
@@ -264,6 +266,7 @@ import {
 } from "../lib/xray/snapUtils";
 import { removeImageBackground, createCombinedReportCanvas } from "../lib/xray/reportUtils";
 
+const IDLE_TUTORIAL_DELAY_MS = 120000;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 12;
 const STORY_STORAGE_KEY = "xray_workspace_story_v1";
@@ -889,8 +892,12 @@ export default function XrayCalibrationWorkspace({
   const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
   const [simpleDesktopHkaOpen, setSimpleDesktopHkaOpen] = useState(false);
   const [simpleDesktopEditFotoOpen, setSimpleDesktopEditFotoOpen] = useState(false);
+  const [simpleDesktopDorrOpen, setSimpleDesktopDorrOpen] = useState(false);
   const [simpleStepPopoverOpen, setSimpleStepPopoverOpen] = useState(false);
   const simpleStepPopoverRef = useRef(null);
+  const [idleTutorialVisible, setIdleTutorialVisible] = useState(false);
+  const [idleTutorialTick, setIdleTutorialTick] = useState(0);
+  const idleTutorialTimerRef = useRef(null);
   const [mobileObjPanelPos, setMobileObjPanelPos] = useState(null);
   const mobileObjPanelDragRef = useRef(null);
   const [layerBarDragPos, setLayerBarDragPos] = useState(null);
@@ -906,6 +913,46 @@ export default function XrayCalibrationWorkspace({
     document.addEventListener("pointerdown", handler, true);
     return () => document.removeEventListener("pointerdown", handler, true);
   }, [simpleStepPopoverOpen]);
+
+  useEffect(() => {
+    if (!isSimpleUiMode || typeof window === "undefined") {
+      if (idleTutorialTimerRef.current) {
+        window.clearTimeout(idleTutorialTimerRef.current);
+        idleTutorialTimerRef.current = null;
+      }
+      setIdleTutorialVisible(false);
+      return undefined;
+    }
+
+    const resetIdleTutorialTimer = () => {
+      if (idleTutorialTimerRef.current) {
+        window.clearTimeout(idleTutorialTimerRef.current);
+      }
+      setIdleTutorialVisible(false);
+      idleTutorialTimerRef.current = window.setTimeout(() => {
+        setIdleTutorialTick((value) => value + 1);
+        setIdleTutorialVisible(true);
+      }, IDLE_TUTORIAL_DELAY_MS);
+    };
+
+    const activityEvents = ["pointerdown", "keydown", "wheel", "touchstart"];
+    activityEvents.forEach((eventName) =>
+      window.addEventListener(eventName, resetIdleTutorialTimer, {
+        passive: true,
+      }),
+    );
+    resetIdleTutorialTimer();
+
+    return () => {
+      if (idleTutorialTimerRef.current) {
+        window.clearTimeout(idleTutorialTimerRef.current);
+        idleTutorialTimerRef.current = null;
+      }
+      activityEvents.forEach((eventName) =>
+        window.removeEventListener(eventName, resetIdleTutorialTimer),
+      );
+    };
+  }, [isSimpleUiMode]);
   const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
     useState(false);
   useEffect(() => { if (!mobileObjectSettingsOpen) setMobileObjPanelPos(null); }, [mobileObjectSettingsOpen]);
@@ -2829,6 +2876,8 @@ export default function XrayCalibrationWorkspace({
   );
 
   const lineTypeLabel = useCallback((type) => {
+    if (type === "dorrOuter") return "DORR-A";
+    if (type === "dorrCanal") return "DORR-B";
     if (type === "hka") return "HKA";
     if (type === "ruler") return "RULER";
     if (type === "axis") return "AXIS";
@@ -2847,6 +2896,8 @@ export default function XrayCalibrationWorkspace({
   }, []);
 
   const lineTypeColor = useCallback((type) => {
+    if (type === "dorrOuter") return "#10b981";
+    if (type === "dorrCanal") return "#f43f5e";
     if (type === "hka") return "#06b6d4";
     if (type === "ruler") return "#22c55e";
     if (type === "axis") return "#0f766e";
@@ -2913,6 +2964,10 @@ export default function XrayCalibrationWorkspace({
         dashPattern = [6, 3, 2, 3];
       } else if (type === "headDiameter") {
         dashPattern = [3, 4]; // garis diameter tipis sebagai referensi
+      } else if (type === "dorrOuter") {
+        dashPattern = [];
+      } else if (type === "dorrCanal") {
+        dashPattern = [6, 3];
       }
 
       if (isLocked) {
@@ -3329,6 +3384,96 @@ export default function XrayCalibrationWorkspace({
     },
     [flipX, flipY, modelHeight, modelWidth, rotation, view],
   );
+
+  const createDorrCiMeasurementLines = useCallback(() => {
+    if (!image || modelWidth <= 0 || modelHeight <= 0) {
+      setNotice("Upload X-ray dulu sebelum membuat garis Dorr CI.");
+      return null;
+    }
+
+    const overlayRect = overlayCanvasRef.current?.getBoundingClientRect();
+    const canvasCenter = overlayRect
+      ? screenToImagePoint(overlayRect.width / 2, overlayRect.height / 2)
+      : { x: modelWidth / 2, y: modelHeight / 2 };
+    const centerX = clamp(
+      Number.isFinite(canvasCenter?.x) ? canvasCenter.x : modelWidth / 2,
+      24,
+      Math.max(24, modelWidth - 24),
+    );
+    const centerY = clamp(
+      Number.isFinite(canvasCenter?.y) ? canvasCenter.y : modelHeight / 2,
+      24,
+      Math.max(24, modelHeight - 24),
+    );
+    const outerHalf = Math.max(36, Math.min(130, modelWidth * 0.15));
+    const canalHalf = Math.max(18, outerHalf * 0.43);
+    const outerId = nextLineIdRef.current;
+    const canalId = outerId + 1;
+    const safeOuterHalf = Math.min(outerHalf, Math.max(12, centerX - 8), Math.max(12, modelWidth - centerX - 8));
+    const safeCanalHalf = Math.min(canalHalf, Math.max(8, centerX - 8), Math.max(8, modelWidth - centerX - 8));
+
+    const shared = {
+      y1: centerY,
+      y2: centerY,
+      labelOpacity: DEFAULT_LABEL_OPACITY,
+      strokeWidth: Math.max(DEFAULT_LINE_STROKE_WIDTH + 0.3, 2.2),
+    };
+    const outerLine = {
+      ...shared,
+      id: outerId,
+      x1: centerX - safeOuterHalf,
+      x2: centerX + safeOuterHalf,
+      type: "dorrOuter",
+      color: "#10b981",
+      name: "Dorr CI A - Outer Cortex",
+      dorrCiRole: "outer",
+      labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
+      labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y - 16,
+    };
+    const canalLine = {
+      ...shared,
+      id: canalId,
+      x1: centerX - safeCanalHalf,
+      x2: centerX + safeCanalHalf,
+      type: "dorrCanal",
+      color: "#f43f5e",
+      name: "Dorr CI B - Canal Width",
+      dorrCiRole: "canal",
+      labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
+      labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y + 14,
+    };
+
+    nextLineIdRef.current += 2;
+    setLines((prev) => [
+      ...prev.filter((line) => line.dorrCiRole !== "outer" && line.dorrCiRole !== "canal"),
+      outerLine,
+      canalLine,
+    ]);
+    setSelectedLineId(canalId);
+    setSelectedFreeLinePointIndex(null);
+    setSelectedAngleId(null);
+    setSelectedCircleId(null);
+    setSelectedHkaId(null);
+    setSelectedCutLayerId(null);
+    setSelectedAnnotationId(null);
+    setSelectedPlanningGuideId(null);
+    setActiveRightPanel("measure");
+    setTool(getIdleTool());
+    triggerSelectionPulse("line", canalId);
+    if (isCoarsePointer) {
+      setMobileHandleAssist({ lineId: canalId, handleKey: "end" });
+    }
+    setNotice("Garis Dorr CI dibuat. Sesuaikan A ke diameter luar korteks dan B ke diameter kanal pada level yang sama.");
+    return { outerId, canalId };
+  }, [
+    getIdleTool,
+    image,
+    isCoarsePointer,
+    modelHeight,
+    modelWidth,
+    screenToImagePoint,
+    triggerSelectionPulse,
+  ]);
 
   const selectedLayerToolbarAnchor = useMemo(() => {
     if (
@@ -17807,42 +17952,127 @@ export default function XrayCalibrationWorkspace({
   const implantLibraryScaleInstruction = hasCalibration
     ? "Kalibrasi aktif: implant lokal akan mencoba auto-scale mengikuti garis kalibrasi dari ruler template. Jika belum pas, pilih layer lalu tekan Ruler atau Scale."
     : "Sebelum memakai implant lokal, klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi.";
+  const hasImplantTemplateLayer = cutLayers.some((layer) => {
+    const layerName = String(layer.name || "").toLowerCase();
+    return (
+      layer.autoScaleFromCalibration ||
+      layer.implantViewMode ||
+      layerName.includes("cup") ||
+      layerName.includes("stem") ||
+      layerName.includes("implant") ||
+      layerName.includes("lcp")
+    );
+  });
+  const openIdleTutorialTarget = (target) => {
+    setIdleTutorialVisible(false);
+    if (target === "upload") {
+      mainUploadInputRef.current?.click();
+      return;
+    }
+    if (target === "calibration") {
+      openSimpleCalibrationModal("Kalibrasi diperlukan sebelum memakai template cup/stem.");
+      return;
+    }
+    if (target === "implant") {
+      setSelectedImplantType("cup");
+      setSimpleQuickPanelMinimized(false);
+      if (isMobileViewport) {
+        setSimpleMobilePanel("implant");
+      } else {
+        setSimpleManagerTab("implant");
+        setSimpleDesktopManagerOpen(true);
+        setSimpleDesktopHkaOpen(false);
+        setSimpleDesktopEditFotoOpen(false);
+      }
+      return;
+    }
+    if (target === "layerSettings" && selectedCutLayer) {
+      openLayerSettingsModal(selectedCutLayer.id);
+      return;
+    }
+    if (target === "export") {
+      focusExportStep();
+    }
+  };
+  const idleTutorialCards = [
+    {
+      title: "Mulai dari upload X-ray",
+      body: "Klik Upload & Sheet, pilih Drive atau Lokal, lalu muat X-ray AP pelvis/hip sebagai background.",
+      actionLabel: "Upload X-ray",
+      target: "upload",
+    },
+    {
+      title: "Lanjutkan kalibrasi",
+      body: "Buat garis pada marker/ruler, isi ukuran real, lalu Simpan Kalibrasi agar template cup dan stem mengikuti skala.",
+      actionLabel: "Buka Kalibrasi",
+      target: "calibration",
+    },
+    {
+      title: "Tambahkan cup dan stem",
+      body: "Buka Implant Library, pilih tab CUP atau STEM, pilih ukuran, lalu tekan Pakai untuk menambah layer implant.",
+      actionLabel: "Buka Implant Library",
+      target: "implant",
+    },
+    {
+      title: "Atur layer implant",
+      body: "Pilih layer cup/stem, lalu gunakan Layer Settings untuk Scale, Rotate, Opacity, Flip H, atau Ganti template.",
+      actionLabel: "Layer Settings",
+      target: "layerSettings",
+    },
+    {
+      title: "Simpan hasil templating",
+      body: "Setelah posisi cup dan stem sesuai, buka Actions & Export untuk menyimpan PNG, JPEG, atau PDF.",
+      actionLabel: "Export",
+      target: "export",
+    },
+  ];
+  const idleTutorialCard =
+    !image
+      ? idleTutorialCards[0]
+      : !hasCalibration
+        ? idleTutorialCards[1]
+          : !hasImplantTemplateLayer
+            ? idleTutorialCards[2]
+            : selectedCutLayer
+              ? idleTutorialCards[3]
+              : idleTutorialCards[4];
   const simpleToolMenuItems = [
-    { icon: "draw", label: "Line", desc: "tap 2 titik", key: "draw" },
-    { icon: "pan", label: "Move", desc: "tap object", key: "pan" },
-    { icon: "cut", label: "Cut", desc: "fragment", key: "cut" },
+    { icon: "draw", label: "Line", desc: "Buat garis ukur. Klik titik awal lalu titik akhir pada X-ray.", key: "draw" },
+    { icon: "pan", label: "Move", desc: "Geser canvas atau pilih objek/layer yang sudah dibuat.", key: "pan" },
+    { icon: "cut", label: "Cut", desc: "Potong area gambar menjadi fragment/layer terpisah untuk diedit.", key: "cut" },
     {
       icon: "freeLine",
       label: "Free",
-      desc: "freehand",
+      desc: "Gambar area bebas dengan drag freehand untuk membuat layer/mask.",
       key: "freeLine",
       freeLineMode: "freehand",
     },
     {
       icon: "freeLine",
       label: "Point",
-      desc: "point mode",
+      desc: "Buat shape bebas dengan klik beberapa titik, lebih presisi dari freehand.",
       key: "freeLinePoint",
       freeLineMode: "point",
     },
-    { icon: "angle", label: "Angle", desc: "tap 3 titik", key: "angle" },
-    { icon: "circle", label: "Circle", desc: "pusat + tepi", key: "circle" },
-    { icon: "annotation", label: "Text", desc: "tap + input", key: "annotation" },
+    { icon: "angle", label: "Angle", desc: "Ukur sudut dengan 3 titik: kaki pertama, vertex, kaki kedua.", key: "angle" },
+    { icon: "circle", label: "Circle", desc: "Buat lingkaran dari titik pusat dan titik tepi untuk estimasi diameter/head.", key: "circle" },
+    { icon: "annotation", label: "Text", desc: "Tambahkan catatan teks langsung pada gambar X-ray.", key: "annotation" },
     {
       icon: "imageProcess",
       label: "ZakVisor",
       desc:
         imageProcessingMode === "normal"
-          ? "filter x-ray"
+          ? "Buka filter X-ray untuk mengatur kontras, edge, dan visibilitas anatomi."
           : IMAGE_PROCESSING_MODE_LABELS[imageProcessingMode],
       key: "imageProcess",
       action: "imageProcessing",
     },
-    { icon: "hka", label: "HKA", desc: "axis knee", key: "hkaAuto" },
-    { icon: "guideBuilder", label: "Guide", desc: "parallel", key: "guideBuilder" },
-    { icon: "cupAssessment", label: "Cup Assess", desc: "incl & AV", key: "cupAssessment", action: "cupAssessment" },
-    { icon: "zakAceta", label: "ZakAceta", desc: "hip wizard", key: "zakAceta", action: "zakAceta" },
-    { icon: "brush", label: "Brush", desc: "hapus / blur", key: "brush", action: "brushTool", disabled: !image },
+    { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto" },
+    { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder" },
+    { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment" },
+    { icon: "zakAceta", label: "ZakAceta", desc: "Buka panduan hip planning step-by-step untuk ITD, hip length, LLD, dan offset.", key: "zakAceta", action: "zakAceta" },
+    { icon: "brush", label: "Brush", desc: "Gunakan brush untuk hapus/blur area tertentu pada gambar atau layer.", key: "brush", action: "brushTool", disabled: !image },
+    { icon: "dorr", label: "Dorr CI", desc: "Hitung cortical index untuk klasifikasi kanal femur Dorr A/B/C.", key: "dorr", action: "dorr" },
   ];
   const mobileNavigationTabs = [
     {
@@ -27108,6 +27338,13 @@ export default function XrayCalibrationWorkspace({
                   className="h-9 w-full"
                 />
                 <ToolIconButton
+                  icon="dorr"
+                  label="Dorr Classification — Morfologi Kanal Femoral"
+                  onClick={() => setSimpleDesktopDorrOpen((v) => !v)}
+                  active={simpleDesktopDorrOpen}
+                  className="h-9 w-full"
+                />
+                <ToolIconButton
                   icon="undo"
                   label="Undo (Ctrl/Cmd+Z)"
                   onClick={undoHistory}
@@ -30659,6 +30896,95 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 </motion.div>
               ) : null}
+              <AnimatePresence>
+                {isSimpleUiMode && idleTutorialVisible && idleTutorialCard ? (
+                  <motion.div
+                    key={`idle-tutorial-${idleTutorialTick}`}
+                    initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                    transition={PANEL_SPRING}
+                    className={`pointer-events-auto absolute z-[37] ${
+                      isMobileViewport
+                        ? "right-3 bottom-[calc(env(safe-area-inset-bottom)+96px)] left-3"
+                        : "right-5 bottom-5 w-[min(360px,calc(100vw-40px))]"
+                    }`}
+                  >
+                    <div className="overflow-hidden rounded-[22px] border border-cyan-300/70 bg-[linear-gradient(180deg,rgba(8,18,37,0.94)_0%,rgba(15,23,42,0.92)_100%)] text-white shadow-[0_18px_44px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+                      <div className="flex items-start gap-3 px-4 py-3">
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border border-cyan-300/40 bg-cyan-400/15 text-cyan-200">
+                          <Info className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                                Tutorial cepat
+                              </p>
+                              <p className="mt-1 text-sm font-black text-white">
+                                {idleTutorialCard.title}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setIdleTutorialVisible(false)}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                              aria-label="Tutup tutorial"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <p className="mt-2 text-[12px] leading-5 text-slate-300">
+                            {idleTutorialCard.body}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openIdleTutorialTarget(idleTutorialCard.target)}
+                              className="rounded-2xl border border-cyan-300/45 bg-cyan-400/15 px-3 py-2 text-[11px] font-black text-cyan-100 transition hover:bg-cyan-400/25 active:scale-[0.98]"
+                            >
+                              {idleTutorialCard.actionLabel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIdleTutorialVisible(false)}
+                              className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-bold text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-[0.98]"
+                            >
+                              Nanti saja
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+
+              {/* ── Dorr Classification panel overlay (advanced UI desktop) ── */}
+              {!isSimpleUiMode && (
+                <AnimatePresence>
+                  {simpleDesktopDorrOpen && (
+                    <motion.div
+                      key="canvas-dorr-advanced"
+                      initial={{ opacity: 0, x: 14, scale: 0.93 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: 10, scale: 0.94 }}
+                      transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                      className="pointer-events-auto absolute top-4 right-4 z-50 w-96 max-h-[calc(100%-2rem)] overflow-y-auto"
+                    >
+                      <DorrClassificationPanel
+                        onClose={() => setSimpleDesktopDorrOpen(false)}
+                        onCreateCiLines={createDorrCiMeasurementLines}
+                        lines={lines.filter((l) => l.id !== calibrationLineId)}
+                        mmPerPixel={mmPerPixel}
+                        getLineLength={getLineLength}
+                        hasCalibration={hasCalibration}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
+
               {isSimpleUiMode ? (
                 <div className="pointer-events-none absolute inset-0 z-20 hidden lg:block">
                   <AnimatePresence mode="wait">
@@ -30791,6 +31117,7 @@ export default function XrayCalibrationWorkspace({
                         if (item.action === "zakAceta") { setSimpleWizardOpen((v) => !v); return; }
                         if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
                         if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
+                        if (item.action === "dorr") { setSimpleDesktopDorrOpen((v) => !v); return; }
                         if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
                         handleToolChange(item.key);
                       }}
@@ -30800,6 +31127,7 @@ export default function XrayCalibrationWorkspace({
                       canRedo={historyState.redo > 0}
                       cupAssessmentActive={showCupAssessment}
                       zakAcetaActive={simpleWizardOpen}
+                      dorrActive={simpleDesktopDorrOpen}
                     />
                   )}
                   </AnimatePresence>
@@ -30813,7 +31141,7 @@ export default function XrayCalibrationWorkspace({
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: 10, scale: 0.94 }}
                         transition={{ type: "spring", damping: 22, stiffness: 300 }}
-                        className="pointer-events-auto absolute top-1/2 right-[212px] w-72 -translate-y-1/2"
+                        className="pointer-events-auto absolute top-1/2 right-[224px] w-[min(560px,calc(100vw-256px))] -translate-y-1/2"
                       >
                         <HipPlanningWizard
                           lines={lines}
@@ -30821,6 +31149,29 @@ export default function XrayCalibrationWorkspace({
                           onClose={() => setSimpleWizardOpen(false)}
                           mmPerPixel={mmPerPixel}
                           measurementUnit={measurementUnit}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* ── Dorr Classification panel — muncul di kiri PanelActions ── */}
+                  <AnimatePresence>
+                    {simpleDesktopDorrOpen && (
+                      <motion.div
+                        key="canvas-dorr"
+                        initial={{ opacity: 0, x: 14, scale: 0.93 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 10, scale: 0.94 }}
+                        transition={{ type: "spring", damping: 22, stiffness: 300 }}
+                        className="pointer-events-auto absolute top-1/2 right-[212px] w-96 max-h-[calc(100vh-120px)] -translate-y-1/2 overflow-y-auto"
+                      >
+                        <DorrClassificationPanel
+                          onClose={() => setSimpleDesktopDorrOpen(false)}
+                          onCreateCiLines={createDorrCiMeasurementLines}
+                          lines={lines.filter((l) => l.id !== calibrationLineId)}
+                          mmPerPixel={mmPerPixel}
+                          getLineLength={getLineLength}
+                          hasCalibration={hasCalibration}
                         />
                       </motion.div>
                     )}
@@ -30896,6 +31247,7 @@ export default function XrayCalibrationWorkspace({
                         activeFreeLineMode={freeLineMode}
                         onMinimize={() => setSimpleMobilePanel(null)}
                           onSelectTool={(item) => {
+                          if (item.action === "dorr") { setSimpleMobilePanel("dorr"); return; }
                           setSimpleMobilePanel(null);
                           setMobileCanvasMode("edit");
                           if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
@@ -30917,7 +31269,8 @@ export default function XrayCalibrationWorkspace({
                         canRedo={historyState.redo > 0}
                         onCupAssessment={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
                         cupAssessmentActive={showCupAssessment}
-                      zakAcetaActive={simpleWizardOpen}
+                        zakAcetaActive={simpleWizardOpen}
+                        dorrActive={simpleMobilePanel === "dorr"}
                       />
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
@@ -31172,6 +31525,16 @@ export default function XrayCalibrationWorkspace({
                             ) : null}
                           </div>
                         </div>
+                      ) : simpleMobilePanel === "dorr" ? (
+                        <DorrClassificationPanel
+                          className="mx-auto w-[min(92vw,380px)]"
+                          onClose={() => setSimpleMobilePanel(null)}
+                          onCreateCiLines={createDorrCiMeasurementLines}
+                          lines={lines.filter((l) => l.id !== calibrationLineId)}
+                          mmPerPixel={mmPerPixel}
+                          getLineLength={getLineLength}
+                          hasCalibration={hasCalibration}
+                        />
                       ) : (
                       <div className="mx-auto w-[min(92vw,320px)] rounded-[24px] border border-white/75 bg-[#eef2f7]/96 p-3 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                         <div className="mb-2.5 flex items-center justify-between">

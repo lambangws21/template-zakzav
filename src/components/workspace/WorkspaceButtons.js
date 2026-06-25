@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import {
-  Bone, ChartSpline, CircleDot, DraftingCompass, HandGrab, Maximize2,
+  Bone, ChartSpline, CircleDot, DraftingCompass, HandGrab, LensConcave, Maximize2,
   MessageSquare, Paintbrush, PencilLine, Redo2, RulerDimensionLine,
   Slice, SplinePointer, Target, Undo2, ZoomIn, ZoomOut,
 } from "lucide-react";
@@ -121,6 +121,7 @@ const TOOL_ICON_COMPONENTS = {
   angle: DraftingCompass,
   circle: CircleDot,
   hka: ChartSpline,
+  dorr: LensConcave,
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
   fit: Maximize2,

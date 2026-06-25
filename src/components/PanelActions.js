@@ -1,11 +1,15 @@
 "use client";
 
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Activity,
+  Atom,
   Circle,
   Compass,
   GitBranch,
   Grid,
+  LensConcave,
   MessageSquare,
   Minus,
   Waypoints,
@@ -34,24 +38,6 @@ function CupIcon({ className }) {
   );
 }
 
-function ZakAcetaIcon({ className }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      {/* ITD baseline */}
-      <line x1="3" y1="14" x2="21" y2="14" strokeDasharray="3 1.5"/>
-      {/* Hip length lines left + right */}
-      <line x1="7" y1="14" x2="7" y2="7"/>
-      <line x1="17" y1="14" x2="17" y2="6"/>
-      {/* Femoral heads */}
-      <circle cx="7" cy="6" r="2"/>
-      <circle cx="17" cy="5" r="2"/>
-      {/* LLD arrow */}
-      <line x1="19" y1="5" x2="19" y2="6" strokeWidth={1.5}/>
-      <polyline points="18,5.8 19,4.5 20,5.8" strokeWidth={1.5}/>
-    </svg>
-  );
-}
-
 const TOOL_ICON_MAP = {
   draw: PenTool,
   pan: Move,
@@ -66,7 +52,8 @@ const TOOL_ICON_MAP = {
   annotation: MessageSquare,
   imageProcess: Activity,
   cupAssessment: CupIcon,
-  zakAceta: ZakAcetaIcon,
+  zakAceta: Atom,
+  dorr: LensConcave,
 };
 
 // ─── accent system — glassmorphism ────────────────────────────────────────────
@@ -88,6 +75,7 @@ const TOOL_ACCENT = {
   cupAssessment:{ bg: "bg-amber-500/10",   border: "border-amber-500/45",   text: "text-amber-400",   inner: "shadow-[inset_0_1px_4px_rgba(245,158,11,0.22)]",   headerBg: "bg-amber-500/20" },
   zakAceta:     { bg: "bg-rose-500/10",    border: "border-rose-500/45",    text: "text-rose-400",    inner: "shadow-[inset_0_1px_4px_rgba(244,63,94,0.22)]",    headerBg: "bg-rose-500/20" },
   brush:        { bg: "bg-violet-500/10",  border: "border-violet-500/45",  text: "text-violet-400",  inner: "shadow-[inset_0_1px_4px_rgba(139,92,246,0.22)]",   headerBg: "bg-violet-500/20" },
+  dorr:         { bg: "bg-indigo-500/10",  border: "border-indigo-500/45",  text: "text-indigo-400",  inner: "shadow-[inset_0_1px_4px_rgba(99,102,241,0.22)]",   headerBg: "bg-indigo-500/20" },
 };
 
 const IDLE_ICON_COLOR = {
@@ -106,6 +94,7 @@ const IDLE_ICON_COLOR = {
   cupAssessment:"text-amber-400",
   zakAceta:     "text-rose-400",
   brush:        "text-violet-400",
+  dorr:         "text-indigo-400",
 };
 
 // ─── grouping ─────────────────────────────────────────────────────────────────
@@ -122,6 +111,7 @@ function getToolGroupKey(item) {
   if (item.key === "pan")          return "Move";
   if (item.key === "imageProcess") return "ZakVisor";
   if (item.key === "brush")        return "Editing";
+  if (item.key === "dorr")         return "Planning";
   if (["draw","angle","circle","annotation"].includes(item.key) || item.freeLineMode)
     return "Drawing";
   return "Planning";
@@ -164,23 +154,43 @@ const TAP = { whileTap: { scale: 0.9 } };
 
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
 
-function Tooltip({ label, desc, visible }) {
-  return (
+function Tooltip({ label, desc, visible, anchorRect }) {
+  if (typeof document === "undefined") return null;
+
+  const width = 240;
+  const viewportWidth = typeof window === "undefined" ? width + 24 : window.innerWidth;
+  const left = anchorRect
+    ? Math.min(
+        Math.max(anchorRect.left + anchorRect.width / 2 - width / 2, 12),
+        Math.max(12, viewportWidth - width - 12),
+      )
+    : 12;
+  const top = anchorRect ? anchorRect.bottom + 8 : 12;
+  const arrowLeft = anchorRect
+    ? Math.min(Math.max(anchorRect.left + anchorRect.width / 2 - left - 4, 14), width - 18)
+    : width / 2;
+
+  return createPortal(
     <AnimatePresence>
-      {visible && (
+      {visible && anchorRect && (
         <motion.div
-          initial={{ opacity: 0, x: 6, scale: 0.92 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: 4, scale: 0.92 }}
+          initial={{ opacity: 0, y: -4, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -3, scale: 0.96 }}
           transition={{ duration: 0.14 }}
-          className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 w-max max-w-[140px] rounded-xl border border-white/70 bg-slate-800/95 px-2.5 py-1.5 text-left backdrop-blur-sm"
+          className="pointer-events-none fixed z-[120] rounded-xl border border-white/70 bg-slate-800/95 px-3 py-2 text-left shadow-xl backdrop-blur-sm"
+          style={{ left, top, width }}
         >
           <p className="text-[10px] font-black text-white">{label}</p>
-          {desc && <p className="mt-0.5 text-[8px] text-slate-400">{desc}</p>}
-          <div className="absolute top-1/2 right-0 h-0 w-0 -translate-y-1/2 translate-x-full border-t-4 border-b-4 border-l-4 border-transparent border-l-slate-800/95" />
+          {desc && <p className="mt-0.5 whitespace-normal text-[9px] leading-snug text-slate-300">{desc}</p>}
+          <div
+            className="absolute top-0 h-0 w-0 -translate-y-full border-r-4 border-b-4 border-l-4 border-transparent border-b-slate-800/95"
+            style={{ left: arrowLeft }}
+          />
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -190,11 +200,23 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
   const ToolIcon = getToolIcon(item);
   const accent   = TOOL_ACCENT[item.key] || TOOL_ACCENT.draw;
   const idleClr  = IDLE_ICON_COLOR[item.key] || "text-slate-400";
+  const [tipVisible, setTipVisible] = useState(false);
+  const [tipAnchor, setTipAnchor] = useState(null);
+  const showTip = (event) => {
+    setTipAnchor(event.currentTarget.getBoundingClientRect());
+    setTipVisible(true);
+  };
+  const hideTip = () => setTipVisible(false);
 
   return (
     <motion.button
       type="button"
       onClick={() => onSelect(item)}
+      onMouseEnter={showTip}
+      onMouseMove={showTip}
+      onMouseLeave={hideTip}
+      onFocus={showTip}
+      onBlur={hideTip}
       className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl border p-1.5 transition-all duration-200 ${
         fullWidth ? "w-full flex-row gap-2 px-2.5 py-2 justify-start" : "aspect-square w-full"
       } ${
@@ -218,7 +240,38 @@ function ToolBtn({ item, isActive, onSelect, fullWidth = false }) {
       } ${isActive ? "" : "text-[var(--soft-text-lo,theme(colors.slate.500))]"}`}>
         {item.label}
       </span>
+      <Tooltip label={item.label} desc={item.desc} visible={tipVisible} anchorRect={tipAnchor} />
     </motion.button>
+  );
+}
+
+function HeaderActionButton({ label, desc, onClick, disabled = false, className = "", children }) {
+  const [tipVisible, setTipVisible] = useState(false);
+  const [tipAnchor, setTipAnchor] = useState(null);
+  const showTip = (event) => {
+    setTipAnchor(event.currentTarget.getBoundingClientRect());
+    setTipVisible(true);
+  };
+  const hideTip = () => setTipVisible(false);
+  return (
+    <div className="relative">
+      <motion.button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        onMouseEnter={showTip}
+        onMouseMove={showTip}
+        onMouseLeave={hideTip}
+        onFocus={showTip}
+        onBlur={hideTip}
+        className={className}
+        aria-label={`${label}: ${desc}`}
+        {...TAP}
+      >
+        {children}
+      </motion.button>
+      <Tooltip label={label} desc={desc} visible={tipVisible} anchorRect={tipAnchor} />
+    </div>
   );
 }
 
@@ -238,6 +291,7 @@ export default function PanelActions({
   onCupAssessment,
   cupAssessmentActive = false,
   zakAcetaActive = false,
+  dorrActive = false,
 }) {
   const groups = groupTools(tools);
 
@@ -250,6 +304,7 @@ export default function PanelActions({
   const isItemActive = (item) => {
     if (item.key === "cupAssessment") return cupAssessmentActive;
     if (item.key === "zakAceta") return zakAcetaActive;
+    if (item.key === "dorr") return dorrActive;
     return item.freeLineMode
       ? activeTool === "freeLine" && activeFreeLineMode === item.freeLineMode
       : activeTool === item.key;
@@ -307,33 +362,35 @@ export default function PanelActions({
 
         {/* Undo / Redo + Minimize — one compact row */}
         <div className="flex shrink-0 items-center gap-1">
-          <div className="flex items-center rounded-lg border border-[var(--soft-border)] overflow-hidden">
-            <motion.button
-              type="button" onClick={onUndo} disabled={!canUndo}
+          <div className="flex items-center rounded-lg border border-[var(--soft-border)]">
+            <HeaderActionButton
+              onClick={onUndo}
+              disabled={!canUndo}
+              label="Undo"
+              desc="Batalkan aksi terakhir pada workspace. Shortcut: Ctrl/Cmd+Z."
               className={`flex h-6 w-6 items-center justify-center transition-all duration-150 ${canUndo ? "hover:bg-white/10 text-[var(--soft-text)]" : "opacity-30 cursor-not-allowed text-slate-500"}`}
-              title="Undo (Ctrl+Z)" {...TAP}
             >
               <Undo2 className="h-3 w-3" />
-            </motion.button>
+            </HeaderActionButton>
             <div className="h-3.5 w-px bg-[var(--soft-border)]" />
-            <motion.button
-              type="button" onClick={onRedo} disabled={!canRedo}
+            <HeaderActionButton
+              onClick={onRedo}
+              disabled={!canRedo}
+              label="Redo"
+              desc="Ulangi aksi yang baru dibatalkan. Shortcut: Ctrl/Cmd+Y."
               className={`flex h-6 w-6 items-center justify-center transition-all duration-150 ${canRedo ? "hover:bg-white/10 text-[var(--soft-text)]" : "opacity-30 cursor-not-allowed text-slate-500"}`}
-              title="Redo (Ctrl+Y)" {...TAP}
             >
               <Redo2 className="h-3 w-3" />
-            </motion.button>
+            </HeaderActionButton>
           </div>
-          <motion.button
-            type="button"
+          <HeaderActionButton
             onClick={onMinimize}
+            label="Minimize"
+            desc="Sembunyikan panel tool sementara agar area X-ray lebih luas."
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-500/80 text-white hover:bg-rose-500 transition-colors"
-            title="Minimize"
-            {...TAP}
-            whileHover={{ scale: 1.12 }}
           >
             <Minus className="h-3 w-3" />
-          </motion.button>
+          </HeaderActionButton>
         </div>
       </div>
 

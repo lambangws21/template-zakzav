@@ -5,6 +5,7 @@ import {
   Crosshair,
   Download,
   Hand,
+  LensConcave,
   Layers,
   Lock,
   LockOpen,
@@ -71,6 +72,7 @@ const TAB_ICONS = {
   manager:     Layers,
   export:      Download,
   annotate:    MapPin,
+  dorr:        LensConcave,
 };
 
 const TAB_ACTIVE_COLORS = {
@@ -80,6 +82,7 @@ const TAB_ACTIVE_COLORS = {
   manager:     "text-violet-600",
   export:      "text-emerald-600",
   annotate:    "text-rose-600",
+  dorr:        "text-indigo-600",
 };
 
 function Btn({ active, icon: Icon, label, children, className = "", color = "", ...rest }) {
