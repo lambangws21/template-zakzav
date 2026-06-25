@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -58,6 +58,7 @@ export default function CalibrationWizard({
   calibrationMode = "line",
   onCalibrationModeChange,
   calibrationReferenceLine = null,
+  calibrationReferenceCircle = null,
   lineTypeLabel = (type) => type || "LINE",
   actualValue = "",
   onActualValueChange,
@@ -73,6 +74,8 @@ export default function CalibrationWizard({
   onCreatePresetFromInput,
   onCreatePresetLine,
   onManualDraw,
+  onManualCircle,
+  onAutoHeadLine,
   lineStrokeWidth = 2,
   onLineStrokeWidthChange,
   onSave,
@@ -89,19 +92,20 @@ export default function CalibrationWizard({
   const [strokeExpanded, setStrokeExpanded] = useState(false);
   const [drawExpanded, setDrawExpanded] = useState(true);
   const [showMagGuide, setShowMagGuide] = useState(false);
+  const [estimateExpanded, setEstimateExpanded] = useState(false);
   const [headEstimateSex, setHeadEstimateSex] = useState("female");
   const [headEstimateHeightCm, setHeadEstimateHeightCm] = useState("155");
+  const [estimateApplyPulse, setEstimateApplyPulse] = useState(false);
+  const estimatePulseTimerRef = useRef(null);
 
   const isLineMode = calibrationMode === "line";
   const isMagMode = calibrationMode === "magnification";
   const strokeValue = Number.isFinite(Number(lineStrokeWidth)) ? Number(lineStrokeWidth) : 2;
 
-  const magFactorNum = Number(magnificationFactor);
   const anatomicalSizeNum = Number(anatomicalRefSizeMm);
   const apparentSizeMm =
-    Number.isFinite(magFactorNum) && magFactorNum > 0 &&
     Number.isFinite(anatomicalSizeNum) && anatomicalSizeNum > 0
-      ? (anatomicalSizeNum * magFactorNum / 100).toFixed(1)
+      ? anatomicalSizeNum.toFixed(1)
       : null;
 
   const factorText =
@@ -125,6 +129,7 @@ export default function CalibrationWizard({
     qcStatus === "good" ? "#d1fae5" : qcStatus === "warn" ? "#fef3c7" : "#fee2e2";
 
   const hasLine = Boolean(calibrationReferenceLine);
+  const hasHeadCircle = Boolean(calibrationReferenceCircle);
   const femoralHeadEstimate = useMemo(
     () => getFemoralHeadHeightEstimate(headEstimateSex, headEstimateHeightCm),
     [headEstimateHeightCm, headEstimateSex],
@@ -134,14 +139,33 @@ export default function CalibrationWizard({
     : "-";
   const femoralHeadConfidenceLabel =
     femoralHeadEstimate?.confidence === "low" ? "Estimasi rendah" : "Estimasi sedang";
+  const activeFemoralEstimateMm = femoralHeadEstimate?.headMm
+    ? String(femoralHeadEstimate.headMm)
+    : "";
+  const isFemoralEstimateApplied =
+    activeFemoralEstimateMm && String(anatomicalRefSizeMm) === activeFemoralEstimateMm;
 
   useEffect(() => {
     if (open) setShowQCDetail(false);
   }, [open]);
 
+  useEffect(() => () => {
+    if (estimatePulseTimerRef.current) clearTimeout(estimatePulseTimerRef.current);
+  }, []);
+
   const updateStroke = (value) => {
     const nextValue = clamp(Number(value) || strokeValue, 0.5, 8);
     onLineStrokeWidthChange?.(nextValue);
+  };
+
+  const applyFemoralHeadEstimate = () => {
+    if (!activeFemoralEstimateMm) return;
+    onAnatomicalRefSizeMmChange?.(activeFemoralEstimateMm);
+    setEstimateApplyPulse(true);
+    if (estimatePulseTimerRef.current) clearTimeout(estimatePulseTimerRef.current);
+    estimatePulseTimerRef.current = setTimeout(() => {
+      setEstimateApplyPulse(false);
+    }, 1600);
   };
 
   const handleSave = () => onSave?.();
@@ -230,7 +254,7 @@ export default function CalibrationWizard({
           </button>
           <button type="button" onClick={() => onCalibrationModeChange?.("magnification")}
             className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isMagMode ? "cw-active" : "text-slate-500"}`}>
-            Magnifikasi
+            Head Ref
           </button>
           <button type="button" onClick={() => onCalibrationModeChange?.("zoom")}
             className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${calibrationMode === "zoom" ? "cw-active" : "text-slate-500"}`}>
@@ -386,16 +410,16 @@ export default function CalibrationWizard({
             {/* Collapsible guide */}
             {showMagGuide && (
               <div className="rounded-[16px] border border-amber-100 bg-amber-50 p-3 space-y-2.5">
-                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Panduan Kalibrasi Magnifikasi</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Panduan Kalibrasi Head Ref</p>
                 <p className="text-[9px] leading-relaxed text-amber-800">
-                  Foto X-ray di mesin radiologi memperbesar gambar secara proporsional — ini disebut <strong>faktor magnifikasi</strong>. Misalnya AP Hip 115% artinya caput femur yang sebenarnya 46mm akan tampak 52.9mm di foto.
+                  Pakai diameter head yang sudah diketahui sebagai referensi langsung. Jika implant/head 42 mm, isi 42 mm, lalu sesuaikan circle sampai tepat mengikuti tepi head di foto.
                 </p>
                 <div className="space-y-1.5">
                   {[
-                    { step: "1", text: "Isi jenis kelamin dan tinggi badan pasien." },
-                    { step: "2", text: "Pakai estimasi caput femur, atau isi ukuran manual bila sudah tahu." },
-                    { step: "3", text: "Seret garis tepat pada diameter caput femur di foto." },
-                    { step: "4", text: "Tekan \"Terapkan\" setelah garis sudah pas." },
+                    { step: "1", text: "Isi diameter referensi head/ball implant yang diketahui." },
+                    { step: "2", text: "Tekan buat circle, lalu posisikan ke head pada foto." },
+                    { step: "3", text: "Resize circle sampai diameter visualnya pas." },
+                    { step: "4", text: "Tekan \"Terapkan Kalibrasi\"." },
                   ].map(({ step, text }) => (
                     <div key={step} className="flex items-start gap-2">
                       <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[8px] font-black text-amber-700">{step}</div>
@@ -406,108 +430,34 @@ export default function CalibrationWizard({
                 <div className="rounded-[10px] border border-amber-200 bg-amber-100 px-2.5 py-2">
                   <p className="text-[9px] font-black text-amber-700">💡 Tips akurasi</p>
                   <p className="mt-0.5 text-[9px] text-amber-600 leading-relaxed">
-                    Gunakan struktur bulat yang batasnya jelas (caput femur ideal). Semakin panjang garis = semakin stabil. Jika ada ruler fisik di foto, gunakan tab "Garis Ruler" untuk akurasi lebih tinggi.
+                    Untuk foto dengan implant seperti contoh, gunakan diameter ball implant yang diketahui. Estimasi tinggi badan hanya dipakai jika tidak ada ukuran head pasti.
                   </p>
                 </div>
               </div>
             )}
 
             <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">
-                    Ukuran caput femur
-                  </p>
-                  <p className="mt-0.5 text-[9px] font-bold leading-snug text-slate-500">
-                    Estimasi dari tinggi badan. Bisa diganti manual bila ukuran lapangan berbeda.
-                  </p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${
-                  femoralHeadEstimate?.confidence === "low"
-                    ? "bg-amber-100 text-amber-700"
-                    : "bg-emerald-100 text-emerald-700"
-                }`}>
-                  {femoralHeadConfidenceLabel}
-                </span>
+              <div className="mb-2">
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">
+                  1 · Diameter referensi
+                </p>
+                <p className="mt-0.5 text-[9px] font-bold leading-snug text-slate-500">
+                  Isi diameter head/ball implant yang diketahui. Angka ini dipakai langsung untuk kalibrasi.
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-1.5">
-                {FEMORAL_HEAD_SEX_OPTIONS.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setHeadEstimateSex(option.id)}
-                    className={`min-h-9 rounded-[11px] text-[10px] font-black transition-all ${
-                      headEstimateSex === option.id ? "cw-active" : "text-slate-600 cw-btn"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                <div className="flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
-                  <span className="shrink-0 text-[9px] font-black text-slate-400">Tinggi</span>
-                  <input
-                    type="number"
-                    min="120"
-                    max="210"
-                    step="1"
-                    value={headEstimateHeightCm}
-                    onChange={(e) => setHeadEstimateHeightCm(e.target.value)}
-                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
-                    placeholder="155"
-                  />
-                  <span className="shrink-0 text-[11px] font-black text-slate-500">cm</span>
-                </div>
-                <div className="flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
-                  <span className="shrink-0 text-[9px] font-black text-slate-400">Caput</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="0.5"
-                    value={anatomicalRefSizeMm}
-                    onChange={(e) => onAnatomicalRefSizeMmChange?.(e.target.value)}
-                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
-                    placeholder="46"
-                  />
-                  <span className="shrink-0 text-[11px] font-black text-slate-500">mm</span>
-                </div>
-              </div>
-
-              <div className="mt-2 rounded-[14px] border border-white/60 px-3 py-2 cw-pressed">
-                <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-                      {femoralHeadEstimate?.label || "Estimasi belum tersedia"}
-                    </div>
-                    <div className="mt-0.5 text-[10px] font-bold leading-snug text-slate-500">
-                      Range {femoralHeadRangeLabel}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[22px] font-black leading-none text-blue-600">
-                      {femoralHeadEstimate?.headMm || "-"}
-                    </div>
-                    <div className="text-[8px] font-black uppercase text-slate-400">mm</div>
-                  </div>
-                </div>
-                {femoralHeadEstimate?.note ? (
-                  <p className="mt-1.5 text-[9px] font-medium leading-snug text-slate-500">
-                    {femoralHeadEstimate.note}
-                  </p>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!femoralHeadEstimate?.headMm) return;
-                    onAnatomicalRefSizeMmChange?.(String(femoralHeadEstimate.headMm));
-                  }}
-                  className="mt-2 min-h-9 w-full rounded-[12px] bg-blue-600 text-[10px] font-black uppercase tracking-wider text-white"
-                >
-                  Pakai estimasi {femoralHeadEstimate?.headMm || "-"} mm
-                </button>
+              <div className="flex items-center gap-2 rounded-[14px] border border-white/60 px-3 py-2.5 cw-pressed">
+                <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400">Diameter</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={anatomicalRefSizeMm}
+                  onChange={(e) => onAnatomicalRefSizeMmChange?.(e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-right text-lg font-black text-slate-800 outline-none"
+                  placeholder="42"
+                />
+                <span className="shrink-0 text-[12px] font-black text-slate-500">mm</span>
               </div>
 
               <div className="mt-2 flex flex-wrap gap-1">
@@ -526,27 +476,121 @@ export default function CalibrationWizard({
                   </button>
                 ))}
               </div>
+
+              <button
+                type="button"
+                onClick={() => setEstimateExpanded((v) => !v)}
+                className="mt-2 flex w-full items-center justify-between rounded-[12px] border border-white/60 px-3 py-2 text-left cw-pressed"
+              >
+                <span>
+                  <span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">
+                    Estimasi tinggi badan
+                  </span>
+                  <span className="block text-[9px] font-bold text-slate-400">
+                    Opsional bila ukuran head tidak diketahui
+                  </span>
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${
+                  femoralHeadEstimate?.confidence === "low"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  {estimateExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : femoralHeadEstimate?.headMm || "-"}
+                </span>
+              </button>
+
+              {estimateExpanded && (
+                <div className="mt-2 rounded-[14px] border border-white/60 px-3 py-2 cw-pressed">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {FEMORAL_HEAD_SEX_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setHeadEstimateSex(option.id)}
+                        className={`min-h-9 rounded-[11px] text-[10px] font-black transition-all ${
+                          headEstimateSex === option.id ? "cw-active" : "text-slate-600 cw-btn"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5 rounded-[10px] border border-white/60 px-2.5 py-1.5 cw-pressed">
+                    <span className="shrink-0 text-[9px] font-black text-slate-400">Tinggi</span>
+                    <input
+                      type="number"
+                      min="120"
+                      max="210"
+                      step="1"
+                      value={headEstimateHeightCm}
+                      onChange={(e) => setHeadEstimateHeightCm(e.target.value)}
+                      className="min-w-0 flex-1 bg-transparent text-right text-sm font-black text-slate-700 outline-none"
+                      placeholder="155"
+                    />
+                    <span className="shrink-0 text-[11px] font-black text-slate-500">cm</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                        {femoralHeadEstimate?.label || "Estimasi belum tersedia"}
+                      </div>
+                      <div className="mt-0.5 text-[10px] font-bold leading-snug text-slate-500">
+                        Range {femoralHeadRangeLabel} · {femoralHeadConfidenceLabel}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[22px] font-black leading-none text-blue-600">
+                        {femoralHeadEstimate?.headMm || "-"}
+                      </div>
+                      <div className="text-[8px] font-black uppercase text-slate-400">mm</div>
+                    </div>
+                  </div>
+                  {femoralHeadEstimate?.note ? (
+                    <p className="mt-1.5 text-[9px] font-medium leading-snug text-slate-500">
+                      {femoralHeadEstimate.note}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={applyFemoralHeadEstimate}
+                    className={`mt-2 flex min-h-9 w-full items-center justify-center gap-1.5 rounded-[12px] text-[10px] font-black uppercase tracking-wider text-white transition-all ${
+                      isFemoralEstimateApplied || estimateApplyPulse
+                        ? "bg-emerald-600"
+                        : "bg-blue-600 active:scale-[0.99]"
+                    }`}
+                  >
+                    {(isFemoralEstimateApplied || estimateApplyPulse) ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                        Diameter diisi
+                      </>
+                    ) : (
+                      <>Isi diameter {femoralHeadEstimate?.headMm || "-"} mm</>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Apparent size result */}
             {apparentSizeMm ? (
-              <div className="flex items-center gap-3 rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-2">
-                <div className="text-[24px] font-black leading-none text-amber-700">≈{apparentSizeMm}</div>
+              <div className="flex items-center gap-3 rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div className="text-[24px] font-black leading-none text-emerald-700">{apparentSizeMm}</div>
                 <div>
-                  <div className="text-[8px] font-black uppercase tracking-widest text-amber-500">mm tampak di foto</div>
-                  <div className="text-[10px] font-bold text-amber-600">Caput {anatomicalRefSizeMm}mm × magnifikasi</div>
+                  <div className="text-[8px] font-black uppercase tracking-widest text-emerald-500">mm referensi aktif</div>
+                  <div className="text-[10px] font-bold text-emerald-700">Circle akan dihitung langsung sebagai {anatomicalRefSizeMm} mm</div>
                 </div>
-                <div className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100">
-                  <Check className="h-3.5 w-3.5 text-amber-600 stroke-[3]" />
+                <div className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                  <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
                 </div>
               </div>
             ) : (
               <div className="rounded-[12px] px-3 py-2 text-center text-[9px] text-slate-400 cw-pressed">
-                Isi ukuran caput untuk melihat ukuran tampak
+                Isi diameter referensi head terlebih dulu.
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 rounded-[12px] border border-white/60 px-3 py-2 cw-flat">
+            <div className="hidden items-center gap-1.5 rounded-[12px] border border-white/60 px-3 py-2 cw-flat">
               <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-slate-400">
                 Magnifikasi
               </span>
@@ -561,30 +605,34 @@ export default function CalibrationWizard({
             <div className="rounded-[18px] border border-white/60 cw-flat overflow-hidden">
               <div className="p-3">
                 <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
-                  Seret garis di foto
+                  2 · Circle diameter head
                 </p>
-                <button type="button" onClick={onManualDraw}
+                <button type="button" onClick={onManualCircle}
                   className="flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-slate-900 text-[10px] font-black tracking-wider text-white uppercase">
                   <MousePointer2 className="h-3.5 w-3.5" />
-                  Mulai Gambar Garis
+                  Gambar Circle Manual
                 </button>
-                {calibrationReferenceLine ? (
+                <button type="button" onClick={() => onAutoHeadLine?.(Number(anatomicalRefSizeMm))}
+                  className="mt-2 flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-blue-600 text-[10px] font-black tracking-wider text-white uppercase">
+                  <Ruler className="h-3.5 w-3.5" />
+                  Buat / Update Circle {anatomicalRefSizeMm || "-"} mm
+                </button>
+                {hasHeadCircle ? (
                   <div className="mt-2 flex items-center gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
                     <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
                       <Check className="h-3 w-3 text-white stroke-[3]" />
                     </div>
-                    <span className="text-[10px] font-black text-emerald-800">Garis siap</span>
+                    <span className="text-[10px] font-black text-emerald-800">Circle siap</span>
                     <span className="ml-auto text-[10px] font-bold text-emerald-600">{selectedLengthText || "—"}</span>
                   </div>
                 ) : (
                   <div className="mt-2 rounded-[10px] px-2.5 py-1.5 text-center text-[9px] text-slate-400 cw-pressed">
-                    Seret garis tepat pada diameter caput femur di foto.
+                    Buat circle, lalu geser dan resize sampai tepinya mengikuti head.
                   </div>
                 )}
               </div>
 
-              {/* Inline apply button */}
-              {calibrationReferenceLine && apparentSizeMm && (
+              {hasHeadCircle && apparentSizeMm && (
                 <button type="button" onClick={handleSave}
                   className="flex w-full items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3.5 text-[11px] font-black tracking-widest text-white uppercase transition-all active:brightness-90">
                   <Save className="h-4 w-4" />
@@ -593,11 +641,11 @@ export default function CalibrationWizard({
               )}
             </div>
 
-            {!calibrationReferenceLine && (
+            {!hasHeadCircle && (
               <div className="flex items-center gap-1.5 px-1">
                 <Info className="h-3 w-3 shrink-0 text-amber-400" />
                 <span className="text-[9px] text-slate-400 leading-snug">
-                  Gambar garis dulu, lalu tombol "Terapkan" muncul di sini.
+                  Buat circle caput dulu, lalu tombol "Terapkan" muncul di sini.
                 </span>
               </div>
             )}

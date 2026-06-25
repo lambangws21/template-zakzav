@@ -280,9 +280,9 @@ export default function QuickPanel({
       {/* ── Scroll body ────────────────────────────────── */}
       <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-4 py-3 space-y-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 
-        {/* ── Upload & Sheet (expandable) ──── */}
+        {/* ── Upload Xray (expandable) ──── */}
         <div className="space-y-1.5">
-          <SectionHeader label="Upload & Sheet" expanded={uploadOpen} onToggle={() => setUploadOpen((p) => !p)} icon={FileText} iconCls="text-blue-400" accent="blue" />
+          <SectionHeader label="Upload Xray" expanded={uploadOpen} onToggle={() => setUploadOpen((p) => !p)} icon={FileText} iconCls="text-blue-400" accent="blue" />
           <AnimatePresence initial={false}>
             {uploadOpen ? (
               <motion.div key="upload-body" {...COLLAPSE} className="overflow-hidden">
@@ -311,7 +311,16 @@ export default function QuickPanel({
         <div className="space-y-2">
           <p className="px-0.5 text-[8px] font-black tracking-widest text-[var(--soft-text-lo,theme(colors.slate.400))] uppercase">Setup</p>
           <div className="grid grid-cols-2 gap-1.5">
-            <Btn icon={Scaling} iconCls="text-emerald-400" onClick={onCalibration} className="py-2.5">Kalibrasi</Btn>
+            <Btn
+              icon={Scaling}
+              iconCls="text-emerald-400"
+              onClick={onCalibration}
+              className="py-2.5"
+              title="Kalibrasi skala X-ray: pakai ruler/marker fisik atau circle caput femur untuk mengubah pixel menjadi ukuran nyata."
+              aria-label="Kalibrasi skala X-ray"
+            >
+              Kalibrasi
+            </Btn>
             <Btn icon={Layers} iconCls="text-indigo-400" onClick={onCreateLayer} disabled={!canCreateLayer} className="py-2.5">Layer Kosong</Btn>
           </div>
 
@@ -327,7 +336,12 @@ export default function QuickPanel({
               <img src="/images/quick-panel/tka-icons.svg" alt="TKA" className="h-4 w-4 shrink-0 object-contain" />
               TKA
             </Btn>
-            <Btn onClick={onOpenHip} className="py-2.5">
+            <Btn
+              onClick={onOpenHip}
+              className="py-2.5"
+              title="Hip planning: panduan cup, stem, offset, LLD, dan parameter templating."
+              aria-label="Hip planning"
+            >
               <img src="/images/quick-panel/hip-icon.svg" alt="HIP" className="h-4 w-4 shrink-0 object-contain" />
               HIP
             </Btn>

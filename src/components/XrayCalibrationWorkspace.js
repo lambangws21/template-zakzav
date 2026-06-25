@@ -649,6 +649,8 @@ export default function XrayCalibrationWorkspace({
   const [angles, setAngles] = useState([]);
   const [draftAnglePoints, setDraftAnglePoints] = useState([]);
   const [circles, setCircles] = useState([]);
+  const circlesRef = useRef([]);
+  circlesRef.current = circles;
   const [draftCirclePoints, setDraftCirclePoints] = useState([]);
   const [draftCenterFinderPoints, setDraftCenterFinderPoints] = useState([]);
   const [draftAxisBuilderPoints, setDraftAxisBuilderPoints] = useState([]);
@@ -702,6 +704,9 @@ export default function XrayCalibrationWorkspace({
   const [selectedCircleId, setSelectedCircleId] = useState(null);
   const [selectedHkaId, setSelectedHkaId] = useState(null);
   const [calibrationLineId, setCalibrationLineId] = useState(null);
+  const [calibrationCircleId, setCalibrationCircleId] = useState(null);
+  const [pendingCalibrationCircleSave, setPendingCalibrationCircleSave] =
+    useState(null);
   const [lockedLineIds, setLockedLineIds] = useState(new Set());
   const [mmPerPixel, setMmPerPixel] = useState(null);
   const [calibrationMode, setCalibrationMode] = useState("line");
@@ -2731,6 +2736,14 @@ export default function XrayCalibrationWorkspace({
       null,
     [calibrationLineId, lines, selectedLine],
   );
+  const calibrationReferenceCircle = useMemo(
+    () =>
+      circles.find((circle) => circle.id === calibrationCircleId) ||
+      (selectedCircle?.calibrationHeadCircle ? selectedCircle : null) ||
+      circles.find((circle) => circle.calibrationHeadCircle) ||
+      null,
+    [calibrationCircleId, circles, selectedCircle],
+  );
   const nonCalibrationLineCount = useMemo(
     () => lines.filter((line) => line.id !== calibrationLineId).length,
     [calibrationLineId, lines],
@@ -2775,15 +2788,30 @@ export default function XrayCalibrationWorkspace({
     if (calibrationMode === "magnification") {
       const magFactor = Number(magnificationFactorInput);
       const realSizeMm = Number(anatomicalRefSizeMm);
+      if (!Number.isFinite(realSizeMm) || realSizeMm <= 0) {
+        return { status: "bad", title: "QC: Diameter referensi", detail: "Isi diameter head/implant (mm) dengan angka valid." };
+      }
+      const referenceMagCircle = calibrationReferenceCircle;
+      if (referenceMagCircle) {
+        const diameterPx = Number(referenceMagCircle.radius) * 2;
+        if (!Number.isFinite(diameterPx) || diameterPx <= 0) {
+          return { status: "bad", title: "QC: Circle tidak valid", detail: "Resize circle caput sampai diameter terlihat jelas." };
+        }
+        const endpointTolPx = 2;
+        const errPct = (endpointTolPx / diameterPx) * 100;
+        const status = errPct > 3.5 ? "bad" : errPct > 1.8 ? "warn" : "good";
+        return {
+          status,
+          title: "QC: Circle head reference",
+          detail: `Diameter referensi: ${realSizeMm}mm. Diameter circle: ${diameterPx.toFixed(1)}px. Kalibrasi memakai angka ini langsung.`,
+        };
+      }
       if (!Number.isFinite(magFactor) || magFactor <= 0) {
         return { status: "bad", title: "QC: Faktor magnifikasi", detail: "Isi faktor magnifikasi (%) dengan angka valid." };
       }
-      if (!Number.isFinite(realSizeMm) || realSizeMm <= 0) {
-        return { status: "bad", title: "QC: Ukuran anatomi", detail: "Isi estimasi ukuran anatomi (mm) dengan angka valid." };
-      }
       const referenceMagLine = calibrationReferenceLine;
       if (!referenceMagLine) {
-        return { status: "bad", title: "QC: Garis anatomi", detail: "Gambar garis di atas struktur anatomi (caput femur dll) lalu simpan." };
+        return { status: "bad", title: "QC: Circle head", detail: "Buat circle head, sesuaikan dengan foto, lalu simpan." };
       }
       const lineLenPx = getLineLength(referenceMagLine);
       if (!Number.isFinite(lineLenPx) || lineLenPx <= 0) {
@@ -2851,6 +2879,7 @@ export default function XrayCalibrationWorkspace({
       detail: `Estimasi error ±${relativeErrorPct.toFixed(2)}%${absoluteErrorMm ? ` (±${absoluteErrorMm} mm)` : ""}.${zoomHint}`,
     };
   }, [
+    calibrationReferenceCircle,
     calibrationReferenceLine,
     calibrationLineId,
     calibrationMode,
@@ -3220,6 +3249,7 @@ export default function XrayCalibrationWorkspace({
       selectedHkaId,
       selectedAnnotationId,
       calibrationLineId,
+      calibrationCircleId,
       lockedLineIds: [...lockedLineIds],
       mmPerPixel,
       calibrationMode,
@@ -3279,6 +3309,7 @@ export default function XrayCalibrationWorkspace({
       calibrationDraftStrokeWidth,
       annotations,
       angles,
+      calibrationCircleId,
       calibrationLineId,
       calibrationMode,
       circles,
@@ -4856,6 +4887,168 @@ export default function XrayCalibrationWorkspace({
     createCalibrationPresetLine(targetMm);
   }, [actualMmInput, actualUnit, createCalibrationPresetLine]);
 
+  const applyMagnificationCircleCalibration = useCallback(
+    (circleOverride = null, { silent = false } = {}) => {
+      const referenceCircle =
+        circleOverride ||
+        circlesRef.current.find((circle) => circle.id === calibrationCircleId) ||
+        selectedCircle ||
+        circlesRef.current.find((circle) => circle.calibrationHeadCircle) ||
+        null;
+      if (!referenceCircle) {
+        if (!silent) setNotice("Buat atau pilih circle caput femur dulu.");
+        return false;
+      }
+      const realSizeMm = Number(anatomicalRefSizeMm);
+      const diameterPx = Number(referenceCircle.radius) * 2;
+      if (!Number.isFinite(realSizeMm) || realSizeMm <= 0) {
+        if (!silent) setNotice("Isi diameter referensi head/implant (mm) dengan angka valid.");
+        return false;
+      }
+      if (!Number.isFinite(diameterPx) || diameterPx <= 0) {
+        if (!silent) setNotice("Diameter circle caput tidak valid.");
+        return false;
+      }
+
+      const factor = realSizeMm / diameterPx;
+      const zoomPercent = Number(sourceZoomPercent);
+      const normalizedAt100Mag =
+        Number.isFinite(zoomPercent) && zoomPercent > 0
+          ? factor * (zoomPercent / 100)
+          : null;
+      setMmPerPixel(factor);
+      setCalibrationMode("magnification");
+      setCalibrationCircleId(referenceCircle.id);
+      setCalibrationLineId(null);
+      setSelectedCircleId(referenceCircle.id);
+      setSelectedLineId(null);
+      if (Number.isFinite(normalizedAt100Mag) && normalizedAt100Mag > 0) {
+        setMmPerPixelAt100Input(normalizedAt100Mag.toFixed(6));
+      }
+      setCircles((prev) =>
+        prev.map((circle) =>
+          circle.id === referenceCircle.id
+            ? {
+                ...circle,
+                calibrationHeadCircle: true,
+                targetMm: realSizeMm,
+                targetApparentMm: realSizeMm,
+                color: circle.color || "#ec4899",
+                source: circle.source || "headCalibration",
+              }
+            : circle,
+        ),
+      );
+      if (!silent) {
+        setNotice(
+          `Kalibrasi circle head aktif. Diameter referensi ${realSizeMm}mm. Faktor: ${factor.toFixed(6)} mm/px.`,
+        );
+      }
+      return true;
+    },
+    [
+      anatomicalRefSizeMm,
+      calibrationCircleId,
+      selectedCircle,
+      sourceZoomPercent,
+    ],
+  );
+
+  const createAutoFemoralHeadCalibrationLine = useCallback(
+    (headMmOverride = null) => {
+      if (!image || modelWidth <= 0 || modelHeight <= 0) {
+        setNotice("Upload X-ray dulu sebelum membuat circle caput otomatis.");
+        return null;
+      }
+
+      const headMm = Number(headMmOverride ?? anatomicalRefSizeMm);
+      if (!Number.isFinite(headMm) || headMm <= 0) {
+        setNotice("Isi diameter referensi head/implant dengan angka valid dulu.");
+        return null;
+      }
+
+      const viewportCenter =
+        viewport.width > 0 && viewport.height > 0
+          ? screenToImagePoint(viewport.width / 2, viewport.height / 2)
+          : null;
+
+      const fallbackRadius = clamp(
+        Math.min(modelWidth, modelHeight) * 0.065,
+        28,
+        Math.min(120, Math.max(30, modelWidth * 0.16)),
+      );
+      const centerX = clamp(
+        Number.isFinite(viewportCenter?.x) ? viewportCenter.x : modelWidth * 0.58,
+        16,
+        Math.max(16, modelWidth - 16),
+      );
+      const centerY = clamp(
+        Number.isFinite(viewportCenter?.y) ? viewportCenter.y : modelHeight * 0.52,
+        16,
+        Math.max(16, modelHeight - 16),
+      );
+      const safeRadius = Math.min(
+        fallbackRadius,
+        Math.max(12, centerX - 8),
+        Math.max(12, modelWidth - centerX - 8),
+        Math.max(12, centerY - 8),
+        Math.max(12, modelHeight - centerY - 8),
+      );
+      const nextCircle = {
+        id: nextCircleIdRef.current,
+        cx: centerX,
+        cy: centerY,
+        radius: safeRadius,
+        diameterAngle: 0,
+        source: "headCalibration",
+        name: `Caput femur ${headMm}mm`,
+        calibrationHeadCircle: true,
+        color: "#ec4899",
+        targetMm: headMm,
+        targetApparentMm: headMm,
+        labelOffsetX: 0,
+        labelOffsetY: 0,
+        strokeWidth: Math.max(DEFAULT_CIRCLE_STROKE_WIDTH, 2.4),
+      };
+      nextCircleIdRef.current += 1;
+      setCircles((prev) => [
+        ...prev.filter((circle) => !circle.calibrationHeadCircle),
+        nextCircle,
+      ]);
+      setSelectedCircleId(nextCircle.id);
+      setCalibrationCircleId(nextCircle.id);
+      setCalibrationLineId(null);
+      setSelectedLineId(null);
+      setSelectedFreeLinePointIndex(null);
+      setSelectedAngleId(null);
+      setSelectedHkaId(null);
+      setSelectedCutLayerId(null);
+      setSelectedAnnotationId(null);
+      setSelectedPlanningGuideId(null);
+      setCalibrationMode("magnification");
+      setMmPerPixel(null);
+      setTool(getIdleTool());
+      setActiveRightPanel("measure");
+      triggerSelectionPulse("circle", nextCircle.id);
+
+      setNotice(
+        `Circle head otomatis dibuat. Geser/resize sampai pas pada head, lalu Terapkan Kalibrasi. Diameter referensi: ${headMm} mm.`,
+      );
+      return nextCircle;
+    },
+    [
+      anatomicalRefSizeMm,
+      getIdleTool,
+      image,
+      modelHeight,
+      modelWidth,
+      screenToImagePoint,
+      triggerSelectionPulse,
+      viewport.height,
+      viewport.width,
+    ],
+  );
+
   const handleHkaModeChange = useCallback((nextMode) => {
     setHkaInputMode(nextMode);
     setDraftHkaPoints([]);
@@ -4866,7 +5059,9 @@ export default function XrayCalibrationWorkspace({
     (nextTool, options = {}) => {
       const requiresCalibration =
         nextTool === "angle" || nextTool === "circle" || nextTool === "hkaAuto";
-      if (requiresCalibration && !hasCalibration) {
+      const allowMagnificationCircle =
+        nextTool === "circle" && calibrationModeRef.current === "magnification";
+      if (requiresCalibration && !hasCalibration && !allowMagnificationCircle) {
         const calibrationMessage =
           "Kalibrasi wajib sebelum memakai Angle/Circle/HKA.";
         if (isSimpleUiMode) {
@@ -5009,8 +5204,8 @@ export default function XrayCalibrationWorkspace({
         label: "Kalibrasi",
         description: "Tandai ruler untuk akurasi",
         done: hasCalibration,
-        hint: "Kalibrasi wajib agar ukuran HKA dan implant akurat.",
-        actionLabel: "Kalibrasi",
+        hint: "Setelah upload, kalibrasi wajib agar ukuran HKA dan implant akurat.",
+        actionLabel: "Mulai Kalibrasi",
         onAction: () => openSimpleCalibrationModal(),
       },
       {
@@ -5058,8 +5253,8 @@ export default function XrayCalibrationWorkspace({
       return {
         key: "no-calib",
         type: "warning",
-        text: "Kalibrasi belum dilakukan — hasil pengukuran tidak akan akurat.",
-        actionLabel: "Kalibrasi",
+        text: "X-ray sudah masuk. Untuk memulai dengan benar, lakukan kalibrasi skala terlebih dulu.",
+        actionLabel: "Mulai Kalibrasi",
         onAction: () => openSimpleCalibrationModal(),
       };
     if (hkaSets.length === 0)
@@ -5750,6 +5945,7 @@ export default function XrayCalibrationWorkspace({
         setSelectedHkaId(payload.selectedHkaId ?? null);
         setSelectedAnnotationId(payload.selectedAnnotationId ?? null);
         setCalibrationLineId(payload.calibrationLineId ?? null);
+        setCalibrationCircleId(payload.calibrationCircleId ?? null);
         setLockedLineIds(
           new Set(
             Array.isArray(payload.lockedLineIds) ? payload.lockedLineIds : [],
@@ -6272,6 +6468,7 @@ export default function XrayCalibrationWorkspace({
       })),
       selectedCutLayerExtraIds,
       calibrationLineId,
+      calibrationCircleId,
       lockedLineIds: [...lockedLineIds].sort((a, b) => a - b),
       mmPerPixel,
       calibrationMode,
@@ -6309,6 +6506,7 @@ export default function XrayCalibrationWorkspace({
       calibrationDraftStrokeWidth,
       annotations,
       angles,
+      calibrationCircleId,
       calibrationMode,
       calibrationLineId,
       circles,
@@ -6402,6 +6600,7 @@ export default function XrayCalibrationWorkspace({
         : [],
     );
     setCalibrationLineId(snapshot.calibrationLineId);
+    setCalibrationCircleId(snapshot.calibrationCircleId ?? null);
     setLockedLineIds(new Set(snapshot.lockedLineIds));
     setMmPerPixel(snapshot.mmPerPixel);
     setCalibrationMode(snapshot.calibrationMode || "line");
@@ -7823,34 +8022,66 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.lineTo(end.x, end.y);
       overlayCtx.stroke();
 
-      if (opts.calibrationReference) {
+      const shouldDrawEndpointCaps =
+        opts.endpointCaps || opts.calibrationReference || line.type === "ruler";
+      if (shouldDrawEndpointCaps) {
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         const length = Math.hypot(dx, dy);
         if (length > 1) {
           const nx = -dy / length;
           const ny = dx / length;
-          const capLength = 12;
-          overlayCtx.strokeStyle = opts.color;
-          overlayCtx.lineWidth = Math.max(1.2, (opts.width || 2) * 0.85);
+          const capLength = opts.calibrationReference ? 18 : opts.highlightHandles ? 16 : 13;
+          const capHalf = capLength * 0.5;
+          const capPoints = [
+            {
+              x: start.x,
+              y: start.y,
+              x1: start.x - nx * capHalf,
+              y1: start.y - ny * capHalf,
+              x2: start.x + nx * capHalf,
+              y2: start.y + ny * capHalf,
+            },
+            {
+              x: end.x,
+              y: end.y,
+              x1: end.x - nx * capHalf,
+              y1: end.y - ny * capHalf,
+              x2: end.x + nx * capHalf,
+              y2: end.y + ny * capHalf,
+            },
+          ];
+
+          overlayCtx.setLineDash([]);
+          overlayCtx.lineCap = "round";
+          overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.92)";
+          overlayCtx.lineWidth = Math.max(3.2, (opts.width || 2) + 1.6);
           overlayCtx.beginPath();
-          overlayCtx.moveTo(
-            start.x - nx * (capLength * 0.5),
-            start.y - ny * (capLength * 0.5),
-          );
-          overlayCtx.lineTo(
-            start.x + nx * (capLength * 0.5),
-            start.y + ny * (capLength * 0.5),
-          );
-          overlayCtx.moveTo(
-            end.x - nx * (capLength * 0.5),
-            end.y - ny * (capLength * 0.5),
-          );
-          overlayCtx.lineTo(
-            end.x + nx * (capLength * 0.5),
-            end.y + ny * (capLength * 0.5),
-          );
+          capPoints.forEach((point) => {
+            overlayCtx.moveTo(point.x1, point.y1);
+            overlayCtx.lineTo(point.x2, point.y2);
+          });
           overlayCtx.stroke();
+
+          overlayCtx.strokeStyle = opts.color;
+          overlayCtx.lineWidth = Math.max(1.5, (opts.width || 2) * 0.8);
+          overlayCtx.beginPath();
+          capPoints.forEach((point) => {
+            overlayCtx.moveTo(point.x1, point.y1);
+            overlayCtx.lineTo(point.x2, point.y2);
+          });
+          overlayCtx.stroke();
+
+          overlayCtx.fillStyle = "rgba(248, 250, 252, 0.96)";
+          fillCircleMarkers(
+            overlayCtx,
+            capPoints.map((point) => ({ x: point.x, y: point.y, radius: 3.8 })),
+          );
+          overlayCtx.fillStyle = opts.color;
+          fillCircleMarkers(
+            overlayCtx,
+            capPoints.map((point) => ({ x: point.x, y: point.y, radius: 2.1 })),
+          );
         }
       }
 
@@ -8112,6 +8343,7 @@ export default function XrayCalibrationWorkspace({
         dashed: isLocked,
         showTouchHalo: isSelected && !isLocked && isCoarsePointer,
         pulse: isPulsing,
+        endpointCaps: (isSelected || isPulsing) && !isLocked,
         calibrationReference: isCalibrationReference,
         calibrationSaved: isCalibration,
         assistHandleKey:
@@ -10135,7 +10367,7 @@ export default function XrayCalibrationWorkspace({
       resetHistoryStacks();
       setNotice(
         noticeText ||
-          "Gambar aktif. Tarik garis referensi, lalu drag untuk adjust bila perlu sebelum kalibrasi.",
+          "X-ray aktif. Langkah berikutnya: buka Kalibrasi, pilih Garis Ruler atau Head Ref, lalu Simpan Kalibrasi untuk memulai measurement/templating.",
       );
       return true;
     },
@@ -10521,18 +10753,19 @@ export default function XrayCalibrationWorkspace({
         const applied = applyMainImageToWorkspace({
           nextImage: loaded.image,
           nextImageName: imageItem.name || "sheet-drive-image",
-          noticeText: `Background "${imageItem.name || "Google Sheet Image"}" dimuat dari Google Sheet/Drive.`,
+          noticeText: `X-ray "${imageItem.name || "Google Sheet Image"}" dimuat. Lanjutkan dengan Kalibrasi agar measurement dan implant mengikuti skala nyata.`,
         });
         if (applied) {
           mainImageFileRef.current = null;
           setMainImageSrc(loaded.src);
           setHasTemporaryMainImage(false);
+          if (isSimpleUiMode) openSimpleCalibrationModal();
         }
       } catch {
         setNotice("Gagal memuat gambar dari Google Drive.");
       }
     },
-    [applyMainImageToWorkspace],
+    [applyMainImageToWorkspace, isSimpleUiMode, openSimpleCalibrationModal],
   );
 
   const useSelectedSheetImageAsMain = useCallback(() => {
@@ -10564,7 +10797,7 @@ export default function XrayCalibrationWorkspace({
         const applied = applyMainImageToWorkspace({
           nextImage,
           nextImageName: file.name,
-          noticeText: `Background "${file.name}" aktif sementara di memory. Tekan Simpan Kasus untuk upload ke Drive.`,
+          noticeText: `X-ray "${file.name}" aktif. Lanjutkan dengan Kalibrasi agar measurement dan implant mengikuti skala nyata.`,
         });
         if (applied) {
           objectUrlRef.current = nextObjectUrl;
@@ -10574,6 +10807,7 @@ export default function XrayCalibrationWorkspace({
           readFileAsDataUrl(file).then((dataUrl) =>
             saveImageToIDB(dataUrl, file.name),
           ).catch(() => {});
+          if (isSimpleUiMode) openSimpleCalibrationModal();
         } else {
           URL.revokeObjectURL(nextObjectUrl);
         }
@@ -10587,7 +10821,7 @@ export default function XrayCalibrationWorkspace({
       nextImage.src = nextObjectUrl;
       input.value = "";
     },
-    [applyMainImageToWorkspace],
+    [applyMainImageToWorkspace, isSimpleUiMode, openSimpleCalibrationModal],
   );
 
   const handlePointerDown = useCallback(
@@ -12391,7 +12625,9 @@ export default function XrayCalibrationWorkspace({
 
       if (
         !hasCalibration &&
-        (tool === "angle" || tool === "circle" || tool === "hkaAuto")
+        (tool === "angle" ||
+          (tool === "circle" && calibrationModeRef.current !== "magnification") ||
+          tool === "hkaAuto")
       ) {
         focusCalibrationStep(
           "Kalibrasi wajib sebelum memakai Angle/Circle/HKA.",
@@ -12647,13 +12883,27 @@ export default function XrayCalibrationWorkspace({
             setNotice("Circle terlalu kecil. Tap tepi yang lebih jauh dari pusat.");
             return;
           }
-          appendCircleMeasurement({
+          const nextCircle = appendCircleMeasurement({
             cx: center.x,
             cy: center.y,
             radius,
             points: [center, edge],
-            source: "diameter",
+            source: calibrationModeRef.current === "magnification" ? "headCalibration" : "diameter",
+            calibrationHeadCircle: calibrationModeRef.current === "magnification",
+            color: calibrationModeRef.current === "magnification" ? "#ec4899" : undefined,
+            targetMm:
+              calibrationModeRef.current === "magnification"
+                ? Number(anatomicalRefSizeMm)
+                : undefined,
+            targetApparentMm:
+              calibrationModeRef.current === "magnification"
+                ? Number(anatomicalRefSizeMm)
+                : undefined,
           });
+          if (calibrationModeRef.current === "magnification" && nextCircle) {
+            setCalibrationCircleId(nextCircle.id);
+            setCalibrationLineId(null);
+          }
           setDraftCirclePoints([]);
           setHistoryPaused(false);
           setNotice(
@@ -14302,7 +14552,7 @@ export default function XrayCalibrationWorkspace({
         if (!hasCalibration) {
           const calibrationMessage =
             calibrationModeRef.current === "magnification"
-              ? 'Garis siap. Tekan "Terapkan Kalibrasi" di panel Magnifikasi untuk menerapkan.'
+              ? 'Circle siap. Tekan "Terapkan Kalibrasi" di panel Head Ref untuk menerapkan.'
               : 'Garis dibuat. Buka menu "Kalibrasi", pakai tab "Garis Real", isi nilai referensi, lalu tekan "Simpan Kalibrasi".';
           setActionToast({
             id: Date.now(),
@@ -14352,14 +14602,28 @@ export default function XrayCalibrationWorkspace({
       const edge = draftCirclePoints[1];
       const radius = getDistance(center, edge);
       if (radius >= 3) {
-        appendCircleMeasurement({
+        const nextCircle = appendCircleMeasurement({
           cx: center.x,
           cy: center.y,
           radius,
           points: [center, edge],
           strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
-          source: "diameter",
+          source: calibrationModeRef.current === "magnification" ? "headCalibration" : "diameter",
+          calibrationHeadCircle: calibrationModeRef.current === "magnification",
+          color: calibrationModeRef.current === "magnification" ? "#ec4899" : undefined,
+          targetMm:
+            calibrationModeRef.current === "magnification"
+              ? Number(anatomicalRefSizeMm)
+              : undefined,
+          targetApparentMm:
+            calibrationModeRef.current === "magnification"
+              ? Number(anatomicalRefSizeMm)
+              : undefined,
         });
+        if (calibrationModeRef.current === "magnification" && nextCircle) {
+          setCalibrationCircleId(nextCircle.id);
+          setCalibrationLineId(null);
+        }
         setNotice(
           "Circle/diameter berhasil dibuat. Drag area dalam untuk pindah, drag tepi untuk resize.",
         );
@@ -14389,6 +14653,23 @@ export default function XrayCalibrationWorkspace({
     if (completedInteractionMode === "move-hka-label" && !interactionRef.current.hasMoved && isSimpleUiMode) {
       setHkaResultPanelOpen(true);
     }
+    if (
+      calibrationMode === "magnification" &&
+      hasCalibration &&
+      ["move-circle-center", "move-circle-radius", "move-circle-diameter"].includes(
+        completedInteractionMode,
+      ) &&
+      interactionRef.current.circleId === calibrationCircleId
+    ) {
+      const adjustedCircle = circlesRef.current.find(
+        (circle) => circle.id === calibrationCircleId,
+      );
+      setPendingCalibrationCircleSave({
+        circleId: calibrationCircleId,
+        diameterPx: adjustedCircle?.radius ? adjustedCircle.radius * 2 : null,
+        referenceMm: Number(anatomicalRefSizeMm),
+      });
+    }
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     interactionStartedAtRef.current = 0;
     interactionCanvasRectRef.current = null;
@@ -14400,6 +14681,10 @@ export default function XrayCalibrationWorkspace({
     restoreMobilePrecisionView();
   }, [
     appendCircleMeasurement,
+    applyMagnificationCircleCalibration,
+    anatomicalRefSizeMm,
+    calibrationCircleId,
+    calibrationMode,
     clampViewToViewport,
     clearMobileGesturePointers,
     clearMobilePinchGesture,
@@ -14622,12 +14907,21 @@ export default function XrayCalibrationWorkspace({
     }
 
     if (calibrationMode === "magnification") {
+      const referenceMagCircle =
+        selectedCircle ||
+        circles.find((circle) => circle.id === calibrationCircleId) ||
+        circles.find((circle) => circle.calibrationHeadCircle) ||
+        null;
+      if (referenceMagCircle) {
+        return applyMagnificationCircleCalibration(referenceMagCircle);
+      }
+
       const referenceMagLine =
         selectedLine ||
         lines.find((line) => line.id === calibrationLineId) ||
         null;
       if (!referenceMagLine) {
-        setNotice("Gambar garis di atas struktur anatomi (caput femur, dll) lalu simpan.");
+        setNotice("Buat circle head, sesuaikan dengan foto, lalu simpan.");
         return false;
       }
       const magFactor = Number(magnificationFactorInput);
@@ -14650,6 +14944,7 @@ export default function XrayCalibrationWorkspace({
       const normalizedAt100Mag = factor * (Number(sourceZoomPercent) / 100);
       setMmPerPixel(factor);
       setCalibrationLineId(referenceMagLine.id);
+      setCalibrationCircleId(null);
       if (Number.isFinite(normalizedAt100Mag) && normalizedAt100Mag > 0) {
         setMmPerPixelAt100Input(normalizedAt100Mag.toFixed(6));
       }
@@ -14700,12 +14995,16 @@ export default function XrayCalibrationWorkspace({
   }, [
     actualMmInput,
     actualUnit,
+    applyMagnificationCircleCalibration,
+    calibrationCircleId,
     calibrationMode,
     calibrationLineId,
+    circles,
     lines,
     mmPerPixelAt100Input,
     magnificationFactorInput,
     anatomicalRefSizeMm,
+    selectedCircle,
     selectedLine,
     sourceZoomPercent,
   ]);
@@ -14863,7 +15162,13 @@ export default function XrayCalibrationWorkspace({
         prev.filter((item) => item.id !== selectedCircle.id),
       );
       setSelectedCircleId(null);
-      setNotice("Circle terpilih dihapus.");
+      if (selectedCircle.id === calibrationCircleId) {
+        setCalibrationCircleId(null);
+        setMmPerPixel(null);
+        setNotice("Circle kalibrasi dihapus. Silakan kalibrasi ulang.");
+      } else {
+        setNotice("Circle terpilih dihapus.");
+      }
       return;
     }
 
@@ -14891,6 +15196,7 @@ export default function XrayCalibrationWorkspace({
     setNotice("Tidak ada measurement yang dipilih.");
   }, [
     calibrationLineId,
+    calibrationCircleId,
     deleteSelectedFreeLinePoint,
     isLineLocked,
     removeSelectedAnnotation,
@@ -14939,7 +15245,9 @@ export default function XrayCalibrationWorkspace({
     if (calibrationLineId !== null) keepIds.add(calibrationLineId);
     setLines((prev) => prev.filter((line) => keepIds.has(line.id)));
     setAngles([]);
-    setCircles([]);
+    setCircles((prev) =>
+      prev.filter((circle) => circle.id === calibrationCircleId),
+    );
     setHkaSets([]);
     setDraftAnglePoints([]);
     setDraftCirclePoints([]);
@@ -14965,18 +15273,19 @@ export default function XrayCalibrationWorkspace({
       setNotice("Measurement dihapus, garis lock dipertahankan.");
       return;
     }
-    if (calibrationLineId !== null) {
-      setNotice("Garis measurement dihapus, garis kalibrasi dipertahankan.");
+    if (calibrationLineId !== null || calibrationCircleId !== null) {
+      setNotice("Measurement dihapus, referensi kalibrasi dipertahankan.");
       return;
     }
     setNotice("Semua measurement dihapus.");
-  }, [calibrationLineId, lockedLineIds, selectedLineId]);
+  }, [calibrationCircleId, calibrationLineId, lockedLineIds, selectedLineId]);
 
   const resetCalibration = useCallback(() => {
     setCalibrationLineId(null);
+    setCalibrationCircleId(null);
     setMmPerPixel(null);
     setNotice(
-      "Kalibrasi di-reset. Garis tetap ada, silakan pilih garis referensi baru.",
+      "Kalibrasi di-reset. Garis/circle tetap ada, silakan pilih referensi baru.",
     );
   }, []);
 
@@ -17997,7 +18306,7 @@ export default function XrayCalibrationWorkspace({
   const idleTutorialCards = [
     {
       title: "Mulai dari upload X-ray",
-      body: "Klik Upload & Sheet, pilih Drive atau Lokal, lalu muat X-ray AP pelvis/hip sebagai background.",
+      body: "Klik Upload Xray, pilih Drive atau Lokal, lalu muat X-ray AP pelvis/hip sebagai background.",
       actionLabel: "Upload X-ray",
       target: "upload",
     },
@@ -18093,11 +18402,13 @@ export default function XrayCalibrationWorkspace({
     {
       id: "calibration",
       label: "Calibration",
+      title: "Kalibrasi skala X-ray: ruler/marker fisik atau circle caput femur untuk mendapatkan ukuran nyata.",
+      ariaLabel: "Kalibrasi skala X-ray",
       onClick: () => {
         if (isSimpleUiMode) {
           setSimpleMobilePanel(null);
           openSimpleCalibrationModal(
-            "Wizard kalibrasi: pilih marker/ruler, tap 2 titik ujung marker, isi nilai real, lalu Simpan Kalibrasi.",
+            "Wizard kalibrasi: gunakan ruler/marker atau circle caput femur, sesuaikan ke foto, lalu Simpan Kalibrasi.",
           );
           return;
         }
@@ -21952,6 +22263,7 @@ export default function XrayCalibrationWorkspace({
         calibrationMode={calibrationMode}
         onCalibrationModeChange={setCalibrationMode}
         calibrationReferenceLine={calibrationReferenceLine}
+        calibrationReferenceCircle={calibrationReferenceCircle}
         lineTypeLabel={lineTypeLabel}
         actualValue={actualMmInput}
         onActualValueChange={setActualMmInput}
@@ -21964,7 +22276,11 @@ export default function XrayCalibrationWorkspace({
         onMmPerPixelAt100Change={setMmPerPixelAt100Input}
         calibrationQuality={calibrationQuality}
         selectedLengthText={
-          calibrationReferenceLine
+          calibrationMode === "magnification" && calibrationReferenceCircle
+            ? mmPerPixel !== null
+              ? formatMeasurementFromPx(calibrationReferenceCircle.radius * 2)
+              : `${Math.round(calibrationReferenceCircle.radius * 2)} px`
+            : calibrationReferenceLine
             ? formatMeasurementFromPx(getLineLength(calibrationReferenceLine))
             : ""
         }
@@ -21977,6 +22293,12 @@ export default function XrayCalibrationWorkspace({
           handleToolChange("draw");
           // Modal tetap terbuka — backdrop pointer-events-none jadi canvas tetap interaktif
         }}
+        onManualCircle={() => {
+          setCalibrationMode("magnification");
+          setTool("circle");
+          setNotice("Circle head: klik/tap pusat head lalu tepi head.");
+        }}
+        onAutoHeadLine={createAutoFemoralHeadCalibrationLine}
         lineStrokeWidth={
           calibrationReferenceLine &&
           Number.isFinite(calibrationReferenceLine.strokeWidth)
@@ -22010,8 +22332,7 @@ export default function XrayCalibrationWorkspace({
           calibrationMode === "line"
             ? Boolean(calibrationReferenceLine)
             : calibrationMode === "magnification"
-              ? Boolean(calibrationReferenceLine) &&
-                Number(magnificationFactorInput) > 0 &&
+              ? Boolean(calibrationReferenceCircle) &&
                 Number(anatomicalRefSizeMm) > 0
               : true
         }
@@ -22023,6 +22344,108 @@ export default function XrayCalibrationWorkspace({
           openTemplatingWizard(true);
         }}
       />
+
+      <AnimatePresence>
+        {pendingCalibrationCircleSave ? (
+          <motion.div
+            key="calibration-circle-save-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-[2px]"
+            onClick={() => {
+              setPendingCalibrationCircleSave(null);
+              setNotice("Circle head berubah. Tekan Terapkan Kalibrasi untuk menyimpan ulang skala.");
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ type: "spring", damping: 24, stiffness: 310 }}
+              className="w-full max-w-[360px] rounded-[24px] border border-white/80 bg-[#eef2f7] p-4 text-slate-800 shadow-[18px_18px_42px_rgba(15,23,42,0.32),-8px_-8px_24px_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-[#111827] dark:text-slate-100 dark:shadow-[18px_18px_42px_rgba(0,0,0,0.45)]"
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="calibration-circle-save-title"
+            >
+              <div className="mb-3 flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-cyan-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
+                  <Scaling className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3
+                    id="calibration-circle-save-title"
+                    className="text-[14px] font-black leading-tight tracking-tight"
+                  >
+                    Simpan ulang kalibrasi?
+                  </h3>
+                  <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
+                    Circle head sudah diubah. Simpan ulang agar skala implant dan measurement mengikuti diameter circle terbaru.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <div className="rounded-[16px] border border-white/70 bg-white/45 px-3 py-2 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Referensi
+                  </p>
+                  <p className="mt-0.5 text-[18px] font-black text-cyan-700 dark:text-cyan-300">
+                    {Number.isFinite(pendingCalibrationCircleSave.referenceMm)
+                      ? pendingCalibrationCircleSave.referenceMm
+                      : "-"}
+                    <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                      mm
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-[16px] border border-white/70 bg-white/45 px-3 py-2 dark:border-white/10 dark:bg-white/5">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Circle
+                  </p>
+                  <p className="mt-0.5 text-[18px] font-black text-slate-800 dark:text-slate-100">
+                    {Number.isFinite(pendingCalibrationCircleSave.diameterPx)
+                      ? pendingCalibrationCircleSave.diameterPx.toFixed(0)
+                      : "-"}
+                    <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                      px
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingCalibrationCircleSave(null);
+                    setNotice("Circle head berubah. Tekan Terapkan Kalibrasi untuk menyimpan ulang skala.");
+                  }}
+                  className="min-h-11 rounded-[16px] border border-white/70 bg-white/55 text-[11px] font-black text-slate-600 shadow-[2px_2px_7px_rgba(148,163,184,0.32),-2px_-2px_7px_rgba(255,255,255,0.75)] transition active:scale-[0.99] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:shadow-none"
+                >
+                  Nanti
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ok = applyMagnificationCircleCalibration(null);
+                    setPendingCalibrationCircleSave(null);
+                    if (ok) {
+                      setNotice("Kalibrasi circle head sudah disimpan ulang.");
+                    }
+                  }}
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-cyan-500 to-blue-600 text-[11px] font-black text-white shadow-[0_12px_28px_rgba(37,99,235,0.3)] transition active:scale-[0.99]"
+                >
+                  <Save className="h-4 w-4" />
+                  Simpan
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* ── Floating pill: ruler adjustment mode ── */}
       <AnimatePresence>
@@ -24873,7 +25296,7 @@ export default function XrayCalibrationWorkspace({
               <Icon name="upload" className="h-4 w-4 text-slate-600" />
               {!isLeftSidebarCompact ? (
                 <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
-                  Load / Upload
+                  Upload Xray
                 </span>
               ) : null}
               <InfoTooltip text="Pilih sumber: Google Drive (dari library tersimpan) atau File Lokal dari komputer/hp." />
@@ -31207,7 +31630,7 @@ export default function XrayCalibrationWorkspace({
                       {simpleMobilePanel === "upload" ? (
                         <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                           <div className="mb-2.5 flex items-center justify-between">
-                            <p className="text-xs font-black uppercase tracking-wider">Upload / Load</p>
+                            <p className="text-xs font-black uppercase tracking-wider">Upload Xray</p>
                             <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
                               <X className="h-3 w-3" />
                             </button>
@@ -31570,7 +31993,11 @@ export default function XrayCalibrationWorkspace({
                             <span className="text-[10px] font-black">TKA</span>
                           </button>
                           {/* HIP/THA */}
-                          <button type="button" onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); }}
+                          <button
+                            type="button"
+                            title="Hip planning: panduan cup, stem, offset, LLD, dan parameter templating."
+                            aria-label="Hip planning"
+                            onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); }}
                             className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
                             <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M4 10 Q3 4 10 3 Q16 2 16 10"/>

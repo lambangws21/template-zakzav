@@ -149,7 +149,8 @@ export default function MobileNavigation({
                     ? `mnav-pressed ${activeColor}`
                     : "text-slate-400"
                 }`}
-                aria-label={tab.label}
+                aria-label={tab.ariaLabel || tab.label}
+                title={tab.title || tab.label}
               >
                 {Icon && <Icon className="h-4 w-4 shrink-0" />}
                 <span className="truncate text-[8px] font-black tracking-wide">{tab.label}</span>
