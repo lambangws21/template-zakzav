@@ -19,6 +19,12 @@ import {
 import femoralHeadCalibrationPresets from "../data/femoralHeadCalibrationPresets.json";
 
 const SPRING = { type: "spring", damping: 26, stiffness: 320, mass: 0.9 };
+const REVEAL = {
+  initial: { opacity: 0, y: -8, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: -6, scale: 0.98 },
+  transition: { duration: 0.18, ease: "easeOut" },
+};
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -87,16 +93,32 @@ export default function CalibrationWizard({
   onMagnificationFactorChange,
   anatomicalRefSizeMm = "46",
   onAnatomicalRefSizeMmChange,
+  onCircleNudge,
+  onCircleResize,
+  circleRadiusPx = null,
 } = {}) {
   const [showQCDetail, setShowQCDetail] = useState(false);
-  const [strokeExpanded, setStrokeExpanded] = useState(false);
-  const [drawExpanded, setDrawExpanded] = useState(true);
+  const [drawExpanded, setDrawExpanded] = useState(false);
   const [showMagGuide, setShowMagGuide] = useState(false);
   const [estimateExpanded, setEstimateExpanded] = useState(false);
   const [headEstimateSex, setHeadEstimateSex] = useState("female");
   const [headEstimateHeightCm, setHeadEstimateHeightCm] = useState("155");
   const [estimateApplyPulse, setEstimateApplyPulse] = useState(false);
+  const [canvasEditCompact, setCanvasEditCompact] = useState(false);
   const estimatePulseTimerRef = useRef(null);
+  const nudgeIntervalRef = useRef(null);
+
+  const startNudge = (fn) => {
+    fn();
+    nudgeIntervalRef.current = setInterval(fn, 120);
+  };
+  const stopNudge = () => {
+    if (nudgeIntervalRef.current) {
+      clearInterval(nudgeIntervalRef.current);
+      nudgeIntervalRef.current = null;
+    }
+  };
+  useEffect(() => () => stopNudge(), []);
 
   const isLineMode = calibrationMode === "line";
   const isMagMode = calibrationMode === "magnification";
@@ -130,6 +152,8 @@ export default function CalibrationWizard({
 
   const hasLine = Boolean(calibrationReferenceLine);
   const hasHeadCircle = Boolean(calibrationReferenceCircle);
+  const isCompactCanvasEdit = isMobile && isMagMode && canvasEditCompact;
+  const lineActionLabel = hasLine ? "Update Line dari Nilai Ini" : "Buat Line dari Nilai Ini";
   const femoralHeadEstimate = useMemo(
     () => getFemoralHeadHeightEstimate(headEstimateSex, headEstimateHeightCm),
     [headEstimateHeightCm, headEstimateSex],
@@ -146,8 +170,16 @@ export default function CalibrationWizard({
     activeFemoralEstimateMm && String(anatomicalRefSizeMm) === activeFemoralEstimateMm;
 
   useEffect(() => {
-    if (open) setShowQCDetail(false);
+    if (open) {
+      setShowQCDetail(false);
+      setDrawExpanded(false);
+    }
+    if (!open) setCanvasEditCompact(false);
   }, [open]);
+
+  useEffect(() => {
+    if (calibrationMode !== "magnification") setCanvasEditCompact(false);
+  }, [calibrationMode]);
 
   useEffect(() => () => {
     if (estimatePulseTimerRef.current) clearTimeout(estimatePulseTimerRef.current);
@@ -168,6 +200,16 @@ export default function CalibrationWizard({
     }, 1600);
   };
 
+  const handleManualCircle = () => {
+    onManualCircle?.();
+    if (isMobile) setCanvasEditCompact(true);
+  };
+
+  const handleAutoHeadCircle = () => {
+    onAutoHeadLine?.(Number(anatomicalRefSizeMm));
+    if (isMobile) setCanvasEditCompact(true);
+  };
+
   const handleSave = () => onSave?.();
 
   return (
@@ -182,12 +224,30 @@ export default function CalibrationWizard({
         .cw-btn:active { box-shadow: inset 1px 1px 3px #cbd5e1,inset -1px -1px 3px #ffffff; transform: translateY(1px); }
         .cw-input { background: #edf1f6; box-shadow: inset 2px 2px 4px #c4cfdc,inset -2px -2px 4px #ffffff; border: 1px solid white; }
         .cw-active { background: #3b82f6; color: white !important; box-shadow: inset 1px 1px 3px rgba(0,0,0,.2); }
+        .cw-line-primary { background: rgba(239,246,255,.9); border-color: #93c5fd; box-shadow: 0 0 24px rgba(37,99,235,.16); }
+        .cw-line-primary.is-ready { background: rgba(236,253,245,.86); border-color: #6ee7b7; box-shadow: 0 0 22px rgba(16,185,129,.14); }
+        .cw-line-status { background: rgba(255,255,255,.68); border-color: #bfdbfe; }
+        .cw-line-primary.is-ready .cw-line-status { border-color: #a7f3d0; }
+        .cw-line-help { background: rgba(255,255,255,.68); border-color: #bfdbfe; color: #1e40af; }
         [data-theme="dark"] .cw-card    { background: #1a2438; box-shadow: 6px 6px 18px rgba(0,5,20,.65),-2px -2px 6px rgba(50,75,130,.18); border: 1px solid rgba(255,255,255,.09); color: #c8d5e8; }
         [data-theme="dark"] .cw-flat    { background: #1e2840; box-shadow: 2px 2px 5px rgba(0,5,20,.5),-1px -1px 4px rgba(50,75,130,.16); }
         [data-theme="dark"] .cw-pressed { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,.55),inset -1px -1px 3px rgba(50,75,130,.14); }
         [data-theme="dark"] .cw-btn     { background: #1e2840; box-shadow: 2px 2px 4px rgba(0,5,20,.5),-1px -1px 3px rgba(50,75,130,.16); border: 1px solid rgba(255,255,255,.09); color: #94a3b8; }
         [data-theme="dark"] .cw-input   { background: #141d2e; box-shadow: inset 2px 2px 4px rgba(0,5,20,.55),inset -1px -1px 3px rgba(50,75,130,.12); border: 1px solid rgba(255,255,255,.08); color: #c8d5e8; }
         [data-theme="dark"] .cw-active  { background: #2563eb; color: white !important; }
+        [data-theme="dark"] .cw-line-primary { background: #101d33; border-color: rgba(96,165,250,.42); box-shadow: 0 0 22px rgba(37,99,235,.2); }
+        [data-theme="dark"] .cw-line-primary.is-ready { background: #10271f; border-color: rgba(52,211,153,.48); box-shadow: 0 0 22px rgba(16,185,129,.18); }
+        [data-theme="dark"] .cw-line-primary .cw-line-title { color: #93c5fd !important; }
+        [data-theme="dark"] .cw-line-primary.is-ready .cw-line-title { color: #86efac !important; }
+        [data-theme="dark"] .cw-line-primary .cw-line-subtitle { color: #bfdbfe !important; }
+        [data-theme="dark"] .cw-line-primary.is-ready .cw-line-subtitle { color: #bbf7d0 !important; }
+        [data-theme="dark"] .cw-line-primary .cw-line-pill { background: rgba(37,99,235,.28) !important; color: #dbeafe !important; border: 1px solid rgba(147,197,253,.28); }
+        [data-theme="dark"] .cw-line-primary.is-ready .cw-line-pill { background: rgba(16,185,129,.24) !important; color: #d1fae5 !important; border-color: rgba(110,231,183,.28); }
+        [data-theme="dark"] .cw-line-status { background: rgba(15,23,42,.6) !important; border-color: rgba(147,197,253,.24) !important; }
+        [data-theme="dark"] .cw-line-primary.is-ready .cw-line-status { border-color: rgba(110,231,183,.3) !important; }
+        [data-theme="dark"] .cw-line-status .cw-line-status-title { color: #d1fae5 !important; }
+        [data-theme="dark"] .cw-line-status .cw-line-status-subtitle { color: #a7f3d0 !important; }
+        [data-theme="dark"] .cw-line-help { background: rgba(15,23,42,.6) !important; border-color: rgba(147,197,253,.24) !important; color: #bfdbfe !important; }
         [data-theme="dark"] .cw-card .text-slate-800 { color: #c8d5e8 !important; }
         [data-theme="dark"] .cw-card .text-slate-700 { color: #94a3b8 !important; }
         [data-theme="dark"] .cw-card .text-slate-600 { color: #7f96b2 !important; }
@@ -214,7 +274,9 @@ export default function CalibrationWizard({
         exit={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, x: -36, scale: 0.96 }}
         transition={isMobile ? { ...SPRING, damping: 32, stiffness: 340 } : SPRING}
         className={
-          isMobile
+          isCompactCanvasEdit
+            ? "fixed bottom-[calc(env(safe-area-inset-bottom)+76px)] left-3 right-3 z-[95] rounded-[22px] p-3 text-slate-800 cw-card font-sans"
+          : isMobile
             ? "fixed bottom-0 left-0 right-0 z-[95] max-h-[88dvh] overflow-y-auto rounded-t-[28px] p-4 pb-[calc(env(safe-area-inset-bottom)+20px)] text-slate-800 cw-card font-sans"
             : "fixed left-3 top-1/2 z-[95] w-[min(308px,calc(100vw-24px))] max-h-[min(92vh,640px)] -translate-y-1/2 overflow-y-auto rounded-[28px] p-4 text-slate-800 cw-card font-sans"
         }
@@ -225,6 +287,64 @@ export default function CalibrationWizard({
         {isMobile && (
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300" />
         )}
+
+        {isCompactCanvasEdit ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] text-blue-600 cw-flat">
+                <Scaling className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] font-black uppercase tracking-tight text-slate-800">
+                  Edit Circle di Canvas
+                </p>
+                <p className="truncate text-[9px] font-bold text-slate-500">
+                  {selectedLengthText || `Ø ${anatomicalRefSizeMm || "-"} mm`} · geser langsung di foto
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCanvasEditCompact(false)}
+                className="flex h-9 shrink-0 items-center justify-center rounded-[14px] px-3 text-[10px] font-black text-slate-600 cw-btn"
+              >
+                Panel
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 cw-btn"
+                aria-label="Tutup"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={handleAutoHeadCircle}
+                className="rounded-[14px] px-2 py-2 text-[9px] font-black uppercase tracking-wide text-slate-600 cw-btn"
+              >
+                Update Ø
+              </button>
+              <button
+                type="button"
+                onClick={() => setCanvasEditCompact(false)}
+                className="rounded-[14px] px-2 py-2 text-[9px] font-black uppercase tracking-wide text-slate-600 cw-btn"
+              >
+                Kontrol
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!hasHeadCircle || !canSave}
+                className="rounded-[14px] bg-emerald-600 px-2 py-2 text-[9px] font-black uppercase tracking-wide text-white disabled:opacity-45"
+              >
+                Terapkan
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
 
         {/* Header */}
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -264,134 +384,178 @@ export default function CalibrationWizard({
 
         {isLineMode ? (
           <div className="space-y-2.5">
-            {/* Draw / preset buttons — collapsible */}
-            <button type="button"
-              onClick={() => setDrawExpanded((v) => !v)}
-              className="flex w-full items-center justify-between rounded-[14px] border border-white/60 px-3 py-2 text-[10px] font-black text-slate-600 cw-flat">
-              <span className="flex items-center gap-1.5">
-                <Ruler className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                1 · Gambar garis di ruler X-ray
-              </span>
-              <span className="flex items-center gap-1.5">
-                {hasLine && (
-                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
-                    ✓ {rulerPresetLabel || "Manual"}
-                  </span>
-                )}
-                {drawExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              </span>
-            </button>
-            {drawExpanded && (
-              <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button type="button" onClick={onManualDraw}
-                    className="col-span-3 min-h-10 rounded-[12px] bg-slate-900 px-3 text-[10px] font-black tracking-wider text-white uppercase">
-                    <span className="flex items-center justify-center gap-1.5">
-                      <MousePointer2 className="h-3.5 w-3.5" /> Gambar Manual
-                    </span>
-                  </button>
-                  {[{ label: "10 cm", mm: 100 }, { label: "13 cm", mm: 130 }, { label: "15 cm", mm: 150 }].map(({ label, mm }) => (
-                    <button key={mm} type="button" onClick={() => onCreatePresetLine?.(mm)}
-                      className="min-h-9 rounded-[12px] text-[10px] font-black text-slate-600 cw-btn">
-                      {label}
-                    </button>
-                  ))}
+            {/* Primary custom ruler flow */}
+            <motion.div
+              layout
+              animate={{ scale: hasLine ? 1.006 : 1 }}
+              transition={{ type: "spring", stiffness: 360, damping: 28 }}
+              className={`cw-line-primary rounded-[18px] border p-3 transition-all ${hasLine ? "is-ready" : ""}`}
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className={`cw-line-title text-[9px] font-black uppercase tracking-widest ${hasLine ? "text-emerald-700" : "text-blue-700"}`}>
+                    1 · Nilai referensi ruler
+                  </p>
+                  <p className={`cw-line-subtitle mt-0.5 truncate text-[10px] font-bold ${hasLine ? "text-emerald-700/80" : "text-blue-700/80"}`}>
+                    Isi panjang real, lalu buat line dari nilai itu.
+                  </p>
                 </div>
-                {/* Line status */}
-                {hasLine ? (
-                  <div className="mt-2 rounded-[12px] border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <Ruler className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                      <span className="text-[11px] font-black text-emerald-800">Penggaris Kalibrasi</span>
-                      <span className="ml-auto rounded-full bg-emerald-200 px-1.5 py-0.5 text-[9px] font-black text-emerald-800">
-                        #{calibrationReferenceLine.id}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 grid grid-cols-2 gap-1 text-[10px]">
-                      <div className="rounded-[8px] bg-white/70 px-2 py-1">
-                        <div className="font-bold text-slate-400 uppercase" style={{ fontSize: "8px", letterSpacing: "0.06em" }}>Target</div>
-                        <div className="font-black text-emerald-700">{rulerPresetLabel || "Manual"}</div>
-                      </div>
-                      <div className="rounded-[8px] bg-white/70 px-2 py-1">
-                        <div className="font-bold text-slate-400 uppercase" style={{ fontSize: "8px", letterSpacing: "0.06em" }}>Di Layar</div>
-                        <div className="font-black text-emerald-700">{selectedLengthText || "—"}</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-2 rounded-[10px] px-2.5 py-1.5 text-[10px] font-bold text-slate-500 cw-pressed">
-                    Belum ada garis. Gambar atau pilih preset.
-                  </div>
-                )}
+                <span className={`cw-line-pill shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${hasLine ? "bg-emerald-200 text-emerald-800" : "bg-blue-200 text-blue-800"}`}>
+                  Zoom {sourceZoomPercent || "-"}%
+                </span>
               </div>
-            )}
-
-            {/* Stroke — collapsible */}
-            <button type="button"
-              onClick={() => setStrokeExpanded((v) => !v)}
-              className="flex w-full items-center justify-between rounded-[14px] border border-white/60 px-3 py-2 text-[10px] font-black text-slate-600 cw-flat">
-              <span>Ketebalan garis · {strokeValue.toFixed(1)}x</span>
-              {strokeExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            </button>
-            {strokeExpanded && (
-              <div className="rounded-[16px] border border-white/60 p-3 cw-flat">
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => updateStroke(strokeValue - 0.1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 cw-btn">
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <input type="range" min="0.5" max="8" step="0.1" value={strokeValue}
-                    onChange={(e) => updateStroke(e.target.value)}
-                    className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-300 accent-blue-500" />
-                  <button type="button" onClick={() => updateStroke(strokeValue + 0.1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 cw-btn">
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-1.5">
-                  {[1.5, 2.5, 4].map((v) => (
-                    <button key={v} type="button" onClick={() => updateStroke(v)}
-                      className={`min-h-8 rounded-[10px] text-[10px] font-black ${Math.abs(strokeValue - v) < 0.05 ? "cw-active" : "text-slate-600 cw-btn"}`}>
-                      {v}x
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Value input */}
-            <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
-              <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
-                2 · Nilai referensi garis
-              </p>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[1fr_58px_70px] gap-1.5">
                 <input type="number" min="0" step="0.01" value={actualValue}
                   onChange={(e) => onActualValueChange?.(e.target.value)}
-                  placeholder="Contoh: 10"
-                  className="min-w-0 flex-1 rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
+                  placeholder="10"
+                  className="min-h-10 min-w-0 rounded-[12px] px-3 text-[15px] font-black text-slate-800 outline-none cw-input" />
                 <select value={actualUnit} onChange={(e) => onActualUnitChange?.(e.target.value)}
-                  className="w-16 cursor-pointer appearance-none rounded-[12px] px-2 py-2 text-sm font-bold text-slate-700 outline-none cw-flat">
+                  className="min-h-10 cursor-pointer appearance-none rounded-[12px] px-2 text-center text-[14px] font-black text-slate-700 outline-none cw-flat">
                   <option value="cm">cm</option>
                   <option value="mm">mm</option>
                 </select>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
                 <input type="number" min="1" step="0.1" value={sourceZoomPercent}
                   onChange={(e) => onSourceZoomPercentChange?.(e.target.value)}
-                  placeholder="Zoom %"
-                  className="min-w-0 flex-1 rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
+                  placeholder="100"
+                  className="min-h-10 min-w-0 rounded-[12px] px-2 text-center text-[14px] font-black text-slate-800 outline-none cw-input" />
+              </div>
+              <motion.button type="button" onClick={onCreatePresetFromInput}
+                whileTap={{ scale: 0.985 }}
+                className={`mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-[14px] px-3 text-[11px] font-black tracking-wider text-white uppercase transition-all ${
+                  hasLine
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_10px_24px_rgba(16,185,129,0.22)]"
+                    : "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-[0_10px_26px_rgba(37,99,235,0.32)]"
+                }`}>
+                <Ruler className="h-3.5 w-3.5" />
+                {lineActionLabel}
+              </motion.button>
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                 {["100", "90"].map((v) => (
                   <button key={v} type="button" onClick={() => onSourceZoomPercentChange?.(v)}
-                    className="min-h-10 rounded-[12px] px-2.5 text-[10px] font-black text-slate-600 cw-btn">
+                    className={`min-h-8 rounded-[11px] text-[11px] font-black transition-transform active:scale-[0.98] ${
+                      String(sourceZoomPercent) === v ? "cw-active" : "text-slate-600 cw-btn"
+                    }`}>
                     {v}%
                   </button>
                 ))}
               </div>
-              <button type="button" onClick={onCreatePresetFromInput}
-                className="mt-2 min-h-9 w-full rounded-[12px] text-[10px] font-black text-slate-600 cw-btn">
-                Buat ruler dari nilai ini
-              </button>
-            </div>
+
+              <AnimatePresence mode="wait" initial={false}>
+              {hasLine ? (
+                <motion.div key="line-ready" {...REVEAL} className="cw-line-status mt-2 rounded-[12px] border px-2.5 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="cw-line-status-title truncate text-[11px] font-black text-emerald-800">
+                        Line siap · {rulerPresetLabel || `${actualValue || "-"} ${actualUnit}`}
+                      </div>
+                      <div className="cw-line-status-subtitle truncate text-[10px] font-bold text-emerald-600">
+                        {selectedLengthText || "Panjang layar belum terbaca"}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-black text-emerald-800">
+                      #{calibrationReferenceLine.id}
+                    </span>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key="line-help" {...REVEAL} className="cw-line-help mt-2 rounded-[12px] border px-2.5 py-2 text-[11px] font-black leading-snug">
+                  Contoh: ruler 12.7 cm, isi 12.7 cm lalu tekan tombol biru.
+                </motion.div>
+              )}
+              </AnimatePresence>
+            </motion.div>
+
+            {/* Secondary options */}
+            <button type="button"
+              onClick={() => setDrawExpanded((v) => !v)}
+              className="flex w-full items-center justify-between rounded-[14px] border border-white/60 px-3 py-2.5 text-[11px] font-black text-slate-600 cw-flat transition-transform active:scale-[0.99]">
+              <span className="flex items-center gap-1.5">
+                <MousePointer2 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                Opsi lain: preset, manual, ketebalan
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-black cw-pressed">
+                  Line {strokeValue.toFixed(1)}x
+                </span>
+                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-black cw-pressed">
+                  {drawExpanded ? "Terbuka" : "Tertutup"}
+                </span>
+                <motion.span
+                  animate={{ rotate: drawExpanded ? 180 : 0 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className="flex h-4 w-4 items-center justify-center"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </motion.span>
+              </span>
+            </button>
+            <AnimatePresence initial={false}>
+            {drawExpanded && (
+              <motion.div
+                key="line-extra-options"
+                {...REVEAL}
+                className="rounded-[18px] border border-white/60 p-2.5 cw-flat"
+              >
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button type="button" onClick={onManualDraw}
+                    className="col-span-3 min-h-10 rounded-[12px] bg-slate-900 px-3 text-[11px] font-black tracking-wider text-white uppercase transition-transform active:scale-[0.98]">
+                    <span className="flex items-center justify-center gap-1.5">
+                      <MousePointer2 className="h-3.5 w-3.5" /> Line Manual Bebas
+                    </span>
+                  </button>
+                  {[{ label: "10 cm", mm: 100 }, { label: "13 cm", mm: 130 }, { label: "15 cm", mm: 150 }].map(({ label, mm }) => (
+                    <button key={mm} type="button" onClick={() => onCreatePresetLine?.(mm)}
+                      className="min-h-8 rounded-[11px] text-[10px] font-black text-slate-600 cw-btn">
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-2 rounded-[14px] border border-white/60 p-2.5 cw-pressed">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      Ketebalan line
+                    </span>
+                    <motion.span
+                      key={strokeValue.toFixed(1)}
+                      initial={{ scale: 0.92, opacity: 0.7 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.16 }}
+                      className="rounded-full px-2 py-1 text-[10px] font-black cw-flat"
+                    >
+                      {strokeValue.toFixed(1)}x
+                    </motion.span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => updateStroke(strokeValue - 0.1)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-600 cw-btn"
+                      aria-label="Kurangi ketebalan line">
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <input type="range" min="0.5" max="8" step="0.1" value={strokeValue}
+                      onChange={(e) => updateStroke(e.target.value)}
+                      className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-300 accent-blue-500" />
+                    <button type="button" onClick={() => updateStroke(strokeValue + 0.1)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-600 cw-btn"
+                      aria-label="Tambah ketebalan line">
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-4 gap-1.5">
+                    {[1.5, 2.5, 4, 6].map((v) => (
+                      <button key={v} type="button" onClick={() => updateStroke(v)}
+                        className={`min-h-8 rounded-[10px] text-[11px] font-black transition-transform active:scale-[0.98] ${Math.abs(strokeValue - v) < 0.05 ? "cw-active" : "text-slate-600 cw-btn"}`}>
+                        {v}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            </AnimatePresence>
           </div>
         ) : isMagMode ? (
           /* Magnification mode */
@@ -607,23 +771,35 @@ export default function CalibrationWizard({
                 <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
                   2 · Circle diameter head
                 </p>
-                <button type="button" onClick={onManualCircle}
+                <button type="button" onClick={handleManualCircle}
                   className="flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-slate-900 text-[10px] font-black tracking-wider text-white uppercase">
                   <MousePointer2 className="h-3.5 w-3.5" />
                   Gambar Circle Manual
                 </button>
-                <button type="button" onClick={() => onAutoHeadLine?.(Number(anatomicalRefSizeMm))}
+                <button type="button" onClick={handleAutoHeadCircle}
                   className="mt-2 flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-blue-600 text-[10px] font-black tracking-wider text-white uppercase">
                   <Ruler className="h-3.5 w-3.5" />
                   Buat / Update Circle {anatomicalRefSizeMm || "-"} mm
                 </button>
                 {hasHeadCircle ? (
-                  <div className="mt-2 flex items-center gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
-                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
-                      <Check className="h-3 w-3 text-white stroke-[3]" />
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
+                        <Check className="h-3 w-3 text-white stroke-[3]" />
+                      </div>
+                      <span className="text-[10px] font-black text-emerald-800">Circle siap</span>
+                      <span className="ml-auto text-[10px] font-bold text-emerald-600">{selectedLengthText || "—"}</span>
                     </div>
-                    <span className="text-[10px] font-black text-emerald-800">Circle siap</span>
-                    <span className="ml-auto text-[10px] font-bold text-emerald-600">{selectedLengthText || "—"}</span>
+                    {isMobile && (
+                      <button
+                        type="button"
+                        onClick={() => setCanvasEditCompact(true)}
+                        className="flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-slate-900 text-[10px] font-black tracking-wider text-white uppercase"
+                      >
+                        <MousePointer2 className="h-3.5 w-3.5" />
+                        Edit di Canvas
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-2 rounded-[10px] px-2.5 py-1.5 text-center text-[9px] text-slate-400 cw-pressed">
@@ -639,6 +815,14 @@ export default function CalibrationWizard({
                   Terapkan Kalibrasi
                 </button>
               )}
+              {hasCalibration && hasHeadCircle && (
+                <div className="flex items-center gap-1.5 px-1 pt-0.5">
+                  <Info className="h-3 w-3 shrink-0 text-amber-400" />
+                  <span className="text-[9px] leading-snug text-amber-600">
+                    Geser / resize circle, lalu klik Terapkan untuk update skala.
+                  </span>
+                </div>
+              )}
             </div>
 
             {!hasHeadCircle && (
@@ -647,6 +831,58 @@ export default function CalibrationWizard({
                 <span className="text-[9px] text-slate-400 leading-snug">
                   Buat circle caput dulu, lalu tombol "Terapkan" muncul di sini.
                 </span>
+              </div>
+            )}
+
+            {/* ── Mobile d-pad: move + resize circle ── */}
+            {isMobile && hasHeadCircle && (
+              <div className="rounded-[16px] border border-pink-200/60 bg-pink-50/60 p-3 space-y-2">
+                <p className="text-[8px] font-black uppercase tracking-widest text-pink-400">Kontrol Circle</p>
+
+                {/* D-pad move */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div />
+                  <button type="button"
+                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
+                    onPointerDown={() => startNudge(() => onCircleNudge?.(0, -8))}
+                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>▲</button>
+                  <div />
+                  <button type="button"
+                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
+                    onPointerDown={() => startNudge(() => onCircleNudge?.(-8, 0))}
+                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>◀</button>
+                  <div className="flex h-10 items-center justify-center rounded-[12px] bg-pink-100 border border-pink-200">
+                    <span className="text-[9px] font-black text-pink-400">MOVE</span>
+                  </div>
+                  <button type="button"
+                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
+                    onPointerDown={() => startNudge(() => onCircleNudge?.(8, 0))}
+                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>▶</button>
+                  <div />
+                  <button type="button"
+                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
+                    onPointerDown={() => startNudge(() => onCircleNudge?.(0, 8))}
+                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>▼</button>
+                  <div />
+                </div>
+
+                {/* Resize */}
+                <div className="flex items-center gap-2">
+                  <button type="button"
+                    className="flex h-10 flex-1 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
+                    onPointerDown={() => startNudge(() => onCircleResize?.(-6))}
+                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>−</button>
+                  <div className="flex-1 text-center">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-pink-400">Radius</p>
+                    <p className="text-[11px] font-black text-slate-700">
+                      {circleRadiusPx != null ? `${Math.round(circleRadiusPx)} px` : "—"}
+                    </p>
+                  </div>
+                  <button type="button"
+                    className="flex h-10 flex-1 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
+                    onPointerDown={() => startNudge(() => onCircleResize?.(6))}
+                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>+</button>
+                </div>
               </div>
             )}
           </div>
@@ -733,6 +969,8 @@ export default function CalibrationWizard({
               Isi nilai real marker/ruler X-ray. Contoh: 10 cm, 13 cm.
             </span>
           </div>
+        )}
+          </>
         )}
       </motion.div>
     </>

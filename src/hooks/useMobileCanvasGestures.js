@@ -102,9 +102,10 @@ export default function useMobileCanvasGestures({
     const second = points[1];
     const centerX = (first.x + second.x) / 2;
     const centerY = (first.y + second.y) / 2;
+    const angle = Math.atan2(second.y - first.y, second.x - first.x);
     const distance = Math.hypot(second.x - first.x, second.y - first.y);
     if (!Number.isFinite(distance) || distance <= 1) return null;
-    return { centerX, centerY, distance };
+    return { centerX, centerY, distance, angle };
   }, []);
 
   const consumeDoubleTap = useCallback(

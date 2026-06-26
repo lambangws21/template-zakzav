@@ -314,6 +314,23 @@ const SIDEBAR_TAB_GRID_CLASS =
 
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
 const MOBILE_PANEL_TRANSITION = { duration: 0.12, ease: "easeOut" };
+const shallowEqualObject = (left, right) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => Object.is(left[key], right[key]));
+};
+const shallowEqualObjectArray = (left, right) => {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (!shallowEqualObject(left[index], right[index])) return false;
+  }
+  return true;
+};
 const MEASUREMENT_WORKFLOW_ITEMS = [
   {
     key: "line",
@@ -2223,12 +2240,17 @@ export default function XrayCalibrationWorkspace({
 
   const scheduleCutLayersUpdate = useCallback(
     (updater) => {
+      const guardedUpdater = (prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        return shallowEqualObjectArray(prev, next) ? prev : next;
+      };
+
       if (typeof window === "undefined") {
-        setCutLayers(updater);
+        setCutLayers(guardedUpdater);
         return;
       }
 
-      mobileCutLayerRafUpdaterRef.current = updater;
+      mobileCutLayerRafUpdaterRef.current = guardedUpdater;
       if (mobileCutLayerRafRef.current !== null) return;
 
       mobileCutLayerRafRef.current = window.requestAnimationFrame(() => {
@@ -4954,6 +4976,87 @@ export default function XrayCalibrationWorkspace({
     ],
   );
 
+  // Auto-resize calibration circle when the reference diameter changes.
+  useEffect(() => {
+    if (
+      calibrationMode !== "magnification" ||
+      calibrationCircleId === null ||
+      calibrationCircleId === undefined ||
+      !Number.isFinite(Number(anatomicalRefSizeMm)) ||
+      Number(anatomicalRefSizeMm) <= 0
+    ) return;
+    const newRefMm = Number(anatomicalRefSizeMm);
+    setCircles((prev) =>
+      prev.map((c) => {
+        if (c.id !== calibrationCircleId) return c;
+
+        const currentRadius = Number(c.radius);
+        const previousRefMm = Number(c.targetMm || c.targetApparentMm);
+        const calibratedMmPerPixel = Number(mmPerPixel);
+        let nextRadius = currentRadius;
+
+        if (Number.isFinite(calibratedMmPerPixel) && calibratedMmPerPixel > 0) {
+          nextRadius = (newRefMm / 2) / calibratedMmPerPixel;
+        } else if (
+          Number.isFinite(previousRefMm) &&
+          previousRefMm > 0 &&
+          Number.isFinite(currentRadius) &&
+          currentRadius > 0
+        ) {
+          nextRadius = currentRadius * (newRefMm / previousRefMm);
+        }
+
+        if (!Number.isFinite(nextRadius) || nextRadius <= 0) {
+          return { ...c, targetMm: newRefMm, targetApparentMm: newRefMm };
+        }
+
+        return {
+          ...c,
+          radius: nextRadius,
+          targetMm: newRefMm,
+          targetApparentMm: newRefMm,
+        };
+      }),
+    );
+  }, [anatomicalRefSizeMm, calibrationCircleId, calibrationMode, mmPerPixel]);
+
+  // Mobile nudge/resize callbacks for calibration head circle
+  const nudgeCalibrationCircle = useCallback(
+    (screenDx, screenDy) => {
+      if (!calibrationCircleId) return;
+      const scale = Math.max(view.scale, 0.01);
+      const dx = screenDx / scale;
+      const dy = screenDy / scale;
+      setCircles((prev) =>
+        prev.map((c) =>
+          c.id === calibrationCircleId
+            ? {
+                ...c,
+                cx: clamp(c.cx + dx, 0, modelWidth),
+                cy: clamp(c.cy + dy, 0, modelHeight),
+              }
+            : c,
+        ),
+      );
+    },
+    [calibrationCircleId, modelHeight, modelWidth, view.scale],
+  );
+
+  const resizeCalibrationCircle = useCallback(
+    (screenDelta) => {
+      if (!calibrationCircleId) return;
+      const delta = screenDelta / Math.max(view.scale, 0.01);
+      setCircles((prev) =>
+        prev.map((c) =>
+          c.id === calibrationCircleId
+            ? { ...c, radius: Math.max(8, c.radius + delta) }
+            : c,
+        ),
+      );
+    },
+    [calibrationCircleId, view.scale],
+  );
+
   const createAutoFemoralHeadCalibrationLine = useCallback(
     (headMmOverride = null) => {
       if (!image || modelWidth <= 0 || modelHeight <= 0) {
@@ -4965,6 +5068,77 @@ export default function XrayCalibrationWorkspace({
       if (!Number.isFinite(headMm) || headMm <= 0) {
         setNotice("Isi diameter referensi head/implant dengan angka valid dulu.");
         return null;
+      }
+
+      const existingHeadCircle =
+        circlesRef.current.find((circle) => circle.id === calibrationCircleId) ||
+        circlesRef.current.find((circle) => circle.calibrationHeadCircle) ||
+        null;
+      if (existingHeadCircle) {
+        const previousRefMm = Number(
+          existingHeadCircle.targetMm || existingHeadCircle.targetApparentMm,
+        );
+        const currentRadius = Number(existingHeadCircle.radius);
+        const calibratedMmPerPixel = Number(mmPerPixel);
+        let nextRadius = currentRadius;
+
+        if (Number.isFinite(calibratedMmPerPixel) && calibratedMmPerPixel > 0) {
+          nextRadius = (headMm / 2) / calibratedMmPerPixel;
+        } else if (
+          Number.isFinite(previousRefMm) &&
+          previousRefMm > 0 &&
+          Number.isFinite(currentRadius) &&
+          currentRadius > 0
+        ) {
+          nextRadius = currentRadius * (headMm / previousRefMm);
+        }
+
+        setCircles((prev) =>
+          prev.map((circle) =>
+            circle.id === existingHeadCircle.id
+              ? {
+                  ...circle,
+                  radius:
+                    Number.isFinite(nextRadius) && nextRadius > 0
+                      ? nextRadius
+                      : circle.radius,
+                  name: `Caput femur ${headMm}mm`,
+                  calibrationHeadCircle: true,
+                  color: "#ec4899",
+                  targetMm: headMm,
+                  targetApparentMm: headMm,
+                  source: "headCalibration",
+                }
+              : circle,
+          ),
+        );
+        setSelectedCircleId(existingHeadCircle.id);
+        setCalibrationCircleId(existingHeadCircle.id);
+        setCalibrationLineId(null);
+        setSelectedLineId(null);
+        setSelectedFreeLinePointIndex(null);
+        setSelectedAngleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedAnnotationId(null);
+        setSelectedPlanningGuideId(null);
+        setCalibrationMode("magnification");
+        setMmPerPixel(null);
+        setTool(getIdleTool());
+        setActiveRightPanel("measure");
+        triggerSelectionPulse("circle", existingHeadCircle.id);
+        setNotice(
+          `Circle head diperbarui ke ${headMm} mm. Diameter visual ikut disesuaikan; cek tepi circle lalu Terapkan Kalibrasi.`,
+        );
+        return {
+          ...existingHeadCircle,
+          radius:
+            Number.isFinite(nextRadius) && nextRadius > 0
+              ? nextRadius
+              : existingHeadCircle.radius,
+          targetMm: headMm,
+          targetApparentMm: headMm,
+        };
       }
 
       const viewportCenter =
@@ -5038,8 +5212,10 @@ export default function XrayCalibrationWorkspace({
     },
     [
       anatomicalRefSizeMm,
+      calibrationCircleId,
       getIdleTool,
       image,
+      mmPerPixel,
       modelHeight,
       modelWidth,
       screenToImagePoint,
@@ -10958,6 +11134,61 @@ export default function XrayCalibrationWorkspace({
 
           const gestureSnapshot = getMobileGestureSnapshot();
           if (gestureSnapshot) {
+            const gestureImagePoint = screenToImagePoint(
+              gestureSnapshot.centerX,
+              gestureSnapshot.centerY,
+            );
+            const gestureLayerId = findCutLayerByPoint(gestureImagePoint);
+            const gestureTargetLayer =
+              (gestureLayerId !== null
+                ? cutLayers.find((layer) => layer.id === gestureLayerId)
+                : null) ||
+              selectedCutLayer ||
+              null;
+            if (gestureTargetLayer && !gestureTargetLayer.hidden) {
+              const selectedGestureLayerIds = selectedCutLayerIdsSet.has(
+                gestureTargetLayer.id,
+              )
+                ? selectedCutLayerIds
+                : getRelatedLayerIds(gestureTargetLayer.id, {
+                    includeGroup: true,
+                  });
+              const gestureLayerIds = selectedGestureLayerIds.filter((layerId) =>
+                cutLayers.some((item) => item.id === layerId),
+              );
+              if (gestureLayerIds.length > 0) {
+                selectLayerFromCanvas(gestureTargetLayer.id, {
+                  includeGroup: true,
+                  openPanel: false,
+                });
+                setMobileCanvasMode("edit");
+                setTool("pan");
+                setMobileToolMode("move");
+                setHistoryPaused(true);
+                interactionRef.current = {
+                  mode: "layer-gesture",
+                  layerIds: gestureLayerIds,
+                  startCenterImageX: gestureImagePoint.x,
+                  startCenterImageY: gestureImagePoint.y,
+                  startDistance: gestureSnapshot.distance,
+                  startAngle: gestureSnapshot.angle,
+                  origins: gestureLayerIds.map((layerId) => {
+                    const layer = cutLayers.find((item) => item.id === layerId);
+                    return {
+                      layerId,
+                      originCenterX: Number(layer?.centerX || 0),
+                      originCenterY: Number(layer?.centerY || 0),
+                      originDisplayWidth: Number(layer?.displayWidth || 16),
+                      originDisplayHeight: Number(layer?.displayHeight || 16),
+                      originRotation: Number(layer?.rotation || 0),
+                      lockScale: Boolean(layer?.lockScale),
+                    };
+                  }),
+                };
+                setNotice("Edit langsung: 1 jari geser, 2 jari scale/rotate layer.");
+                return;
+              }
+            }
             if (mobileCanvasLocked) {
               setNotice(
                 "Canvas terkunci. Gunakan tombol Lock Canvas untuk mengaktifkan pan/pinch lagi.",
@@ -11188,6 +11419,57 @@ export default function XrayCalibrationWorkspace({
           mobileCanvasMode === "pan" &&
           tool === "pan"
         ) {
+          const directLayerId = findCutLayerByPoint(imagePoint);
+          if (directLayerId !== null) {
+            const targetLayer = cutLayers.find(
+              (layer) => layer.id === directLayerId,
+            );
+            if (targetLayer) {
+              selectLayerFromCanvas(directLayerId, {
+                additive: isAdditiveLayerSelection,
+                includeGroup: !isAdditiveLayerSelection,
+                openPanel: false,
+              });
+              setSelectedFreeLinePointIndex(null);
+              setSelectedLineId(null);
+              setSelectedAngleId(null);
+              setSelectedCircleId(null);
+              setSelectedHkaId(null);
+              setSelectedPlanningGuideId(null);
+              triggerSelectionPulse("layer", targetLayer.id);
+              clearMobileHandleAssist();
+              clearMobilePlanningGuideHandleAssist();
+              setMobileCanvasMode("edit");
+              setMobileToolMode("move");
+              syncMobileCanvasSelection("tool", {
+                noticeText: "Layer aktif. Geser langsung dengan jari di layar.",
+              });
+              const selectedMoveLayerIds = selectedCutLayerIdsSet.has(targetLayer.id)
+                ? selectedCutLayerIds
+                : getRelatedLayerIds(targetLayer.id, { includeGroup: true });
+              const movableLayerIds = selectedMoveLayerIds.filter((layerId) =>
+                cutLayers.some((item) => item.id === layerId),
+              );
+              if (movableLayerIds.length > 0) {
+                setHistoryPaused(true);
+                interactionRef.current = {
+                  mode: "move-cut-layer",
+                  layerIds: movableLayerIds,
+                  startImageX: imagePoint.x,
+                  startImageY: imagePoint.y,
+                  origins: movableLayerIds.map((layerId) => {
+                    const layer = cutLayers.find((item) => item.id === layerId);
+                    return {
+                      layerId,
+                      originCenterX: Number(layer?.centerX || 0),
+                      originCenterY: Number(layer?.centerY || 0),
+                    };
+                  }),
+                };
+              }
+              return;
+            }
+          }
           if (mobileCanvasLocked) {
             setNotice(
               "Canvas terkunci. Object tetap bisa diedit, pan canvas dinonaktifkan.",
@@ -13360,6 +13642,86 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      if (interactionRef.current.mode === "layer-gesture") {
+        event.preventDefault();
+        clearSnapPreview();
+        const gestureSnapshot = getMobileGestureSnapshot();
+        const {
+          layerIds = [],
+          origins = [],
+          startCenterImageX,
+          startCenterImageY,
+          startDistance,
+          startAngle,
+        } = interactionRef.current;
+        if (!gestureSnapshot || !layerIds.length) return;
+        const currentCenterImage = screenToImagePoint(
+          gestureSnapshot.centerX,
+          gestureSnapshot.centerY,
+        );
+        const dx = currentCenterImage.x - startCenterImageX;
+        const dy = currentCenterImage.y - startCenterImageY;
+        const scaleFactor =
+          Number.isFinite(startDistance) && startDistance > 0
+            ? clamp(gestureSnapshot.distance / startDistance, 0.08, 8)
+            : 1;
+        const rotationDeltaDeg =
+          Number.isFinite(startAngle) && Number.isFinite(gestureSnapshot.angle)
+            ? ((gestureSnapshot.angle - startAngle) * 180) / Math.PI
+            : 0;
+
+        scheduleCutLayersUpdate((prev) =>
+          prev.map((layer) => {
+            if (!layerIds.includes(layer.id)) return layer;
+            const origin = origins.find((item) => item.layerId === layer.id);
+            if (!origin) return layer;
+            const canScale = !origin.lockScale && !layer.lockScale;
+            const nextCenterX = Number(origin.originCenterX || layer.centerX || 0) + dx;
+            const nextCenterY = Number(origin.originCenterY || layer.centerY || 0) + dy;
+            const nextDisplayWidth = canScale
+              ? clamp(
+                  Number(origin.originDisplayWidth || layer.displayWidth || 16) *
+                    scaleFactor,
+                  16,
+                  Math.max(16, modelWidth * 3),
+                )
+              : layer.displayWidth;
+            const nextDisplayHeight = canScale
+              ? clamp(
+                  Number(origin.originDisplayHeight || layer.displayHeight || 16) *
+                    scaleFactor,
+                  16,
+                  Math.max(16, modelHeight * 3),
+                )
+              : layer.displayHeight;
+            const nextRotation =
+              Math.round(
+                normalizeRotationDegrees(
+                  Number(origin.originRotation || 0) + rotationDeltaDeg,
+                ) * 10,
+              ) / 10;
+            if (
+              Object.is(layer.centerX, nextCenterX) &&
+              Object.is(layer.centerY, nextCenterY) &&
+              Object.is(layer.displayWidth, nextDisplayWidth) &&
+              Object.is(layer.displayHeight, nextDisplayHeight) &&
+              Object.is(layer.rotation, nextRotation)
+            ) {
+              return layer;
+            }
+            return {
+              ...layer,
+              centerX: nextCenterX,
+              centerY: nextCenterY,
+              displayWidth: nextDisplayWidth,
+              displayHeight: nextDisplayHeight,
+              rotation: nextRotation,
+            };
+          }),
+        );
+        return;
+      }
+
       if (interactionRef.current.mode === "mobile-long-press-pending") {
         event.preventDefault();
         return;
@@ -13751,23 +14113,25 @@ export default function XrayCalibrationWorkspace({
         const dy = nextImagePoint.y - startImageY;
 
         scheduleCutLayersUpdate((prev) =>
-          prev.map((layer) =>
-            layerIds.includes(layer.id)
-              ? {
-                  ...layer,
-                  centerX:
-                    Number(
-                      origins.find((item) => item.layerId === layer.id)
-                        ?.originCenterX || layer.centerX || 0,
-                    ) + dx,
-                  centerY:
-                    Number(
-                      origins.find((item) => item.layerId === layer.id)
-                        ?.originCenterY || layer.centerY || 0,
-                    ) + dy,
-                }
-              : layer,
-          ),
+          prev.map((layer) => {
+            if (!layerIds.includes(layer.id)) return layer;
+            const origin = origins.find((item) => item.layerId === layer.id);
+            const nextCenterX =
+              Number(origin?.originCenterX || layer.centerX || 0) + dx;
+            const nextCenterY =
+              Number(origin?.originCenterY || layer.centerY || 0) + dy;
+            if (
+              Object.is(layer.centerX, nextCenterX) &&
+              Object.is(layer.centerY, nextCenterY)
+            ) {
+              return layer;
+            }
+            return {
+              ...layer,
+              centerX: nextCenterX,
+              centerY: nextCenterY,
+            };
+          }),
         );
         return;
       }
@@ -14661,14 +15025,15 @@ export default function XrayCalibrationWorkspace({
       ) &&
       interactionRef.current.circleId === calibrationCircleId
     ) {
-      const adjustedCircle = circlesRef.current.find(
-        (circle) => circle.id === calibrationCircleId,
-      );
-      setPendingCalibrationCircleSave({
-        circleId: calibrationCircleId,
-        diameterPx: adjustedCircle?.radius ? adjustedCircle.radius * 2 : null,
-        referenceMm: Number(anatomicalRefSizeMm),
-      });
+      if (isSimpleUiMode) {
+        setSimpleCalibrationModalOpen(true);
+      } else {
+        setActionToast({
+          id: Date.now(),
+          type: "success",
+          text: "Circle head diubah. Klik Terapkan Kalibrasi untuk menyimpan ulang skala.",
+        });
+      }
     }
     interactionRef.current = { mode: null, startX: 0, startY: 0 };
     interactionStartedAtRef.current = 0;
@@ -22277,9 +22642,19 @@ export default function XrayCalibrationWorkspace({
         calibrationQuality={calibrationQuality}
         selectedLengthText={
           calibrationMode === "magnification" && calibrationReferenceCircle
-            ? mmPerPixel !== null
-              ? formatMeasurementFromPx(calibrationReferenceCircle.radius * 2)
-              : `${Math.round(calibrationReferenceCircle.radius * 2)} px`
+            ? (() => {
+                const targetMm = Number(
+                  calibrationReferenceCircle.targetMm ?? anatomicalRefSizeMm,
+                );
+                if (Number.isFinite(targetMm) && targetMm > 0) {
+                  const label =
+                    Math.abs(targetMm - Math.round(targetMm)) < 0.01
+                      ? targetMm.toFixed(0)
+                      : targetMm.toFixed(1);
+                  return `Ø ${label} mm`;
+                }
+                return `${Math.round(calibrationReferenceCircle.radius * 2)} px`;
+              })()
             : calibrationReferenceLine
             ? formatMeasurementFromPx(getLineLength(calibrationReferenceLine))
             : ""
@@ -22320,6 +22695,9 @@ export default function XrayCalibrationWorkspace({
         onMagnificationFactorChange={setMagnificationFactorInput}
         anatomicalRefSizeMm={anatomicalRefSizeMm}
         onAnatomicalRefSizeMmChange={setAnatomicalRefSizeMm}
+        onCircleNudge={nudgeCalibrationCircle}
+        onCircleResize={resizeCalibrationCircle}
+        circleRadiusPx={calibrationReferenceCircle?.radius ?? null}
         onSave={() => {
           const ok = applyCalibration();
           if (ok) {
@@ -22344,108 +22722,6 @@ export default function XrayCalibrationWorkspace({
           openTemplatingWizard(true);
         }}
       />
-
-      <AnimatePresence>
-        {pendingCalibrationCircleSave ? (
-          <motion.div
-            key="calibration-circle-save-modal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.16 }}
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-[2px]"
-            onClick={() => {
-              setPendingCalibrationCircleSave(null);
-              setNotice("Circle head berubah. Tekan Terapkan Kalibrasi untuk menyimpan ulang skala.");
-            }}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 18, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.97 }}
-              transition={{ type: "spring", damping: 24, stiffness: 310 }}
-              className="w-full max-w-[360px] rounded-[24px] border border-white/80 bg-[#eef2f7] p-4 text-slate-800 shadow-[18px_18px_42px_rgba(15,23,42,0.32),-8px_-8px_24px_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-[#111827] dark:text-slate-100 dark:shadow-[18px_18px_42px_rgba(0,0,0,0.45)]"
-              onClick={(event) => event.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="calibration-circle-save-title"
-            >
-              <div className="mb-3 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-cyan-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-                  <Scaling className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3
-                    id="calibration-circle-save-title"
-                    className="text-[14px] font-black leading-tight tracking-tight"
-                  >
-                    Simpan ulang kalibrasi?
-                  </h3>
-                  <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
-                    Circle head sudah diubah. Simpan ulang agar skala implant dan measurement mengikuti diameter circle terbaru.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mb-3 grid grid-cols-2 gap-2">
-                <div className="rounded-[16px] border border-white/70 bg-white/45 px-3 py-2 dark:border-white/10 dark:bg-white/5">
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                    Referensi
-                  </p>
-                  <p className="mt-0.5 text-[18px] font-black text-cyan-700 dark:text-cyan-300">
-                    {Number.isFinite(pendingCalibrationCircleSave.referenceMm)
-                      ? pendingCalibrationCircleSave.referenceMm
-                      : "-"}
-                    <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
-                      mm
-                    </span>
-                  </p>
-                </div>
-                <div className="rounded-[16px] border border-white/70 bg-white/45 px-3 py-2 dark:border-white/10 dark:bg-white/5">
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                    Circle
-                  </p>
-                  <p className="mt-0.5 text-[18px] font-black text-slate-800 dark:text-slate-100">
-                    {Number.isFinite(pendingCalibrationCircleSave.diameterPx)
-                      ? pendingCalibrationCircleSave.diameterPx.toFixed(0)
-                      : "-"}
-                    <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
-                      px
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPendingCalibrationCircleSave(null);
-                    setNotice("Circle head berubah. Tekan Terapkan Kalibrasi untuk menyimpan ulang skala.");
-                  }}
-                  className="min-h-11 rounded-[16px] border border-white/70 bg-white/55 text-[11px] font-black text-slate-600 shadow-[2px_2px_7px_rgba(148,163,184,0.32),-2px_-2px_7px_rgba(255,255,255,0.75)] transition active:scale-[0.99] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:shadow-none"
-                >
-                  Nanti
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const ok = applyMagnificationCircleCalibration(null);
-                    setPendingCalibrationCircleSave(null);
-                    if (ok) {
-                      setNotice("Kalibrasi circle head sudah disimpan ulang.");
-                    }
-                  }}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-cyan-500 to-blue-600 text-[11px] font-black text-white shadow-[0_12px_28px_rgba(37,99,235,0.3)] transition active:scale-[0.99]"
-                >
-                  <Save className="h-4 w-4" />
-                  Simpan
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
 
       {/* ── Floating pill: ruler adjustment mode ── */}
       <AnimatePresence>
@@ -32469,6 +32745,188 @@ export default function XrayCalibrationWorkspace({
                     </div>
                   ) : null}
                 </div>
+              ) : null}
+
+              {isSimpleUiMode &&
+              isMobileViewport &&
+              selectedCutLayer &&
+              selectedLayerMetrics &&
+              !simpleMobilePanel ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 18, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 12, scale: 0.98 }}
+                  transition={MOBILE_PANEL_TRANSITION}
+                  className="pointer-events-auto absolute right-2 left-2 z-[34] rounded-[22px] border border-white/70 bg-[#eef2f7]/96 p-2.5 text-slate-800 shadow-[4px_4px_14px_rgba(15,23,42,0.18),-4px_-4px_14px_rgba(255,255,255,0.75)] backdrop-blur-xl"
+                  style={{
+                    bottom: mobileObjectSettingsOpen
+                      ? "calc(env(safe-area-inset-bottom) + 52px)"
+                      : "calc(env(safe-area-inset-bottom) + 84px)",
+                  }}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileCanvasMode("edit");
+                        handleToolChange("pan");
+                        setNotice("Edit layer aktif. Drag layer di canvas atau pakai tombol nudge.");
+                      }}
+                      className="min-w-0 flex-1 rounded-[16px] border border-cyan-200 bg-cyan-50 px-3 py-2 text-left shadow-sm"
+                    >
+                      <div className="truncate text-[11px] font-black text-cyan-900">
+                        {selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)}
+                      </div>
+                      <div className="text-[9px] font-bold text-cyan-700">
+                        Scale {selectedLayerScalePercent}% · Rotate {selectedLayerRotationValue}°
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileObjectSettingsOpen((prev) => !prev)}
+                      className={`min-h-12 rounded-[16px] px-3 text-[10px] font-black shadow-sm ${
+                        mobileObjectSettingsOpen
+                          ? "bg-slate-900 text-white"
+                          : "border border-white/70 bg-white/65 text-slate-700"
+                      }`}
+                    >
+                      Detail
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[84px_1fr] gap-2">
+                    <div className="grid grid-cols-3 grid-rows-3 gap-1">
+                      <span />
+                      <button
+                        type="button"
+                        onClick={() => nudgeMobileActiveTarget(0, -MOBILE_FINE_STEP_SCREEN)}
+                        className="flex h-9 items-center justify-center rounded-[13px] border border-white/70 bg-white/65 text-[12px] font-black shadow-sm"
+                        aria-label="Geser layer ke atas"
+                      >
+                        ↑
+                      </button>
+                      <span />
+                      <button
+                        type="button"
+                        onClick={() => nudgeMobileActiveTarget(-MOBILE_FINE_STEP_SCREEN, 0)}
+                        className="flex h-9 items-center justify-center rounded-[13px] border border-white/70 bg-white/65 text-[12px] font-black shadow-sm"
+                        aria-label="Geser layer ke kiri"
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => focusLayerCanvas(selectedCutLayer.id, { openPanel: false })}
+                        className="flex h-9 items-center justify-center rounded-[13px] bg-slate-900 text-[10px] font-black text-white shadow-sm"
+                        aria-label="Pusatkan layer"
+                      >
+                        •
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => nudgeMobileActiveTarget(MOBILE_FINE_STEP_SCREEN, 0)}
+                        className="flex h-9 items-center justify-center rounded-[13px] border border-white/70 bg-white/65 text-[12px] font-black shadow-sm"
+                        aria-label="Geser layer ke kanan"
+                      >
+                        →
+                      </button>
+                      <span />
+                      <button
+                        type="button"
+                        onClick={() => nudgeMobileActiveTarget(0, MOBILE_FINE_STEP_SCREEN)}
+                        className="flex h-9 items-center justify-center rounded-[13px] border border-white/70 bg-white/65 text-[12px] font-black shadow-sm"
+                        aria-label="Geser layer ke bawah"
+                      >
+                        ↓
+                      </button>
+                      <span />
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => scaleSelectedLayerBy(0.97)}
+                        disabled={selectedCutLayer.lockScale}
+                        className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm disabled:opacity-40"
+                      >
+                        S-
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scaleSelectedLayerBy(1.03)}
+                        disabled={selectedCutLayer.lockScale}
+                        className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm disabled:opacity-40"
+                      >
+                        S+
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => rotateSelectedLayerBy(-1)}
+                        className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm"
+                      >
+                        -1°
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => rotateSelectedLayerBy(1)}
+                        className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm"
+                      >
+                        +1°
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            lockScale: !item.lockScale,
+                          }))
+                        }
+                        className={`min-h-9 rounded-[13px] border text-[9px] font-black shadow-sm ${
+                          selectedCutLayer.lockScale
+                            ? "border-amber-300 bg-amber-50 text-amber-700"
+                            : "border-white/70 bg-white/65 text-slate-700"
+                        }`}
+                      >
+                        {selectedCutLayer.lockScale ? "Unlock" : "Lock"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            hidden: !item.hidden,
+                          }))
+                        }
+                        className={`min-h-9 rounded-[13px] border text-[9px] font-black shadow-sm ${
+                          selectedCutLayer.hidden
+                            ? "border-rose-200 bg-rose-50 text-rose-600"
+                            : "border-white/70 bg-white/65 text-slate-700"
+                        }`}
+                      >
+                        {selectedCutLayer.hidden ? "Show" : "Hide"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayerById(selectedCutLayer.id, (item) => ({
+                            ...item,
+                            flipX: !item.flipX,
+                          }))
+                        }
+                        className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[9px] font-black text-slate-700 shadow-sm"
+                      >
+                        Flip
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openLayerSettingsModal(selectedCutLayer.id)}
+                        className="min-h-9 rounded-[13px] bg-cyan-700 text-[9px] font-black text-white shadow-sm"
+                      >
+                        Setting
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
               ) : null}
 
               {isSimpleUiMode &&
