@@ -80,6 +80,18 @@ export const HIP_FUNCTION_SUMMARY_ITEMS = [
     imageCaption: "Fig. 3 — Acetabular offset (no.4): jarak pusat rotasi acetabulum ke garis vertikal interteardrop",
   },
   {
+    key: "cupOrientation",
+    label: "Cup Ori",
+    shortLabel: "Cup inclination + anteversion",
+    activeClass: "text-fuchsia-700",
+    detail:
+      "PostTHA cup orientation dinilai dari acetabular inclination pada AP pelvis dan anteversion dari elips cup. Jurnal Budzinska 2023 menyebut inclination memengaruhi ROM dan wear; anteversion 5-25 derajat sering dipakai sebagai referensi Lewinnek, walau tidak ada safe zone absolut.",
+    notice:
+      "Buka Cup Assess, posisikan elips pada rim cup, lalu simpan INC/AV untuk interpretasi PostTHA.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    imageCaption: "PostTHA — gunakan Cup Assess untuk cup inclination dan anteversion pada radiograf AP pelvis",
+  },
+  {
     key: "hipLength",
     label: "H-Len",
     shortLabel: "Hip length",
@@ -234,10 +246,23 @@ const HIP_WIZARD_STEPS = [
     countType: "acetabularOffset",
   },
   {
+    key: "cupOrientation",
+    shortLabel: "Cup Ori",
+    label: "Cup Orientation — Inclination & Anteversion",
+    instruction: "Buka Cup Assess, letakkan elips mengikuti rim cup asetabular.\nSimpan hasil INC/AV untuk interpretasi PostTHA.\nTarget referensi: INC sekitar 45°; AV 5–25° sebagai referensi Lewinnek.",
+    tip: "Gunakan tool Cup Assess — bukan line biasa. Simpan hasil agar muncul di panel PostTHA.",
+    image: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+    caption: "PostTHA — Cup inclination di AP pelvis dan anteversion dari elips cup",
+    color: "#c026d3",
+    needCount: 1,
+    countType: "cupAssessment",
+    isCupAssessment: true,
+  },
+  {
     key: "done",
     shortLabel: "✓",
     label: "Planning Selesai!",
-    instruction: "Semua line selesai!\nF-Off dihitung otomatis dari HRC → Fem-Axis.\nLLD, G-Off, & Head size tampil di panel.",
+    instruction: "Semua parameter PostTHA selesai!\nF-Off dihitung otomatis dari HRC → Fem-Axis.\nLLD, G-Off, Head size, dan Cup Orientation tampil di panel.",
     tip: "Geser ujung line → nilai kalkulasi update real-time",
     image: "/images/jurnal-scheerlinck/fig5-templating-rotation-centre.jpeg",
     caption: "Fig. 5 — FRC & ARC: acuan templating posisi implan",
@@ -248,13 +273,23 @@ const HIP_WIZARD_STEPS = [
   },
 ];
 
-export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, measurementUnit }) {
+export function HipPlanningWizard({
+  lines,
+  onSelectPreset,
+  onOpenCupAssessment,
+  onClose,
+  mmPerPixel,
+  measurementUnit,
+  cupAssessment,
+}) {
   const [step, setStep] = useState(0);
   const [showResults, setShowResults] = useState(false);
 
   // ── helpers ────────────────────────────────────────────────────────────────
-  const getCount = (type) =>
-    type ? lines.filter((l) => l.type === type).length : 0;
+  const getCount = (type) => {
+    if (type === "cupAssessment") return cupAssessment ? 1 : 0;
+    return type ? lines.filter((l) => l.type === type).length : 0;
+  };
   const isStepComplete = (s) =>
     s.isDone ? true : getCount(s.countType) >= s.needCount;
 
@@ -309,7 +344,8 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
 
   const hasAnyLine = byType("interteardrop").length + byType("hipLength").length +
     byType("femoralOffset").length + byType("acetabularOffset").length +
-    byType("globalOffset").length > 0;
+    byType("globalOffset").length + byType("headDiameter").length +
+    byType("femurAxis").length + (cupAssessment ? 1 : 0) > 0;
 
   // ── wizard state ──────────────────────────────────────────────────────────
   const current = HIP_WIZARD_STEPS[step];
@@ -346,13 +382,23 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
     </div>
   );
 
+  const cupInclination = Number(cupAssessment?.inclination);
+  const cupAnteversion = Number(cupAssessment?.anteversion);
+  const hasCupAssessment = Number.isFinite(cupInclination) && Number.isFinite(cupAnteversion);
+  const cupIncFlag = hasCupAssessment
+    ? cupInclination < 35 ? "low" : cupInclination > 50 ? "high" : "normal"
+    : null;
+  const cupAvFlag = hasCupAssessment
+    ? cupAnteversion < 5 ? "low" : cupAnteversion > 25 ? "high" : "normal"
+    : null;
+
   return (
     <div className="w-full overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_8px_32px_rgba(15,23,42,0.16)]">
       {/* Header */}
       <div className="flex items-center justify-between bg-slate-900 px-3 py-2.5">
         <div className="flex items-center gap-2 text-[10px] font-black tracking-wider text-white uppercase">
           <Icon name="target" className="h-3.5 w-3.5 text-rose-400" />
-          Panduan Hip Planning
+          PostTHA Radiographic Assessment
         </div>
         <button onClick={onClose} className="rounded p-0.5 text-slate-400 transition hover:text-white">
           <Icon name="close" className="h-3.5 w-3.5" />
@@ -410,8 +456,12 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
             <span>{currentDone ? "✅" : "⬜"}</span>
             <span>
               {currentDone
-                ? `${getCount(current.countType)} line ${current.shortLabel} sudah tergambar`
-                : `Butuh ${current.needCount} line ${current.shortLabel} — sekarang: ${getCount(current.countType)}`}
+                ? current.isCupAssessment
+                  ? "Cup orientation sudah tersimpan"
+                  : `${getCount(current.countType)} line ${current.shortLabel} sudah tergambar`
+                : current.isCupAssessment
+                  ? "Butuh hasil Cup Assess yang sudah disimpan"
+                  : `Butuh ${current.needCount} line ${current.shortLabel} — sekarang: ${getCount(current.countType)}`}
             </span>
           </div>
         )}
@@ -496,6 +546,27 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
                     )}
                   </div>
                 )}
+
+                {/* Cup inclination / anteversion */}
+                {hasCupAssessment && (
+                  <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/60 px-2 py-1.5">
+                    <div className="mb-1 text-[8px] font-extrabold text-fuchsia-700 uppercase">Cup Orientation</div>
+                    <ResultRow
+                      label="Inclination"
+                      color={cupIncFlag === "normal" ? "#16a34a" : "#ef4444"}
+                      value={`${cupInclination.toFixed(1)}°`}
+                      note={cupIncFlag === "normal" ? "acceptable" : cupIncFlag === "low" ? "rendah" : "tinggi"}
+                      highlight={cupIncFlag !== "normal"}
+                    />
+                    <ResultRow
+                      label="Anteversion"
+                      color={cupAvFlag === "normal" ? "#16a34a" : "#ef4444"}
+                      value={`${cupAnteversion.toFixed(1)}°`}
+                      note={cupAvFlag === "normal" ? "Lewinnek 5-25°" : cupAvFlag === "low" ? "rendah" : "tinggi"}
+                      highlight={cupAvFlag !== "normal"}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -504,7 +575,16 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
 
       {/* Tombol aksi */}
       <div className="flex items-center gap-1.5 px-3 pb-3 pt-2.5">
-        {!current.isDone && (
+        {!current.isDone && current.isCupAssessment && (
+          <button
+            onClick={() => onOpenCupAssessment?.()}
+            className="flex-1 rounded-xl py-2 text-[10px] font-black text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
+            style={{ background: current.color }}
+          >
+            Buka Cup Assess
+          </button>
+        )}
+        {!current.isDone && !current.isCupAssessment && (
           <button
             onClick={() => onSelectPreset(current.key)}
             className="flex-1 rounded-xl py-2 text-[10px] font-black text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
@@ -545,7 +625,14 @@ export function HipPlanningWizard({ lines, onSelectPreset, onClose, mmPerPixel, 
   );
 }
 
-export function HipPlanningWizardButton({ lines, onSelectPreset, mmPerPixel, measurementUnit }) {
+export function HipPlanningWizardButton({
+  lines,
+  onSelectPreset,
+  onOpenCupAssessment,
+  mmPerPixel,
+  measurementUnit,
+  cupAssessment,
+}) {
   const [open, setOpen] = useState(false);
 
   const doneCount = HIP_WIZARD_STEPS.filter(
@@ -559,9 +646,11 @@ export function HipPlanningWizardButton({ lines, onSelectPreset, mmPerPixel, mea
         <HipPlanningWizard
           lines={lines}
           onSelectPreset={onSelectPreset}
+          onOpenCupAssessment={onOpenCupAssessment}
           onClose={() => setOpen(false)}
           mmPerPixel={mmPerPixel}
           measurementUnit={measurementUnit}
+          cupAssessment={cupAssessment}
         />
       </div>
     );
@@ -576,10 +665,10 @@ export function HipPlanningWizardButton({ lines, onSelectPreset, mmPerPixel, mea
         <span className="text-xl leading-none">📋</span>
         <div>
           <div className="text-[10px] font-black text-rose-800">
-            Panduan Step-by-Step
+            PostTHA Step-by-Step
           </div>
           <div className="text-[9px] text-rose-500">
-            Ikuti langkah berdasarkan jurnal Scheerlinck 2010
+            Radiograf pasca-THA: COR, offset, LLD, cup INC/AV
           </div>
         </div>
       </div>

@@ -266,6 +266,7 @@ import {
 } from "../lib/xray/snapUtils";
 import { removeImageBackground, createCombinedReportCanvas } from "../lib/xray/reportUtils";
 import TKAAssessmentPanel from "./TKAAssessmentPanel";
+import PostTHAAssessmentPanel from "./PostTHAAssessmentPanel";
 
 const IDLE_TUTORIAL_DELAY_MS = 120000;
 const MIN_SCALE = 0.1;
@@ -906,6 +907,7 @@ export default function XrayCalibrationWorkspace({
   const [wizardConfirmOpen, setWizardConfirmOpen] = useState(false);
   const [jlaGuideModalOpen, setJlaGuideModalOpen] = useState(false);
   const [tkaAssessmentOpen, setTkaAssessmentOpen] = useState(false);
+  const [postThaAssessmentOpen, setPostThaAssessmentOpen] = useState(false);
   const [preOpSummaryOpen, setPreOpSummaryOpen] = useState(false);
   const [hkaInfoBubble, setHkaInfoBubble] = useState(null);
   const [hkaResultPanelOpen, setHkaResultPanelOpen] = useState(false);
@@ -18747,7 +18749,7 @@ export default function XrayCalibrationWorkspace({
     { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment" },
     { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder" },
     { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment" },
-    { icon: "zakAceta", label: "ZakAceta", desc: "Buka panduan hip planning step-by-step untuk ITD, hip length, LLD, dan offset.", key: "zakAceta", action: "zakAceta" },
+    { icon: "postTHA", label: "PostTHA", desc: "Analisis radiograf pasca-THA: COR, offset, LLD, inclination, dan anteversion.", key: "zakAceta", action: "zakAceta" },
     { icon: "brush", label: "Brush", desc: "Gunakan brush untuk hapus/blur area tertentu pada gambar atau layer.", key: "brush", action: "brushTool", disabled: !image },
     { icon: "dorr", label: "Dorr CI", desc: "Hitung cortical index untuk klasifikasi kanal femur Dorr A/B/C.", key: "dorr", action: "dorr" },
   ];
@@ -19429,6 +19431,16 @@ export default function XrayCalibrationWorkspace({
         onClose={() => setTkaAssessmentOpen(false)}
         imageCanvasRef={imageCanvasRef}
         mmPerPixel={mmPerPixel}
+      />
+
+      {/* ── Post-THA Assessment Panel ───────────────────────────────────── */}
+      <PostTHAAssessmentPanel
+        isOpen={postThaAssessmentOpen}
+        onClose={() => setPostThaAssessmentOpen(false)}
+        imageCanvasRef={imageCanvasRef}
+        mmPerPixel={mmPerPixel}
+        cupAssessment={savedCupAssessment}
+        onSaveCupAssessment={setSavedCupAssessment}
       />
 
       {/* ── HKA/FTA/JLA Result Panel ─────────────────────────────────────── */}
@@ -23921,12 +23933,13 @@ export default function XrayCalibrationWorkspace({
                     <div className="rounded-[24px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.15),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
                       <div className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-slate-700">
                         <Icon name="target" className="h-4 w-4 text-rose-700" />
-                        Kalkulasi Hip
+                        Kalkulasi PostTHA
                       </div>
                       <HipPlanningCalculator
                         lines={lines}
                         mmPerPixel={mmPerPixel}
                         measurementUnit={measurementUnit}
+                        cupAssessment={savedCupAssessment}
                       />
                     </div>
                     <HipFunctionSummaryPanel />
@@ -27671,12 +27684,13 @@ export default function XrayCalibrationWorkspace({
             <div className="rounded-xl border border-rose-200/60 bg-rose-50/40 px-2.5 py-2">
               <div className="mb-1 flex items-center gap-1.5 text-[9px] font-extrabold tracking-wide text-rose-800 uppercase">
                 <Icon name="target" className="h-3 w-3 shrink-0" />
-                Kalkulasi Hip
+                Kalkulasi PostTHA
               </div>
               <HipPlanningCalculator
                 lines={lines}
                 mmPerPixel={mmPerPixel}
                 measurementUnit={measurementUnit}
+                cupAssessment={savedCupAssessment}
               />
             </div>
           </div>
@@ -28726,10 +28740,12 @@ export default function XrayCalibrationWorkspace({
                   <HipPlanningWizardButton
                     lines={lines}
                     onSelectPreset={handleLinePresetChange}
+                    onOpenCupAssessment={() => setShowCupAssessment(true)}
                     mmPerPixel={mmPerPixel}
                     measurementUnit={measurementUnit}
+                    cupAssessment={savedCupAssessment}
                   />
-                  {/* ── Auto Kalkulasi Hip Planning ───────────────── */}
+                  {/* ── Auto Kalkulasi PostTHA ───────────────── */}
                   <div className="mt-2 rounded-xl border border-rose-200/60 bg-rose-50/40 px-2.5 py-2">
                     <div className="mb-1 flex items-center gap-1.5 text-[9px] font-extrabold tracking-wide text-rose-800 uppercase">
                       <Icon name="target" className="h-3 w-3 shrink-0" />
@@ -28739,6 +28755,7 @@ export default function XrayCalibrationWorkspace({
                       lines={lines}
                       mmPerPixel={mmPerPixel}
                       measurementUnit={measurementUnit}
+                      cupAssessment={savedCupAssessment}
                     />
                   </div>
                 </div>
@@ -30855,12 +30872,13 @@ export default function XrayCalibrationWorkspace({
                 <div className={`${SOFT_TINT_CARD_CLASS} px-3 py-3 text-rose-900`}>
                   <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-extrabold tracking-wide text-rose-800 uppercase">
                     <Icon name="target" className="h-3.5 w-3.5 shrink-0" />
-                    Kalkulasi Hip
+                    Kalkulasi PostTHA
                   </div>
                   <HipPlanningCalculator
                     lines={lines}
                     mmPerPixel={mmPerPixel}
                     measurementUnit={measurementUnit}
+                    cupAssessment={savedCupAssessment}
                   />
                   <HipFunctionSummaryPanel
                     className="mt-2"
@@ -31795,7 +31813,7 @@ export default function XrayCalibrationWorkspace({
                       brushToolActive={tool === "brush"}
                       onCupAssessment={() => setShowCupAssessment(v => !v)}
                       cupAssessmentActive={showCupAssessment}
-                      zakAcetaActive={simpleWizardOpen}
+                      zakAcetaActive={postThaAssessmentOpen}
                       lines={lines.filter((l) => l.id !== calibrationLineId)}
                       selectedLineId={selectedLineId}
                       onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
@@ -31835,7 +31853,7 @@ export default function XrayCalibrationWorkspace({
                       onSelectTool={(item) => {
                         if (item.action === "tkaAssessment") { setTkaAssessmentOpen((v) => !v); return; }
                         if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
-                        if (item.action === "zakAceta") { setSimpleWizardOpen((v) => !v); return; }
+                        if (item.action === "zakAceta") { setPostThaAssessmentOpen((v) => !v); return; }
                         if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
                         if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
                         if (item.action === "dorr") { setSimpleDesktopDorrOpen((v) => !v); return; }
@@ -31847,13 +31865,13 @@ export default function XrayCalibrationWorkspace({
                       canUndo={historyState.undo > 0}
                       canRedo={historyState.redo > 0}
                       cupAssessmentActive={showCupAssessment}
-                      zakAcetaActive={simpleWizardOpen}
+                      zakAcetaActive={postThaAssessmentOpen}
                       dorrActive={simpleDesktopDorrOpen}
                     />
                   )}
                   </AnimatePresence>
 
-                  {/* ── ZakAceta Wizard — muncul di kiri PanelActions saat diklik ── */}
+                  {/* ── PostTHA Wizard — muncul di kiri PanelActions saat diklik ── */}
                   <AnimatePresence>
                     {simpleWizardOpen && (
                       <motion.div
@@ -31867,9 +31885,11 @@ export default function XrayCalibrationWorkspace({
                         <HipPlanningWizard
                           lines={lines}
                           onSelectPreset={handleLinePresetChange}
+                          onOpenCupAssessment={() => setShowCupAssessment(true)}
                           onClose={() => setSimpleWizardOpen(false)}
                           mmPerPixel={mmPerPixel}
                           measurementUnit={measurementUnit}
+                          cupAssessment={savedCupAssessment}
                         />
                       </motion.div>
                     )}
@@ -31973,7 +31993,7 @@ export default function XrayCalibrationWorkspace({
                           setSimpleMobilePanel(null);
                           setMobileCanvasMode("edit");
                           if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
-                          if (item.action === "zakAceta") { setSimpleWizardOpen((v) => !v); return; }
+                          if (item.action === "zakAceta") { setPostThaAssessmentOpen((v) => !v); return; }
                           if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
                           if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
                           if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
@@ -31991,7 +32011,7 @@ export default function XrayCalibrationWorkspace({
                         canRedo={historyState.redo > 0}
                         onCupAssessment={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
                         cupAssessmentActive={showCupAssessment}
-                        zakAcetaActive={simpleWizardOpen}
+                        zakAcetaActive={postThaAssessmentOpen}
                         dorrActive={simpleMobilePanel === "dorr"}
                       />
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (

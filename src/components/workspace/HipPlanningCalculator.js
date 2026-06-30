@@ -31,7 +31,7 @@ export function HipCalcRow({ label, color, value, badge, highlight, note }) {
   );
 }
 
-export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
+export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit, cupAssessment }) {
   const fmt = (mm) => {
     if (mm === null || mm === undefined) return "—";
     if (measurementUnit === "cm") return `${(mm / 10).toFixed(2)} cm`;
@@ -40,6 +40,7 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
   const pxToMm = (px) => (mmPerPixel !== null ? px * mmPerPixel : px);
   const fmtPx = (px) =>
     mmPerPixel !== null ? fmt(pxToMm(px)) : `${Math.round(px)} px`;
+  const toMm = (px) => (mmPerPixel !== null && px !== null && px !== undefined ? px * mmPerPixel : null);
 
   const byType = (type) => lines.filter((l) => l.type === type);
   const sortByX = (arr) =>
@@ -77,11 +78,22 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
       side: (hrcX < (axis.x1 + axis.x2) / 2) ? "L" : "R",
     };
   }).filter(Boolean);
+  const corCenters = headDiamLines.map((hd) => ({
+    x: (hd.x1 + hd.x2) / 2,
+    y: (hd.y1 + hd.y2) / 2,
+  }));
+  const corDeltaPx = corCenters.length >= 2
+    ? {
+        x: Math.abs(corCenters[1].x - corCenters[0].x),
+        y: Math.abs(corCenters[1].y - corCenters[0].y),
+      }
+    : null;
 
+  const hasCupAssessment = Number.isFinite(Number(cupAssessment?.inclination)) && Number.isFinite(Number(cupAssessment?.anteversion));
   const hasAny = [itdLines, hLenLines, fOffLines, aOffLines, gOffLines, lldLines, offsetLines, headDiamLines, femurAxisLines]
     .some((arr) => arr.length > 0);
 
-  if (!hasAny) {
+  if (!hasAny && !hasCupAssessment) {
     return (
       <div className="mt-2 rounded-xl border border-dashed border-slate-300/80 px-3 py-3 text-center text-[9px] leading-relaxed text-slate-400">
         Gambar line <span className="font-bold text-teal-600">ITD</span>,{" "}
@@ -123,6 +135,26 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
   };
 
   const sideLabel = (i, arr) => (arr.length > 1 ? (i === 0 ? " L" : " R") : "");
+  const lldMm = toMm(lldFromHLen);
+  const lldStatus =
+    lldMm === null ? null :
+    lldMm > 10 ? "high" :
+    lldMm >= 6 ? "watch" :
+    "normal";
+  const cupInclination = Number(cupAssessment?.inclination);
+  const cupAnteversion = Number(cupAssessment?.anteversion);
+  const incStatus =
+    hasCupAssessment
+      ? cupInclination < 35 ? "low" : cupInclination > 50 ? "high" : cupInclination > 45 ? "watch" : "normal"
+      : null;
+  const avStatus =
+    hasCupAssessment
+      ? cupAnteversion < 5 ? "low" : cupAnteversion > 25 ? "high" : "normal"
+      : null;
+  const statusColor = (status) =>
+    status === "normal" ? "#16a34a" : status === "watch" ? "#d97706" : "#dc2626";
+  const statusLabel = (status) =>
+    status === "normal" ? "Normal" : status === "watch" ? "Monitor" : status === "low" ? "Rendah" : "Tinggi";
 
   return (
     <div className="mt-2 space-y-1.5">
@@ -161,11 +193,11 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
               <div className="my-1 border-t border-sky-200/80" />
               <HipCalcRow
                 label="LLD"
-                color={COLORS.lld}
+                color={lldStatus ? statusColor(lldStatus) : COLORS.lld}
                 value={fmtPx(lldFromHLen)}
                 badge={lldSign}
-                highlight={mmPerPixel ? pxToMm(lldFromHLen) > 10 : false}
-                note="= |H-Len R − H-Len L|"
+                highlight={lldStatus === "high" || lldStatus === "watch"}
+                note={lldStatus ? `${statusLabel(lldStatus)} · Budzinska: >6 mm terasa, >10 mm bermasalah` : "= |H-Len R − H-Len L|"}
               />
             </>
           )}
@@ -233,9 +265,10 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
                 <div className="my-1 border-t border-emerald-200/80" />
                 <HipCalcRow
                   label="ΔG-Off"
-                  color={COLORS.gOff}
+                  color={mmPerPixel && diff * mmPerPixel > 5 ? "#dc2626" : COLORS.gOff}
                   value={fmtPx(diff)}
-                  note="perbedaan G-Off"
+                  highlight={mmPerPixel ? diff * mmPerPixel > 5 : false}
+                  note="bandingkan sisi normal"
                 />
               </>
             );
@@ -263,6 +296,36 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
         />
       ))}
 
+      {/* Cup orientation saved from Cup Assess */}
+      {hasCupAssessment && (
+        <div className="rounded-xl border border-fuchsia-200/60 bg-fuchsia-50/50 px-2.5 py-2">
+          <div className="mb-1 text-[9px] font-extrabold tracking-wide text-fuchsia-700 uppercase">
+            PostTHA Cup Orientation
+          </div>
+          <HipCalcRow
+            label="Acetabular Inclination"
+            color={statusColor(incStatus)}
+            value={`${cupInclination.toFixed(1)}°`}
+            badge={statusLabel(incStatus)}
+            highlight={incStatus !== "normal"}
+            note="AI; target sekitar 45°"
+          />
+          <HipCalcRow
+            label="Acetabular Anteversion"
+            color={statusColor(avStatus)}
+            value={`${cupAnteversion.toFixed(1)}°`}
+            badge={statusLabel(avStatus)}
+            highlight={avStatus !== "normal"}
+            note="Lewinnek 5-25°"
+          />
+          {cupAssessment?.savedAt && (
+            <div className="mt-1 text-[8px] font-semibold text-fuchsia-500">
+              Disimpan {cupAssessment.savedAt} · {cupAssessment.side === "left" ? "Kiri" : "Kanan"} · {cupAssessment.zone}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Precision: Head Diameter + Femoral Axis ───────────────────── */}
       {(headDiamLines.length > 0 || femurAxisLines.length > 0) && (
         <div className="rounded-xl border border-pink-200/60 bg-pink-50/50 px-2.5 py-2">
@@ -278,6 +341,25 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
               note="diameter"
             />
           ))}
+          {corDeltaPx && (
+            <>
+              <div className="my-1 border-t border-pink-200/60" />
+              <HipCalcRow
+                label="ΔCOR horizontal"
+                color={mmPerPixel && corDeltaPx.x * mmPerPixel > 5 ? "#dc2626" : "#16a34a"}
+                value={fmtPx(corDeltaPx.x)}
+                highlight={mmPerPixel ? corDeltaPx.x * mmPerPixel > 5 : false}
+                note="target ≤5 mm"
+              />
+              <HipCalcRow
+                label="ΔCOR vertical"
+                color={mmPerPixel && corDeltaPx.y * mmPerPixel > 3 ? "#dc2626" : "#16a34a"}
+                value={fmtPx(corDeltaPx.y)}
+                highlight={mmPerPixel ? corDeltaPx.y * mmPerPixel > 3 : false}
+                note="target ≤3 mm superior"
+              />
+            </>
+          )}
           {femurAxisLines.map((l, i) => (
             <HipCalcRow
               key={l.id}
@@ -306,4 +388,3 @@ export function HipPlanningCalculator({ lines, mmPerPixel, measurementUnit }) {
     </div>
   );
 }
-

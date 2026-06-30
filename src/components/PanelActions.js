@@ -53,6 +53,7 @@ const TOOL_ICON_MAP = {
   imageProcess: Activity,
   cupAssessment: CupIcon,
   zakAceta: Atom,
+  postTHA: Atom,
   dorr: LensConcave,
 };
 
@@ -74,6 +75,7 @@ const TOOL_ACCENT = {
   imageProcess: { bg: "bg-sky-500/10",     border: "border-sky-500/45",     text: "text-sky-400",     inner: "shadow-[inset_0_1px_4px_rgba(14,165,233,0.22)]",   headerBg: "bg-sky-500/20" },
   cupAssessment:{ bg: "bg-amber-500/10",   border: "border-amber-500/45",   text: "text-amber-400",   inner: "shadow-[inset_0_1px_4px_rgba(245,158,11,0.22)]",   headerBg: "bg-amber-500/20" },
   zakAceta:     { bg: "bg-rose-500/10",    border: "border-rose-500/45",    text: "text-rose-400",    inner: "shadow-[inset_0_1px_4px_rgba(244,63,94,0.22)]",    headerBg: "bg-rose-500/20" },
+  postTHA:      { bg: "bg-rose-500/10",    border: "border-rose-500/45",    text: "text-rose-400",    inner: "shadow-[inset_0_1px_4px_rgba(244,63,94,0.22)]",    headerBg: "bg-rose-500/20" },
   brush:        { bg: "bg-violet-500/10",  border: "border-violet-500/45",  text: "text-violet-400",  inner: "shadow-[inset_0_1px_4px_rgba(139,92,246,0.22)]",   headerBg: "bg-violet-500/20" },
   dorr:         { bg: "bg-indigo-500/10",  border: "border-indigo-500/45",  text: "text-indigo-400",  inner: "shadow-[inset_0_1px_4px_rgba(99,102,241,0.22)]",   headerBg: "bg-indigo-500/20" },
 };
@@ -93,6 +95,7 @@ const IDLE_ICON_COLOR = {
   imageProcess: "text-sky-400",
   cupAssessment:"text-amber-400",
   zakAceta:     "text-rose-400",
+  postTHA:      "text-rose-400",
   brush:        "text-violet-400",
   dorr:         "text-indigo-400",
 };

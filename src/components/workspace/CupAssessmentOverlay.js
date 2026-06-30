@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 
 // ─── Cup Assessment Inline Component ─────────────────────────────────────────
 
@@ -400,6 +400,22 @@ export default function CupAssessmentOverlayInline({ onClose, onSave, savedData 
                 background: handleSize === "normal" ? "#fff7ed" : "white",
                 color: handleSize === "normal" ? "#ea580c" : "#94a3b8" }
             }, "Normal"),
+          ),
+        ),
+        // Ellipse size control
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: 10, background: "rgba(255,255,255,0.7)", border: "1px solid #e2e8f0" } },
+          React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: "#475569" } }, "Ukuran lingkaran"),
+          React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+            React.createElement("button", {
+              onClick: () => { setA(prev => Math.max(20, prev * 0.85)); setB(prev => Math.max(4, prev * 0.85)); },
+              title: "Perkecil lingkaran",
+              style: { width: 28, height: 28, borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", color: "#475569", fontSize: 18, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }
+            }, "−"),
+            React.createElement("button", {
+              onClick: () => { setA(prev => prev * 1.15); setB(prev => prev * 1.15); },
+              title: "Perbesar lingkaran",
+              style: { width: 28, height: 28, borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", color: "#475569", fontSize: 18, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }
+            }, "+"),
           ),
         ),
         // Big value display
