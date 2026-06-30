@@ -131,7 +131,7 @@ export function computeTKAAlignment({
 // Tibial posterior slope (lateral view).
 // Normal post-TKA: 3–7°. < 3° = too flat; > 7° = too steep; anterior slope = abnormal.
 // Ref: Kumar et al. 2014; most PS designs target 3–5°, CR designs 5–7°.
-export function computeTibialSlope({ tibShaftTop, tibShaftBot, slopePlateauAnt, slopePlateauPost }) {
+export function computeTibialSlope({ tibShaftTop, tibShaftBot, slopePlateauAnt, slopePlateauPost, legSide = "left" }) {
   if (!tibShaftTop || !tibShaftBot || !slopePlateauAnt || !slopePlateauPost) return null;
 
   // Tibial shaft direction (upward: from tibShaftBot → tibShaftTop)
@@ -151,11 +151,11 @@ export function computeTibialSlope({ tibShaftTop, tibShaftBot, slopePlateauAnt, 
   if (angle > 90) angle = 180 - angle;
   const slope = r1(angle);
 
-  // Determine direction via cross product (z-component):
-  // For standard lateral with y-down: upward shaft → shU.y < 0.
-  // Posterior slope: vPlateau.y > 0 (post side is lower). Cross = shU.x*vP.y - shU.y*vP.x < 0.
+  // Determine direction via cross product (z-component, y-down image coords):
+  // Left knee  (standard lateral): anterior = RIGHT side of image → PP is to the LEFT of PA  → vPlateau.x < 0 → cross < 0 for posterior slope
+  // Right knee (standard lateral): anterior = LEFT  side of image → PP is to the RIGHT of PA → vPlateau.x > 0 → cross > 0 for posterior slope
   const cross = shU.x * vPlateau.y - shU.y * vPlateau.x;
-  const isPosterior = cross < 0;
+  const isPosterior = legSide === "right" ? cross > 0 : cross < 0;
 
   const slopeFlag = !isPosterior ? "high"
                   : slope < 3   ? "low"

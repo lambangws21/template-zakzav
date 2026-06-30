@@ -253,14 +253,44 @@ function imgToScreen(pt, t) {
 function screenToImg(pt, t) {
   return { x: (pt.x - t.offsetX) / t.scale, y: (pt.y - t.offsetY) / t.scale };
 }
-function fitTransform(img, canvas) {
+function fitTransform(img, canvas, cropRect = null) {
   if (!img || !canvas) return { scale: 1, offsetX: 0, offsetY: 0 };
-  const scale = Math.min(canvas.width / img.naturalWidth, canvas.height / img.naturalHeight);
+  const sourceW = cropRect?.w || img.naturalWidth;
+  const sourceH = cropRect?.h || img.naturalHeight;
+  const sourceX = cropRect?.x || 0;
+  const sourceY = cropRect?.y || 0;
+  const scale = Math.min(canvas.width / sourceW, canvas.height / sourceH);
   return {
     scale,
-    offsetX: (canvas.width  - img.naturalWidth  * scale) / 2,
-    offsetY: (canvas.height - img.naturalHeight * scale) / 2,
+    offsetX: (canvas.width  - sourceW * scale) / 2 - sourceX * scale,
+    offsetY: (canvas.height - sourceH * scale) / 2 - sourceY * scale,
   };
+}
+
+function getLandmarkCropRect(img, landmarks, landmarkDefs, paddingRatio = 0.45) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+  const pts = landmarkDefs.map((def) => landmarks[def.key]).filter(Boolean);
+  if (pts.length < 2) return null;
+
+  let minX = Math.min(...pts.map((p) => p.x));
+  let maxX = Math.max(...pts.map((p) => p.x));
+  let minY = Math.min(...pts.map((p) => p.y));
+  let maxY = Math.max(...pts.map((p) => p.y));
+
+  const boxW = Math.max(1, maxX - minX);
+  const boxH = Math.max(1, maxY - minY);
+  const padX = Math.max(img.naturalWidth * 0.08, boxW * paddingRatio);
+  const padY = Math.max(img.naturalHeight * 0.08, boxH * (paddingRatio * 0.8));
+
+  minX = Math.max(0, minX - padX);
+  maxX = Math.min(img.naturalWidth, maxX + padX);
+  minY = Math.max(0, minY - padY);
+  maxY = Math.min(img.naturalHeight, maxY + padY);
+
+  const w = maxX - minX;
+  const h = maxY - minY;
+  if (w < 20 || h < 20) return null;
+  return { x: minX, y: minY, w, h };
 }
 
 // ── Canvas draw utilities ─────────────────────────────────────────────────────
@@ -577,28 +607,23 @@ function useCanvasInteraction({
 
 // ── Draw-canvas-to-image utility for PDF export ───────────────────────────────
 
-function renderAnnotatedCanvas(img, landmarks, landmarkDefs, connections, width = 900, height = 620, drawOverlay = null) {
+function renderAnnotatedCanvas(img, landmarks, landmarkDefs, connections, maxWidth = 1400, maxHeight = 2800, drawOverlay = null, cropRect = null) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+  const sourceW = cropRect?.w || img.naturalWidth;
+  const sourceH = cropRect?.h || img.naturalHeight;
+  const sourceX = cropRect?.x || 0;
+  const sourceY = cropRect?.y || 0;
+  // Scale to fit within maxWidth×maxHeight, no letterbox — canvas matches source aspect ratio
+  const s = Math.min(maxWidth / sourceW, maxHeight / sourceH);
+  const w = Math.round(sourceW * s);
+  const h = Math.round(sourceH * s);
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width  = w;
+  canvas.height = h;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, sourceX, sourceY, sourceW, sourceH, 0, 0, w, h);
 
-  let transform = { scale: 1, offsetX: 0, offsetY: 0 };
-  if (img) {
-    const scale = Math.min(width / img.naturalWidth, height / img.naturalHeight);
-    transform = {
-      scale,
-      offsetX: (width  - img.naturalWidth  * scale) / 2,
-      offsetY: (height - img.naturalHeight * scale) / 2,
-    };
-    ctx.save();
-    ctx.translate(transform.offsetX, transform.offsetY);
-    ctx.scale(transform.scale, transform.scale);
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-  }
+  const transform = { scale: s, offsetX: -sourceX * s, offsetY: -sourceY * s };
 
   connections.forEach(({ from, to, color, dash }) => {
     const a = landmarks[from] ? imgToScreen(landmarks[from], transform) : null;
@@ -634,31 +659,36 @@ function LandmarkCanvas({
   connections = [],
   canvasRef: externalRef,
   drawOverlay,
+  pointRadius,
+  showLabels = true,
+  showPoints = true,
+  cropRect = null,
 }) {
   const internalRef = useRef(null);
   const canvasRef   = externalRef || internalRef;
   const imgRef      = useRef(null);
   const [imgLoaded, setImgLoaded] = useState(false);
 
-  // Resize canvas to fill container so portrait X-rays fill the view
+  // Resize canvas buffer to fill container, multiplied by devicePixelRatio for crisp rendering
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const container = canvas.parentElement;
     if (!container) return;
     const resize = () => {
-      const w = container.clientWidth  || 900;
-      const h = container.clientHeight || 580;
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round((container.clientWidth  || 900) * dpr);
+      const h = Math.round((container.clientHeight || 580) * dpr);
       if (canvas.width === w && canvas.height === h) return;
       canvas.width  = w;
       canvas.height = h;
-      if (imgRef.current) setTransform(fitTransform(imgRef.current, canvas));
+      if (imgRef.current) setTransform(fitTransform(imgRef.current, canvas, cropRect));
     };
     const ro = new ResizeObserver(resize);
     ro.observe(container);
     resize();
     return () => ro.disconnect();
-  }, [canvasRef, setTransform]);
+  }, [canvasRef, setTransform, cropRect]);
 
   useEffect(() => {
     if (!imageSrc) { imgRef.current = null; setImgLoaded(false); return; }
@@ -667,10 +697,10 @@ function LandmarkCanvas({
     img.onload = () => {
       imgRef.current = img;
       setImgLoaded(true);
-      if (canvasRef.current) setTransform(fitTransform(img, canvasRef.current));
+      if (canvasRef.current) setTransform(fitTransform(img, canvasRef.current, cropRect));
     };
     img.src = imageSrc;
-  }, [imageSrc, canvasRef, setTransform]);
+  }, [imageSrc, canvasRef, setTransform, cropRect]);
 
   // Draw
   useEffect(() => {
@@ -709,12 +739,13 @@ function LandmarkCanvas({
       if (!pt) return;
       const sp = imgToScreen(pt, transform);
       const isActive = i === activeIndex;
-      drawCircle(ctx, sp.x, sp.y, isActive ? 9 : 7, def.color, "#111827");
-      drawLabel(ctx, def.short, sp.x, sp.y, def.color);
+      const baseR = pointRadius ?? (isActive ? 9 : 7);
+      if (showPoints) drawCircle(ctx, sp.x, sp.y, baseR, def.color, "#111827");
+      if (showLabels) drawLabel(ctx, def.short, sp.x, sp.y, def.color);
       // ring on active
-      if (isActive) {
+      if (isActive && showPoints) {
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 14, 0, Math.PI * 2);
+        ctx.arc(sp.x, sp.y, baseR + 5, 0, Math.PI * 2);
         ctx.strokeStyle = def.color;
         ctx.lineWidth = 2;
         ctx.globalAlpha = 0.45;
@@ -725,7 +756,7 @@ function LandmarkCanvas({
 
     // Custom overlay (e.g. PCO measurement lines)
     if (drawOverlay) drawOverlay(ctx, transform);
-  }, [landmarks, landmarkDefs, activeIndex, transform, imgLoaded, connections, canvasRef, drawOverlay]);
+  }, [landmarks, landmarkDefs, activeIndex, transform, imgLoaded, connections, canvasRef, drawOverlay, pointRadius, showLabels, showPoints]);
 
   // Determine cursor: over placed landmark = move cursor; active = crosshair; else grab
   const [hoveredKey, setHoveredKey] = useState(null);
@@ -767,9 +798,7 @@ function LandmarkCanvas({
   return (
     <canvas
       ref={canvasRef}
-      width={900}
-      height={580}
-      className="h-full w-full"
+      className="h-full w-full object-contain"
       style={{ cursor, display: "block" }}
     />
   );
@@ -850,46 +879,15 @@ async function exportToPDF({
 
   // ── X-ray images ─────────────────────────────────────────────────────────────
   let apUrl = null, latUrl = null, skyUrl = null;
+  const apCropRect = apImgRef.current ? getLandmarkCropRect(apImgRef.current, apPoints, AP_LANDMARKS, 0.5) : null;
   // render at portrait resolution — X-rays are taller than wide
-  try { if (apImgRef.current)  apUrl  = renderAnnotatedCanvas(apImgRef.current,  apPoints,  AP_LANDMARKS,      AP_CONNECTIONS,      700, 1050); } catch {}
+  try { if (apImgRef.current)  apUrl  = renderAnnotatedCanvas(apImgRef.current,  apPoints,  AP_LANDMARKS,      AP_CONNECTIONS,      700, 1050, null, apCropRect); } catch {}
   try {
     if (latImgRef.current && Object.keys(latPoints).length > 0)
       latUrl = renderAnnotatedCanvas(latImgRef.current, latPoints, ALL_LAT_LANDMARKS, ALL_LAT_CONNECTIONS, 700, 1050,
         (ctx, t) => drawPCOMeasurementLines(ctx, latPoints, t, pcoResult));
   } catch {}
   try { if (skyImgRef.current && Object.keys(skyPoints).length > 0) skyUrl = renderAnnotatedCanvas(skyImgRef.current, skyPoints, SKY_LANDMARKS, SKY_CONNECTIONS, 700, 1050); } catch {}
-
-  const imgW   = PW - M * 2;   // full usable width (182mm)
-  const aspect = 1050 / 700;   // portrait 3:2
-
-  if (apUrl || latUrl || skyUrl) {
-    // Section title
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.dark);
-    doc.text("FOTO X-RAY", M, y); y += 4;
-
-    const imgs = [
-      apUrl  ? { url: apUrl,  label: "AP View"              } : null,
-      latUrl ? { url: latUrl, label: "Lateral View"          } : null,
-      skyUrl ? { url: skyUrl, label: "Skyline/Merchant View" } : null,
-    ].filter(Boolean);
-
-    // Each image full-width, stacked vertically
-    const iW = imgW;
-    const iH = iW * aspect;
-
-    imgs.forEach((img) => {
-      checkPage(iH + 12);
-      doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...C.mid);
-      doc.text(img.label, M, y);
-      // subtle background behind image
-      doc.setFillColor(15, 23, 42);
-      doc.roundedRect(M, y + 2, iW, iH, 2, 2, "F");
-      doc.addImage(img.url, "JPEG", M, y + 2, iW, iH, undefined, "FAST");
-      y += iH + 7;
-    });
-
-    y += 2;
-  }
 
   // ── Metric row helper ─────────────────────────────────────────────────────────
   const COL = { label: M + 2, valR: M + 108, range: M + 112, statusR: PW - M - 2 };
@@ -1040,6 +1038,30 @@ async function exportToPDF({
   const refLines = doc.splitTextToSize(refText, PW - M * 2 - 4);
   doc.text(refLines.slice(0, 2), M + 2, y + 10);
 
+  // ── X-ray images — each on its own page, fills max available space ──────────
+  if (apUrl || latUrl || skyUrl) {
+    const imgRefs = [apImgRef.current, latImgRef.current, skyImgRef.current];
+    const imgs = [
+      apUrl  ? { url: apUrl,  label: "AP View",              ref: imgRefs[0], displayW: apCropRect?.w, displayH: apCropRect?.h } : null,
+      latUrl ? { url: latUrl, label: "Lateral View",          ref: imgRefs[1] } : null,
+      skyUrl ? { url: skyUrl, label: "Skyline/Merchant View", ref: imgRefs[2] } : null,
+    ].filter(Boolean);
+    imgs.forEach((img) => {
+      doc.addPage(); y = M;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...C.mid);
+      doc.text(img.label, M, y); y += 5;
+      const nw = img.displayW || img.ref?.naturalWidth  || 700;
+      const nh = img.displayH || img.ref?.naturalHeight || 1050;
+      const availW = PW - M * 2;
+      const availH = PH - M * 2 - 7; // minus label row
+      let iW2 = availW;
+      let iH2 = iW2 * (nh / nw);
+      if (iH2 > availH) { iH2 = availH; iW2 = iH2 * (nw / nh); }
+      const xOff = M + (availW - iW2) / 2;
+      doc.addImage(img.url, "JPEG", xOff, y, iW2, iH2, undefined, "FAST");
+    });
+  }
+
   return { doc, filename: `PostTKA_Assessment_${today.replace(/\s/g, "_")}.pdf` };
 }
 
@@ -1118,9 +1140,14 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   const apImgRef  = useRef(null);
   const latImgRef = useRef(null);
   const skyImgRef = useRef(null);
-  const apCanRef  = useRef(null);
-  const latCanRef = useRef(null);
-  const skyCanRef = useRef(null);
+  const [apImgLoadKey, setApImgLoadKey] = useState(0);
+  const apCanRef    = useRef(null);
+  const latCanRef   = useRef(null);
+  const skyCanRef   = useRef(null);
+  // Separate refs for result preview canvases
+  const apResCanRef  = useRef(null);
+  const latResCanRef = useRef(null);
+  const skyResCanRef = useRef(null);
 
   const [legSide, setLegSide] = useState("right"); // "right" | "left"
 
@@ -1136,6 +1163,11 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   const [apResTransform,  setApResTransform]  = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const [latResTransform, setLatResTransform] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const [skyResTransform, setSkyResTransform] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
+
+  // Result canvas annotation visibility
+  const [resShowLabels, setResShowLabels] = useState(true);
+  const [resShowPoints, setResShowPoints] = useState(true);
+  const [resPointRadius, setResPointRadius] = useState(4);
 
   const apUploadRef  = useRef(null);
   const latUploadRef = useRef(null);
@@ -1203,8 +1235,8 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
 
   const slopeResult = useMemo(() => {
     const { tibShaftTop, tibShaftBot, slopePlateauAnt, slopePlateauPost } = latPoints;
-    return computeTibialSlope({ tibShaftTop, tibShaftBot, slopePlateauAnt, slopePlateauPost });
-  }, [latPoints]);
+    return computeTibialSlope({ tibShaftTop, tibShaftBot, slopePlateauAnt, slopePlateauPost, legSide });
+  }, [latPoints, legSide]);
 
   const isResult = useMemo(() => {
     const { patellaSup, patellaInf, tibTuberosity } = latPoints;
@@ -1224,7 +1256,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   useEffect(() => {
     if (!apImageSrc) { apImgRef.current = null; return; }
     const img = new Image();
-    img.onload = () => { apImgRef.current = img; };
+    img.onload = () => { apImgRef.current = img; setApImgLoadKey((key) => key + 1); };
     img.src = apImageSrc;
   }, [apImageSrc]);
   useEffect(() => {
@@ -1239,6 +1271,38 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
     img.onload = () => { skyImgRef.current = img; };
     img.src = skyImageSrc;
   }, [skyImageSrc]);
+
+  const apResultCropRect = useMemo(() => {
+    if (step !== "result" || !apImgRef.current) return null;
+    return getLandmarkCropRect(apImgRef.current, apPoints, AP_LANDMARKS, 0.5);
+  }, [step, apImageSrc, apImgLoadKey, apPoints]);
+
+  // Auto-fit result canvases: explicitly size canvas from its container then compute fit
+  useEffect(() => {
+    if (step !== "result") return;
+    const fitOne = (imgRef, canRef, setT, cropRect = null) => {
+      if (!imgRef.current || !canRef.current) return;
+      const canvas = canRef.current;
+      const container = canvas.parentElement;
+      if (!container) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round(container.clientWidth  * dpr);
+      const h = Math.round(container.clientHeight * dpr);
+      if (w < 10 || h < 10) return;
+      canvas.width  = w;
+      canvas.height = h;
+      setT(fitTransform(imgRef.current, canvas, cropRect));
+    };
+    let r1, r2;
+    r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => {
+        fitOne(apImgRef,  apResCanRef,  setApResTransform, apResultCropRect);
+        fitOne(latImgRef, latResCanRef, setLatResTransform);
+        fitOne(skyImgRef, skyResCanRef, setSkyResTransform);
+      });
+    });
+    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
+  }, [step, apImageSrc, latImageSrc, skyImageSrc, apResultCropRect]);
 
   // Capture workspace canvas on open
   useEffect(() => {
@@ -1386,6 +1450,19 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
     ];
   }, [legSide]);
 
+  // Side-aware hints for tibial slope landmarks on lateral X-ray
+  const slopeHints = useMemo(() => {
+    const antDir = legSide === "right" ? "KIRI" : "KANAN";
+    const postDir = legSide === "right" ? "KANAN" : "KIRI";
+    const legLabel = legSide === "right" ? "kanan" : "kiri";
+    return [
+      "TA — klik titik TENGAH shaft tibia ATAS, tepat di bawah komponen tibial (sekitar 1-2 cm dari sendi). Pilih korteks tibia, bukan pada implan.",
+      "TB — klik titik TENGAH shaft tibia BAWAH, lebih jauh dari lutut (sekitar 5-10 cm dari sendi). Titik TA–TB membentuk sumbu tibial mekanik.",
+      `PA — klik ujung ANTERIOR (depan) base plate tibial. Pada kaki ${legLabel}, titik ini ada di sisi ${antDir} komponen tibial di gambar — ke arah depan lutut (patela).`,
+      `PP — klik ujung POSTERIOR (belakang) base plate tibial. Pada kaki ${legLabel}, titik ini ada di sisi ${postDir} komponen tibial di gambar — ke arah belakang lutut.`,
+    ];
+  }, [legSide]);
+
   if (!isOpen) return null;
 
   // Photo grid layout — computed outside JSX to avoid IIFE (SWC limitation)
@@ -1399,7 +1476,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
     const activeHints = isAP ? sideHints(hints, true) : hints;
     return (
     <div
-      className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden md:w-[260px]"
+      className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden md:w-[220px]"
       style={{ borderLeft: "1px solid var(--soft-border, #e2e8f0)" }}
     >
       {/* ── Fixed header ────────────────────────────────────── */}
@@ -1416,35 +1493,46 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
       {/* ── Scrollable body ─────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto">
 
-        {/* Leg side selector — AP only */}
-        {isAP && (
-          <div className="px-3 py-3" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-            <p className="mb-1.5 text-[9px] font-black tracking-wide text-slate-500 uppercase">Sisi Kaki</p>
-            <div className="flex gap-2">
-              {[
-                { key: "right", label: "Kaki Kanan", sub: "Medial = kiri gambar" },
-                { key: "left",  label: "Kaki Kiri",  sub: "Medial = kanan gambar" },
-              ].map(({ key, label, sub }) => (
-                <button
-                  key={key}
-                  onClick={() => setLegSide(key)}
-                  className="flex flex-1 flex-col items-center rounded-xl border py-2 text-[10px] font-black transition-all"
-                  style={{
-                    background: legSide === key ? "#ede9fe" : "transparent",
-                    borderColor: legSide === key ? "#7c3aed" : "var(--soft-border, #e2e8f0)",
-                    color: legSide === key ? "#6d28d9" : "#94a3b8",
-                  }}
-                >
-                  {label}
-                  <span className="mt-0.5 text-[8px] font-normal opacity-70">{sub}</span>
-                </button>
-              ))}
-            </div>
+        {/* Leg side selector — visible on all steps */}
+        <div className="px-3 py-3" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+          <p className="mb-1.5 text-[9px] font-black tracking-wide text-slate-500 uppercase">Sisi Kaki</p>
+          <div className="flex gap-2">
+            {[
+              { key: "right", label: "Kaki Kanan", sub: isAP ? "Medial = kiri gambar" : "ANT ← di gambar" },
+              { key: "left",  label: "Kaki Kiri",  sub: isAP ? "Medial = kanan gambar" : "ANT → di gambar" },
+            ].map(({ key, label, sub }) => (
+              <button
+                key={key}
+                onClick={() => setLegSide(key)}
+                className="flex flex-1 flex-col items-center rounded-xl border py-2 text-[10px] font-black transition-all"
+                style={{
+                  background: legSide === key ? "#ede9fe" : "transparent",
+                  borderColor: legSide === key ? "#7c3aed" : "var(--soft-border, #e2e8f0)",
+                  color: legSide === key ? "#6d28d9" : "#94a3b8",
+                }}
+              >
+                {label}
+                <span className="mt-0.5 text-[8px] font-normal opacity-70">{sub}</span>
+              </button>
+            ))}
+          </div>
+          {/* AP anatomy diagram — only shown in AP step */}
+          {isAP && (
             <div className="relative mt-2 overflow-hidden rounded-xl bg-slate-900" style={{ aspectRatio: "137/184" }}>
               <img src="/tka/ap.svg" alt="AP knee" className="h-full w-full object-contain" />
             </div>
-          </div>
-        )}
+          )}
+          {/* Lateral orientation summary for non-AP steps */}
+          {!isAP && !isSky && (
+            <div className="mt-2 rounded-lg px-2.5 py-2 text-[9px] text-slate-500" style={{ background: "var(--soft-border, #e2e8f0)" }}>
+              <span className="font-black text-orange-500">{legSide === "right" ? "ANT ←" : "← POST"}</span>
+              <span className="mx-1.5 text-slate-300">|</span>
+              <span className="text-slate-400">{legSide === "right" ? "Lateral Kaki Kanan" : "Lateral Kaki Kiri"}</span>
+              <span className="mx-1.5 text-slate-300">|</span>
+              <span className="font-black text-blue-500">{legSide === "right" ? "→ POST" : "ANT →"}</span>
+            </div>
+          )}
+        </div>
 
         {/* Landmark list */}
         <div>
@@ -1727,11 +1815,17 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
             {/* ── Header ──────────────────────────────────────────────── */}
             <div className="shrink-0 px-3 py-3 md:px-5 md:py-4" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="hidden text-[10px] font-black tracking-widest text-violet-600 uppercase md:block">Post-TKA Radiographic Assessment</div>
-                  <h2 className="truncate text-sm font-extrabold md:mt-0.5 md:text-lg" style={{ color: "var(--soft-text-hi, #0f172a)" }}>
-                    Analisis Alignment TKA
-                  </h2>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="min-w-0">
+                    <div className="hidden text-[10px] font-black tracking-widest text-violet-600 uppercase md:block">Post-TKA Radiographic Assessment</div>
+                    <h2 className="truncate text-sm font-extrabold md:mt-0.5 md:text-lg" style={{ color: "var(--soft-text-hi, #0f172a)" }}>
+                      Analisis Alignment TKA
+                    </h2>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-black" style={{ background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd" }}>
+                    <span>{legSide === "right" ? "⬤" : "○"}</span>
+                    <span>{legSide === "right" ? "Kaki Kanan" : "Kaki Kiri"}</span>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {step === "result" && tkaResult && (
@@ -1818,7 +1912,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                         imageSrc={latImageSrc}
                         landmarks={latPoints}
                         landmarkDefs={ALL_LAT_LANDMARKS}
-                        hints={[...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS]}
+                        hints={[...LAT_HINTS, ...slopeHints, ...IS_HINTS]}
                         activeIndex={latActiveIndex}
                         transform={latTransform}
                         setTransform={setLatTransform}
@@ -1829,18 +1923,18 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                         canvasRef={latCanRef}
                       />
                       {canvasControls(latUploadRef, handleLatUpload, latPoints, resetLatPoints, latTransform, setLatTransform, latImageSrc, latImgRef, latCanRef, undoLat, redoLat, canUndoLat, canRedoLat)}
-                      {/* Orientation guide bar — standard lateral X-ray: anterior on right for left knee */}
+                      {/* Orientation guide bar — direction depends on leg side */}
                       {latImageSrc && (
                         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 backdrop-blur-sm">
-                          <span className="text-[9px] font-black text-blue-300">← POST</span>
+                          <span className="text-[9px] font-black text-orange-300">{legSide === "right" ? "ANT ←" : "← POST"}</span>
                           <span className="h-2 w-px bg-white/20" />
-                          <span className="text-[9px] font-bold text-white/40">Orientasi Standar</span>
+                          <span className="text-[9px] font-bold text-white/40">Lateral {legSide === "right" ? "Kaki Kanan" : "Kaki Kiri"}</span>
                           <span className="h-2 w-px bg-white/20" />
-                          <span className="text-[9px] font-black text-orange-300">ANT →</span>
+                          <span className="text-[9px] font-black text-blue-300">{legSide === "right" ? "→ POST" : "ANT →"}</span>
                         </div>
                       )}
                     </div>
-                    {sidebar(ALL_LAT_LANDMARKS, [...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS], latPoints, latActiveIndex, null)}
+                    {sidebar(ALL_LAT_LANDMARKS, [...LAT_HINTS, ...slopeHints, ...IS_HINTS], latPoints, latActiveIndex, null)}
                   </motion.div>
                 )}
 
@@ -1887,59 +1981,84 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                   >
                     {/* ── COL 1: X-Ray Visualization ─────────────────────── */}
                     <div className="flex shrink-0 flex-col overflow-hidden border-b border-slate-200 min-w-full lg:min-w-0 lg:h-full lg:border-b-0 lg:border-r" style={{ background: "var(--color-surface-lo, #f1f5f9)", width: `${col1Pct}%` }}>
-                      <div className="shrink-0 px-3 py-2" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-                        <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase">X-Ray Visualization &amp; Annotation</p>
+                      <div className="shrink-0 flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                        <p className="flex-1 text-[9px] font-black tracking-widest text-slate-500 uppercase">X-Ray Visualization &amp; Annotation</p>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setResShowLabels(v => !v)} title="Toggle labels" className="flex h-5 w-5 items-center justify-center rounded text-[8px] font-black transition-colors" style={{ background: resShowLabels ? "#ede9fe" : "var(--soft-border,#e2e8f0)", color: resShowLabels ? "#6d28d9" : "#94a3b8" }}>T</button>
+                          <button onClick={() => setResShowPoints(v => !v)} title="Toggle points" className="flex h-5 w-5 items-center justify-center rounded transition-colors" style={{ background: resShowPoints ? "#ede9fe" : "var(--soft-border,#e2e8f0)", color: resShowPoints ? "#6d28d9" : "#94a3b8" }}>⬤</button>
+                          <button onClick={() => setResPointRadius(r => r <= 2 ? 7 : r - 1)} title="Point size" className="flex h-5 items-center gap-0.5 rounded px-1 text-[8px] font-black transition-colors" style={{ background: "var(--soft-border,#e2e8f0)", color: "#64748b" }}>●{resPointRadius}</button>
+                        </div>
                       </div>
-                      {/* AP + Lateral side by side */}
-                      <div className="flex h-[180px] flex-row lg:h-[50%]" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-                        <PhotoRow compareMode={compareMode} preOpSrc={preOpApSrc} preOpLabel="AP" className="flex-1 w-auto">
-                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 p-1.5">
-                            <span className="rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black tracking-widest text-white/80 uppercase">X-Ray AP View</span>
-                          </div>
+                      {/* AP + Lateral — fills full height when no Skyline, else 50% */}
+                      <div className={`flex flex-row ${skyImageSrc ? "h-[180px] lg:h-[50%]" : "min-h-0 flex-1"}`} style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                        {/* AP — use absolute inset-0 wrapper so canvas dimensions resolve correctly */}
+                        <div className="relative flex-1 min-w-0 overflow-hidden bg-slate-900 border-r border-slate-800">
+                          <span className="pointer-events-none absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black tracking-widest text-white/80 uppercase">X-Ray AP View</span>
                           {apImageSrc ? (
-                            <LandmarkCanvas imageSrc={apImageSrc} landmarks={apPoints} landmarkDefs={AP_LANDMARKS} hints={AP_HINTS} activeIndex={-1} transform={apResTransform} setTransform={setApResTransform} onPlace={() => {}} onMoveLandmark={handleApMove} connections={AP_CONNECTIONS} />
+                            <div className="absolute inset-0">
+                              <LandmarkCanvas imageSrc={apImageSrc} landmarks={apPoints} landmarkDefs={AP_LANDMARKS} hints={AP_HINTS} activeIndex={-1} transform={apResTransform} setTransform={setApResTransform} onPlace={() => {}} onMoveLandmark={handleApMove} connections={AP_CONNECTIONS} pointRadius={resPointRadius} showLabels={resShowLabels} showPoints={resShowPoints} cropRect={apResultCropRect} canvasRef={apResCanRef} />
+                            </div>
                           ) : (
                             <div className="flex h-full items-center justify-center text-[10px] text-slate-500">Foto AP belum diunggah</div>
                           )}
-                        </PhotoRow>
-                        <PhotoRow compareMode={compareMode} preOpSrc={preOpLatSrc} preOpLabel="Lateral" className="flex-1 w-auto border-r-0">
-                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 p-1.5">
-                            <span className="rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black tracking-widest text-white/80 uppercase">X-Ray Lateral View</span>
-                          </div>
+                          {compareMode && preOpApSrc && (
+                            <div className="absolute inset-0 flex">
+                              <div className="relative flex-1 min-w-0 overflow-hidden border-r border-slate-700">
+                                <LandmarkCanvas imageSrc={apImageSrc} landmarks={apPoints} landmarkDefs={AP_LANDMARKS} hints={AP_HINTS} activeIndex={-1} transform={apResTransform} setTransform={setApResTransform} onPlace={() => {}} onMoveLandmark={handleApMove} connections={AP_CONNECTIONS} pointRadius={resPointRadius} showLabels={resShowLabels} showPoints={resShowPoints} cropRect={apResultCropRect} />
+                                <span className="pointer-events-none absolute bottom-1 left-1 z-20 rounded bg-emerald-900/80 px-1 py-0.5 text-[7px] font-black tracking-wider text-emerald-300 uppercase">Post-op</span>
+                              </div>
+                              <div className="relative flex-1 min-w-0 overflow-hidden bg-slate-950">
+                                <img src={preOpApSrc} alt="Pre-op AP" className="h-full w-full object-contain" />
+                                <span className="pointer-events-none absolute bottom-1 left-1 z-20 rounded bg-violet-900/80 px-1 py-0.5 text-[7px] font-black tracking-wider text-violet-300 uppercase">Pre-op</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {/* Lateral */}
+                        <div className="relative flex-1 min-w-0 overflow-hidden bg-slate-900">
+                          <span className="pointer-events-none absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black tracking-widest text-white/80 uppercase">X-Ray Lateral View</span>
                           {latImageSrc ? (
-                            <LandmarkCanvas imageSrc={latImageSrc} landmarks={latPoints} landmarkDefs={ALL_LAT_LANDMARKS} hints={[...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS]} activeIndex={-1} transform={latResTransform} setTransform={setLatResTransform} onPlace={() => {}} onMoveLandmark={handleLatMove} connections={ALL_LAT_CONNECTIONS} drawOverlay={pcoOverlay} />
+                            <div className="absolute inset-0">
+                              <LandmarkCanvas imageSrc={latImageSrc} landmarks={latPoints} landmarkDefs={ALL_LAT_LANDMARKS} hints={[...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS]} activeIndex={-1} transform={latResTransform} setTransform={setLatResTransform} onPlace={() => {}} onMoveLandmark={handleLatMove} connections={ALL_LAT_CONNECTIONS} drawOverlay={pcoOverlay} pointRadius={resPointRadius} showLabels={resShowLabels} showPoints={resShowPoints} canvasRef={latResCanRef} />
+                            </div>
                           ) : (
                             <div className="flex h-full items-center justify-center text-[10px] text-slate-500">Foto lateral belum diunggah</div>
                           )}
-                        </PhotoRow>
-                      </div>
-                      {/* Skyline */}
-                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-                        <div className="shrink-0 px-3 py-1.5" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-                          <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">X-Ray Skyline View (Opsional)</p>
+                          {compareMode && preOpLatSrc && (
+                            <div className="absolute inset-0 flex">
+                              <div className="relative flex-1 min-w-0 overflow-hidden border-r border-slate-700">
+                                <LandmarkCanvas imageSrc={latImageSrc} landmarks={latPoints} landmarkDefs={ALL_LAT_LANDMARKS} hints={[...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS]} activeIndex={-1} transform={latResTransform} setTransform={setLatResTransform} onPlace={() => {}} onMoveLandmark={handleLatMove} connections={ALL_LAT_CONNECTIONS} drawOverlay={pcoOverlay} pointRadius={resPointRadius} showLabels={resShowLabels} showPoints={resShowPoints} />
+                                <span className="pointer-events-none absolute bottom-1 left-1 z-20 rounded bg-emerald-900/80 px-1 py-0.5 text-[7px] font-black tracking-wider text-emerald-300 uppercase">Post-op</span>
+                              </div>
+                              <div className="relative flex-1 min-w-0 overflow-hidden bg-slate-950">
+                                <img src={preOpLatSrc} alt="Pre-op Lateral" className="h-full w-full object-contain" />
+                                <span className="pointer-events-none absolute bottom-1 left-1 z-20 rounded bg-violet-900/80 px-1 py-0.5 text-[7px] font-black tracking-wider text-violet-300 uppercase">Pre-op</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        {skyImageSrc ? (
-                          <div className="relative min-h-0 flex-1 overflow-hidden bg-slate-900">
-                            <PhotoRow compareMode={compareMode} preOpSrc={preOpSkySrc} preOpLabel="Skyline" className="h-full w-full border-0">
-                              <LandmarkCanvas imageSrc={skyImageSrc} landmarks={skyPoints} landmarkDefs={SKY_LANDMARKS} hints={SKY_HINTS} activeIndex={-1} transform={skyResTransform} setTransform={setSkyResTransform} onPlace={() => {}} onMoveLandmark={handleSkyMove} connections={SKY_CONNECTIONS} />
-                            </PhotoRow>
-                          </div>
-                        ) : (
-                          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "var(--soft-border, #e2e8f0)" }}>
-                              <Camera className="h-5 w-5 text-slate-400" />
-                            </div>
-                            <div className="text-center">
-                              <p className="text-[11px] font-bold text-slate-500">Upload Skyline / Merchant View</p>
-                              <p className="mt-0.5 text-[9px] text-slate-400">Foto opsional untuk patellar assessment</p>
-                            </div>
-                            <button onClick={() => skyUploadRef.current?.click()} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black text-white" style={{ background: "#7c3aed" }}>
-                              <Camera className="h-3 w-3" /> Upload
-                            </button>
-                            <input ref={skyUploadRef} type="file" accept="image/*" className="hidden" onChange={handleSkyUpload} />
-                          </div>
-                        )}
                       </div>
+                      {/* Skyline — full section when image uploaded, compact strip when not */}
+                      {skyImageSrc ? (
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                          <div className="shrink-0 px-3 py-1.5" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                            <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">X-Ray Skyline View (Opsional)</p>
+                          </div>
+                          <div className="relative min-h-0 flex-1 overflow-hidden bg-slate-900">
+                            <div className="absolute inset-0">
+                              <LandmarkCanvas imageSrc={skyImageSrc} landmarks={skyPoints} landmarkDefs={SKY_LANDMARKS} hints={SKY_HINTS} activeIndex={-1} transform={skyResTransform} setTransform={setSkyResTransform} onPlace={() => {}} onMoveLandmark={handleSkyMove} connections={SKY_CONNECTIONS} pointRadius={resPointRadius} showLabels={resShowLabels} showPoints={resShowPoints} canvasRef={skyResCanRef} />
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="shrink-0 flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                          <p className="flex-1 text-[8px] font-black tracking-widest text-slate-400 uppercase">Skyline (Opsional)</p>
+                          <button onClick={() => skyUploadRef.current?.click()} className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-black text-white" style={{ background: "#7c3aed" }}>
+                            <Camera className="h-2.5 w-2.5" /> Upload
+                          </button>
+                          <input ref={skyUploadRef} type="file" accept="image/*" className="hidden" onChange={handleSkyUpload} />
+                        </div>
+                      )}
                       {/* Compare mode toggle */}
                       <div className="shrink-0 px-3 py-2">
                         <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[9px] font-black transition-colors" style={{ background: compareMode ? "#ede9fe" : "var(--soft-border, #e2e8f0)", color: compareMode ? "#6d28d9" : "#94a3b8" }} onClick={() => setCompareMode((v) => !v)}>
@@ -2287,13 +2406,6 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                   onClick={() => {
                     const next = Math.min(STEPS.length - 1, stepIndex + 1);
                     setStepIndex(next);
-                    // Auto-fit result canvases when entering result step
-                    if (next === STEPS.length - 1) {
-                      const cv = { width: 900, height: 580 };
-                      if (apImgRef.current)  setApResTransform(fitTransform(apImgRef.current, cv));
-                      if (latImgRef.current) setLatResTransform(fitTransform(latImgRef.current, cv));
-                      if (skyImgRef.current) setSkyResTransform(fitTransform(skyImgRef.current, cv));
-                    }
                   }}
                   className="flex items-center gap-1.5 rounded-full px-4 py-2 text-[11px] font-black text-white"
                   style={{ background: "#4f46e5" }}
