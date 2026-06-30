@@ -265,6 +265,7 @@ import {
   normalizeSnapSettings, getSnapTypeShortLabel, getSnapTargetSignature,
 } from "../lib/xray/snapUtils";
 import { removeImageBackground, createCombinedReportCanvas } from "../lib/xray/reportUtils";
+import TKAAssessmentPanel from "./TKAAssessmentPanel";
 
 const IDLE_TUTORIAL_DELAY_MS = 120000;
 const MIN_SCALE = 0.1;
@@ -904,6 +905,7 @@ export default function XrayCalibrationWorkspace({
   const [wizardCupId, setWizardCupId] = useState(null);
   const [wizardConfirmOpen, setWizardConfirmOpen] = useState(false);
   const [jlaGuideModalOpen, setJlaGuideModalOpen] = useState(false);
+  const [tkaAssessmentOpen, setTkaAssessmentOpen] = useState(false);
   const [preOpSummaryOpen, setPreOpSummaryOpen] = useState(false);
   const [hkaInfoBubble, setHkaInfoBubble] = useState(null);
   const [hkaResultPanelOpen, setHkaResultPanelOpen] = useState(false);
@@ -18742,6 +18744,7 @@ export default function XrayCalibrationWorkspace({
       action: "imageProcessing",
     },
     { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto" },
+    { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment" },
     { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder" },
     { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment" },
     { icon: "zakAceta", label: "ZakAceta", desc: "Buka panduan hip planning step-by-step untuk ITD, hip length, LLD, dan offset.", key: "zakAceta", action: "zakAceta" },
@@ -19196,6 +19199,16 @@ export default function XrayCalibrationWorkspace({
                     Panduan Lengkap JLA →
                   </button>
                 )}
+
+                {/* Post-TKA Assessment button */}
+                <button
+                  type="button"
+                  onClick={() => { setHkaInfoBubble(null); setTkaAssessmentOpen(true); }}
+                  className="mt-1 w-full rounded-[14px] py-2 text-[10px] font-black text-white"
+                  style={{ background: "#7c3aed" }}
+                >
+                  Post-TKA Assessment →
+                </button>
               </div>
             </motion.div>
           );
@@ -19409,6 +19422,14 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {/* ── Post-TKA Assessment Panel ────────────────────────────────────── */}
+      <TKAAssessmentPanel
+        isOpen={tkaAssessmentOpen}
+        onClose={() => setTkaAssessmentOpen(false)}
+        imageCanvasRef={imageCanvasRef}
+        mmPerPixel={mmPerPixel}
+      />
 
       {/* ── HKA/FTA/JLA Result Panel ─────────────────────────────────────── */}
       <AnimatePresence>
@@ -31812,6 +31833,7 @@ export default function XrayCalibrationWorkspace({
                       activeFreeLineMode={freeLineMode}
                       onMinimize={() => setSimpleToolPanelMinimized(true)}
                       onSelectTool={(item) => {
+                        if (item.action === "tkaAssessment") { setTkaAssessmentOpen((v) => !v); return; }
                         if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
                         if (item.action === "zakAceta") { setSimpleWizardOpen((v) => !v); return; }
                         if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
@@ -31947,6 +31969,7 @@ export default function XrayCalibrationWorkspace({
                         onMinimize={() => setSimpleMobilePanel(null)}
                           onSelectTool={(item) => {
                           if (item.action === "dorr") { setSimpleMobilePanel("dorr"); return; }
+                          if (item.action === "tkaAssessment") { setSimpleMobilePanel(null); setTkaAssessmentOpen((v) => !v); return; }
                           setSimpleMobilePanel(null);
                           setMobileCanvasMode("edit");
                           if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
