@@ -225,10 +225,10 @@ export default function QuickPanel({
     <>
     <motion.div
       {...PANEL_ENTER}
-      className={`w-[min(84vw,300px)] shrink-0 overflow-hidden rounded-[15px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
+      className={`w-[min(84vw,300px)] shrink-0 flex flex-col overflow-hidden rounded-[15px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-surface)] backdrop-blur-xl ${className}`}
     >
       {/* ── Header ─────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--soft-border)] px-4 py-3">
+      <div className="shrink-0 flex items-center justify-between gap-2 border-b border-[var(--soft-border)] px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/15 shadow-[inset_0_1px_3px_rgba(59,130,246,0.15)]">
             <Sliders className="h-3.5 w-3.5 text-blue-400" />
@@ -252,7 +252,7 @@ export default function QuickPanel({
       </div>
 
       {/* ── Step info ──────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--soft-border)] bg-white/4 px-4 py-2">
+      <div className="shrink-0 flex items-center justify-between gap-3 border-b border-[var(--soft-border)] bg-white/4 px-4 py-2">
         <div className="flex items-center gap-3">
           <div className="text-center">
             <p className="text-[8px] font-black tracking-widest text-[var(--soft-text-lo,theme(colors.slate.400))] uppercase">Step</p>
@@ -278,7 +278,7 @@ export default function QuickPanel({
       </div>
 
       {/* ── Scroll body ────────────────────────────────── */}
-      <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-4 py-3 space-y-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 
         {/* ── Upload Xray (expandable) ──── */}
         <div className="space-y-1.5">

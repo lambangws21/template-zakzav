@@ -25,6 +25,8 @@ import {
   Download,
   Move,
   Activity,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { computeTKAAlignment, computePCO, computeTibialSlope, computeInsallSalvati, computeSkylineAssessment } from "../lib/hka/tkaCalculator";
 
@@ -157,40 +159,88 @@ function ResultCard({ label, value, unit, range, flag, text }) {
   const s = FLAG_STYLES[flag] || FLAG_STYLES.normal;
   const statusLabel = flag === "normal" ? "Normal" : flag === "low" ? "Rendah" : "Tinggi";
   return (
-    <div className="rounded-2xl border p-3.5" style={{ background: s.bg, borderColor: s.border }}>
+    <div className="rounded-xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-black tracking-wide text-slate-500 uppercase">{label}</span>
-        <span className="rounded-full px-2 py-0.5 text-[10px] font-black" style={{ background: s.dot + "22", color: s.dot }}>
+        <span className="text-[10px] font-black tracking-wide text-slate-500 uppercase">{label}</span>
+        <span className="rounded-full px-2 py-0.5 text-[9px] font-black" style={{ background: s.dot + "22", color: s.dot }}>
           {statusLabel}
         </span>
       </div>
-      <div className="mt-1 flex items-baseline gap-1">
-        <span className="text-2xl font-black" style={{ color: s.text }}>{value}</span>
+      <div className="mt-0.5 flex items-baseline gap-1">
+        <span className="text-xl font-black" style={{ color: s.text }}>{value}</span>
         <span className="text-xs font-semibold text-slate-400">{unit}</span>
       </div>
-      <p className="mt-0.5 text-[10px] text-slate-400">Kisaran: {range}</p>
-      <p className="mt-2 text-[11px] leading-snug" style={{ color: s.text }}>{text}</p>
+      <p className="mt-0.5 text-[9px] text-slate-400">Kisaran: {range}</p>
+      {text && <p className="mt-1.5 text-[10px] leading-snug" style={{ color: s.text }}>{text}</p>}
     </div>
   );
 }
 
-function MiniResultCard({ label, value, unit, range, flag }) {
+function MetricRow({ label, value, unit, range, flag, text }) {
   const s = FLAG_STYLES[flag] || FLAG_STYLES.normal;
   const statusLabel = flag === "normal" ? "Normal" : flag === "low" ? "Rendah" : "Tinggi";
   return (
-    <div className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-[10px] font-black tracking-wide text-slate-500 uppercase">{label}</span>
-        <span className="rounded-full px-1.5 py-0.5 text-[9px] font-black" style={{ background: s.dot + "22", color: s.dot }}>
-          {statusLabel}
-        </span>
+    <div className="flex items-center gap-2 rounded-xl border px-3 py-2" style={{ background: s.bg, borderColor: s.border }}>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] font-black tracking-wide text-slate-500 uppercase">{label}</span>
+          <span className="rounded-full px-1.5 py-px text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>
+            {statusLabel}
+          </span>
+        </div>
+        {text && <p className="mt-0.5 text-[9px] leading-snug text-slate-400 line-clamp-2">{text}</p>}
       </div>
-      <div className="mt-0.5 flex items-baseline gap-0.5">
-        <span className="text-2xl font-black" style={{ color: s.text }}>{value}</span>
-        <span className="text-xs font-semibold text-slate-400">{unit}</span>
-        <span className="ml-0.5 text-[10px] text-slate-400">↓</span>
+      <div className="shrink-0 text-right">
+        <span className="text-lg font-black leading-none" style={{ color: s.text }}>{value}</span>
+        <span className="ml-0.5 text-[10px] text-slate-400">{unit}</span>
+        <p className="text-[8px] text-slate-300">{range}</p>
       </div>
-      <p className="text-[9px] text-slate-400">Kisaran: {range}</p>
+    </div>
+  );
+}
+
+// ── Mini sparkline chart ──────────────────────────────────────────────────────
+
+function MiniChart({ value, min, max, normalLow, normalHigh, flag }) {
+  const W = 88, H = 34;
+  const toX = (v) => Math.max(1, Math.min(W - 1, ((v - min) / (max - min)) * (W - 2) + 1));
+  const flagCol = { normal: "#16a34a", low: "#ea580c", high: "#dc2626" }[flag] || "#94a3b8";
+  const lowX = toX(normalLow), highX = toX(normalHigh), valX = toX(value);
+  const center = (lowX + highX) / 2;
+  const curvePts = Array.from({ length: 48 }, (_, i) => {
+    const px = (i / 47) * W;
+    const rel = (px - center) / ((W * 0.45) || 1);
+    const py = (H - 8) * Math.exp(-0.5 * rel * rel) ;
+    return `${px.toFixed(1)},${(H - 4 - py).toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0">
+      <line x1={0} y1={H - 4} x2={W} y2={H - 4} stroke="currentColor" strokeWidth={0.5} className="text-slate-200" />
+      <rect x={lowX} y={2} width={Math.max(0, highX - lowX)} height={H - 6} rx={2} fill="rgba(21,128,61,0.12)" />
+      <polyline points={curvePts} fill="none" stroke="rgba(148,163,184,0.4)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <line x1={valX} y1={2} x2={valX} y2={H - 4} stroke={flagCol} strokeWidth={1.5} strokeLinecap="round" />
+      <circle cx={valX} cy={(H - 4) / 2} r={3.5} fill={flagCol} stroke="white" strokeWidth={1.5} />
+    </svg>
+  );
+}
+
+// ── Photo row with optional pre-op comparison split ──────────────────────────
+
+function PhotoRow({ children, compareMode, preOpSrc, preOpLabel, className }) {
+  return (
+    <div className={`relative h-full w-[200px] shrink-0 overflow-hidden bg-slate-900 md:h-auto md:w-auto border-r border-slate-800 md:border-r-0 md:border-b${className ? " " + className : ""}`}>
+      {compareMode && preOpSrc ? (
+        <div className="flex h-full w-full">
+          <div className="relative flex-1 min-w-0 overflow-hidden border-r border-slate-700">
+            {children}
+            <span className="pointer-events-none absolute bottom-1 left-1 z-20 rounded bg-emerald-900/80 px-1 py-0.5 text-[7px] font-black tracking-wider text-emerald-300 uppercase">Post-op</span>
+          </div>
+          <div className="relative flex-1 min-w-0 overflow-hidden bg-slate-950">
+            <img src={preOpSrc} alt={"Pre-op " + preOpLabel} className="h-full w-full object-contain" />
+            <span className="pointer-events-none absolute bottom-1 left-1 z-20 rounded bg-violet-900/80 px-1 py-0.5 text-[7px] font-black tracking-wider text-violet-300 uppercase">Pre-op</span>
+          </div>
+        </div>
+      ) : children}
     </div>
   );
 }
@@ -527,7 +577,7 @@ function useCanvasInteraction({
 
 // ── Draw-canvas-to-image utility for PDF export ───────────────────────────────
 
-function renderAnnotatedCanvas(img, landmarks, landmarkDefs, connections, width = 900, height = 620) {
+function renderAnnotatedCanvas(img, landmarks, landmarkDefs, connections, width = 900, height = 620, drawOverlay = null) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -564,6 +614,8 @@ function renderAnnotatedCanvas(img, landmarks, landmarkDefs, connections, width 
     drawLabel(ctx, def.short, sp.x, sp.y, def.color);
   });
 
+  if (drawOverlay) drawOverlay(ctx, transform);
+
   return canvas.toDataURL("image/jpeg", 0.92);
 }
 
@@ -587,6 +639,26 @@ function LandmarkCanvas({
   const canvasRef   = externalRef || internalRef;
   const imgRef      = useRef(null);
   const [imgLoaded, setImgLoaded] = useState(false);
+
+  // Resize canvas to fill container so portrait X-rays fill the view
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const container = canvas.parentElement;
+    if (!container) return;
+    const resize = () => {
+      const w = container.clientWidth  || 900;
+      const h = container.clientHeight || 580;
+      if (canvas.width === w && canvas.height === h) return;
+      canvas.width  = w;
+      canvas.height = h;
+      if (imgRef.current) setTransform(fitTransform(imgRef.current, canvas));
+    };
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+    resize();
+    return () => ro.disconnect();
+  }, [canvasRef, setTransform]);
 
   useEffect(() => {
     if (!imageSrc) { imgRef.current = null; setImgLoaded(false); return; }
@@ -728,270 +800,310 @@ function StepDot({ index, active, done, label }) {
 // ── PDF export ────────────────────────────────────────────────────────────────
 
 async function exportToPDF({
-  apImgRef,
-  latImgRef,
-  skyImgRef,
-  apPoints,
-  latPoints,
-  skyPoints,
-  tkaResult,
-  pcoResult,
-  slopeResult,
-  isResult,
-  skyResult,
+  apImgRef, latImgRef, skyImgRef,
+  apPoints, latPoints, skyPoints,
+  tkaResult, pcoResult, slopeResult, isResult, skyResult,
+  legSide = "right", doctorNotes = "",
 }) {
   const { default: jsPDF } = await import("jspdf");
-
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const PW = 210, PH = 297;
-  const margin = 14;
-  let y = margin;
+  const PW = 210, PH = 297, M = 14;
+  let y = M;
 
-  // ── Colors ──
-  const violet   = [99, 102, 241];
-  const slate700 = [51, 65, 85];
-  const slate400 = [148, 163, 184];
-  const green    = [21, 128, 61];
-  const orange   = [194, 65, 12];
-  const red      = [185, 28, 28];
+  // ── Palette ──────────────────────────────────────────────────────────────────
+  const C = {
+    violet:  [99, 102, 241],
+    white:   [255, 255, 255],
+    dark:    [30, 41, 59],
+    mid:     [100, 116, 139],
+    light:   [203, 213, 225],
+    green:   [21, 128, 61],
+    orange:  [194, 65, 12],
+    red:     [185, 28, 28],
+    bgGreen: [240, 253, 244],
+    bgAmber: [255, 251, 235],
+    bgRed:   [254, 242, 242],
+    bgGray:  [241, 245, 249],
+  };
+  const flagRgb   = (f) => f === "normal" ? C.green : f === "low" ? C.orange : C.red;
+  const flagBgRgb = (f) => f === "normal" ? C.bgGreen : f === "low" ? C.bgAmber : C.bgRed;
+  const flagLabel = (f) => f === "normal" ? "Normal" : f === "low" ? "Rendah" : "Tinggi";
 
-  const flagColor = (flag) => flag === "normal" ? green : flag === "low" ? orange : red;
-
-  // ── Header ──
-  doc.setFillColor(...violet);
-  doc.rect(0, 0, PW, 22, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.text("Post-TKA Radiographic Assessment", margin, 9);
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.text("Analisis Alignment Pasca Operasi Total Knee Arthroplasty", margin, 15);
   const today = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
-  doc.text(`Tanggal: ${today}`, PW - margin - 40, 15);
-  y = 28;
 
-  // ── X-ray images (side-by-side) ──
-  let apDataUrl = null;
-  let latDataUrl = null;
-  let skyDataUrl = null;
-  if (apImgRef.current) {
-    try { apDataUrl = renderAnnotatedCanvas(apImgRef.current, apPoints, AP_LANDMARKS, AP_CONNECTIONS, 900, 600); } catch {}
-  }
-  if (latImgRef.current && Object.keys(latPoints).length > 0) {
-    try { latDataUrl = renderAnnotatedCanvas(latImgRef.current, latPoints, LAT_LANDMARKS, LAT_CONNECTIONS, 900, 600); } catch {}
-  }
-  if (skyImgRef.current && Object.keys(skyPoints).length > 0) {
-    try { skyDataUrl = renderAnnotatedCanvas(skyImgRef.current, skyPoints, SKY_LANDMARKS, SKY_CONNECTIONS, 900, 600); } catch {}
-  }
+  // ── Page helpers ──────────────────────────────────────────────────────────────
+  const checkPage = (need = 30) => { if (y + need > PH - M) { doc.addPage(); y = M; } };
 
-  if (apDataUrl || latDataUrl) {
-    doc.setTextColor(...slate700);
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.text("Foto X-Ray", margin, y);
-    y += 5;
+  // ── Header band ──────────────────────────────────────────────────────────────
+  doc.setFillColor(...C.violet);
+  doc.rect(0, 0, PW, 26, "F");
+  doc.setTextColor(...C.white);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Post-TKA Radiographic Assessment", M, 11);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("Analisis Alignment Pasca Operasi Total Knee Arthroplasty", M, 18);
+  doc.setFontSize(7.5);
+  doc.text(`Tanggal: ${today}  ·  Sisi: ${legSide === "right" ? "Kaki Kanan (R)" : "Kaki Kiri (L)"}`, PW - M, 18, { align: "right" });
+  y = 33;
 
-    const hasBoth = !!(apDataUrl && latDataUrl);
-    const gap = 3;
-    const iW = hasBoth ? (PW - margin * 2 - gap) / 2 : PW - margin * 2;
-    const iH = iW * (600 / 900);
+  // ── X-ray images ─────────────────────────────────────────────────────────────
+  let apUrl = null, latUrl = null, skyUrl = null;
+  // render at portrait resolution — X-rays are taller than wide
+  try { if (apImgRef.current)  apUrl  = renderAnnotatedCanvas(apImgRef.current,  apPoints,  AP_LANDMARKS,      AP_CONNECTIONS,      700, 1050); } catch {}
+  try {
+    if (latImgRef.current && Object.keys(latPoints).length > 0)
+      latUrl = renderAnnotatedCanvas(latImgRef.current, latPoints, ALL_LAT_LANDMARKS, ALL_LAT_CONNECTIONS, 700, 1050,
+        (ctx, t) => drawPCOMeasurementLines(ctx, latPoints, t, pcoResult));
+  } catch {}
+  try { if (skyImgRef.current && Object.keys(skyPoints).length > 0) skyUrl = renderAnnotatedCanvas(skyImgRef.current, skyPoints, SKY_LANDMARKS, SKY_CONNECTIONS, 700, 1050); } catch {}
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...slate400);
-    if (apDataUrl) doc.text("AP View", margin, y);
-    if (latDataUrl) doc.text("Lateral View", hasBoth ? margin + iW + gap : margin, y);
-    y += 3;
+  const imgW   = PW - M * 2;   // full usable width (182mm)
+  const aspect = 1050 / 700;   // portrait 3:2
 
-    if (apDataUrl) doc.addImage(apDataUrl, "JPEG", margin, y, iW, iH);
-    if (latDataUrl) doc.addImage(latDataUrl, "JPEG", hasBoth ? margin + iW + gap : margin, y, iW, iH);
-    y += iH + 3;
+  if (apUrl || latUrl || skyUrl) {
+    // Section title
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.dark);
+    doc.text("FOTO X-RAY", M, y); y += 4;
 
-    if (skyDataUrl) {
-      const sW = (PW - margin * 2) / 2;
-      const sH = sW * (600 / 900);
-      doc.setFontSize(7); doc.setTextColor(...slate400);
-      doc.text("Skyline/Merchant View", margin, y);
-      y += 3;
-      doc.addImage(skyDataUrl, "JPEG", margin, y, sW, sH);
-      y += sH + 4;
-    } else {
-      y += 4;
-    }
-  }
+    const imgs = [
+      apUrl  ? { url: apUrl,  label: "AP View"              } : null,
+      latUrl ? { url: latUrl, label: "Lateral View"          } : null,
+      skyUrl ? { url: skyUrl, label: "Skyline/Merchant View" } : null,
+    ].filter(Boolean);
 
-  // ── AP Results table ──
-  if (tkaResult) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...slate700);
-    doc.text("Hasil Pengukuran AP View", margin, y);
-    y += 5;
+    // Each image full-width, stacked vertically
+    const iW = imgW;
+    const iH = iW * aspect;
 
-    const rows = [
-      { label: "MDFA (Mechanical Distal Femoral Angle)", value: `${tkaResult.MDFA}°`, range: "85–95°", flag: tkaResult.mdfaFlag, text: tkaResult.mdfaText },
-      { label: "MPTA (Medial Proximal Tibial Angle)",    value: `${tkaResult.MPTA}°`, range: "85–95°", flag: tkaResult.mptaFlag, text: tkaResult.mptaText },
-      { label: "MDFA + MPTA (Combined)",                  value: `${tkaResult.combined}°`, range: "175–185°", flag: tkaResult.combinedFlag, text: tkaResult.combinedText },
-    ];
-
-    rows.forEach((row) => {
-      const rowH = 18;
-      const col1 = margin, col2 = margin + 70, col3 = margin + 90, col4 = margin + 105;
-      // background
-      const fs = FLAG_STYLES[row.flag] || FLAG_STYLES.normal;
-      const bgHex = fs.bg.replace("#", "");
-      const br = parseInt(bgHex.slice(0, 2), 16), bg2 = parseInt(bgHex.slice(2, 4), 16), bb = parseInt(bgHex.slice(4, 6), 16);
-      doc.setFillColor(br, bg2, bb);
-      doc.roundedRect(margin, y, PW - margin * 2, rowH, 3, 3, "F");
-
-      doc.setTextColor(...slate700);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text(row.label, col1 + 2, y + 5);
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(...flagColor(row.flag));
-      doc.text(row.value, col2 + 2, y + 7);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(...slate400);
-      doc.text(`Kisaran: ${row.range}`, col3 - 10, y + 5);
-
-      const statusLabel = row.flag === "normal" ? "Normal" : row.flag === "low" ? "Rendah" : "Tinggi";
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...flagColor(row.flag));
-      doc.text(statusLabel, col4 + 10, y + 5);
-
-      // interpretation text
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(...slate400);
-      const wrapped = doc.splitTextToSize(row.text, PW - margin * 2 - 4);
-      doc.text(wrapped.slice(0, 1), col1 + 2, y + 13);
-
-      y += rowH + 2;
+    imgs.forEach((img) => {
+      checkPage(iH + 12);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...C.mid);
+      doc.text(img.label, M, y);
+      // subtle background behind image
+      doc.setFillColor(15, 23, 42);
+      doc.roundedRect(M, y + 2, iW, iH, 2, 2, "F");
+      doc.addImage(img.url, "JPEG", M, y + 2, iW, iH, undefined, "FAST");
+      y += iH + 7;
     });
-    y += 4;
+
+    y += 2;
   }
 
+  // ── Metric row helper ─────────────────────────────────────────────────────────
+  const COL = { label: M + 2, valR: M + 108, range: M + 112, statusR: PW - M - 2 };
+  const ROW_H = 28;
 
-  // ── PCO result ──
-  if (pcoResult) {
-    if (y > PH - 40) { doc.addPage(); y = margin; }
-    const rowH = 18;
-    const fs = FLAG_STYLES[pcoResult.pcoFlag] || FLAG_STYLES.normal;
-    const bgHex = fs.bg.replace("#", "");
-    const br = parseInt(bgHex.slice(0, 2), 16), bg2 = parseInt(bgHex.slice(2, 4), 16), bb = parseInt(bgHex.slice(4, 6), 16);
-    doc.setFillColor(br, bg2, bb);
-    doc.roundedRect(margin, y, PW - margin * 2, rowH, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...slate700);
-    doc.text("PCO Ratio (Posterior Condylar Offset)", margin + 2, y + 5);
-    doc.setFontSize(11);
-    doc.setTextColor(...flagColor(pcoResult.pcoFlag));
-    doc.text(pcoResult.ratio.toFixed(2), margin + 72, y + 7);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...slate400);
-    doc.text("Kisaran: 0.40–0.60 (ideal ≥0.47)", margin + 88, y + 5);
-    const pcoLabel = pcoResult.pcoFlag === "normal" ? "Normal" : pcoResult.pcoFlag === "low" ? "Rendah" : "Tinggi";
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...flagColor(pcoResult.pcoFlag));
-    doc.text(pcoLabel, margin + 125, y + 5);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...slate400);
-    const wrapped = doc.splitTextToSize(pcoResult.pcoText, PW - margin * 2 - 4);
-    doc.text(wrapped.slice(0, 1), margin + 2, y + 13);
-    y += rowH + 6;
-  }
+  // Draw inline range bar — shows normal zone + value marker
+  const drawRangeBar = (rowY, val, min, max, lo, hi, flag) => {
+    const barX = COL.label + 4;
+    const barW = 82;
+    const barH = 3.5;
+    const barY = rowY + ROW_H - 7;
+    const toX  = (v) => barX + Math.max(0, Math.min(barW, ((v - min) / (max - min)) * barW));
 
-  // ── Tibial slope result ──
-  const pdfRow = (title, valueStr, rangeStr, flagKey, noteText) => {
-    if (y > PH - 40) { doc.addPage(); y = margin; }
-    const rowH = 18;
-    const fs2 = FLAG_STYLES[flagKey] || FLAG_STYLES.normal;
-    const bHex = fs2.bg.replace("#", "");
-    doc.setFillColor(parseInt(bHex.slice(0,2),16), parseInt(bHex.slice(2,4),16), parseInt(bHex.slice(4,6),16));
-    doc.roundedRect(margin, y, PW - margin * 2, rowH, 3, 3, "F");
-    doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(...slate700);
-    doc.text(title, margin + 2, y + 5);
-    doc.setFontSize(11); doc.setTextColor(...flagColor(flagKey));
-    doc.text(valueStr, margin + 72, y + 7);
-    doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(...slate400);
-    doc.text(rangeStr, margin + 88, y + 5);
-    const lbl = flagKey === "normal" ? "Normal" : flagKey === "low" ? "Rendah" : "Tinggi";
-    doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(...flagColor(flagKey));
-    doc.text(lbl, margin + 125, y + 5);
-    doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(...slate400);
-    const wrp = doc.splitTextToSize(noteText, PW - margin * 2 - 4);
-    doc.text(wrp.slice(0,1), margin + 2, y + 13);
-    y += rowH + 6;
+    // Track
+    doc.setFillColor(218, 222, 232);
+    doc.roundedRect(barX, barY, barW, barH, barH / 2, barH / 2, "F");
+
+    // Normal zone (green band)
+    const nX = toX(lo), nW = Math.max(0, toX(hi) - nX);
+    doc.setFillColor(187, 247, 208);
+    doc.roundedRect(nX, barY, nW, barH, barH / 2, barH / 2, "F");
+
+    // Zone boundary ticks
+    doc.setFillColor(134, 239, 172);
+    doc.roundedRect(nX - 0.4, barY - 0.5, 0.8, barH + 1, 0.4, 0.4, "F");
+    doc.roundedRect(toX(hi) - 0.4, barY - 0.5, 0.8, barH + 1, 0.4, 0.4, "F");
+
+    // Value marker (colored vertical pill + circle)
+    const vX = toX(val);
+    const [fr, fg, fb] = flagRgb(flag);
+    doc.setFillColor(fr, fg, fb);
+    doc.roundedRect(vX - 1, barY - 1, 2, barH + 2, 1, 1, "F");
+    doc.setFillColor(255, 255, 255);
+    doc.circle(vX, barY + barH / 2, 1.2, "F");
+    doc.setFillColor(fr, fg, fb);
+    doc.circle(vX, barY + barH / 2, 0.7, "F");
   };
 
+  const pdfRow = (sectionLabel, label, value, range, flag, note, chart = null) => {
+    checkPage(ROW_H + 12);
+
+    if (sectionLabel) {
+      y += 2;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...C.mid);
+      doc.text(sectionLabel.toUpperCase(), M, y); y += 4;
+    }
+
+    // Row background
+    const [br, bg2, bb] = flagBgRgb(flag);
+    doc.setFillColor(br, bg2, bb);
+    doc.roundedRect(M, y, PW - M * 2, ROW_H, 3, 3, "F");
+
+    // Left border accent
+    doc.setFillColor(...flagRgb(flag));
+    doc.roundedRect(M, y, 3.5, ROW_H, 1.5, 1.5, "F");
+
+    // Label
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...C.dark);
+    doc.text(label, COL.label + 6, y + 7);
+
+    // Note
+    if (note) {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(...C.mid);
+      const lines = doc.splitTextToSize(note, 78);
+      doc.text(lines.slice(0, 2), COL.label + 6, y + 13.5);
+    }
+
+    // Range bar chart
+    if (chart) drawRangeBar(y, chart.val, chart.min, chart.max, chart.lo, chart.hi, flag);
+
+    // Value (large)
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(...flagRgb(flag));
+    doc.text(value, COL.valR, y + 11, { align: "right" });
+
+    // Range text
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(...C.mid);
+    doc.text(`Kisaran: ${range}`, COL.range, y + 7);
+
+    // Status
+    const [sfr, sfg, sfb] = flagRgb(flag);
+    const statusLabel = flagLabel(flag);
+    const statusW = doc.getTextWidth(statusLabel) + 4;
+    doc.setFillColor(sfr, sfg, sfb);
+    doc.roundedRect(COL.statusR - statusW, y + 11, statusW, 5.5, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...C.white);
+    doc.text(statusLabel, COL.statusR - statusW / 2, y + 14.5, { align: "center" });
+
+    y += ROW_H + 2;
+  };
+
+  // ── AP Results ───────────────────────────────────────────────────────────────
+  if (tkaResult) {
+    checkPage(ROW_H * 3 + 30);
+    pdfRow("Alignment Koronal (AP View)", "MDFA — Mechanical Distal Femoral Angle", `${tkaResult.MDFA}°`, "85-95°", tkaResult.mdfaFlag, tkaResult.mdfaText, { val: tkaResult.MDFA, min: 60, max: 120, lo: 85, hi: 95 });
+    pdfRow(null, "MPTA — Medial Proximal Tibial Angle",  `${tkaResult.MPTA}°`,     "85-95°",   tkaResult.mptaFlag,  tkaResult.mptaText,  { val: tkaResult.MPTA, min: 60, max: 120, lo: 85, hi: 95 });
+    pdfRow(null, "MDFA + MPTA — Combined",               `${tkaResult.combined}°`, "175-185°", tkaResult.combinedFlag, tkaResult.combinedText, { val: tkaResult.combined, min: 140, max: 210, lo: 175, hi: 185 });
+    y += 2;
+  }
+
+  // ── PCO ─────────────────────────────────────────────────────────────────────
+  if (pcoResult) {
+    pdfRow("PCO Ratio (Lateral View)", "Posterior Condylar Offset Ratio", pcoResult.ratio.toFixed(2), "0.40-0.60 (ideal >=0.47)", pcoResult.pcoFlag, pcoResult.pcoText, { val: pcoResult.ratio, min: 0.2, max: 0.9, lo: 0.4, hi: 0.6 });
+    y += 2;
+  }
+
+  // ── Tibial Slope ─────────────────────────────────────────────────────────────
   if (slopeResult) {
-    pdfRow(
-      `Tibial Slope ${slopeResult.isPosterior ? "Posterior" : "Anterior"}`,
-      slopeResult.slope + "°",
-      "Normal: posterior 3–7°",
-      slopeResult.slopeFlag,
-      slopeResult.slopeText,
-    );
+    pdfRow("Tibial Slope (Lateral View)", `Slope Tibial ${slopeResult.isPosterior ? "Posterior" : "Anterior"}`, `${slopeResult.slope}°`, "Posterior 3-7°", slopeResult.slopeFlag, slopeResult.slopeText, { val: slopeResult.slope, min: -5, max: 20, lo: 3, hi: 7 });
+    y += 2;
   }
 
+  // ── Insall-Salvati ───────────────────────────────────────────────────────────
   if (isResult) {
-    pdfRow(
-      "Insall-Salvati Ratio (Tinggi Patela)",
-      isResult.ratio.toFixed(2),
-      "Normal: 0.8–1.2",
-      isResult.isFlag,
-      isResult.isText,
-    );
+    pdfRow("Insall-Salvati Ratio (Tinggi Patela)", "Insall-Salvati (LP/LT)", isResult.ratio.toFixed(2), "0.8-1.2", isResult.isFlag, isResult.isText, { val: isResult.ratio, min: 0.3, max: 2.0, lo: 0.8, hi: 1.2 });
+    y += 2;
   }
 
+  // ── Skyline / Patellar ───────────────────────────────────────────────────────
   if (skyResult) {
-    if (skyResult.patellarTilt !== null) {
-      pdfRow(
-        "Patellar Tilt (Skyline View)",
-        skyResult.patellarTilt + "°",
-        "Normal: <20°",
-        skyResult.tiltFlag,
-        skyResult.tiltText,
-      );
-    }
-    if (skyResult.sulcusAngle !== null) {
-      pdfRow(
-        "Sulkus Angle (Skyline View)",
-        skyResult.sulcusAngle + "°",
-        "Normal: ≤144°",
-        skyResult.sulcusFlag,
-        skyResult.sulcusText,
-      );
-    }
+    if (skyResult.patellarTilt !== null) pdfRow("Patellar Assessment (Skyline View)", "Patellar Tilt", `${skyResult.patellarTilt}°`, "<20°", skyResult.tiltFlag, skyResult.tiltText, { val: skyResult.patellarTilt, min: 0, max: 45, lo: 0, hi: 20 });
+    if (skyResult.sulcusAngle  !== null) pdfRow(skyResult.patellarTilt !== null ? null : "Patellar Assessment (Skyline View)", "Sulkus Angle (Trochlear Groove)", `${skyResult.sulcusAngle}°`, "<=144°", skyResult.sulcusFlag, skyResult.sulcusText, { val: skyResult.sulcusAngle, min: 100, max: 200, lo: 100, hi: 144 });
+    y += 2;
   }
 
-  // ── Reference footer ──
-  if (y > PH - 30) { doc.addPage(); y = margin; }
-  doc.setFillColor(241, 245, 249);
-  doc.roundedRect(margin, y, PW - margin * 2, 22, 3, 3, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.setTextColor(...slate700);
-  doc.text("Referensi:", margin + 2, y + 5);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(...slate400);
-  const refText = "MDFA 85–95° & MPTA 85–95° (Ritter et al. 2011 CORR; Parratte et al. 2010 JBJS). PCO ratio ≥0.47 (Bellemans et al. 2002 JBJS Br). Tibial slope 3–7° (Kumar et al. 2014 Orthop Surg). Insall-Salvati 0.8–1.2 (Rogers et al. 2006 JBJS Br). Patellar tilt <20° & Sulkus ≤144° (Merchant 1974 JBJS). Keputusan klinis memerlukan evaluasi penuh oleh dokter ortopedi.";
-  const refLines = doc.splitTextToSize(refText, PW - margin * 2 - 4);
-  doc.text(refLines, margin + 2, y + 11);
+  // ── Doctor Notes ─────────────────────────────────────────────────────────────
+  if (doctorNotes && doctorNotes.trim()) {
+    checkPage(30);
+    doc.setFillColor(...C.bgGray);
+    const noteLines = doc.splitTextToSize(doctorNotes.trim(), PW - M * 2 - 8);
+    const noteH = Math.max(18, 10 + noteLines.length * 5);
+    doc.roundedRect(M, y, PW - M * 2, noteH, 2, 2, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.dark);
+    doc.text("Catatan Dokter:", M + 3, y + 5.5);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.mid);
+    doc.text(noteLines, M + 3, y + 11);
+    y += noteH + 4;
+  }
 
-  doc.save(`PostTKA_Assessment_${today.replace(/\s/g, "_")}.pdf`);
+  // ── Reference footer ─────────────────────────────────────────────────────────
+  checkPage(20);
+  doc.setFillColor(...C.bgGray);
+  const refH = 18;
+  doc.roundedRect(M, y, PW - M * 2, refH, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...C.mid);
+  doc.text("Referensi Klinis:", M + 2, y + 5);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6);
+  const refText = "MDFA/MPTA 85-95° (Ritter 2011 CORR; Parratte 2010 JBJS) · PCO >=0.47 (Bellemans 2002 JBJS) · Tibial slope 3-7° (Kumar 2014) · Insall-Salvati 0.8-1.2 (Rogers 2006) · Patellar tilt <20° & Sulkus <=144° (Merchant 1974) · Keputusan klinis memerlukan evaluasi penuh oleh dokter ortopedi berlisensi.";
+  const refLines = doc.splitTextToSize(refText, PW - M * 2 - 4);
+  doc.text(refLines.slice(0, 2), M + 2, y + 10);
+
+  return { doc, filename: `PostTKA_Assessment_${today.replace(/\s/g, "_")}.pdf` };
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+
+function exportToCSV({ legSide, doctorNotes, tkaResult, pcoResult, slopeResult, isResult, skyResult }) {
+  const today = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+  const flagLabel = (f) => f === "normal" ? "Normal" : f === "low" ? "Rendah" : "Tinggi";
+  const rows = [
+    ["Post-TKA Radiographic Assessment"],
+    ["Tanggal", today],
+    ["Sisi Kaki", legSide === "right" ? "Kaki Kanan" : "Kaki Kiri"],
+    [],
+    ["Parameter", "Nilai", "Kisaran Normal", "Status"],
+  ];
+  if (tkaResult) {
+    rows.push(["MDFA (Mechanical Distal Femoral Angle)", `${tkaResult.MDFA}°`, "85–95°", flagLabel(tkaResult.mdfaFlag)]);
+    rows.push(["MPTA (Medial Proximal Tibial Angle)", `${tkaResult.MPTA}°`, "85–95°", flagLabel(tkaResult.mptaFlag)]);
+    rows.push(["MDFA + MPTA (Combined)", `${tkaResult.combined}°`, "175–185°", flagLabel(tkaResult.combinedFlag)]);
+  }
+  if (pcoResult)   rows.push(["PCO Ratio (Posterior Condylar Offset)", pcoResult.ratio.toFixed(2), "0.40–0.60 (ideal ≥0.47)", flagLabel(pcoResult.pcoFlag)]);
+  if (slopeResult) rows.push([`Tibial Slope (${slopeResult.isPosterior ? "Posterior" : "Anterior"})`, `${slopeResult.slope}°`, "3–7°", flagLabel(slopeResult.slopeFlag)]);
+  if (isResult)    rows.push(["Insall-Salvati Ratio", isResult.ratio.toFixed(2), "0.8–1.2", flagLabel(isResult.isFlag)]);
+  if (skyResult) {
+    if (skyResult.patellarTilt !== null) rows.push(["Patellar Tilt", `${skyResult.patellarTilt}°`, "<20°", flagLabel(skyResult.tiltFlag)]);
+    if (skyResult.sulcusAngle  !== null) rows.push(["Sulkus Angle",  `${skyResult.sulcusAngle}°`,  "≤144°", flagLabel(skyResult.sulcusFlag)]);
+  }
+  if (doctorNotes) {
+    rows.push([]);
+    rows.push(["Catatan Dokter", doctorNotes.replace(/\n/g, " ")]);
+  }
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `PostTKA_Assessment_${today.replace(/\s/g, "_")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Points history hook ───────────────────────────────────────────────────────
+
+function usePointsHistory() {
+  const [hist, setHist] = useState({ stack: [{}], idx: 0 });
+  const points = hist.stack[hist.idx];
+
+  const setPoints = useCallback((updater) => {
+    setHist((prev) => {
+      const cur = prev.stack[prev.idx];
+      const next = typeof updater === "function" ? updater(cur) : updater;
+      const newStack = [...prev.stack.slice(0, prev.idx + 1), next];
+      return { stack: newStack, idx: newStack.length - 1 };
+    });
+  }, []);
+
+  const undo = useCallback(() => setHist((p) => p.idx > 0 ? { ...p, idx: p.idx - 1 } : p), []);
+  const redo = useCallback(() => setHist((p) => p.idx < p.stack.length - 1 ? { ...p, idx: p.idx + 1 } : p), []);
+  const reset = useCallback(() => setHist({ stack: [{}], idx: 0 }), []);
+
+  const canUndo = hist.idx > 0;
+  const canRedo = hist.idx < hist.stack.length - 1;
+
+  return { points, setPoints, undo, redo, reset, canUndo, canRedo };
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -1006,12 +1118,15 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   const apImgRef  = useRef(null);
   const latImgRef = useRef(null);
   const skyImgRef = useRef(null);
+  const apCanRef  = useRef(null);
+  const latCanRef = useRef(null);
+  const skyCanRef = useRef(null);
 
   const [legSide, setLegSide] = useState("right"); // "right" | "left"
 
-  const [apPoints,  setApPoints]  = useState({});
-  const [latPoints, setLatPoints] = useState({});
-  const [skyPoints, setSkyPoints] = useState({});
+  const { points: apPoints,  setPoints: setApPoints,  undo: undoAp,  redo: redoAp,  reset: resetApPoints,  canUndo: canUndoAp,  canRedo: canRedoAp  } = usePointsHistory();
+  const { points: latPoints, setPoints: setLatPoints, undo: undoLat, redo: redoLat, reset: resetLatPoints, canUndo: canUndoLat, canRedo: canRedoLat } = usePointsHistory();
+  const { points: skyPoints, setPoints: setSkyPoints, undo: undoSky, redo: redoSky, reset: resetSkyPoints, canUndo: canUndoSky, canRedo: canRedoSky } = usePointsHistory();
 
   const [apTransform,  setApTransform]  = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const [latTransform, setLatTransform] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
@@ -1026,6 +1141,51 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   const latUploadRef = useRef(null);
   const skyUploadRef = useRef(null);
   const [exporting, setExporting] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState(null); // { url, doc, filename }
+
+  // ── New features ─────────────────────────────────────────────────────────────
+  const [doctorNotes, setDoctorNotes] = useState("");
+  const [compareMode, setCompareMode] = useState(false);
+  const [preOpApSrc,  setPreOpApSrc]  = useState(null);
+  const [preOpLatSrc, setPreOpLatSrc] = useState(null);
+  const [preOpSkySrc, setPreOpSkySrc] = useState(null);
+  const preOpApRef  = useRef(null);
+  const preOpLatRef = useRef(null);
+  const preOpSkyRef = useRef(null);
+
+  const [col1Pct, setCol1Pct] = useState(32);
+  const [col3Pct, setCol3Pct] = useState(28);
+  const col1PctRef   = useRef(32);
+  const col3PctRef   = useRef(28);
+  const resultRowRef = useRef(null);
+
+  // keep refs in sync with state so drag handlers always see latest value
+  col1PctRef.current = col1Pct;
+  col3PctRef.current = col3Pct;
+
+  const makeResizeHandler = (pctRef, setPct, min, max, dir = 1) => (e) => {
+    const startX = e.clientX;
+    const startW = pctRef.current;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev) => {
+      const containerW = resultRowRef.current?.offsetWidth || window.innerWidth;
+      const dx = (ev.clientX - startX) * dir;
+      setPct(Math.min(max, Math.max(min, startW + (dx / containerW) * 100)));
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    e.preventDefault();
+  };
+
+  const onResizeStart  = makeResizeHandler(col1PctRef, setCol1Pct, 22, 55,  1);
+  const onResize3Start = makeResizeHandler(col3PctRef, setCol3Pct, 18, 45, -1);
 
   const apActiveIndex  = useMemo(() => AP_LANDMARKS.findIndex((l) => !apPoints[l.key]),  [apPoints]);
   const latActiveIndex = useMemo(() => ALL_LAT_LANDMARKS.findIndex((l) => !latPoints[l.key]), [latPoints]);
@@ -1090,8 +1250,11 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   // Reset on close
   useEffect(() => {
     if (!isOpen) {
-      setStepIndex(0); setApPoints({}); setLatPoints({}); setSkyPoints({});
+      setStepIndex(0); resetApPoints(); resetLatPoints(); resetSkyPoints();
       setApImageSrc(null); setLatImageSrc(null); setSkyImageSrc(null);
+      setDoctorNotes(""); setCompareMode(false);
+      setPreOpApSrc(null); setPreOpLatSrc(null); setPreOpSkySrc(null);
+      setCol1Pct(32); setCol3Pct(28);
     }
   }, [isOpen]);
 
@@ -1122,9 +1285,12 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
     setSkyPoints((prev) => ({ ...prev, [key]: imgPt }));
   }, []);
 
-  const handleApUpload  = (e) => { const f = e.target.files?.[0]; if (!f) return; setApImageSrc(URL.createObjectURL(f)); setApPoints({}); e.target.value = ""; };
-  const handleLatUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; setLatImageSrc(URL.createObjectURL(f)); setLatPoints({}); e.target.value = ""; };
-  const handleSkyUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; setSkyImageSrc(URL.createObjectURL(f)); setSkyPoints({}); e.target.value = ""; };
+  const handleApUpload  = (e) => { const f = e.target.files?.[0]; if (!f) return; setApImageSrc(URL.createObjectURL(f)); resetApPoints();  e.target.value = ""; };
+  const handleLatUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; setLatImageSrc(URL.createObjectURL(f)); resetLatPoints(); e.target.value = ""; };
+  const handleSkyUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; setSkyImageSrc(URL.createObjectURL(f)); resetSkyPoints(); e.target.value = ""; };
+  const handlePreOpApUpload  = (e) => { const f = e.target.files?.[0]; if (!f) return; setPreOpApSrc(URL.createObjectURL(f));  e.target.value = ""; };
+  const handlePreOpLatUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; setPreOpLatSrc(URL.createObjectURL(f)); e.target.value = ""; };
+  const handlePreOpSkyUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; setPreOpSkySrc(URL.createObjectURL(f)); e.target.value = ""; };
 
   const overallFlag = useMemo(() => {
     if (!tkaResult) return null;
@@ -1180,12 +1346,28 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   const handleExport = async () => {
     setExporting(true);
     try {
-      await exportToPDF({ apImgRef, latImgRef, skyImgRef, apPoints, latPoints, skyPoints, tkaResult, pcoResult, slopeResult, isResult, skyResult });
+      const { doc, filename } = await exportToPDF({ apImgRef, latImgRef, skyImgRef, apPoints, latPoints, skyPoints, tkaResult, pcoResult, slopeResult, isResult, skyResult, legSide, doctorNotes });
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      setPdfPreview({ url, doc, filename });
     } catch (err) {
       console.error("PDF export error:", err);
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleExportCSV = () => {
+    exportToCSV({ legSide, doctorNotes, tkaResult, pcoResult, slopeResult, isResult, skyResult });
+  };
+
+  const handleDownloadPDF = () => {
+    if (pdfPreview) pdfPreview.doc.save(pdfPreview.filename);
+  };
+
+  const handleClosePdfPreview = () => {
+    if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
+    setPdfPreview(null);
   };
 
   // Side-aware hints for medial/lateral landmarks — must be before any early return
@@ -1206,6 +1388,10 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
 
   if (!isOpen) return null;
 
+  // Photo grid layout — computed outside JSX to avoid IIFE (SWC limitation)
+  const photoCount   = [apImageSrc, latImageSrc, skyImageSrc].filter(Boolean).length || 1;
+  const gridRowsCls  = photoCount <= 1 ? "md:grid-rows-1" : photoCount === 2 ? "md:grid-rows-2" : "md:grid-rows-3";
+
   const sidebar = (landmarkDefs, hints, points, activeIndex, result) => {
     const isAP  = landmarkDefs === AP_LANDMARKS;
     const isSky = landmarkDefs === SKY_LANDMARKS;
@@ -1213,208 +1399,213 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
     const activeHints = isAP ? sideHints(hints, true) : hints;
     return (
     <div
-      className="flex w-full shrink-0 flex-col overflow-y-auto md:w-[260px]"
+      className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden md:w-[260px]"
       style={{ borderLeft: "1px solid var(--soft-border, #e2e8f0)" }}
     >
-      {/* Leg side selector — only on AP step */}
-      {isAP && (
-        <div className="px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-          <p className="mb-2 text-[10px] font-black tracking-wide text-slate-500 uppercase">Sisi Kaki yang Di-foto</p>
-          <div className="flex gap-2">
+      {/* ── Fixed header ────────────────────────────────────── */}
+      <div className="shrink-0 px-4 py-2.5" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+        <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">
+          {isAP ? "AP View — 7 Titik" : isSky ? "Skyline — 5 Titik (Opsional)" : "Lateral — PCO + Slope + Patela"}
+        </p>
+        <div className="mt-1 flex items-center gap-1.5">
+          <Move className="h-3 w-3 shrink-0 text-slate-400" />
+          <span className="text-[9px] text-slate-400">Klik gambar tempatkan titik · Drag untuk edit</span>
+        </div>
+      </div>
+
+      {/* ── Scrollable body ─────────────────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+
+        {/* Leg side selector — AP only */}
+        {isAP && (
+          <div className="px-3 py-3" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+            <p className="mb-1.5 text-[9px] font-black tracking-wide text-slate-500 uppercase">Sisi Kaki</p>
+            <div className="flex gap-2">
+              {[
+                { key: "right", label: "Kaki Kanan", sub: "Medial = kiri gambar" },
+                { key: "left",  label: "Kaki Kiri",  sub: "Medial = kanan gambar" },
+              ].map(({ key, label, sub }) => (
+                <button
+                  key={key}
+                  onClick={() => setLegSide(key)}
+                  className="flex flex-1 flex-col items-center rounded-xl border py-2 text-[10px] font-black transition-all"
+                  style={{
+                    background: legSide === key ? "#ede9fe" : "transparent",
+                    borderColor: legSide === key ? "#7c3aed" : "var(--soft-border, #e2e8f0)",
+                    color: legSide === key ? "#6d28d9" : "#94a3b8",
+                  }}
+                >
+                  {label}
+                  <span className="mt-0.5 text-[8px] font-normal opacity-70">{sub}</span>
+                </button>
+              ))}
+            </div>
+            <div className="relative mt-2 overflow-hidden rounded-xl bg-slate-900" style={{ aspectRatio: "137/184" }}>
+              <img src="/tka/ap.svg" alt="AP knee" className="h-full w-full object-contain" />
+            </div>
+          </div>
+        )}
+
+        {/* Landmark list */}
+        <div>
+          {landmarkDefs.map((def, i) => {
+            const placed = !!points[def.key];
+            const isActive = i === activeIndex;
+            const isSlopeFirst = isLat && def === SLOPE_LANDMARKS[0];
+            const isISFirst    = isLat && def === IS_LANDMARKS[0];
+            return (
+              <React.Fragment key={def.key}>
+                {isSlopeFirst && (
+                  <div className="flex items-center gap-2 px-4 py-1.5" style={{ background: "#f0fdf4", borderBottom: "1px solid #d1fae5", borderTop: "1px solid #d1fae5" }}>
+                    <span className="text-[9px] font-black tracking-widest text-emerald-600 uppercase">Tibial Slope</span>
+                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[8px] font-bold text-emerald-500">Opsional · 3–7°</span>
+                  </div>
+                )}
+                {isISFirst && (
+                  <div className="flex items-center gap-2 px-4 py-1.5" style={{ background: "#fdf4ff", borderBottom: "1px solid #f0abfc", borderTop: "1px solid #f0abfc" }}>
+                    <span className="text-[9px] font-black tracking-widest text-fuchsia-600 uppercase">Insall-Salvati</span>
+                    <span className="rounded-full bg-fuchsia-100 px-1.5 py-0.5 text-[8px] font-bold text-fuchsia-500">Opsional · 0.8–1.2</span>
+                  </div>
+                )}
+                <div
+                  className="flex items-start gap-2.5 px-3 py-2"
+                  style={{
+                    background: isActive ? def.color + "12" : "transparent",
+                    borderLeft: isActive ? `3px solid ${def.color}` : "3px solid transparent",
+                    borderBottom: "1px solid var(--soft-border, #e2e8f0)",
+                  }}
+                >
+                  <div
+                    className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 flex items-center justify-center text-[9px] font-black"
+                    style={{ background: placed ? def.color : "transparent", borderColor: def.color, color: placed ? "#fff" : def.color }}
+                  >
+                    {placed ? "✓" : i + 1}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold leading-tight" style={{ color: isActive ? def.color : placed ? "var(--soft-text-hi, #0f172a)" : "#94a3b8" }}>
+                      {def.short} — {def.label}
+                    </p>
+                    {isActive && <p className="mt-0.5 text-[9px] leading-snug" style={{ color: def.color + "cc" }}>{activeHints[i]}</p>}
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* AP quick preview */}
+        {result && landmarkDefs === AP_LANDMARKS && (
+          <div className="m-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+            <p className="mb-1.5 text-[9px] font-black text-indigo-700 uppercase tracking-wide">Preview AP</p>
             {[
-              { key: "right", label: "Kaki Kanan", sub: "Medial = KIRI gambar" },
-              { key: "left",  label: "Kaki Kiri",  sub: "Medial = KANAN gambar" },
-            ].map(({ key, label, sub }) => (
-              <button
-                key={key}
-                onClick={() => setLegSide(key)}
-                className="flex flex-1 flex-col items-center rounded-xl border py-2 text-[10px] font-black transition-all"
-                style={{
-                  background: legSide === key ? "#ede9fe" : "transparent",
-                  borderColor: legSide === key ? "#7c3aed" : "var(--soft-border, #e2e8f0)",
-                  color: legSide === key ? "#6d28d9" : "#94a3b8",
-                }}
-              >
-                {label}
-                <span className="mt-0.5 text-[9px] font-normal" style={{ color: legSide === key ? "#8b5cf6" : "#cbd5e1" }}>{sub}</span>
-              </button>
+              { label: "MDFA", val: result.MDFA + "°", flag: result.mdfaFlag },
+              { label: "MPTA", val: result.MPTA + "°", flag: result.mptaFlag },
+              { label: "Total", val: result.combined + "°", flag: result.combinedFlag },
+            ].map(({ label, val, flag }) => (
+              <div key={label} className="flex items-center justify-between py-0.5">
+                <span className="text-[10px] text-slate-500">{label}</span>
+                <div className="flex items-center gap-1">
+                  <FlagDot flag={flag} />
+                  <span className="text-[10px] font-black text-slate-700">{val}</span>
+                </div>
+              </div>
             ))}
           </div>
-          {/* AP anatomy diagram — labels Medial/Lateral sudah embedded dalam SVG */}
-          <div className="relative mt-2 overflow-hidden rounded-xl bg-slate-900" style={{ aspectRatio: "137/184" }}>
-            <img src="/tka/ap.svg" alt="AP knee" className="h-full w-full object-contain" />
-          </div>
-        </div>
-      )}
+        )}
 
-      <div className="px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-        <p className="text-[10px] font-black tracking-wide text-slate-500 uppercase">
-          {isAP ? "AP View — 7 Titik" : isSky ? "Skyline View — 5 Titik (Opsional)" : "Lateral View — PCO + Slope + Patela"}
-        </p>
-        <p className="mt-0.5 text-[10px] text-slate-400">
-          Klik gambar untuk menempatkan titik. Titik yang sudah ada bisa di-drag untuk dipindah.
-        </p>
-        <div className="mt-1.5 flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1">
-          <Move className="h-3 w-3 shrink-0 text-slate-400" />
-          <span className="text-[10px] text-slate-400">Drag titik untuk edit posisi</span>
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {landmarkDefs.map((def, i) => {
-          const placed = !!points[def.key];
-          const isActive = i === activeIndex;
-          // Section headers for lateral sub-groups
-          const isSlopeFirst = isLat && def === SLOPE_LANDMARKS[0];
-          const isISFirst    = isLat && def === IS_LANDMARKS[0];
-          return (
-            <React.Fragment key={def.key}>
-              {isSlopeFirst && (
-                <div className="flex items-center gap-2 px-4 py-1.5 bg-emerald-50" style={{ borderBottom: "1px solid #d1fae5" }}>
-                  <span className="text-[9px] font-black tracking-widest text-emerald-600 uppercase">Tibial Slope (Opsional)</span>
-                  <span className="text-[8px] text-emerald-400">Normal 3–7°</span>
-                </div>
-              )}
-              {isISFirst && (
-                <div className="flex items-center gap-2 px-4 py-1.5 bg-fuchsia-50" style={{ borderBottom: "1px solid #f0abfc" }}>
-                  <span className="text-[9px] font-black tracking-widest text-fuchsia-600 uppercase">Insall-Salvati (Opsional)</span>
-                  <span className="text-[8px] text-fuchsia-400">Normal 0.8–1.2</span>
-                </div>
-              )}
-              <div
-                className="flex items-start gap-2.5 px-4 py-2.5"
-                style={{
-                  background: isActive ? def.color + "14" : "transparent",
-                  borderLeft: isActive ? `3px solid ${def.color}` : "3px solid transparent",
-                  borderBottom: "1px solid var(--soft-border, #e2e8f0)",
-                }}
-              >
-                <div
-                  className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 flex items-center justify-center text-[9px] font-black"
-                  style={{ background: placed ? def.color : "transparent", borderColor: def.color, color: placed ? "#fff" : def.color }}
-                >
-                  {placed ? "✓" : i + 1}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold leading-tight" style={{ color: isActive ? def.color : placed ? "var(--soft-text-hi, #0f172a)" : "#94a3b8" }}>
-                    {def.short} — {def.label}
-                  </p>
-                  {isActive && <p className="mt-0.5 text-[9px] text-slate-400">{activeHints[i]}</p>}
-                </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-
-      {/* Quick preview */}
-      {result && landmarkDefs === AP_LANDMARKS && (
-        <div className="m-3 shrink-0 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
-          <p className="mb-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wide">Preview AP</p>
-          {[
-            { label: "MDFA", val: result.MDFA + "°", flag: result.mdfaFlag },
-            { label: "MPTA", val: result.MPTA + "°", flag: result.mptaFlag },
-            { label: "Total", val: result.combined + "°", flag: result.combinedFlag },
-          ].map(({ label, val, flag }) => (
-            <div key={label} className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-500">{label}</span>
-              <div className="flex items-center gap-1">
-                <FlagDot flag={flag} />
-                <span className="text-[10px] font-black text-slate-700">{val}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {isLat && (
-        <>
-          {/* PCO diagram — titik KA/KP/CP dan garis pengukuran sudah embedded dalam SVG */}
-          <div className="px-3 pt-3 pb-2 shrink-0" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-            <p className="mb-1.5 text-[9px] font-black tracking-wider text-slate-400 uppercase">Panduan titik PCO (lateral)</p>
-            <div className="overflow-hidden rounded-xl bg-slate-900" style={{ width: "100%", aspectRatio: "140/185" }}>
+        {/* PCO diagram */}
+        {isLat && (
+          <div className="px-3 py-3" style={{ borderTop: "1px solid var(--soft-border, #e2e8f0)" }}>
+            <p className="mb-1.5 text-[9px] font-black tracking-wider text-slate-400 uppercase">Panduan PCO (Lateral)</p>
+            <div className="overflow-hidden rounded-xl bg-slate-900" style={{ aspectRatio: "140/185" }}>
               <img src="/tka/lateral.svg" alt="lateral knee" className="h-full w-full object-contain" />
             </div>
-            {/* Legend */}
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
               {[
-                { col: "#efd213", label: "KA", sub: "korteks anterior" },
-                { col: "#d9710b", label: "KP", sub: "korteks post. shaft" },
-                { col: "#9a18c7", label: "CP", sub: "kondil posterior" },
+                { col: "#efd213", label: "KA", sub: "anterior" },
+                { col: "#d9710b", label: "KP", sub: "post. shaft" },
+                { col: "#9a18c7", label: "CP", sub: "kondil post." },
               ].map(({ col, label, sub }) => (
                 <div key={label} className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: col }} />
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col }} />
                   <span className="text-[9px] font-black" style={{ color: col }}>{label}</span>
                   <span className="text-[9px] text-slate-400">{sub}</span>
                 </div>
               ))}
             </div>
-            <p className="mt-1.5 text-[8px] text-slate-400">Garis merah = garis referensi PCO. Diagram kiri = kaki kanan; kanan = kaki kiri.</p>
-          </div>
-          <div className="m-3 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex gap-2">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-              <p className="text-[10px] leading-snug text-slate-500">
-                PCO opsional. Lewati langsung ke Hasil jika tidak ada X-ray lateral. Klik berurutan: <span className="font-bold text-yellow-500">KA</span> → <span className="font-bold text-orange-500">KP</span> → <span className="font-bold text-violet-500">CP</span>.
+            <div className="mt-2 flex gap-1.5 rounded-lg bg-slate-100 px-2.5 py-2">
+              <Info className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+              <p className="text-[9px] leading-snug text-slate-500">
+                PCO opsional. Klik berurutan: <span className="font-bold text-yellow-600">KA</span> → <span className="font-bold text-orange-600">KP</span> → <span className="font-bold text-violet-600">CP</span>.
               </p>
             </div>
           </div>
-        </>
-      )}
+        )}
 
-      {isSky && (
-        <>
-          {/* Skyline guide */}
-          <div className="px-3 pt-3 pb-1 shrink-0" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-            <p className="mb-1.5 text-[9px] font-black tracking-wider text-slate-400 uppercase">Panduan Skyline/Merchant View</p>
+        {/* Skyline guide */}
+        {isSky && (
+          <div className="px-3 py-3" style={{ borderTop: "1px solid var(--soft-border, #e2e8f0)" }}>
+            <p className="mb-1.5 text-[9px] font-black tracking-wider text-slate-400 uppercase">Panduan Skyline/Merchant</p>
             <div className="rounded-xl bg-slate-100 p-2.5">
-              <p className="text-[9px] leading-relaxed text-slate-500">
-                Foto Merchant (45° fleksi, X-ray dari atas). Patela di tengah, trochlear groove di bawahnya.
-              </p>
+              <p className="text-[9px] leading-relaxed text-slate-500">Foto Merchant (45° fleksi). Patela di tengah, trochlear groove di bawahnya.</p>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                 {[
-                  { col: "#c084fc", label: "PM", sub: "facet medial patela" },
-                  { col: "#a855f7", label: "PL", sub: "facet lateral patela" },
+                  { col: "#c084fc", label: "PM", sub: "medial patela" },
+                  { col: "#a855f7", label: "PL", sub: "lateral patela" },
                   { col: "#38bdf8", label: "TM", sub: "kondil medial" },
                   { col: "#0ea5e9", label: "TL", sub: "kondil lateral" },
-                  { col: "#f472b6", label: "SG", sub: "sulkus groove" },
+                  { col: "#f472b6", label: "SG", sub: "sulkus" },
                 ].map(({ col, label, sub }) => (
                   <div key={label} className="flex items-center gap-1">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: col }} />
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: col }} />
                     <span className="text-[9px] font-black" style={{ color: col }}>{label}</span>
                     <span className="text-[9px] text-slate-400">{sub}</span>
                   </div>
                 ))}
               </div>
             </div>
-          </div>
-          <div className="m-3 shrink-0 rounded-xl border border-purple-200 bg-purple-50 p-3">
-            <div className="flex gap-2">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-400" />
-              <p className="text-[10px] leading-snug text-purple-600">
-                Skyline opsional. Lewati ke Hasil jika tidak ada foto ini. Klik berurutan: <span className="font-bold">PM → PL → TM → TL → SG</span>.
-              </p>
+            <div className="mt-2 flex gap-1.5 rounded-lg bg-purple-50 px-2.5 py-2">
+              <Info className="mt-0.5 h-3 w-3 shrink-0 text-purple-400" />
+              <p className="text-[9px] leading-snug text-purple-600">Skyline opsional. Klik berurutan: <span className="font-bold">PM → PL → TM → TL → SG</span>.</p>
             </div>
           </div>
-        </>
-      )}
+        )}
+
+      </div>
     </div>
   );
   };
 
-  const canvasControls = (uploadRef, handleUpload, points, setPoints, transform, setTransform, imageSrc, imgRef = apImgRef) => (
+  const canvasControls = (uploadRef, handleUpload, points, resetPoints, transform, setTransform, imageSrc, imgRef = apImgRef, canRef = apCanRef, undo = null, redo = null, canUndo = false, canRedo = false) => (
     <>
-      <div className="absolute left-2 top-2 flex gap-1.5 z-10">
+      <div className="absolute left-2 top-2 flex gap-1.5 z-10 flex-wrap">
         <button onClick={() => uploadRef.current?.click()} className="flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
           <Camera className="h-3 w-3" />
           {imageSrc ? "Ganti" : "Upload"}
         </button>
         {Object.keys(points).length > 0 && (
-          <button onClick={() => setPoints({})} className="flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
+          <button onClick={resetPoints} className="flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
             <RotateCcw className="h-3 w-3" />
-            Reset Titik
+            Reset
           </button>
         )}
+      </div>
+      {/* Undo / Redo */}
+      <div className="absolute left-2 bottom-2 flex gap-1 z-10">
+        <button
+          onClick={undo} disabled={!canUndo}
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm disabled:opacity-30"
+          title="Undo"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={redo} disabled={!canRedo}
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm disabled:opacity-30"
+          title="Redo"
+        >
+          <Redo2 className="h-3.5 w-3.5" />
+        </button>
       </div>
       <div className="absolute right-2 top-2 flex flex-col gap-1 z-10">
         <button onClick={() => setTransform((t) => ({ ...t, scale: Math.min(30, t.scale * 1.25) }))} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
@@ -1426,7 +1617,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
         {imageSrc && (
           <button
             className="flex h-7 items-center justify-center rounded-full bg-black/55 px-1.5 text-[9px] font-black text-white backdrop-blur-sm"
-            onClick={() => { if (imgRef.current) setTransform(fitTransform(imgRef.current, { width: 900, height: 580 })); }}
+            onClick={() => { if (imgRef.current && canRef.current) setTransform(fitTransform(imgRef.current, canRef.current)); }}
           >
             Fit
           </button>
@@ -1437,12 +1628,90 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
   );
 
   const content = (
+    <>
+    {/* ── PDF Preview Modal ──────────────────────────────────────────────────── */}
+    {pdfPreview && (
+      <div className="fixed inset-0 z-[300] flex items-end justify-center sm:items-center sm:p-4"
+        style={{ background: "rgba(15,23,42,0.85)", backdropFilter: "blur(8px)" }}
+        onClick={handleClosePdfPreview}
+      >
+        <div
+          className="relative flex h-[92vh] w-full max-w-[860px] flex-col overflow-hidden rounded-t-2xl shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl"
+          style={{ background: "#fff" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal header */}
+          <div className="flex shrink-0 items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #e2e8f0" }}>
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "#4f46e5" }}>
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs font-black text-slate-700">Preview PDF</p>
+                <p className="text-[10px] text-slate-400">{pdfPreview.filename}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDownloadPDF}
+                className="flex items-center gap-1.5 rounded-full px-4 py-2 text-[11px] font-black text-white"
+                style={{ background: "#4f46e5" }}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download PDF
+              </button>
+              <button
+                onClick={handleClosePdfPreview}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {/* PDF viewer — iframe on desktop, download prompt on mobile */}
+          <iframe
+            src={pdfPreview.url}
+            className="hidden w-full flex-1 sm:block"
+            style={{ minHeight: "60vh", border: "none" }}
+            title="PDF Preview"
+          />
+          {/* Mobile fallback: show download link since iOS Safari blocks PDF iframe */}
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 sm:hidden">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: "#ede9fe" }}>
+              <svg className="h-8 w-8 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-black text-slate-700">PDF Siap Diunduh</p>
+              <p className="mt-1 text-xs text-slate-400">Preview tidak tersedia di browser mobile. Tap tombol Download untuk mengunduh file PDF.</p>
+            </div>
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 rounded-full px-6 py-3 text-sm font-black text-white"
+              style={{ background: "#4f46e5" }}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download PDF
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <AnimatePresence>
       {isOpen && (
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4"
+          className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-4"
           style={{ background: "rgba(15,23,42,0.75)", backdropFilter: "blur(6px)" }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
@@ -1451,34 +1720,46 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.94, opacity: 0, y: 16 }}
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
-            className="flex max-h-[99vh] w-full max-w-[1280px] flex-col overflow-hidden rounded-[24px] shadow-2xl"
+            className="flex h-[96vh] w-full max-w-[1280px] flex-col overflow-hidden rounded-t-[24px] shadow-2xl sm:h-[96vh] sm:max-h-[99vh] sm:rounded-[24px]"
             style={{ background: "var(--color-surface, #f8fafc)" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* ── Header ──────────────────────────────────────────────── */}
-            <div className="shrink-0 px-5 py-4" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[10px] font-black tracking-widest text-violet-600 uppercase">Post-TKA Radiographic Assessment</div>
-                  <h2 className="mt-0.5 text-lg font-extrabold" style={{ color: "var(--soft-text-hi, #0f172a)" }}>
-                    Analisis Alignment Pasca Operasi TKA
+            <div className="shrink-0 px-3 py-3 md:px-5 md:py-4" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="hidden text-[10px] font-black tracking-widest text-violet-600 uppercase md:block">Post-TKA Radiographic Assessment</div>
+                  <h2 className="truncate text-sm font-extrabold md:mt-0.5 md:text-lg" style={{ color: "var(--soft-text-hi, #0f172a)" }}>
+                    Analisis Alignment TKA
                   </h2>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   {step === "result" && tkaResult && (
-                    <button
-                      onClick={handleExport}
-                      disabled={exporting}
-                      className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[11px] font-black text-white"
-                      style={{ background: "#7c3aed" }}
-                    >
-                      {exporting ? (
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      ) : (
-                        <Download className="h-3.5 w-3.5" />
-                      )}
-                      {exporting ? "Menyimpan..." : "Simpan PDF"}
-                    </button>
+                    <>
+                      <button
+                        onClick={handleExportCSV}
+                        className="flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-black"
+                        style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}
+                        title="Export ke CSV"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        <span className="hidden md:inline">CSV</span>
+                      </button>
+                      <button
+                        onClick={handleExport}
+                        disabled={exporting}
+                        className="flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-black text-white md:px-3.5"
+                        style={{ background: "#7c3aed" }}
+                      >
+                        {exporting ? (
+                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        ) : (
+                          <Download className="h-3.5 w-3.5" />
+                        )}
+                        <span className="hidden md:inline">{exporting ? "Menyimpan..." : "Simpan PDF"}</span>
+                        <span className="md:hidden">{exporting ? "..." : "PDF"}</span>
+                      </button>
+                    </>
                   )}
                   <button onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--soft-border, #e2e8f0)", color: "var(--soft-text-hi, #0f172a)" }}>
                     <X className="h-4 w-4" />
@@ -1487,7 +1768,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
               </div>
 
               {/* Step dots */}
-              <div className="mt-4 flex items-center gap-0">
+              <div className="mt-3 flex items-center gap-0 md:mt-4">
                 {STEPS.map((s, i) => (
                   <React.Fragment key={s}>
                     <StepDot index={i} active={i === stepIndex} done={i < stepIndex} label={STEP_LABELS[i]} />
@@ -1505,7 +1786,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                 {/* ── AP View ─────────────────────────────────────────── */}
                 {step === "ap" && (
                   <motion.div key="ap" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}
-                    className="flex h-full flex-col md:flex-row"
+                    className="flex h-full flex-col overflow-hidden md:flex-row"
                   >
                     <div className="relative min-h-[260px] flex-1 overflow-hidden bg-slate-900">
                       <LandmarkCanvas
@@ -1519,8 +1800,9 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                         onPlace={handleApPlace}
                         onMoveLandmark={handleApMove}
                         connections={AP_CONNECTIONS}
+                        canvasRef={apCanRef}
                       />
-                      {canvasControls(apUploadRef, handleApUpload, apPoints, setApPoints, apTransform, setApTransform, apImageSrc)}
+                      {canvasControls(apUploadRef, handleApUpload, apPoints, resetApPoints, apTransform, setApTransform, apImageSrc, apImgRef, apCanRef, undoAp, redoAp, canUndoAp, canRedoAp)}
                     </div>
                     {sidebar(AP_LANDMARKS, AP_HINTS, apPoints, apActiveIndex, tkaResult)}
                   </motion.div>
@@ -1529,7 +1811,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                 {/* ── Lateral View ─────────────────────────────────────── */}
                 {step === "lateral" && (
                   <motion.div key="lateral" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}
-                    className="flex h-full flex-col md:flex-row"
+                    className="flex h-full flex-col overflow-hidden md:flex-row"
                   >
                     <div className="relative min-h-[260px] flex-1 overflow-hidden bg-slate-900">
                       <LandmarkCanvas
@@ -1544,8 +1826,9 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                         onMoveLandmark={handleLatMove}
                         connections={ALL_LAT_CONNECTIONS}
                         drawOverlay={pcoOverlay}
+                        canvasRef={latCanRef}
                       />
-                      {canvasControls(latUploadRef, handleLatUpload, latPoints, setLatPoints, latTransform, setLatTransform, latImageSrc, latImgRef)}
+                      {canvasControls(latUploadRef, handleLatUpload, latPoints, resetLatPoints, latTransform, setLatTransform, latImageSrc, latImgRef, latCanRef, undoLat, redoLat, canUndoLat, canRedoLat)}
                       {/* Orientation guide bar — standard lateral X-ray: anterior on right for left knee */}
                       {latImageSrc && (
                         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 backdrop-blur-sm">
@@ -1564,7 +1847,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                 {/* ── Skyline View ─────────────────────────────────────── */}
                 {step === "skyline" && (
                   <motion.div key="skyline" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}
-                    className="flex h-full flex-col md:flex-row"
+                    className="flex h-full flex-col overflow-hidden md:flex-row"
                   >
                     <div className="relative min-h-[260px] flex-1 overflow-hidden bg-slate-900">
                       <LandmarkCanvas
@@ -1578,8 +1861,9 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
                         onPlace={handleSkyPlace}
                         onMoveLandmark={handleSkyMove}
                         connections={SKY_CONNECTIONS}
+                        canvasRef={skyCanRef}
                       />
-                      {canvasControls(skyUploadRef, handleSkyUpload, skyPoints, setSkyPoints, skyTransform, setSkyTransform, skyImageSrc, skyImgRef)}
+                      {canvasControls(skyUploadRef, handleSkyUpload, skyPoints, resetSkyPoints, skyTransform, setSkyTransform, skyImageSrc, skyImgRef, skyCanRef, undoSky, redoSky, canUndoSky, canRedoSky)}
                       <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 backdrop-blur-sm">
                         <span className="text-[9px] font-black text-purple-300">Skyline/Merchant View</span>
                         <span className="h-2 w-px bg-white/20" />
@@ -1598,294 +1882,380 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
 
                 {/* ── Results ──────────────────────────────────────────── */}
                 {step === "result" && (
-                  <motion.div key="result" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}
-                    className="flex h-full overflow-hidden"
+                  <motion.div key="result" ref={resultRowRef} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.2 }}
+                    className="flex h-full flex-col overflow-y-auto lg:overflow-hidden lg:flex-row"
                   >
-                    {/* Left: X-ray images stacked */}
-                    <div className="flex flex-col" style={{ width: "46%", minWidth: 0, borderRight: "1px solid #1e293b" }}>
-                      {/* AP image */}
-                      <div className="relative flex-1 overflow-hidden bg-slate-900" style={{ borderBottom: "1px solid #1e293b" }}>
-                        <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-2">
-                          <span className="rounded-md bg-black/50 px-2 py-0.5 text-[9px] font-black tracking-widest text-white/70 uppercase backdrop-blur-sm">X-Ray AP View</span>
-                          {tkaResult ? (
-                            <span className="rounded-full px-2 py-0.5 text-[9px] font-black backdrop-blur-sm"
-                              style={[tkaResult.mdfaFlag, tkaResult.mptaFlag, tkaResult.combinedFlag].every((f) => f === "normal")
-                                ? { background: "rgba(21,128,61,0.75)", color: "#fff" }
-                                : { background: "rgba(180,83,9,0.75)", color: "#fff" }}>
-                              {[tkaResult.mdfaFlag, tkaResult.mptaFlag, tkaResult.combinedFlag].every((f) => f === "normal") ? "Semua Normal" : "Terdapat Abnormal"}
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-black/40 px-2 py-0.5 text-[9px] font-black text-white/60 backdrop-blur-sm">Belum Dianalisis</span>
-                          )}
-                        </div>
-                        {apImageSrc ? (
-                          <LandmarkCanvas
-                            imageSrc={apImageSrc}
-                            landmarks={apPoints}
-                            landmarkDefs={AP_LANDMARKS}
-                            hints={AP_HINTS}
-                            activeIndex={-1}
-                            transform={apResTransform}
-                            setTransform={setApResTransform}
-                            onPlace={() => {}}
-                            onMoveLandmark={handleApMove}
-                            connections={AP_CONNECTIONS}
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-[11px] text-slate-500">Foto AP belum diunggah</div>
-                        )}
+                    {/* ── COL 1: X-Ray Visualization ─────────────────────── */}
+                    <div className="flex shrink-0 flex-col overflow-hidden border-b border-slate-200 min-w-full lg:min-w-0 lg:h-full lg:border-b-0 lg:border-r" style={{ background: "var(--color-surface-lo, #f1f5f9)", width: `${col1Pct}%` }}>
+                      <div className="shrink-0 px-3 py-2" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                        <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase">X-Ray Visualization &amp; Annotation</p>
                       </div>
-
-                      {/* Lateral image */}
-                      <div className="relative flex-1 overflow-hidden bg-slate-900" style={{ borderBottom: skyImageSrc ? "1px solid #1e293b" : "none" }}>
-                        <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-2">
-                          <span className="rounded-md bg-black/50 px-2 py-0.5 text-[9px] font-black tracking-widest text-white/70 uppercase backdrop-blur-sm">X-Ray Lateral View</span>
-                          {pcoResult ? (
-                            <span className="rounded-full px-2 py-0.5 text-[9px] font-black backdrop-blur-sm" style={{ background: "rgba(6,182,212,0.75)", color: "#fff" }}>
-                              Analisis Lateral
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-black/40 px-2 py-0.5 text-[9px] font-black text-white/60 backdrop-blur-sm">Belum Dianalisis</span>
-                          )}
-                        </div>
-                        {latImageSrc ? (
-                          <LandmarkCanvas
-                            imageSrc={latImageSrc}
-                            landmarks={latPoints}
-                            landmarkDefs={ALL_LAT_LANDMARKS}
-                            hints={[...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS]}
-                            activeIndex={-1}
-                            transform={latResTransform}
-                            setTransform={setLatResTransform}
-                            onPlace={() => {}}
-                            onMoveLandmark={handleLatMove}
-                            connections={ALL_LAT_CONNECTIONS}
-                            drawOverlay={pcoOverlay}
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-[11px] text-slate-500">Foto lateral belum diunggah</div>
-                        )}
-                      </div>
-
-                      {/* Skyline image — only shown if uploaded */}
-                      {skyImageSrc && (
-                        <div className="relative flex-1 overflow-hidden bg-slate-900">
-                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-2">
-                            <span className="rounded-md bg-black/50 px-2 py-0.5 text-[9px] font-black tracking-widest text-white/70 uppercase backdrop-blur-sm">Skyline/Merchant View</span>
-                            {skyResult ? (
-                              <span className="rounded-full px-2 py-0.5 text-[9px] font-black backdrop-blur-sm" style={{ background: "rgba(168,85,247,0.75)", color: "#fff" }}>
-                                Analisis Patela
-                              </span>
-                            ) : (
-                              <span className="rounded-full bg-black/40 px-2 py-0.5 text-[9px] font-black text-white/60 backdrop-blur-sm">Belum Dianalisis</span>
-                            )}
+                      {/* AP + Lateral side by side */}
+                      <div className="flex h-[180px] flex-row lg:h-[50%]" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                        <PhotoRow compareMode={compareMode} preOpSrc={preOpApSrc} preOpLabel="AP" className="flex-1 w-auto">
+                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 p-1.5">
+                            <span className="rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black tracking-widest text-white/80 uppercase">X-Ray AP View</span>
                           </div>
-                          <LandmarkCanvas
-                            imageSrc={skyImageSrc}
-                            landmarks={skyPoints}
-                            landmarkDefs={SKY_LANDMARKS}
-                            hints={SKY_HINTS}
-                            activeIndex={-1}
-                            transform={skyResTransform}
-                            setTransform={setSkyResTransform}
-                            onPlace={() => {}}
-                            onMoveLandmark={handleSkyMove}
-                            connections={SKY_CONNECTIONS}
-                          />
+                          {apImageSrc ? (
+                            <LandmarkCanvas imageSrc={apImageSrc} landmarks={apPoints} landmarkDefs={AP_LANDMARKS} hints={AP_HINTS} activeIndex={-1} transform={apResTransform} setTransform={setApResTransform} onPlace={() => {}} onMoveLandmark={handleApMove} connections={AP_CONNECTIONS} />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[10px] text-slate-500">Foto AP belum diunggah</div>
+                          )}
+                        </PhotoRow>
+                        <PhotoRow compareMode={compareMode} preOpSrc={preOpLatSrc} preOpLabel="Lateral" className="flex-1 w-auto border-r-0">
+                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 p-1.5">
+                            <span className="rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black tracking-widest text-white/80 uppercase">X-Ray Lateral View</span>
+                          </div>
+                          {latImageSrc ? (
+                            <LandmarkCanvas imageSrc={latImageSrc} landmarks={latPoints} landmarkDefs={ALL_LAT_LANDMARKS} hints={[...LAT_HINTS, ...SLOPE_HINTS, ...IS_HINTS]} activeIndex={-1} transform={latResTransform} setTransform={setLatResTransform} onPlace={() => {}} onMoveLandmark={handleLatMove} connections={ALL_LAT_CONNECTIONS} drawOverlay={pcoOverlay} />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[10px] text-slate-500">Foto lateral belum diunggah</div>
+                          )}
+                        </PhotoRow>
+                      </div>
+                      {/* Skyline */}
+                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                        <div className="shrink-0 px-3 py-1.5" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                          <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">X-Ray Skyline View (Opsional)</p>
                         </div>
-                      )}
+                        {skyImageSrc ? (
+                          <div className="relative min-h-0 flex-1 overflow-hidden bg-slate-900">
+                            <PhotoRow compareMode={compareMode} preOpSrc={preOpSkySrc} preOpLabel="Skyline" className="h-full w-full border-0">
+                              <LandmarkCanvas imageSrc={skyImageSrc} landmarks={skyPoints} landmarkDefs={SKY_LANDMARKS} hints={SKY_HINTS} activeIndex={-1} transform={skyResTransform} setTransform={setSkyResTransform} onPlace={() => {}} onMoveLandmark={handleSkyMove} connections={SKY_CONNECTIONS} />
+                            </PhotoRow>
+                          </div>
+                        ) : (
+                          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: "var(--soft-border, #e2e8f0)" }}>
+                              <Camera className="h-5 w-5 text-slate-400" />
+                            </div>
+                            <div className="text-center">
+                              <p className="text-[11px] font-bold text-slate-500">Upload Skyline / Merchant View</p>
+                              <p className="mt-0.5 text-[9px] text-slate-400">Foto opsional untuk patellar assessment</p>
+                            </div>
+                            <button onClick={() => skyUploadRef.current?.click()} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black text-white" style={{ background: "#7c3aed" }}>
+                              <Camera className="h-3 w-3" /> Upload
+                            </button>
+                            <input ref={skyUploadRef} type="file" accept="image/*" className="hidden" onChange={handleSkyUpload} />
+                          </div>
+                        )}
+                      </div>
+                      {/* Compare mode toggle */}
+                      <div className="shrink-0 px-3 py-2">
+                        <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[9px] font-black transition-colors" style={{ background: compareMode ? "#ede9fe" : "var(--soft-border, #e2e8f0)", color: compareMode ? "#6d28d9" : "#94a3b8" }} onClick={() => setCompareMode((v) => !v)}>
+                          <span>⇌</span>
+                          <span>{compareMode ? "Mode Komparasi Pre/Post Aktif" : "Tambah Foto Pre-op untuk Komparasi"}</span>
+                        </button>
+                        {compareMode && (
+                          <div className="mt-2 grid grid-cols-3 gap-1.5">
+                            {[
+                              { label: "AP", src: preOpApSrc, ref: preOpApRef, handler: handlePreOpApUpload, onClear: () => setPreOpApSrc(null) },
+                              { label: "Lat", src: preOpLatSrc, ref: preOpLatRef, handler: handlePreOpLatUpload, onClear: () => setPreOpLatSrc(null) },
+                              { label: "Sky", src: preOpSkySrc, ref: preOpSkyRef, handler: handlePreOpSkyUpload, onClear: () => setPreOpSkySrc(null) },
+                            ].map(({ label, src, ref, handler, onClear }) => (
+                              <div key={label} className="relative overflow-hidden rounded-lg border-2 border-dashed" style={{ aspectRatio: "1", borderColor: src ? "#7c3aed" : "var(--soft-border, #cbd5e1)" }}>
+                                {src ? (
+                                  <>
+                                    <img src={src} alt={"Pre-op " + label} className="h-full w-full object-cover" />
+                                    <button onClick={onClear} className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[8px] text-white">✕</button>
+                                    <span className="absolute bottom-0 inset-x-0 bg-violet-900/80 py-0.5 text-center text-[7px] font-black text-violet-200">{label}</span>
+                                  </>
+                                ) : (
+                                  <button onClick={() => ref.current?.click()} className="flex h-full w-full flex-col items-center justify-center gap-0.5">
+                                    <span className="text-base text-slate-300">+</span>
+                                    <span className="text-[8px] font-black text-slate-400">{label}</span>
+                                  </button>
+                                )}
+                                <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handler} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Right: measurements panel (scrollable) */}
-                    <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-                      {/* Overall banner */}
-                      {overallFlag && (
-                        <div className="flex items-center gap-3 rounded-2xl p-3"
-                          style={overallFlag === "good" ? { background: "#f0fdf4", border: "1px solid #bbf7d0" } : { background: "#fffbeb", border: "1px solid #fde68a" }}>
-                          {overallFlag === "good"
-                            ? <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
-                            : <AlertCircle className="h-5 w-5 shrink-0 text-amber-500" />}
-                          <div>
-                            <p className="text-xs font-black" style={{ color: overallFlag === "good" ? "#15803d" : "#92400e" }}>
-                              {overallFlag === "good" ? "Alignment Post-TKA dalam Batas Normal" : "Terdapat Parameter di Luar Batas Normal"}
-                            </p>
-                            <p className="text-[10px]" style={{ color: overallFlag === "good" ? "#16a34a" : "#b45309" }}>
-                              {overallFlag === "good"
-                                ? "Semua sudut dalam kisaran akseptabel. Follow-up klinis sesuai protokol."
-                                : "Evaluasi lebih lanjut direkomendasikan. Lihat detail di bawah."}
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                    {/* ── Drag resize handle ─────────────────────────────────── */}
+                    <div
+                      onMouseDown={onResizeStart}
+                      className="group hidden lg:flex shrink-0 w-1.5 cursor-col-resize items-center justify-center hover:w-2 transition-all z-10"
+                      style={{ background: "var(--soft-border, #e2e8f0)" }}
+                      title="Drag untuk mengatur lebar"
+                    >
+                      <div className="h-8 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
 
-                      {/* ALIGNMENT KORONAL */}
-                      <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Alignment Koronal (AP)</p>
+                    {/* ── COL 2: Alignment & Clinical Data ──────────────────── */}
+                    <div className="flex min-h-0 flex-col lg:flex-1 lg:overflow-hidden">
+                      <div className="shrink-0 px-4 py-2.5" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)", background: "var(--color-surface, #f8fafc)" }}>
+                        <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase">Alignment &amp; Clinical Data</p>
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2.5">
 
-                      {tkaResult ? (
-                        <>
-                          {/* MDFA full-width large card */}
-                          <div className="rounded-2xl border p-3.5" style={{ background: FLAG_STYLES[tkaResult.mdfaFlag].bg, borderColor: FLAG_STYLES[tkaResult.mdfaFlag].border }}>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[10px] font-black tracking-wide text-slate-500 uppercase">MDFA</span>
-                              <span className="rounded-full px-2 py-0.5 text-[9px] font-black" style={{ background: FLAG_STYLES[tkaResult.mdfaFlag].dot + "22", color: FLAG_STYLES[tkaResult.mdfaFlag].dot }}>
-                                {tkaResult.mdfaFlag === "normal" ? "Normal" : tkaResult.mdfaFlag === "low" ? "Rendah" : "Tinggi"}
-                              </span>
+                        {/* Alignment Koronal */}
+                        <div>
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Alignment Koronal (AP)</p>
+                          {tkaResult ? (
+                            <div className="space-y-1.5">
+                              {[
+                                { label: "MDFA", sub: "Mechanical Distal Femoral Angle", val: tkaResult.MDFA + "°", range: "85–95°", flag: tkaResult.mdfaFlag, text: tkaResult.mdfaText, min: 60, max: 120, lo: 85, hi: 95, num: tkaResult.MDFA },
+                                { label: "MPTA", sub: "Medial Proximal Tibial Angle", val: tkaResult.MPTA + "°", range: "85–95°", flag: tkaResult.mptaFlag, text: tkaResult.mptaText, min: 60, max: 120, lo: 85, hi: 95, num: tkaResult.MPTA },
+                                { label: "MDFA + MPTA", sub: "Combined alignment", val: tkaResult.combined + "°", range: "175–185°", flag: tkaResult.combinedFlag, text: tkaResult.combinedText, min: 140, max: 210, lo: 175, hi: 185, num: tkaResult.combined },
+                              ].map(({ label, sub, val, range, flag, text, min, max, lo, hi, num }) => {
+                                const s = FLAG_STYLES[flag] || FLAG_STYLES.normal;
+                                const fl = flag === "normal" ? "Normal" : flag === "low" ? "Rendah" : "Tinggi";
+                                return (
+                                  <div key={label} className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[9px] font-black tracking-wide text-slate-400 uppercase">{label}</p>
+                                        <div className="mt-0.5 flex items-baseline gap-1">
+                                          <span className="text-2xl font-black leading-none" style={{ color: s.text }}>{val}</span>
+                                          <span className="text-[9px]" style={{ color: s.dot }}>↓</span>
+                                        </div>
+                                        <p className="mt-0.5 text-[8px] text-slate-400">Kisaran: {range}</p>
+                                        {text && <p className="mt-1 text-[9px] leading-snug" style={{ color: s.text }}>{text}</p>}
+                                      </div>
+                                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                        <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>{fl}</span>
+                                        <MiniChart value={num} min={min} max={max} normalLow={lo} normalHigh={hi} flag={flag} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <div className="mt-0.5 flex items-baseline gap-1">
-                              <span className="text-3xl font-black" style={{ color: FLAG_STYLES[tkaResult.mdfaFlag].text }}>{tkaResult.MDFA}</span>
-                              <span className="text-sm font-semibold text-slate-400">°</span>
-                              <span className="ml-0.5 text-xs text-slate-400">↓</span>
-                            </div>
-                            <p className="text-[10px] text-slate-400">Kisaran: 85–95°</p>
-                            <p className="mt-1.5 text-[10px] leading-snug" style={{ color: FLAG_STYLES[tkaResult.mdfaFlag].text }}>{tkaResult.mdfaText}</p>
-                          </div>
-
-                          {/* MPTA + Combined 2-col mini */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <MiniResultCard label="MPTA" value={tkaResult.MPTA} unit="°" range="85–95°" flag={tkaResult.mptaFlag} />
-                            <MiniResultCard label="MDFA + MPTA" value={tkaResult.combined} unit="°" range="175–185°" flag={tkaResult.combinedFlag} />
-                          </div>
-
-                          {/* Combined detail card */}
-                          <ResultCard label="MDFA + MPTA" value={tkaResult.combined} unit="°" range="175–185°" flag={tkaResult.combinedFlag} text={tkaResult.combinedText} />
-                        </>
-                      ) : (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
-                          <p className="text-sm text-slate-400">Landmark AP belum lengkap — kembali ke step AP View.</p>
-                        </div>
-                      )}
-
-                      {/* PCO */}
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">PCO (Lateral)</p>
-                        {!pcoResult && (
-                          <span className="flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-0.5 text-[9px] font-black text-cyan-600">
-                            <Info className="h-3 w-3" /> Menunggu Analisis
-                          </span>
-                        )}
-                      </div>
-                      {pcoResult ? (
-                        <ResultCard label="PCO Ratio" value={pcoResult.ratio.toFixed(2)} unit="" range="0.40–0.60 (ideal ≥0.47)" flag={pcoResult.pcoFlag} text={pcoResult.pcoText} />
-                      ) : (
-                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-3">
-                          <p className="text-[11px] text-slate-400">X-ray lateral belum dianalisis (opsional).</p>
-                        </div>
-                      )}
-
-                      {/* TIBIAL SLOPE */}
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Tibial Slope (Lateral)</p>
-                        {!slopeResult && (
-                          <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[9px] font-black text-emerald-600">
-                            <Info className="h-3 w-3" /> Opsional
-                          </span>
-                        )}
-                      </div>
-                      {slopeResult ? (
-                        <ResultCard
-                          label={`Slope Tibial ${slopeResult.isPosterior ? "Posterior" : "Anterior"}`}
-                          value={slopeResult.slope + "°"}
-                          unit=""
-                          range="Posterior 3–7° (normal)"
-                          flag={slopeResult.slopeFlag}
-                          text={slopeResult.slopeText}
-                        />
-                      ) : (
-                        <div className="rounded-2xl border border-dashed border-emerald-100 bg-emerald-50/40 p-3">
-                          <p className="text-[11px] text-slate-400">Tandai TA, TB, PA, PP pada lateral X-ray untuk mengukur tibial slope (3–7° normal).</p>
-                        </div>
-                      )}
-
-                      {/* INSALL-SALVATI */}
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Insall-Salvati Ratio (Patela)</p>
-                        {!isResult && (
-                          <span className="flex items-center gap-1 rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2.5 py-0.5 text-[9px] font-black text-fuchsia-600">
-                            <Info className="h-3 w-3" /> Opsional
-                          </span>
-                        )}
-                      </div>
-                      {isResult ? (
-                        <ResultCard
-                          label="Insall-Salvati (LP/LT)"
-                          value={isResult.ratio.toFixed(2)}
-                          unit=""
-                          range="0.8–1.2 normal"
-                          flag={isResult.isFlag}
-                          text={isResult.isText}
-                        />
-                      ) : (
-                        <div className="rounded-2xl border border-dashed border-fuchsia-100 bg-fuchsia-50/40 p-3">
-                          <p className="text-[11px] text-slate-400">Tandai PS, PI, TT pada lateral X-ray untuk menilai tinggi patela (normal 0.8–1.2).</p>
-                        </div>
-                      )}
-
-                      {/* SKYLINE — Patellar Assessment */}
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Patellar Assessment (Skyline)</p>
-                        {!skyResult && (
-                          <span className="flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-[9px] font-black text-purple-600">
-                            <Info className="h-3 w-3" /> Opsional
-                          </span>
-                        )}
-                      </div>
-                      {skyResult ? (
-                        <div className="flex flex-col gap-2">
-                          {skyResult.patellarTilt !== null && (
-                            <ResultCard
-                              label="Patellar Tilt"
-                              value={skyResult.patellarTilt + "°"}
-                              unit=""
-                              range="<20° normal"
-                              flag={skyResult.tiltFlag}
-                              text={skyResult.tiltText}
-                            />
-                          )}
-                          {skyResult.sulcusAngle !== null && (
-                            <ResultCard
-                              label="Sulkus Angle"
-                              value={skyResult.sulcusAngle + "°"}
-                              unit=""
-                              range="≤144° normal"
-                              flag={skyResult.sulcusFlag}
-                              text={skyResult.sulcusText}
-                            />
+                          ) : (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center text-[10px] text-slate-400">Landmark AP belum lengkap — kembali ke step AP View.</div>
                           )}
                         </div>
-                      ) : (
-                        <div className="rounded-2xl border border-dashed border-purple-100 bg-purple-50/40 p-3">
-                          <p className="text-[11px] text-slate-400">Upload foto Skyline/Merchant dan tandai PM, PL, TM, TL, SG untuk menilai patellar tilt dan sulkus angle (opsional).</p>
-                        </div>
-                      )}
 
-                      {/* IKHTISAR MEDIS */}
-                      {medicalInsights.length > 0 && (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">Ikhtisar Medis</p>
-                            <Activity className="h-4 w-4 shrink-0 text-slate-400" />
+                        {/* PCO */}
+                        <div>
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">PCO (Lateral)</p>
+                          {pcoResult ? (() => {
+                            const s = FLAG_STYLES[pcoResult.pcoFlag] || FLAG_STYLES.normal;
+                            const fl = pcoResult.pcoFlag === "normal" ? "Normal" : pcoResult.pcoFlag === "low" ? "Rendah" : "Tinggi";
+                            return (
+                              <div className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[9px] font-black tracking-wide text-slate-400 uppercase">PCO Ratio</p>
+                                    <div className="mt-0.5 flex items-baseline gap-1">
+                                      <span className="text-2xl font-black leading-none" style={{ color: s.text }}>{pcoResult.ratio.toFixed(2)}</span>
+                                    </div>
+                                    <p className="mt-0.5 text-[8px] text-slate-400">Kisaran: 0.40–0.80 (Ideal ≥0.47)</p>
+                                    {pcoResult.pcoText && <p className="mt-1 text-[9px] leading-snug" style={{ color: s.text }}>{pcoResult.pcoText}</p>}
+                                  </div>
+                                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                    <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>{fl}</span>
+                                    <MiniChart value={pcoResult.ratio} min={0.2} max={0.9} normalLow={0.4} normalHigh={0.6} flag={pcoResult.pcoFlag} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })() : (
+                            <div className="rounded-xl border border-dashed border-slate-200 p-3">
+                              <p className="text-[9px] text-slate-400">Tandal TA, TB, PA, PP pasa lateral X-ray untuk mengukur PCO (opsional).</p>
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[8px] font-bold text-slate-400">◎ Opsional</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Tibial Slope */}
+                        <div>
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Tibial Slope (Lateral)</p>
+                          {slopeResult ? (() => {
+                            const s = FLAG_STYLES[slopeResult.slopeFlag] || FLAG_STYLES.normal;
+                            const fl = slopeResult.slopeFlag === "normal" ? "Normal" : slopeResult.slopeFlag === "low" ? "Rendah" : "Tinggi";
+                            return (
+                              <div className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[9px] font-black tracking-wide text-slate-400 uppercase">Slope Tibial {slopeResult.isPosterior ? "Posterior" : "Anterior"}</p>
+                                    <div className="mt-0.5 flex items-baseline gap-1">
+                                      <span className="text-2xl font-black leading-none" style={{ color: s.text }}>{slopeResult.slope}°</span>
+                                    </div>
+                                    <p className="mt-0.5 text-[8px] text-slate-400">Kisaran: 3–7° posterior normal</p>
+                                    {slopeResult.slopeText && <p className="mt-1 text-[9px] leading-snug" style={{ color: s.text }}>{slopeResult.slopeText}</p>}
+                                  </div>
+                                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                    <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>{fl}</span>
+                                    <MiniChart value={slopeResult.slope} min={-5} max={20} normalLow={3} normalHigh={7} flag={slopeResult.slopeFlag} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })() : (
+                            <div className="rounded-xl border border-dashed border-slate-200 p-3">
+                              <p className="text-[9px] text-slate-400">Tandal TA, TB, PA, PP pasa lateral X-ray untuk mengukur tibial slope (3–7° normal).</p>
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[8px] font-bold text-slate-400">◎ Opsional</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Insall-Salvati */}
+                        <div>
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Insall-Salvati Ratio (Patela)</p>
+                          {isResult ? (() => {
+                            const s = FLAG_STYLES[isResult.isFlag] || FLAG_STYLES.normal;
+                            const fl = isResult.isFlag === "normal" ? "Normal" : isResult.isFlag === "low" ? "Rendah" : "Tinggi";
+                            return (
+                              <div className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[9px] font-black tracking-wide text-slate-400 uppercase">Insall-Salvati (LP/LT)</p>
+                                    <div className="mt-0.5"><span className="text-2xl font-black leading-none" style={{ color: s.text }}>{isResult.ratio.toFixed(2)}</span></div>
+                                    <p className="mt-0.5 text-[8px] text-slate-400">Kisaran: 0.8–1.2</p>
+                                    {isResult.isText && <p className="mt-1 text-[9px] leading-snug" style={{ color: s.text }}>{isResult.isText}</p>}
+                                  </div>
+                                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                    <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>{fl}</span>
+                                    <MiniChart value={isResult.ratio} min={0.3} max={2.0} normalLow={0.8} normalHigh={1.2} flag={isResult.isFlag} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })() : (
+                            <div className="rounded-xl border border-dashed border-slate-200 p-3">
+                              <p className="text-[9px] text-slate-400">Tandal PS, PI, TT patia lateral X-ray untul menilai slope (normal 0.8–1.2).</p>
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[8px] font-bold text-slate-400">◎ Opsional</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Patellar Assessment */}
+                        <div>
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Patellar Assessment (Skyline)</p>
+                          {skyResult ? (
+                            <div className="space-y-1.5">
+                              {skyResult.patellarTilt !== null && (() => {
+                                const s = FLAG_STYLES[skyResult.tiltFlag] || FLAG_STYLES.normal;
+                                return (
+                                  <div className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex-1">
+                                        <p className="text-[9px] font-black tracking-wide text-slate-400 uppercase">Patellar Tilt</p>
+                                        <span className="text-2xl font-black" style={{ color: s.text }}>{skyResult.patellarTilt}°</span>
+                                        <p className="text-[8px] text-slate-400">Kisaran: &lt;20°</p>
+                                      </div>
+                                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                        <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>{skyResult.tiltFlag === "normal" ? "Normal" : "Tinggi"}</span>
+                                        <MiniChart value={skyResult.patellarTilt} min={0} max={40} normalLow={0} normalHigh={20} flag={skyResult.tiltFlag} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                              {skyResult.sulcusAngle !== null && (() => {
+                                const s = FLAG_STYLES[skyResult.sulcusFlag] || FLAG_STYLES.normal;
+                                return (
+                                  <div className="rounded-2xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex-1">
+                                        <p className="text-[9px] font-black tracking-wide text-slate-400 uppercase">Sulkus Angle</p>
+                                        <span className="text-2xl font-black" style={{ color: s.text }}>{skyResult.sulcusAngle}°</span>
+                                        <p className="text-[8px] text-slate-400">Kisaran: ≤144°</p>
+                                      </div>
+                                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                        <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>{skyResult.sulcusFlag === "normal" ? "Normal" : "Tinggi"}</span>
+                                        <MiniChart value={skyResult.sulcusAngle} min={100} max={200} normalLow={100} normalHigh={144} flag={skyResult.sulcusFlag} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-200 p-3">
+                              <p className="text-[9px] text-slate-400">Upload foto bo Skyline dan Merchant (opsional).</p>
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[8px] font-bold text-slate-400">◎ Opsional</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Catatan Dokter */}
+                        <div className="rounded-2xl border border-slate-200 p-3" style={{ background: "var(--color-surface, #f8fafc)" }}>
+                          <p className="mb-1.5 text-[9px] font-black tracking-widest text-slate-400 uppercase">Catatan Dokter</p>
+                          <textarea value={doctorNotes} onChange={(e) => setDoctorNotes(e.target.value)} placeholder="Tulis catatan klinis, rekomendasi, atau interpretasi dokter (disertakan di PDF &amp; CSV)..." className="w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-[11px] leading-relaxed text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-300" rows={3} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Drag resize handle (Col2↔Col3) ─────────────────────── */}
+                    <div
+                      onMouseDown={onResize3Start}
+                      className="group hidden lg:flex shrink-0 w-1.5 cursor-col-resize items-center justify-center hover:w-2 transition-all z-10"
+                      style={{ background: "var(--soft-border, #e2e8f0)" }}
+                      title="Drag untuk mengatur lebar"
+                    >
+                      <div className="h-8 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+
+                    {/* ── COL 3: Summary & AI Assessment ────────────────────── */}
+                    <div className="flex min-h-0 flex-col overflow-hidden border-t border-slate-200 min-w-full lg:min-w-0 lg:border-l lg:border-t-0" style={{ background: "var(--color-surface, #f8fafc)", width: `${col3Pct}%` }}>
+                      <div className="shrink-0 px-4 py-2.5" style={{ borderBottom: "1px solid var(--soft-border, #e2e8f0)" }}>
+                        <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase">Summary &amp; AI Assessment</p>
+                        <p className="text-[8px] text-slate-400">Simpligian for reference</p>
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3">
+
+                        {/* Overall status */}
+                        {overallFlag && (
+                          <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                            style={overallFlag === "good" ? { background: "#f0fdf4", border: "1px solid #bbf7d0" } : { background: "#fffbeb", border: "1px solid #fde68a" }}>
+                            {overallFlag === "good" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />}
+                            <p className="text-[10px] font-black" style={{ color: overallFlag === "good" ? "#15803d" : "#92400e" }}>
+                              {overallFlag === "good" ? "Semua parameter dalam batas normal" : "Terdapat parameter di luar batas normal"}
+                            </p>
                           </div>
-                          <ul className="flex flex-col gap-1.5">
+                        )}
+
+                        {/* Ikhtisar Medis */}
+                        <div className="rounded-2xl border border-slate-200 p-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <Activity className="h-3.5 w-3.5 text-slate-400" />
+                              <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase">Ikhtisar Medis</p>
+                            </div>
+                            <span className="text-[10px] text-slate-300">↑</span>
+                          </div>
+                          <ul className="space-y-1.5">
                             {medicalInsights.map((insight, i) => (
-                              <li key={i} className="flex items-start gap-1.5 text-[10px] leading-snug text-slate-600">
-                                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                              <li key={i} className="flex items-start gap-2 text-[10px] leading-snug text-slate-600">
+                                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
                                 {insight}
                               </li>
                             ))}
                           </ul>
                         </div>
-                      )}
 
-                      {/* REFERENSI */}
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="flex gap-2">
-                          <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Referensi</p>
-                            <p className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
-                              MDFA 85–95° &amp; MPTA 85–95° (Ritter 2011; Parratte 2010). PCO ≥0.47 (Bellemans 2002). Tibial slope 3–7° (Kumar 2014). Insall-Salvati 0.8–1.2 (Rogers 2006). Patellar tilt &lt;20° &amp; Sulkus ≤144° (Merchant 1974).
-                            </p>
+                        {/* Rekomendasi Medis */}
+                        <div className="rounded-2xl border border-slate-200 p-3">
+                          <p className="mb-2 text-[9px] font-black tracking-widest text-slate-500 uppercase">Rekomendasi Medis</p>
+                          <div className="mb-2">
+                            <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Automated</p>
+                            <ul className="space-y-1">
+                              {(medicalInsights.length > 0 ? medicalInsights.slice(0, 2) : ["Follow-up klinis sesuai protokol standar."]).map((item, i) => (
+                                <li key={i} className="flex items-start gap-1.5 text-[9px] leading-snug text-slate-500">
+                                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
                           </div>
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Doctor-editable</p>
+                            <textarea value={doctorNotes} onChange={(e) => setDoctorNotes(e.target.value)} placeholder="Rekomendasi dokter..." className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[9px] leading-relaxed text-slate-600 placeholder-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-300" rows={2} />
+                          </div>
+                        </div>
+
+                        {/* Referensi */}
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
+                          <p className="mb-1 text-[8px] font-black text-slate-400 uppercase">Referensi</p>
+                          <p className="text-[8px] leading-relaxed text-slate-400">
+                            Post-TKA, Radiographic Assessment, {legSide === "right" ? "Kanan" : "Kiri"}_{new Date().toLocaleDateString("id-ID")}<br />
+                            MDFA/MPTA 85–95° (Ritter 2011). PCO ≥0.47 (Bellemans 2002). Slope 3–7° (Kumar 2014). IS 0.8–1.2 (Rogers 2006). Tilt &lt;20° &amp; Sulkus ≤144° (Merchant 1974).
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1914,7 +2284,17 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
 
               {stepIndex < STEPS.length - 1 ? (
                 <button
-                  onClick={() => setStepIndex((i) => Math.min(STEPS.length - 1, i + 1))}
+                  onClick={() => {
+                    const next = Math.min(STEPS.length - 1, stepIndex + 1);
+                    setStepIndex(next);
+                    // Auto-fit result canvases when entering result step
+                    if (next === STEPS.length - 1) {
+                      const cv = { width: 900, height: 580 };
+                      if (apImgRef.current)  setApResTransform(fitTransform(apImgRef.current, cv));
+                      if (latImgRef.current) setLatResTransform(fitTransform(latImgRef.current, cv));
+                      if (skyImgRef.current) setSkyResTransform(fitTransform(skyImgRef.current, cv));
+                    }
+                  }}
                   className="flex items-center gap-1.5 rounded-full px-4 py-2 text-[11px] font-black text-white"
                   style={{ background: "#4f46e5" }}
                 >
@@ -1936,6 +2316,7 @@ export default function TKAAssessmentPanel({ isOpen, onClose, imageCanvasRef, mm
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   );
 
   if (typeof document === "undefined") return null;

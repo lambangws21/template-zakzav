@@ -31727,7 +31727,7 @@ export default function XrayCalibrationWorkspace({
                   ) : (
                     <QuickPanel
                       key="quick-full"
-                      className="pointer-events-auto absolute top-3 left-3 max-h-[calc(100vh-180px)] overflow-y-auto backdrop-blur-xl"
+                      className="pointer-events-auto absolute top-3 left-3 max-h-[calc(100vh-80px)] backdrop-blur-xl"
                       statusLabel={hasCalibration ? "Ready" : "Calib"}
                       workflowStep={workflowStep}
                       workflowMax={4}
