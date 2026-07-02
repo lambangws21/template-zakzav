@@ -267,6 +267,7 @@ import {
 import { removeImageBackground, createCombinedReportCanvas } from "../lib/xray/reportUtils";
 import TKAAssessmentPanel from "./TKAAssessmentPanel";
 import PostTHAAssessmentPanel from "./PostTHAAssessmentPanel";
+import PreTKAAssessmentPanel from "./PreTKAAssessmentPanel";
 
 const IDLE_TUTORIAL_DELAY_MS = 120000;
 const MIN_SCALE = 0.1;
@@ -908,6 +909,7 @@ export default function XrayCalibrationWorkspace({
   const [jlaGuideModalOpen, setJlaGuideModalOpen] = useState(false);
   const [tkaAssessmentOpen, setTkaAssessmentOpen] = useState(false);
   const [postThaAssessmentOpen, setPostThaAssessmentOpen] = useState(false);
+  const [preTkaAssessmentOpen, setPreTkaAssessmentOpen] = useState(false);
   const [preOpSummaryOpen, setPreOpSummaryOpen] = useState(false);
   const [hkaInfoBubble, setHkaInfoBubble] = useState(null);
   const [hkaResultPanelOpen, setHkaResultPanelOpen] = useState(false);
@@ -18747,6 +18749,7 @@ export default function XrayCalibrationWorkspace({
     },
     { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto" },
     { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment" },
+    { icon: "preTka", label: "Pre-TKA", desc: "Perencanaan pre-operasi TKA: deformitas HKA, rencana potongan femoral dan tibial.", key: "preTka", action: "preTka" },
     { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder" },
     { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment" },
     { icon: "postTHA", label: "PostTHA", desc: "Analisis radiograf pasca-THA: COR, offset, LLD, inclination, dan anteversion.", key: "zakAceta", action: "zakAceta" },
@@ -19441,6 +19444,14 @@ export default function XrayCalibrationWorkspace({
         mmPerPixel={mmPerPixel}
         cupAssessment={savedCupAssessment}
         onSaveCupAssessment={setSavedCupAssessment}
+      />
+
+      {/* ── Pre-TKA Assessment Panel ────────────────────────────────────── */}
+      <PreTKAAssessmentPanel
+        open={preTkaAssessmentOpen}
+        onClose={() => setPreTkaAssessmentOpen(false)}
+        imageSrc={mainImageSrc}
+        operatedSide="Right"
       />
 
       {/* ── HKA/FTA/JLA Result Panel ─────────────────────────────────────── */}
@@ -31854,6 +31865,7 @@ export default function XrayCalibrationWorkspace({
                         if (item.action === "tkaAssessment") { setTkaAssessmentOpen((v) => !v); return; }
                         if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
                         if (item.action === "zakAceta") { setPostThaAssessmentOpen((v) => !v); return; }
+                        if (item.action === "preTka") { setPreTkaAssessmentOpen((v) => !v); return; }
                         if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
                         if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
                         if (item.action === "dorr") { setSimpleDesktopDorrOpen((v) => !v); return; }
@@ -31867,6 +31879,7 @@ export default function XrayCalibrationWorkspace({
                       cupAssessmentActive={showCupAssessment}
                       zakAcetaActive={postThaAssessmentOpen}
                       dorrActive={simpleDesktopDorrOpen}
+                      preTkaActive={preTkaAssessmentOpen}
                     />
                   )}
                   </AnimatePresence>
@@ -31990,6 +32003,7 @@ export default function XrayCalibrationWorkspace({
                           onSelectTool={(item) => {
                           if (item.action === "dorr") { setSimpleMobilePanel("dorr"); return; }
                           if (item.action === "tkaAssessment") { setSimpleMobilePanel(null); setTkaAssessmentOpen((v) => !v); return; }
+                          if (item.action === "preTka") { setSimpleMobilePanel(null); setPreTkaAssessmentOpen((v) => !v); return; }
                           setSimpleMobilePanel(null);
                           setMobileCanvasMode("edit");
                           if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
@@ -32013,6 +32027,7 @@ export default function XrayCalibrationWorkspace({
                         cupAssessmentActive={showCupAssessment}
                         zakAcetaActive={postThaAssessmentOpen}
                         dorrActive={simpleMobilePanel === "dorr"}
+                        preTkaActive={preTkaAssessmentOpen}
                       />
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel

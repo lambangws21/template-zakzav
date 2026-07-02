@@ -9,12 +9,17 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleDot,
+  Crosshair,
   Download,
   FileText,
   HelpCircle,
   RotateCcw,
+  Spline,
+  Type,
   X,
   ZoomIn,
   ZoomOut,
@@ -55,6 +60,12 @@ const FLAG = {
   watch: { bg: "#fffbeb", border: "#fde68a", text: "#92400e", dot: "#d97706", label: "Monitor" },
   low: { bg: "#fff7ed", border: "#fed7aa", text: "#c2410c", dot: "#ea580c", label: "Rendah" },
   high: { bg: "#fef2f2", border: "#fecaca", text: "#b91c1c", dot: "#dc2626", label: "Tinggi" },
+};
+const FLAG_DARK = {
+  normal: { bg: "rgba(16,185,129,0.12)", border: "rgba(52,211,153,0.22)", text: "#34d399", dot: "#34d399", label: "Normal" },
+  watch:  { bg: "rgba(217,119,6,0.14)",  border: "rgba(251,191,36,0.22)", text: "#fbbf24", dot: "#fbbf24", label: "Monitor" },
+  low:    { bg: "rgba(234,88,12,0.12)",  border: "rgba(251,146,60,0.22)", text: "#fb923c", dot: "#fb923c", label: "Rendah" },
+  high:   { bg: "rgba(220,38,38,0.12)",  border: "rgba(252,165,165,0.22)", text: "#f87171", dot: "#f87171", label: "Tinggi" },
 };
 
 function cupZoneStatus(abd, ant) {
@@ -125,18 +136,19 @@ function classifyRange(value, low, high, watchHigh = null) {
   return "normal";
 }
 
-function ResultCard({ label, value, range, flag = "normal", note }) {
-  const s = FLAG[flag] || FLAG.normal;
+function ResultCard({ label, value, range, flag = "normal", note, isDark }) {
+  const palette = isDark ? FLAG_DARK : FLAG;
+  const s = palette[flag] || palette.normal;
   return (
     <div className="rounded-xl border p-3" style={{ background: s.bg, borderColor: s.border }}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</span>
-        <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "22", color: s.dot }}>
+        <span className="text-[10px] font-black uppercase tracking-wide" style={{ color: isDark ? "#94a3b8" : "#64748b" }}>{label}</span>
+        <span className="rounded-full px-2 py-0.5 text-[8px] font-black" style={{ background: s.dot + "28", color: s.dot }}>
           {s.label}
         </span>
       </div>
       <div className="mt-1 text-2xl font-black leading-none" style={{ color: s.text }}>{value}</div>
-      <div className="mt-1 text-[9px] font-semibold text-slate-400">{range}</div>
+      <div className="mt-1 text-[9px] font-semibold" style={{ color: isDark ? "#64748b" : "#94a3b8" }}>{range}</div>
       {note && <div className="mt-1.5 text-[10px] leading-snug" style={{ color: s.text }}>{note}</div>}
     </div>
   );
@@ -188,10 +200,11 @@ function CupAssessmentSummary({ cupAssessment, draftCupAssessment, onSaveDraft }
   );
 }
 
-function LightCupAssessment({ savedData, side, onChange, transform }) {
+function LightCupAssessment({ savedData, side, onChange, transform, onEllipseChange }) {
   const boxRef = useRef(null);
   const [size, setSize] = useState({ w: 900, h: 580 });
   const [dragging, setDragging] = useState(null);
+  const [handleSmall, setHandleSmall] = useState(false);
   // State stored in IMAGE coordinates (image natural pixels) so it sticks to the photo
   const [imgState, setImgState] = useState(null);
 
@@ -265,6 +278,15 @@ function LightCupAssessment({ savedData, side, onChange, transform }) {
     return `${i === 0 ? "M" : "L"}${(scx + ex * cos - ey * sin).toFixed(1)},${(scy + ex * sin + ey * cos).toFixed(1)}`;
   }).join(" ") + " Z";
 
+  // Semi-ellipse dome: from majorA (t=π) through minorA (t=3π/2) to majorB (t=2π)
+  // closed with Z → straight line majorB→majorA = the major axis → creates a closed cup-dome shape
+  const domePoints = Array.from({ length: 37 }, (_, i) => {
+    const t = Math.PI + (i / 36) * Math.PI;
+    const ex = sa * Math.cos(t);
+    const ey = sb * Math.sin(t);
+    return `${i === 0 ? "M" : "L"}${(scx + ex * cos - ey * sin).toFixed(1)},${(scy + ex * sin + ey * cos).toFixed(1)}`;
+  }).join(" ") + " Z";
+
   const commitCup = useCallback((target) => {
     const raw = (((target.angle * 180) / Math.PI) % 180 + 180) % 180;
     const inc = raw > 90 ? 180 - raw : raw;
@@ -272,10 +294,15 @@ function LightCupAssessment({ savedData, side, onChange, transform }) {
     onChange?.({ inclination: inc, anteversion: av, side, zone: cupZoneStatus(inc, av).label });
   }, [onChange, side]);
 
+  // Expose raw image-space state so parent can include it in PDF export
+  useEffect(() => {
+    if (!imgState) return;
+    onEllipseChange?.(imgState);
+  }, [imgState, onEllipseChange]);
+
   const pointFromEvent = (e) => {
     const rect = boxRef.current?.getBoundingClientRect();
     if (!rect) return { x: e.clientX, y: e.clientY };
-    // CSS pixel position → image coordinates
     const cssPt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     return { x: (cssPt.x - cssOffX) / Math.max(cssScale, 0.01), y: (cssPt.y - cssOffY) / Math.max(cssScale, 0.01) };
   };
@@ -287,7 +314,7 @@ function LightCupAssessment({ savedData, side, onChange, transform }) {
   const move = (e) => {
     if (!dragging) return;
     e.preventDefault();
-    const p = pointFromEvent(e); // image coords
+    const p = pointFromEvent(e);
     setImgState((prev) => {
       const cur = prev || s;
       const c = Math.cos(cur.angle);
@@ -311,26 +338,58 @@ function LightCupAssessment({ savedData, side, onChange, transform }) {
     setDragging(null);
   };
 
+  const resizeEllipse = (factor) => setImgState((prev) => {
+    if (!prev) return prev;
+    const minA = 18 / Math.max(cssScale, 0.01);
+    const minB = 4 / Math.max(cssScale, 0.01);
+    const newA = Math.max(minA, prev.a * factor);
+    const newB = Math.max(minB, Math.min(newA * 0.9, prev.b * factor));
+    return { ...prev, a: newA, b: newB };
+  });
+
   return (
     <div ref={boxRef} className={`absolute inset-0 z-20 ${dragging ? "pointer-events-auto" : "pointer-events-none"}`} onPointerMove={move} onPointerUp={stopDrag} onPointerLeave={stopDrag}>
       <svg className="h-full w-full" viewBox={`0 0 ${size.w} ${size.h}`}>
+        {/* Horizontal reference */}
         <line x1={0} y1={scy} x2={size.w} y2={scy} stroke="#facc15" strokeWidth="1" strokeDasharray="8 6" opacity="0.5" />
+        {/* Major axis (inclination) */}
         <line x1={handles.majorA.x} y1={handles.majorA.y} x2={handles.majorB.x} y2={handles.majorB.y} stroke="#a3e635" strokeWidth="1.35" strokeDasharray="6 4" opacity="0.85" />
+        {/* Minor axis (anteversion) */}
         <line x1={handles.minorA.x} y1={handles.minorA.y} x2={handles.minorB.x} y2={handles.minorB.y} stroke="#22d3ee" strokeWidth="1.35" opacity="0.85" />
-        <path d={ellipsePoints} fill="rgba(249,115,22,0.07)" stroke="#f97316" strokeWidth="1.6" />
+        {/* Outer ellipse — cup rim */}
+        <path d={ellipsePoints} fill="rgba(249,115,22,0.06)" stroke="#f97316" strokeWidth="1.8" />
+        {/* Inner dome — half-ellipse from majorA through minorA to majorB, closed along major axis */}
+        <path d={domePoints} fill="rgba(34,211,238,0.10)" stroke="#22d3ee" strokeWidth="1.4" strokeDasharray="5 3" />
+        {/* Label */}
         <text x={scx + 10} y={scy - 12} fill={zone.color} fontSize="11" fontWeight="900">{`INC ${inclination.toFixed(1)}° · AV ${anteversion.toFixed(1)}°`}</text>
+        {/* Drag handles */}
         {[
-          ["center", handles.center, "#7c3aed", 6],
-          ["majorA", handles.majorA, "#facc15", 7],
-          ["majorB", handles.majorB, "#facc15", 7],
-          ["minorA", handles.minorA, "#22d3ee", 7],
-          ["minorB", handles.minorB, "#22d3ee", 7],
+          ["center", handles.center, "#7c3aed", handleSmall ? 3 : 6],
+          ["majorA", handles.majorA, "#facc15", handleSmall ? 4 : 7],
+          ["majorB", handles.majorB, "#facc15", handleSmall ? 4 : 7],
+          ["minorA", handles.minorA, "#22d3ee", handleSmall ? 4 : 7],
+          ["minorB", handles.minorB, "#22d3ee", handleSmall ? 4 : 7],
         ].map(([id, p, color, r]) => (
           <g key={id} className="pointer-events-auto cursor-move" onPointerDown={startDrag(id)}>
-            <circle cx={p.x} cy={p.y} r={r + 7} fill="transparent" />
+            <circle cx={p.x} cy={p.y} r={Math.max(r + 7, 14)} fill="transparent" />
             <circle cx={p.x} cy={p.y} r={r} fill={color} stroke="#fff" strokeWidth="1.5" />
           </g>
         ))}
+        {/* Size controls — top-left corner */}
+        {[
+          { label: "−", x: 10, factor: 0.85 },
+          { label: "+", x: 46, factor: 1.15 },
+        ].map(({ label, x, factor }) => (
+          <g key={label} className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => resizeEllipse(factor)}>
+            <rect x={x} y={10} width={28} height={28} rx={7} fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.18)" strokeWidth={1} />
+            <text x={x + 14} y={29} fill="white" fontSize={18} fontWeight="900" textAnchor="middle" style={{ userSelect: "none" }}>{label}</text>
+          </g>
+        ))}
+        {/* Handle-size toggle — dot icon, active when small */}
+        <g className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => setHandleSmall((p) => !p)}>
+          <rect x={82} y={10} width={28} height={28} rx={7} fill="rgba(15,23,42,0.72)" stroke={handleSmall ? "rgba(250,204,21,0.7)" : "rgba(255,255,255,0.18)"} strokeWidth={1.5} />
+          <circle cx={96} cy={24} r={handleSmall ? 3 : 5.5} fill="#facc15" stroke="#fff" strokeWidth="1" />
+        </g>
       </svg>
     </div>
   );
@@ -834,7 +893,7 @@ function buildResults(points, cupPoints, mmPerPixel, operatedSide, cupAssessment
   };
 }
 
-function renderAnnotatedImage(img, points, cupPoints, results, displayOptions, maxWidth = 1400, maxHeight = 1200) {
+function renderAnnotatedImage(img, points, cupPoints, results, displayOptions, cupEllipseState, maxWidth = 1400, maxHeight = 1200) {
   if (!img?.naturalWidth) return null;
   const s = Math.min(maxWidth / img.naturalWidth, maxHeight / img.naturalHeight);
   const canvas = document.createElement("canvas");
@@ -857,6 +916,61 @@ function renderAnnotatedImage(img, points, cupPoints, results, displayOptions, m
     if (displayOptions.text) drawLabel(ctx, def.short, sp.x, sp.y, def.color);
   });
   drawReferenceOverlays(ctx, t, points, cupPoints, results, displayOptions);
+
+  // Draw cup assessment ellipse from image-space coordinates
+  if (cupEllipseState) {
+    const { cx: icx, cy: icy, a: ia, b: ib, angle } = cupEllipseState;
+    const ex = icx * s, ey = icy * s, ea = ia * s, eb = ib * s;
+    const ec = Math.cos(angle), es = Math.sin(angle);
+
+    // Outer ellipse — cup rim
+    ctx.beginPath();
+    for (let i = 0; i <= 72; i++) {
+      const tt = (i / 72) * Math.PI * 2;
+      const px = ea * Math.cos(tt), py = eb * Math.sin(tt);
+      const tx = ex + px * ec - py * es, ty = ey + px * es + py * ec;
+      i === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(249,115,22,0.10)"; ctx.fill();
+    ctx.strokeStyle = "#f97316"; ctx.lineWidth = 2.5; ctx.setLineDash([]); ctx.stroke();
+
+    // Inner dome — half-ellipse from majorA through minorA to majorB, closed along major axis
+    ctx.beginPath();
+    for (let i = 0; i <= 36; i++) {
+      const tt = Math.PI + (i / 36) * Math.PI;
+      const px = ea * Math.cos(tt), py = eb * Math.sin(tt);
+      const tx = ex + px * ec - py * es, ty = ey + px * es + py * ec;
+      i === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(34,211,238,0.12)"; ctx.fill();
+    ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 1.8; ctx.setLineDash([7, 5]); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Major axis line (inclination)
+    ctx.strokeStyle = "#a3e635"; ctx.lineWidth = 1.8; ctx.setLineDash([9, 6]);
+    ctx.beginPath(); ctx.moveTo(ex - ea * ec, ey - ea * es); ctx.lineTo(ex + ea * ec, ey + ea * es); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Minor axis line (anteversion)
+    ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ex + eb * es, ey - eb * ec); ctx.lineTo(ex - eb * es, ey + eb * ec); ctx.stroke();
+
+    // Center dot
+    ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2);
+    ctx.fillStyle = "#7c3aed"; ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+
+    // Label
+    const inc = (() => { const r = (((angle * 180) / Math.PI) % 180 + 180) % 180; return r > 90 ? 180 - r : r; })();
+    const av = (Math.asin(Math.max(0, Math.min(0.999, Math.abs(ib / ia)))) * 180) / Math.PI;
+    ctx.font = "bold 16px sans-serif";
+    ctx.strokeStyle = "rgba(0,0,0,0.82)"; ctx.lineWidth = 4;
+    ctx.strokeText(`INC ${inc.toFixed(1)}°  AV ${av.toFixed(1)}°`, ex + 12, ey - 14);
+    ctx.fillStyle = "#f97316"; ctx.fillText(`INC ${inc.toFixed(1)}°  AV ${av.toFixed(1)}°`, ex + 12, ey - 14);
+  }
+
   return canvas.toDataURL("image/jpeg", 0.92);
 }
 
@@ -928,7 +1042,7 @@ function renderCupDiagram(cupData, W = 400, H = 280) {
   return canvas.toDataURL("image/jpeg", 0.92);
 }
 
-async function exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, operatedSide, displayUnit, displayOptions, cupAssessment }) {
+async function exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, operatedSide, displayUnit, displayOptions, cupAssessment, cupEllipseState }) {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const M = 14;
@@ -982,20 +1096,21 @@ async function exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, ope
     doc.addImage(cupDiagramUrl, "JPEG", M + (182 - dW) / 2, y, dW, dH, undefined, "FAST");
   }
 
-  const url = renderAnnotatedImage(imgRef.current, points, cupPoints, results, displayOptions);
+  const url = renderAnnotatedImage(imgRef.current, points, cupPoints, results, displayOptions, cupEllipseState, 2400, 1800);
   if (url) {
-    doc.addPage();
+    doc.addPage("a4", "landscape");
+    const LW = 297, LH = 210, Lm = 10;
     doc.setTextColor(100, 116, 139);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
-    doc.text("Annotated AP Pelvis", M, M);
+    doc.text("Annotated AP Pelvis", Lm, Lm + 3);
     const img = imgRef.current;
-    const availW = 182;
-    const availH = 260;
+    const availW = LW - 2 * Lm;
+    const availH = LH - 2 * Lm - 8;
     let iw = availW;
     let ih = iw * (img.naturalHeight / img.naturalWidth);
     if (ih > availH) { ih = availH; iw = ih * (img.naturalWidth / img.naturalHeight); }
-    doc.addImage(url, "JPEG", M + (availW - iw) / 2, M + 5, iw, ih, undefined, "FAST");
+    doc.addImage(url, "JPEG", Lm + (availW - iw) / 2, Lm + 8, iw, ih, undefined, "FAST");
   }
   return { doc, filename: `PostTHA_Assessment_${today.replace(/\s/g, "_")}.pdf` };
 }
@@ -1018,10 +1133,27 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
   const [pdfPreview, setPdfPreview] = useState(null);
   const [manualActiveIndex, setManualActiveIndex] = useState(null);
   const [draftCupAssessment, setDraftCupAssessment] = useState(null);
+  const [cupEllipseState, setCupEllipseState] = useState(null);
+
+  // Dark mode observer — watches [data-theme] attribute on <html>
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const check = () => setIsDark(document.documentElement.dataset.theme === "dark");
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
 
   const activeDefs = step === "cup" ? [] : LANDMARKS;
   const activePoints = step === "cup" ? cupPoints : step === "result" ? { ...points, ...cupPoints } : points;
-  const activeSetPoints = step === "cup" ? setCupPoints : step === "result" ? () => {} : setPoints;
+
+  // Auto-advance: reset manualActiveIndex after placing a point so activeIndex follows firstMissingIndex
+  const setPointsAndAdvance = useCallback((fn) => {
+    setPoints(fn);
+    setManualActiveIndex(null);
+  }, [setPoints]);
+  const activeSetPoints = step === "cup" ? setCupPoints : step === "result" ? () => {} : setPointsAndAdvance;
   const activeSetPointsLive = step === "cup" ? setCupPointsLive : step === "result" ? () => {} : setPointsLive;
   const activeConnections = step === "cup" ? [] : CONNECTIONS;
   const firstMissingIndex = useMemo(() => activeDefs.findIndex((d) => !activePoints[d.key]), [activeDefs, activePoints]);
@@ -1075,6 +1207,7 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
       setPdfPreview(null);
       setManualActiveIndex(null);
       setDraftCupAssessment(null);
+      setCupEllipseState(null);
       return;
     }
     if (imageCanvasRef?.current && !imageSrc) {
@@ -1099,7 +1232,7 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
     if (!imgRef.current) return;
     setExporting(true);
     try {
-      const { doc, filename } = await exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, operatedSide, doctorNotes, displayUnit, displayOptions, cupAssessment: effectiveCupAssessment });
+      const { doc, filename } = await exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, operatedSide, doctorNotes, displayUnit, displayOptions, cupAssessment: effectiveCupAssessment, cupEllipseState });
       const blob = doc.output("blob");
       const url = URL.createObjectURL(blob);
       setPdfPreview({ url, doc, filename });
@@ -1149,14 +1282,38 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                   <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-700"><X className="h-4 w-4" /></button>
                 </div>
               </div>
-              <div className="mt-3 flex items-center gap-1">
+              <div className="mt-3 flex items-center gap-0">
                 {STEPS.map((s, i) => (
                   <React.Fragment key={s}>
-                    <button onClick={() => setStepIndex(i)} className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[9px] font-black" style={{ background: i === stepIndex ? "#e11d48" : i < stepIndex ? "#ffe4e6" : "#e2e8f0", color: i === stepIndex ? "#fff" : i < stepIndex ? "#be123c" : "#64748b" }}>
-                      {i < stepIndex ? <CheckCircle2 className="h-3 w-3" /> : i + 1}
+                    <motion.button
+                      onClick={() => setStepIndex(i)}
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black transition-colors"
+                      style={{
+                        background: i === stepIndex ? "#1d4ed8" : i < stepIndex ? (isDark ? "rgba(59,130,246,0.18)" : "#dbeafe") : (isDark ? "rgba(255,255,255,0.08)" : "#e2e8f0"),
+                        color: i === stepIndex ? "#fff" : i < stepIndex ? (isDark ? "#93c5fd" : "#1e40af") : (isDark ? "#94a3b8" : "#64748b"),
+                      }}
+                    >
+                      {i < stepIndex ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : i === 2 ? (
+                        <Camera className="h-3 w-3" />
+                      ) : (
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full text-[9px]" style={{ background: i === stepIndex ? "rgba(255,255,255,0.25)" : "transparent" }}>{i + 1}</span>
+                      )}
                       {STEP_LABELS[i]}
-                    </button>
-                    {i < STEPS.length - 1 && <div className="h-px flex-1 bg-slate-200" />}
+                    </motion.button>
+                    {i < STEPS.length - 1 && (
+                      <div className="relative mx-0.5 h-px flex-1 bg-slate-200">
+                        <motion.div
+                          className="absolute inset-y-0 left-0 bg-blue-500"
+                          initial={false}
+                          animate={{ width: stepIndex > i ? "100%" : "0%" }}
+                          transition={{ duration: 0.35, ease: "easeInOut" }}
+                        />
+                      </div>
+                    )}
                   </React.Fragment>
                 ))}
               </div>
@@ -1194,44 +1351,84 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                     side={operatedSide}
                     onChange={handleCupDraftChange}
                     transform={transform}
+                    onEllipseChange={setCupEllipseState}
                   />
                 )}
               </div>
 
               <div className="flex w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white lg:w-[420px]">
-                <div className="border-b border-slate-200 px-4 py-3">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{STEP_LABELS[stepIndex]}</div>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {[{ key: "right", label: "Kanan" }, { key: "left", label: "Kiri" }].map((s) => (
-                      <button key={s.key} onClick={() => setOperatedSide(s.key)} className="rounded-xl border px-3 py-2 text-[10px] font-black" style={{ background: operatedSide === s.key ? "#ffe4e6" : "#f8fafc", borderColor: operatedSide === s.key ? "#fb7185" : "#e2e8f0", color: operatedSide === s.key ? "#be123c" : "#64748b" }}>Operasi {s.label}</button>
+                <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{STEP_LABELS[stepIndex]}</div>
+
+                  {/* Side toggle — blue */}
+                  <div className="mt-2 flex overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {[{ key: "right", label: "Operasi Kanan" }, { key: "left", label: "Operasi Kiri" }].map((s, idx) => (
+                      <motion.button
+                        key={s.key}
+                        onClick={() => setOperatedSide(s.key)}
+                        whileTap={{ scale: 0.96 }}
+                        className="flex-1 px-3 py-2 text-[10px] font-black transition-colors"
+                        style={{
+                          background: operatedSide === s.key ? "#2563eb" : "transparent",
+                          color: operatedSide === s.key ? "#fff" : (isDark ? "#94a3b8" : "#64748b"),
+                          borderRight: idx === 0 ? `1px solid ${isDark ? "rgba(255,255,255,0.09)" : "#e2e8f0"}` : "none",
+                        }}
+                      >
+                        {s.label}
+                      </motion.button>
                     ))}
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {["mm", "cm"].map((unit) => (
-                      <button key={unit} onClick={() => setDisplayUnit(unit)} className="rounded-xl border px-3 py-2 text-[10px] font-black uppercase" style={{ background: displayUnit === unit ? "#fff1f2" : "#f8fafc", borderColor: displayUnit === unit ? "#fb7185" : "#e2e8f0", color: displayUnit === unit ? "#be123c" : "#64748b" }}>{unit}</button>
-                    ))}
+
+                  {/* Unit dropdown */}
+                  <div className="relative mt-2">
+                    <select
+                      value={displayUnit}
+                      onChange={(e) => setDisplayUnit(e.target.value)}
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="mm">Milimeter (MM)</option>
+                      <option value="cm">Sentimeter (CM)</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   </div>
+
+                  {/* Display toggle — icons */}
                   <div className="mt-2 grid grid-cols-4 gap-1.5">
                     {[
-                      { key: "points", label: "Point" },
-                      { key: "lines", label: "Line" },
-                      { key: "text", label: "Text" },
-                      { key: "overlay", label: "AP Ref" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.key}
-                        onClick={() => setDisplayOptions((prev) => ({ ...prev, [opt.key]: !prev[opt.key] }))}
-                        className="rounded-xl border px-1 py-2 text-[9px] font-black"
-                        style={{ background: displayOptions[opt.key] ? "#ecfdf5" : "#f8fafc", borderColor: displayOptions[opt.key] ? "#34d399" : "#e2e8f0", color: displayOptions[opt.key] ? "#047857" : "#94a3b8" }}
+                      { key: "points", Icon: CircleDot, title: "Titik landmark" },
+                      { key: "lines", Icon: Spline, title: "Garis penghubung" },
+                      { key: "text", Icon: Type, title: "Label teks" },
+                      { key: "overlay", Icon: Crosshair, title: "AP Reference lines" },
+                    ].map(({ key, Icon, title }) => (
+                      <motion.button
+                        key={key}
+                        title={title}
+                        onClick={() => setDisplayOptions((prev) => ({ ...prev, [key]: !prev[key] }))}
+                        whileHover={{ scale: 1.06 }}
+                        whileTap={{ scale: 0.9 }}
+                        className="flex items-center justify-center rounded-xl border py-2.5 transition-colors"
+                        style={{
+                          background: displayOptions[key] ? (isDark ? "rgba(59,130,246,0.18)" : "#eff6ff") : (isDark ? "rgba(255,255,255,0.05)" : "#f8fafc"),
+                          borderColor: displayOptions[key] ? "#3b82f6" : (isDark ? "rgba(255,255,255,0.09)" : "#e2e8f0"),
+                          color: displayOptions[key] ? (isDark ? "#60a5fa" : "#2563eb") : (isDark ? "#64748b" : "#94a3b8"),
+                        }}
                       >
-                        {opt.label}
-                      </button>
+                        <Icon className="h-4 w-4" />
+                      </motion.button>
                     ))}
                   </div>
                 </div>
 
+                <AnimatePresence mode="wait">
                 {step === "cup" ? (
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  <motion.div
+                    key="cup"
+                    initial={{ opacity: 0, x: 18 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -18 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="min-h-0 flex-1 overflow-y-auto"
+                  >
                     <CupAssessmentSummary
                       cupAssessment={cupAssessment}
                       draftCupAssessment={draftCupAssessment}
@@ -1242,56 +1439,118 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                         Cup Assessment ini versi ringan khusus PostTHA. Hasil live di atas dipakai oleh export PDF; tekan Simpan jika ingin menyimpan ke data workspace.
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 ) : step !== "result" ? (
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  <motion.div
+                    key="landmarks"
+                    initial={{ opacity: 0, x: 18 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -18 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="min-h-0 flex-1 overflow-y-auto"
+                  >
+                    {/* Active card */}
                     <div className="px-4 py-3">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Titik aktif</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titik Aktif</div>
+                      <AnimatePresence mode="wait">
                         {activeIndex >= 0 ? (
-                          <>
-                            <div className="mt-1 flex items-center gap-1.5 text-sm font-black" style={{ color: activeDefs[activeIndex].color }}>
-                              <span>{activeDefs[activeIndex].short} - {activeDefs[activeIndex].label}</span>
-                              <ExampleHover item={activeDefs[activeIndex]} />
+                          <motion.div
+                            key={activeDefs[activeIndex]?.key}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.18 }}
+                            className="mt-2 overflow-hidden rounded-xl border"
+                            style={{ borderColor: activeDefs[activeIndex].color + "60", background: activeDefs[activeIndex].color + "0d" }}
+                          >
+                            <div className="flex items-start gap-0">
+                              <div className="w-1 shrink-0 self-stretch rounded-l-xl" style={{ background: activeDefs[activeIndex].color }} />
+                              <div className="flex-1 p-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5 text-[13px] font-black" style={{ color: activeDefs[activeIndex].color }}>
+                                    <span>{activeDefs[activeIndex].short} - {activeDefs[activeIndex].label}</span>
+                                    <ExampleHover item={activeDefs[activeIndex]} />
+                                  </div>
+                                  <span className="text-[9px] font-black text-slate-400">(→)</span>
+                                </div>
+                                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                                  {activeDefs[activeIndex].hint} Jika Klik sudah ada, drag titiknya atau klik posisi baru untuk memindahkan.
+                                </p>
+                              </div>
                             </div>
-                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                              {activeDefs[activeIndex].hint} Jika titik sudah ada, drag titiknya atau klik posisi baru untuk memindahkan.
-                            </p>
-                          </>
+                          </motion.div>
                         ) : (
-                          <div className="mt-1 flex items-center gap-2 text-sm font-black text-emerald-700"><CheckCircle2 className="h-4 w-4" />Semua titik lengkap. Pilih item di bawah untuk edit ulang.</div>
+                          <motion.div
+                            key="done"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[11px] font-black text-emerald-700"
+                          >
+                            <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            Semua titik lengkap. Pilih item di bawah untuk edit ulang.
+                          </motion.div>
                         )}
-                      </div>
+                      </AnimatePresence>
                     </div>
-                    <div className="divide-y divide-slate-100">
+
+                    {/* Landmark list with stagger */}
+                    <motion.div
+                      className="divide-y divide-slate-100"
+                      initial="hidden"
+                      animate="visible"
+                      variants={{ visible: { transition: { staggerChildren: 0.03, delayChildren: 0.05 } } }}
+                    >
                       {activeDefs.map((def, i) => (
-                        <button key={def.key} onClick={() => setManualActiveIndex(i)} className="flex w-full items-start gap-2 px-4 py-2.5 text-left" style={{ background: i === activeIndex ? def.color + "12" : "transparent" }}>
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[9px] font-black" style={{ borderColor: def.color, background: activePoints[def.key] ? def.color : "transparent", color: activePoints[def.key] ? "#fff" : def.color }}>{activePoints[def.key] ? "✓" : i + 1}</span>
-                          <span className="min-w-0">
+                        <motion.button
+                          key={def.key}
+                          variants={{ hidden: { opacity: 0, x: -10 }, visible: { opacity: 1, x: 0 } }}
+                          onClick={() => setManualActiveIndex(i)}
+                          className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-slate-50"
+                          style={{ background: i === activeIndex ? def.color + "10" : "transparent" }}
+                        >
+                          <span
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[9px] font-black transition-colors"
+                            style={{ borderColor: def.color, background: activePoints[def.key] ? def.color : "transparent", color: activePoints[def.key] ? "#fff" : def.color }}
+                          >
+                            {activePoints[def.key] ? "✓" : i + 1}
+                          </span>
+                          <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-1.5 text-[11px] font-black text-slate-700">
                               <span className="min-w-0 truncate">{def.short} - {def.label}</span>
                               <ExampleHover item={def} />
                             </span>
-                            {i === activeIndex && <span className="mt-0.5 block text-[9px] leading-snug text-slate-500">Aktif untuk edit. Drag point atau klik lokasi baru.</span>}
+                            {i === activeIndex && (
+                              <span className="mt-0.5 block text-[9px] leading-snug text-slate-400">Aktif untuk edit. Drag point atau klik lokasi baru.</span>
+                            )}
                           </span>
-                        </button>
+                          {activePoints[def.key] && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                          )}
+                        </motion.button>
                       ))}
-                    </div>
-                  </div>
+                    </motion.div>
+                  </motion.div>
                 ) : (
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                    <div className="mb-3 flex items-center gap-2 rounded-xl border p-3" style={{ background: FLAG[overallFlag].bg, borderColor: FLAG[overallFlag].border }}>
-                      {overallFlag === "normal" ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertCircle className="h-5 w-5 text-amber-600" />}
-                      <div className="text-sm font-black" style={{ color: FLAG[overallFlag].text }}>{overallFlag === "normal" ? "Parameter dalam batas referensi" : "Ada parameter yang perlu ditinjau"}</div>
+                  <motion.div
+                    key="result"
+                    initial={{ opacity: 0, x: 18 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -18 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+                  >
+                    <div className="mb-3 flex items-center gap-2 rounded-xl border p-3" style={{ background: (isDark ? FLAG_DARK : FLAG)[overallFlag].bg, borderColor: (isDark ? FLAG_DARK : FLAG)[overallFlag].border }}>
+                      {overallFlag === "normal" ? <CheckCircle2 className="h-5 w-5" style={{ color: (isDark ? FLAG_DARK : FLAG).normal.dot }} /> : <AlertCircle className="h-5 w-5" style={{ color: (isDark ? FLAG_DARK : FLAG).watch.dot }} />}
+                      <div className="text-sm font-black" style={{ color: (isDark ? FLAG_DARK : FLAG)[overallFlag].text }}>{overallFlag === "normal" ? "Parameter dalam batas referensi" : "Ada parameter yang perlu ditinjau"}</div>
                     </div>
                     <div className="grid gap-2">
-                      <ResultCard label="COR Horizontal" value={fmtValue(results.corDx, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.corX} note="Rekonstruksi COR dibanding sisi kontralateral." />
-                      <ResultCard label="COR Vertical" value={fmtValue(results.corDy, mmPerPixel, "length", 1, displayUnit)} range="Target <=3 mm superior" flag={results.flags.corY} note="Superior shift berlebih berisiko loosening/abductor insufficiency." />
-                      <ResultCard label="LLD" value={fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)} range=">6 mm dapat terasa, >10 mm bermasalah" flag={results.flags.lld} />
-                      <ResultCard label="Delta Femoral Offset" value={fmtValue(results.fOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.fOff} />
-                      <ResultCard label="Delta Global Offset" value={fmtValue(results.gOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Bandingkan sisi normal" flag={results.flags.gOff} />
-                      <ResultCard label="Cup Inclination" value={fmtValue(results.inclination, mmPerPixel, "deg")} range="Target sekitar 45°" flag={results.flags.inc} />
-                      <ResultCard label="Cup Anteversion" value={fmtValue(results.anteversion, mmPerPixel, "deg")} range="Lewinnek 5-25°" flag={results.flags.av} />
+                      <ResultCard isDark={isDark} label="COR Horizontal" value={fmtValue(results.corDx, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.corX} note="Rekonstruksi COR dibanding sisi kontralateral." />
+                      <ResultCard isDark={isDark} label="COR Vertical" value={fmtValue(results.corDy, mmPerPixel, "length", 1, displayUnit)} range="Target <=3 mm superior" flag={results.flags.corY} note="Superior shift berlebih berisiko loosening/abductor insufficiency." />
+                      <ResultCard isDark={isDark} label="LLD" value={fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)} range=">6 mm dapat terasa, >10 mm bermasalah" flag={results.flags.lld} />
+                      <ResultCard isDark={isDark} label="Delta Femoral Offset" value={fmtValue(results.fOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.fOff} />
+                      <ResultCard isDark={isDark} label="Delta Global Offset" value={fmtValue(results.gOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Bandingkan sisi normal" flag={results.flags.gOff} />
+                      <ResultCard isDark={isDark} label="Cup Inclination" value={fmtValue(results.inclination, mmPerPixel, "deg")} range="Target sekitar 45°" flag={results.flags.inc} />
+                      <ResultCard isDark={isDark} label="Cup Anteversion" value={fmtValue(results.anteversion, mmPerPixel, "deg")} range="Lewinnek 5-25°" flag={results.flags.av} />
                     </div>
                     <div className="mt-3 rounded-xl border border-slate-200 p-3">
                       <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Catatan Dokter</div>
@@ -1300,8 +1559,9 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[9px] leading-relaxed text-slate-500">
                       Referensi: Budzinska et al. 2023, Japanese Journal of Radiology. Radiograf bersifat alat bantu; keputusan klinis tetap memerlukan evaluasi dokter ortopedi.
                     </div>
-                  </div>
+                  </motion.div>
                 )}
+                </AnimatePresence>
               </div>
             </div>
 
