@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Compass,
+  Calculator,
   Download,
   FileText,
   FolderOpen,
@@ -143,6 +144,7 @@ export default function QuickPanel({
   onMove,
   onOpenTka,
   onOpenHip,
+  onNormmedFemoralSizer,
   onTraumaPlanning,
   onHistory,
   canHistory = true,
@@ -337,6 +339,9 @@ export default function QuickPanel({
                 className="h-4 w-4 shrink-0 object-contain"
               />
               HIP
+            </CompactButton>
+            <CompactButton icon={Calculator} onClick={onNormmedFemoralSizer}>
+              Fem Size
             </CompactButton>
             {onTraumaPlanning ? (
               <CompactButton icon={Compass} onClick={onTraumaPlanning}>

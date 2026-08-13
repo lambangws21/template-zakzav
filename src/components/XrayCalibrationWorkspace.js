@@ -133,6 +133,9 @@ import SmartHintBanner from "./SmartHintBanner";
 import PreOpSummaryModal from "./PreOpSummaryModal";
 import PreOpReportModal from "./PreOpReportModal";
 import ImplantSizePanel from "./ImplantSizePanel";
+import NormmedFemoralSizeChecker, {
+  getNormmedFemoralSizeMatches,
+} from "./NormmedFemoralSizeChecker";
 import TraumaPlanningPanel from "./TraumaPlanningPanel";
 import LandmarkAnnotationPanel from "./LandmarkAnnotationPanel";
 import DriveImplantLibraryPanel from "./DriveImplantLibraryPanel";
@@ -820,6 +823,7 @@ export default function XrayCalibrationWorkspace({
   const [selectionPulse, setSelectionPulse] = useState(null);
   const [hoveredMeasurementInfo, setHoveredMeasurementInfo] = useState(null);
   const [lineLabelHoverInfo, setLineLabelHoverInfo] = useState(null);
+  const [sizingLineHoverInfo, setSizingLineHoverInfo] = useState(null);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
   const [activeRightPanel, setActiveRightPanel] = useState("tool");
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
@@ -1007,6 +1011,8 @@ export default function XrayCalibrationWorkspace({
   const [wsAnalyticsOpen, setWsAnalyticsOpen] = useState(false);
   const [wsAnalyticsCases, setWsAnalyticsCases] = useState([]);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
+  const [normmedFemoralSizerOpen, setNormmedFemoralSizerOpen] =
+    useState(false);
   const [traumaPlanningOpen, setTraumaPlanningOpen] = useState(false);
   const [landmarkAnnotationOpen, setLandmarkAnnotationOpen] = useState(false);
   const [driveLibraryOpen, setDriveLibraryOpen] = useState(false);
@@ -2952,6 +2958,180 @@ export default function XrayCalibrationWorkspace({
     if (type === "femurAxis") return "FEM-AXIS";
     return "LINE";
   }, []);
+
+  const normmedFemoralMeasurement = useMemo(() => {
+    const blockedTypes = new Set([
+      "ruler",
+      "hka",
+      "parallelGuide",
+      "perpendicularGuide",
+      "dorrOuter",
+      "dorrCanal",
+    ]);
+    const isCandidate = (line) =>
+      line &&
+      line.id !== calibrationLineId &&
+      !blockedTypes.has(line.type) &&
+      Number.isFinite(getLineLength(line)) &&
+      getLineLength(line) >= 2;
+
+    let line = null;
+    let source = "";
+    if (isCandidate(selectedLine)) {
+      line = selectedLine;
+      source = "selected";
+    } else {
+      const candidateLines = lines.filter(isCandidate);
+      const taggedLine = [...candidateLines].reverse().find((item) =>
+        /femoral|femur|normmed|size|width|length|height|ml|ap/i.test(
+          `${item.name || ""} ${item.type || ""}`,
+        ),
+      );
+      line = taggedLine || [...candidateLines].reverse()[0] || null;
+      source = taggedLine ? "detected" : line ? "latest" : "";
+    }
+
+    const scaleLine =
+      lines.find((item) => item.id === calibrationLineId) ||
+      lines.find((item) => item.type === "ruler") ||
+      null;
+
+    return {
+      line,
+      source,
+      lengthMm:
+        line && mmPerPixel !== null ? getLineLength(line) * mmPerPixel : null,
+      label: line ? `Line #${line.id} ${lineTypeLabel(line.type)}` : "",
+      autoDetected: Boolean(line && line.id !== selectedLine?.id),
+      scaleSourceLabel:
+        mmPerPixel !== null
+          ? scaleLine
+            ? `Skala: ${lineTypeLabel(scaleLine.type)} #${scaleLine.id}`
+            : `Skala: ${mmPerPixel.toFixed(6)} mm/px`
+      : "Skala ruler belum aktif",
+    };
+  }, [calibrationLineId, lineTypeLabel, lines, mmPerPixel, selectedLine]);
+
+  const getSizingLineIntent = useCallback((line) => {
+    if (!line) return null;
+    const signature = `${line.name || ""} ${line.type || ""}`.toLowerCase();
+    const hasSizingContext =
+      /\b(size|sizing|width|length|height|ml|ap|normmed|gordion|tkr|baseplate|tray)\b/.test(
+        signature,
+      );
+    const isExcluded =
+      /\b(offset|axis|head|dorr|hka|ruler|guide|parallel|perpendicular)\b/.test(
+        signature,
+      );
+
+    if (isExcluded || !hasSizingContext) return null;
+    if (/\b(femoral|femur)\b/.test(signature)) return "femoral";
+    if (/\b(tibial|tibia)\b/.test(signature)) return "tibial";
+    return null;
+  }, []);
+
+  const getNormmedFemoralSizingForLine = useCallback(
+    (line) => {
+      const blockedTypes = new Set([
+        "ruler",
+        "hka",
+        "parallelGuide",
+        "perpendicularGuide",
+        "dorrOuter",
+        "dorrCanal",
+      ]);
+      const isValidLine =
+        line &&
+        line.id !== calibrationLineId &&
+        !blockedTypes.has(line.type) &&
+        Number.isFinite(getLineLength(line)) &&
+        getLineLength(line) >= 2;
+
+      if (!isValidLine) {
+        return null;
+      }
+      const sizingIntent = getSizingLineIntent(line);
+      if (!sizingIntent) {
+        return null;
+      }
+
+      const scaleLine =
+        lines.find((item) => item.id === calibrationLineId) ||
+        lines.find((item) => item.type === "ruler") ||
+        null;
+      const sourceText = scaleLine
+        ? `Skala dari ${lineTypeLabel(scaleLine.type)} #${scaleLine.id}`
+        : mmPerPixel !== null
+          ? `Skala ${mmPerPixel.toFixed(6)} mm/px`
+          : "Kalibrasi ruler belum aktif";
+
+      if (mmPerPixel === null) {
+        return {
+          available: false,
+          kind: sizingIntent,
+          title:
+            sizingIntent === "tibial"
+              ? "Tibial sizing"
+              : "Femoral sizing",
+          sourceText,
+          message: "Kalibrasi ruler/marker dulu agar line bisa dihitung ke mm.",
+        };
+      }
+
+      const lineLengthMm = getLineLength(line) * mmPerPixel;
+      if (sizingIntent === "tibial") {
+        return {
+          available: true,
+          kind: "tibial",
+          title: "Tibial sizing",
+          sourceText,
+          lineLengthMm,
+          primary: null,
+          dimensionItems: [],
+          message:
+            "Tabel ukuran tibial baseplate belum tersedia, jadi hover hanya menampilkan ukuran line terkalibrasi.",
+        };
+      }
+
+      const lineSignature = `${line.name || ""} ${line.type || ""}`;
+      const inferredDimension = /height|tinggi|lateral/i.test(lineSignature)
+        ? "height"
+        : /length|panjang|ap/i.test(lineSignature)
+          ? "length"
+          : "width";
+      const dimensionItems = [
+        { key: "width", label: "Width / ML" },
+        { key: "length", label: "Length / AP" },
+        { key: "height", label: "Height" },
+      ].map((item) => {
+        const match = getNormmedFemoralSizeMatches(
+          lineLengthMm,
+          item.key,
+        )[0];
+        return {
+          ...item,
+          match,
+          active: item.key === inferredDimension,
+        };
+      });
+      const primary =
+        dimensionItems.find((item) => item.active)?.match ||
+        dimensionItems[0]?.match ||
+        null;
+
+      return {
+        available: true,
+        kind: "femoral",
+        title: "Femoral sizing",
+        sourceText,
+        lineLengthMm,
+        inferredDimension,
+        primary,
+        dimensionItems,
+      };
+    },
+    [calibrationLineId, getSizingLineIntent, lineTypeLabel, lines, mmPerPixel],
+  );
 
   const lineTypeColor = useCallback((type) => {
     if (type === "dorrOuter") return "#10b981";
@@ -13825,10 +14005,44 @@ export default function XrayCalibrationWorkspace({
           const hoveredCircleId =
             hoveredCircleLabelId ?? findClosestCircleId(moveImagePoint);
           const hoveredLineLabelId = findLineLabelByPoint(point);
+          const hoveredLineLabel =
+            hoveredLineLabelId !== null && hoveredLineLabelId !== undefined
+              ? lines.find((line) => line.id === hoveredLineLabelId)
+              : null;
+          const hoveredLineSizingIntent = getSizingLineIntent(hoveredLineLabel);
           setLineLabelHoverInfo((cur) => {
-            if (!hoveredLineLabelId) return cur ? null : cur;
-            if (cur?.lineId === hoveredLineLabelId && cur.screenX === Math.round(point.x) && cur.screenY === Math.round(point.y)) return cur;
-            return { lineId: hoveredLineLabelId, screenX: point.x, screenY: point.y };
+            if (!hoveredLineLabel || hoveredLineSizingIntent) {
+              return cur ? null : cur;
+            }
+            if (
+              cur?.lineId === hoveredLineLabel.id &&
+              cur.screenX === Math.round(point.x) &&
+              cur.screenY === Math.round(point.y)
+            ) {
+              return cur;
+            }
+            return {
+              lineId: hoveredLineLabel.id,
+              screenX: point.x,
+              screenY: point.y,
+            };
+          });
+          setSizingLineHoverInfo((cur) => {
+            if (!hoveredLineLabel || !hoveredLineSizingIntent) {
+              return cur ? null : cur;
+            }
+            if (
+              cur?.lineId === hoveredLineLabel.id &&
+              cur.screenX === Math.round(point.x) &&
+              cur.screenY === Math.round(point.y)
+            ) {
+              return cur;
+            }
+            return {
+              lineId: hoveredLineLabel.id,
+              screenX: point.x,
+              screenY: point.y,
+            };
           });
           setHoveredMeasurementInfo((current) => {
             if (hoveredHkaId !== null) {
@@ -13867,6 +14081,9 @@ export default function XrayCalibrationWorkspace({
         } else if (isCoarsePointer && hoveredMeasurementInfo) {
           setHoveredMeasurementInfo(null);
           setLineLabelHoverInfo(null);
+          setSizingLineHoverInfo(null);
+        } else if (isCoarsePointer && sizingLineHoverInfo) {
+          setSizingLineHoverInfo(null);
         }
 
         if (tool === "cut" && draftCut?.points?.length) {
@@ -14869,19 +15086,23 @@ export default function XrayCalibrationWorkspace({
       findClosestAngleId,
       findClosestCircleId,
       findClosestHkaId,
+      findClosestLineId,
       findAngleLabelByPoint,
       findCircleLabelByPoint,
       findHkaLabelByPoint,
+      findLineLabelByPoint,
       freeLineMode,
       guideBuilderPreviewPoint,
       guideBuilderReference,
       getLocalPoint,
       getMobileGestureSnapshot,
+      getSizingLineIntent,
       hoveredMeasurementInfo,
       image,
       isMobileViewport,
       isSimpleUiMode,
       isLineLocked,
+      lines,
       setHoveredMeasurementInfo,
       modelHeight,
       modelWidth,
@@ -14895,6 +15116,7 @@ export default function XrayCalibrationWorkspace({
       schedulePlanningGuidesUpdate,
       scheduleViewportUpdate,
       screenToImagePoint,
+      sizingLineHoverInfo,
       cropToolActive,
       tool,
       trackMobileGesturePointer,
@@ -15181,6 +15403,7 @@ export default function XrayCalibrationWorkspace({
   const handlePointerLeave = useCallback(() => {
     setHoveredMeasurementInfo(null);
     setLineLabelHoverInfo(null);
+    setSizingLineHoverInfo(null);
     if (interactionRef.current.mode && activePointerIdRef.current !== null) {
       return;
     }
@@ -18847,6 +19070,7 @@ export default function XrayCalibrationWorkspace({
     },
     { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto" },
     { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment" },
+    { icon: "ruler", label: "Fem Size", desc: "Cek size femoral TKR PS Normmed dari Width, Length, atau Height.", key: "normmedFemoralSizer", action: "normmedFemoralSizer" },
     { icon: "preTka", label: "Pre-TKA", desc: "Perencanaan pre-operasi TKA: deformitas HKA, rencana potongan femoral dan tibial.", key: "preTka", action: "preTka" },
     { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder" },
     { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment" },
@@ -19002,6 +19226,7 @@ export default function XrayCalibrationWorkspace({
         {lineLabelHoverInfo && (() => {
           const line = lines.find((l) => l.id === lineLabelHoverInfo.lineId);
           if (!line) return null;
+          if (getSizingLineIntent(line)) return null;
           const preset = line.type || "normal";
           const presetInfo = HIP_FUNCTION_SUMMARY_BY_KEY[preset] ?? null;
           const measurement = (() => {
@@ -19018,7 +19243,12 @@ export default function XrayCalibrationWorkspace({
           let tx = lineLabelHoverInfo.screenX + TOOLTIP_OFFSET;
           let ty = lineLabelHoverInfo.screenY + TOOLTIP_OFFSET;
           if (tx + TOOLTIP_W > vpW - 8) tx = lineLabelHoverInfo.screenX - TOOLTIP_W - TOOLTIP_OFFSET;
-          if (ty > vpH * 0.6) ty = lineLabelHoverInfo.screenY - TOOLTIP_OFFSET - (presetInfo?.image ? 320 : 120);
+          if (ty > vpH * 0.6) {
+            ty =
+              lineLabelHoverInfo.screenY -
+              TOOLTIP_OFFSET -
+              (presetInfo?.image ? 320 : 120);
+          }
 
           return (
             <motion.div
@@ -19095,6 +19325,146 @@ export default function XrayCalibrationWorkspace({
                     {line.name ? `"${line.name}"` : `Line #${line.id}`}
                   </div>
                 )}
+              </div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* -- Femoral/Tibial Sizing Hover Tooltip ----------------------------- */}
+      <AnimatePresence>
+        {sizingLineHoverInfo && (() => {
+          const line = lines.find((item) => item.id === sizingLineHoverInfo.lineId);
+          if (!line) return null;
+          const sizing = getNormmedFemoralSizingForLine(line);
+          if (!sizing) return null;
+
+          const color = sizing.kind === "tibial" ? "#6366f1" : "#0891b2";
+          const formatHoverMm = (value, digits = 1) =>
+            Number.isFinite(value)
+              ? `${value.toFixed(digits).replace(/\.?0+$/, "")} mm`
+              : "-";
+          const TOOLTIP_W = sizing.kind === "femoral" ? 300 : 280;
+          const TOOLTIP_OFFSET = 18;
+          const vpW = typeof window !== "undefined" ? window.innerWidth : 1200;
+          const vpH = typeof window !== "undefined" ? window.innerHeight : 800;
+          let tx = sizingLineHoverInfo.screenX + TOOLTIP_OFFSET;
+          let ty = sizingLineHoverInfo.screenY + TOOLTIP_OFFSET;
+          if (tx + TOOLTIP_W > vpW - 8) {
+            tx = sizingLineHoverInfo.screenX - TOOLTIP_W - TOOLTIP_OFFSET;
+          }
+          if (ty > vpH * 0.6) {
+            ty =
+              sizingLineHoverInfo.screenY -
+              TOOLTIP_OFFSET -
+              (sizing.kind === "femoral" ? 190 : 135);
+          }
+
+          return (
+            <motion.div
+              key={`sizing-line-tip-${sizingLineHoverInfo.lineId}`}
+              initial={{ opacity: 0, scale: 0.94, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 4 }}
+              transition={{ duration: 0.14 }}
+              className="fixed z-[121] pointer-events-none"
+              style={{ left: tx, top: ty, width: TOOLTIP_W }}
+            >
+              <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl">
+                <div
+                  className="flex items-center justify-between gap-2 px-3 py-2"
+                  style={{
+                    background: `${color}18`,
+                    borderBottom: `1.5px solid ${color}30`,
+                  }}
+                >
+                  <span
+                    className="rounded-md px-1.5 py-0.5 text-[9px] font-black tracking-widest text-white uppercase"
+                    style={{ background: color }}
+                  >
+                    {sizing.kind === "tibial" ? "TIBIA SIZE" : "FEM SIZE"}
+                  </span>
+                  <span className="truncate text-[8px] font-bold text-slate-400">
+                    {sizing.sourceText}
+                  </span>
+                </div>
+
+                <div className="px-3 py-2">
+                  {sizing.available ? (
+                    <>
+                      <div
+                        className="mb-2 flex items-end justify-between gap-2 rounded-xl border border-cyan-100 bg-cyan-50/80 px-2.5 py-2"
+                        style={
+                          sizing.kind === "tibial"
+                            ? { borderColor: "#c7d2fe", background: "#eef2ff" }
+                            : undefined
+                        }
+                      >
+                        <div>
+                          <div
+                            className="text-[8px] font-black tracking-widest uppercase"
+                            style={{ color }}
+                          >
+                            {sizing.title}
+                          </div>
+                          <div className="font-mono text-sm font-black text-slate-900">
+                            {formatHoverMm(sizing.lineLengthMm, 2)}
+                          </div>
+                        </div>
+                        {sizing.primary ? (
+                          <div className="text-right">
+                            <div className="text-[8px] font-black tracking-widest text-slate-400 uppercase">
+                              Rekomendasi
+                            </div>
+                            <div className="text-xl font-black" style={{ color }}>
+                              Size {sizing.primary.size}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {sizing.kind === "femoral" ? (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {sizing.dimensionItems.map((item) => (
+                            <div
+                              key={item.key}
+                              className={`rounded-lg border px-1.5 py-1 ${
+                                item.active
+                                  ? "border-cyan-300 bg-cyan-50 text-cyan-900"
+                                  : "border-slate-200 bg-slate-50 text-slate-500"
+                              }`}
+                            >
+                              <div className="text-[7px] font-black tracking-widest uppercase">
+                                {item.label}
+                              </div>
+                              <div className="mt-0.5 text-[11px] font-black">
+                                {item.match ? `Size ${item.match.size}` : "-"}
+                              </div>
+                              {item.match ? (
+                                <div className="text-[8px] font-semibold">
+                                  {formatHoverMm(item.match.value, 2)}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1.5 text-[10px] font-semibold leading-snug text-indigo-900">
+                          {sizing.message}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="rounded-lg border border-amber-100 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold leading-snug text-amber-900">
+                      {sizing.message}
+                    </p>
+                  )}
+
+                  <p className="mt-1.5 text-[8px] font-semibold leading-snug text-slate-400">
+                    Aktif hanya untuk line bernama Femoral/Tibia dengan Width,
+                    Length, Height, ML, AP, Size, atau Baseplate.
+                  </p>
+                </div>
               </div>
             </motion.div>
           );
@@ -24023,6 +24393,26 @@ export default function XrayCalibrationWorkspace({
                     {/* ── Referensi TKA Planning ── */}
                     <TkaSummaryPanel />
 
+                    <NormmedFemoralSizeChecker
+                      compact
+                      hasCalibration={hasCalibration}
+                      selectedLineLengthMm={normmedFemoralMeasurement.lengthMm}
+                      selectedLineLabel={normmedFemoralMeasurement.label}
+                      selectedLineAutoDetected={
+                        normmedFemoralMeasurement.autoDetected
+                      }
+                      scaleSourceLabel={
+                        normmedFemoralMeasurement.scaleSourceLabel
+                      }
+                      onStartLine={() => {
+                        setSimplePlanningModal(null);
+                        handleToolChange("draw");
+                        setNotice(
+                          "Buat line ukur femoral Width/Length/Height, lalu buka Fem Size untuk cek size Normmed.",
+                        );
+                      }}
+                    />
+
                     {/* ── Preset tipe line ukur ── */}
                     <details>
                       <summary className="cursor-pointer select-none text-[10px] font-semibold text-slate-400">Preset Tipe Line Ukur ▸</summary>
@@ -24087,6 +24477,49 @@ export default function XrayCalibrationWorkspace({
                   </>
                 )}
               </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {normmedFemoralSizerOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[96] flex items-end justify-center bg-slate-950/35 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setNormmedFemoralSizerOpen(false);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              className="max-h-[92dvh] w-full max-w-[min(100%,540px)] overflow-y-auto rounded-[28px]"
+            >
+              <NormmedFemoralSizeChecker
+                hasCalibration={hasCalibration}
+                selectedLineLengthMm={normmedFemoralMeasurement.lengthMm}
+                selectedLineLabel={normmedFemoralMeasurement.label}
+                selectedLineAutoDetected={
+                  normmedFemoralMeasurement.autoDetected
+                }
+                scaleSourceLabel={normmedFemoralMeasurement.scaleSourceLabel}
+                onStartLine={() => {
+                  setNormmedFemoralSizerOpen(false);
+                  handleToolChange("draw");
+                  setNotice(
+                    "Buat line ukur femoral Width/Length/Height, lalu buka Fem Size untuk cek size Normmed.",
+                  );
+                }}
+                onClose={() => setNormmedFemoralSizerOpen(false)}
+              />
             </motion.div>
           </motion.div>
         ) : null}
@@ -31881,6 +32314,9 @@ export default function XrayCalibrationWorkspace({
                       onMove={() => handleToolChange("pan")}
                       onOpenTka={() => openSimplePlanningModal("tka")}
                       onOpenHip={() => openSimplePlanningModal("hip")}
+                      onNormmedFemoralSizer={() =>
+                        setNormmedFemoralSizerOpen(true)
+                      }
                       onTraumaPlanning={() => setTraumaPlanningOpen(true)}
                       onLandmarkAnnotation={() => setLandmarkAnnotationOpen(true)}
                       onHistory={undoHistory}
@@ -31975,6 +32411,7 @@ export default function XrayCalibrationWorkspace({
                         if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
                         if (item.action === "zakAceta") { setPostThaAssessmentOpen((v) => !v); return; }
                         if (item.action === "preTka") { setPreTkaAssessmentOpen((v) => !v); return; }
+                        if (item.action === "normmedFemoralSizer") { setNormmedFemoralSizerOpen(true); return; }
                         if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
                         if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
                         if (item.action === "dorr") { setSimpleDesktopDorrOpen((v) => !v); return; }
@@ -32113,6 +32550,7 @@ export default function XrayCalibrationWorkspace({
                           if (item.action === "dorr") { setSimpleMobilePanel("dorr"); return; }
                           if (item.action === "tkaAssessment") { setSimpleMobilePanel(null); setTkaAssessmentOpen((v) => !v); return; }
                           if (item.action === "preTka") { setSimpleMobilePanel(null); setPreTkaAssessmentOpen((v) => !v); return; }
+                          if (item.action === "normmedFemoralSizer") { setSimpleMobilePanel(null); setNormmedFemoralSizerOpen(true); return; }
                           setSimpleMobilePanel(null);
                           setMobileCanvasMode("edit");
                           if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
@@ -32450,6 +32888,14 @@ export default function XrayCalibrationWorkspace({
                               <path d="M19.5 17.5 L23 28"/>
                             </svg>
                             <span className="text-[10px] font-black">HIP</span>
+                          </button>
+                          <button type="button" onClick={() => { setSimpleMobilePanel(null); setNormmedFemoralSizerOpen(true); }}
+                            className="col-span-2 flex items-center justify-center gap-2 rounded-[18px] border border-cyan-200 bg-cyan-50 py-2.5 text-[10px] font-black text-cyan-800 shadow-[2px_2px_6px_rgba(14,165,233,0.16)]">
+                            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 13V3h10" />
+                              <path d="M5 11h6M5 8h5M5 5h4" />
+                            </svg>
+                            Cek Femoral Size Normmed
                           </button>
                           {/* Guide */}
                           <button type="button" onClick={() => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); }}

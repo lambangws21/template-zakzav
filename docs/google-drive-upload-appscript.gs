@@ -321,7 +321,7 @@ function doGet(e) {
       });
     }
 
-    if (action === "listpatientcases" || action === "list_patient_cases" || action === "readpatientcases") {
+    if (action === "listpatientcases" || action === "list_patient_cases" || action === "readpatientcases" || action === "read_patient_cases") {
       return jsonOutput_({ ok: true, status: "success", items: readPatientCases_() });
     }
 
@@ -660,6 +660,10 @@ function doPost(e) {
   try {
     const payload = parseRequestBody_(e);
     const action = normalizeAction_(payload.action || "list");
+
+    if (action === "listpatientcases" || action === "list_patient_cases" || action === "readpatientcases" || action === "read_patient_cases") {
+      return jsonOutput_({ ok: true, status: "success", items: readPatientCases_() });
+    }
 
     if (action === "list" || action === "read") {
       if (shouldUseInstrumentProfileSheet_(action, payload)) {

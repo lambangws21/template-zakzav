@@ -6,6 +6,15 @@ export const maxDuration = 90;
 
 const REQUEST_TIMEOUT_MS = 90_000;
 const HTML_TAG_PATTERN = /^\s*<(?:!doctype\s+html|html)\b/i;
+const READ_ACTIONS = new Set([
+  "",
+  "list",
+  "read",
+  "list_patient_cases",
+  "listpatientcases",
+  "read_patient_cases",
+  "readpatientcases",
+]);
 
 function isAllowedRemote(url) {
   try {
@@ -37,6 +46,81 @@ function parseJsonSafe(raw) {
       return null;
     }
   }
+}
+
+function normalizeAction(value) {
+  return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function isReadAction(value) {
+  const action = normalizeAction(value);
+  return READ_ACTIONS.has(action) || READ_ACTIONS.has(action.replace(/_/g, ""));
+}
+
+function getRemoteOk(parsed) {
+  const remoteStatus = String(parsed?.status || "").toLowerCase();
+  if (typeof parsed?.ok === "boolean") return parsed.ok;
+  return remoteStatus ? remoteStatus !== "error" : true;
+}
+
+function remoteResponseStatus(response, remoteOk) {
+  if (response.ok && remoteOk) return 200;
+  return response.ok ? 502 : response.status || 502;
+}
+
+function appendRemoteQuery(remoteUrl, params) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (key === "url" || value === undefined || value === null) return;
+    if (typeof value === "object") {
+      query.set(key, JSON.stringify(value));
+      return;
+    }
+    query.set(key, String(value));
+  });
+  const queryString = query.toString();
+  return queryString
+    ? `${remoteUrl}${remoteUrl.includes("?") ? "&" : "?"}${queryString}`
+    : remoteUrl;
+}
+
+async function forwardGetToRemote(remoteUrl, params = {}) {
+  const target = appendRemoteQuery(remoteUrl, params);
+  const response = await fetch(target, {
+    cache: "no-store",
+    redirect: "follow",
+    headers: {
+      Accept: "application/json,text/csv,text/plain,*/*",
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const rawText = await response.text();
+  const parsed = parseJsonSafe(rawText);
+  if (!parsed || typeof parsed !== "object") {
+    return NextResponse.json(
+      {
+        ok: false,
+        status: response.status || 502,
+        remote: {
+          ok: false,
+          status: "error",
+          error: "Apps Script GET tidak mengembalikan JSON valid.",
+          rawPreview: String(rawText || "").slice(0, 500),
+        },
+      },
+      { status: 502 }
+    );
+  }
+
+  const remoteOk = getRemoteOk(parsed);
+  return NextResponse.json(
+    {
+      ok: response.ok && remoteOk,
+      status: response.status,
+      remote: parsed,
+    },
+    { status: remoteResponseStatus(response, remoteOk) }
+  );
 }
 
 async function forwardPostToRemote(remoteUrl, body) {
@@ -101,19 +185,16 @@ async function forwardPostToRemote(remoteUrl, body) {
     );
   }
 
-  const remoteStatus = String(parsed?.status || "").toLowerCase();
-  const remoteOk =
-    typeof parsed?.ok === "boolean"
-      ? parsed.ok
-      : remoteStatus
-      ? remoteStatus !== "error"
-      : true;
+  const remoteOk = getRemoteOk(parsed);
 
-  return NextResponse.json({
-    ok: response.ok && remoteOk,
-    status: response.status,
-    remote: parsed,
-  });
+  return NextResponse.json(
+    {
+      ok: response.ok && remoteOk,
+      status: response.status,
+      remote: parsed,
+    },
+    { status: remoteResponseStatus(response, remoteOk) }
+  );
 }
 
 async function readRequestJson(request) {
@@ -144,39 +225,7 @@ export async function GET(request) {
 
     const queryWithoutUrl = new URLSearchParams(searchParams.toString());
     queryWithoutUrl.delete("url");
-    const target = queryWithoutUrl.toString()
-      ? `${remoteUrl}${remoteUrl.includes("?") ? "&" : "?"}${queryWithoutUrl.toString()}`
-      : remoteUrl;
-
-    const response = await fetch(target, {
-      cache: "no-store",
-      redirect: "follow",
-      headers: {
-        Accept: "application/json,text/csv,text/plain,*/*",
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    const rawText = await response.text();
-    const parsed = parseJsonSafe(rawText);
-    if (!parsed || typeof parsed !== "object") {
-      return NextResponse.json(
-        {
-          ok: false,
-          status: response.status || 500,
-          remote: {
-            ok: false,
-            status: "error",
-            error: "Apps Script GET tidak mengembalikan JSON valid.",
-            rawPreview: String(rawText || "").slice(0, 500),
-          },
-        },
-        { status: 500 }
-      );
-    }
-    return NextResponse.json(
-      { ok: response.ok, status: response.status, remote: parsed },
-      { status: response.ok ? 200 : response.status || 500 }
-    );
+    return await forwardGetToRemote(remoteUrl, Object.fromEntries(queryWithoutUrl.entries()));
   } catch (error) {
     return NextResponse.json(
       {
@@ -206,6 +255,9 @@ export async function POST(request) {
       );
     }
     const { url, ...forwardBody } = payload || {};
+    if (isReadAction(forwardBody?.action)) {
+      return await forwardGetToRemote(remoteUrl, forwardBody);
+    }
     return await forwardPostToRemote(remoteUrl, forwardBody);
   } catch (error) {
     return NextResponse.json(
