@@ -114,6 +114,8 @@ export default function HKAPlanner() {
             activePoint={activePoint}
             points={points}
             setPoints={setPoints}
+            hkaDeviation={fullHka}
+            direction={direction}
           />
 
           {/* Right panel */}

@@ -144,6 +144,7 @@ export default function ImplantLayer({
   canReplaceSelected = false,
   onClose,
   disabled = false,
+  calibrated = true,
   scaleInstruction = "",
   className = "",
   compact = false,
@@ -334,6 +335,14 @@ export default function ImplantLayer({
         </div>
       ) : null}
 
+      {/* Calibration warning — shown when image is loaded but kalibrasi belum aktif */}
+      {!calibrated ? (
+        <div className="flex items-start gap-2 rounded-2xl border border-amber-400/40 bg-amber-50/80 px-3 py-2 text-[10px] font-semibold leading-4 text-amber-800 dark:border-amber-400/20 dark:bg-amber-900/20 dark:text-amber-300">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <span>Kalibrasi belum aktif — ukuran implant tidak akan akurat. Lakukan kalibrasi sebelum memakai template.</span>
+        </div>
+      ) : null}
+
       {/* Action buttons */}
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -341,9 +350,9 @@ export default function ImplantLayer({
           onClick={onUseSelected}
           disabled={disabled || !selectedItem}
           className="implant-layer-btn-use flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-          title="Tambahkan implant sebagai layer template baru"
+          title={calibrated ? "Tambahkan implant sebagai layer template baru" : "Kalibrasi belum aktif — ukuran implant mungkin tidak akurat"}
         >
-          <Check className="h-4 w-4" />
+          {calibrated ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
           Pakai
         </button>
         <button

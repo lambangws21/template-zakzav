@@ -150,9 +150,97 @@ function drawJLAMode(ctx, points) {
   drawPoint(ctx, tibPlateauLateral, "LTP",  "#14b8a6");
 }
 
+// ─── HKA axis shadow overlay ─────────────────────────────────────────────────
+// All coords are in IMAGE space (called inside ctx.translate/scale block).
+// `scale` is needed to keep pixel sizes consistent across zoom levels.
+
+function drawHKAShadow(ctx, fh, kc, ac, deviation, direction, scale) {
+  if (!fh || !kc || !ac) return;
+
+  const hkaColor = deviation === null ? "#94a3b8"
+    : deviation < 3  ? "#22d3ee"
+    : deviation < 10 ? "#fbbf24"
+    : "#f87171";
+
+  const femDx = kc.x - fh.x, femDy = kc.y - fh.y;
+  const femLen = Math.hypot(femDx, femDy) || 1;
+  const femUx = femDx / femLen, femUy = femDy / femLen;
+
+  const tibDx = kc.x - ac.x, tibDy = kc.y - ac.y;
+  const tibLen = Math.hypot(tibDx, tibDy) || 1;
+  const tibUx = tibDx / tibLen, tibUy = tibDy / tibLen;
+
+  const extPast = Math.min(femLen, tibLen) * 0.28;
+  const lw = 3.5 / scale;
+
+  ctx.save();
+
+  // Femoral shadow: femHead → knee → slight extension into tibial zone
+  ctx.strokeStyle = "#facc1544";
+  ctx.lineWidth = lw;
+  ctx.setLineDash([]);
+  ctx.shadowColor = "#facc15";
+  ctx.shadowBlur = 8 / scale;
+  ctx.beginPath();
+  ctx.moveTo(fh.x, fh.y);
+  ctx.lineTo(kc.x + femUx * extPast, kc.y + femUy * extPast);
+  ctx.stroke();
+
+  // Tibial shadow: ankle → knee → slight extension into femoral zone
+  ctx.strokeStyle = "#22c55e44";
+  ctx.shadowColor = "#22c55e";
+  ctx.beginPath();
+  ctx.moveTo(ac.x, ac.y);
+  ctx.lineTo(kc.x + tibUx * extPast, kc.y + tibUy * extPast);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = "transparent";
+
+  if (deviation !== null) {
+    const arcR = Math.max(28 / scale, Math.min(56 / scale, Math.min(femLen, tibLen) * 0.20));
+
+    const angFemPast = Math.atan2(femUy, femUx);
+    const angTibPast = Math.atan2(tibUy, tibUx);
+    let diff = angTibPast - angFemPast;
+    while (diff >  Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+
+    if (Math.abs(diff) > 0.005) {
+      ctx.strokeStyle = hkaColor + "dd";
+      ctx.lineWidth = 2 / scale;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(kc.x, kc.y, arcR, angFemPast, angTibPast, diff < 0);
+      ctx.stroke();
+    }
+
+    // Label ON the femoral axis, offset perpendicular
+    const labelDist = Math.min(femLen * 0.42, 90 / scale);
+    const lx = kc.x - femUx * labelDist;
+    const ly = kc.y - femUy * labelDist;
+    const px = -femUy, py = femUx;
+    const tx = lx + px * (14 / scale);
+    const ty = ly + py * (14 / scale);
+
+    const label = deviation < 3
+      ? `HKA ${(180 - deviation).toFixed(1)}°`
+      : `${deviation.toFixed(1)}° ${direction === "varus" ? "Varus" : "Valgus"}`;
+    ctx.font = `bold ${12 / scale}px Arial`;
+    ctx.strokeStyle = "rgba(0,0,0,0.82)";
+    ctx.lineWidth = 3 / scale;
+    ctx.setLineDash([]);
+    ctx.strokeText(label, tx, ty);
+    ctx.fillStyle = hkaColor;
+    ctx.fillText(label, tx, ty);
+  }
+
+  ctx.restore();
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints }) {
+export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hkaDeviation = null, direction = "varus" }) {
   const canvasRef  = useRef(null);
   const imageRef   = useRef(null);
   const [imageReady, setImageReady] = useState(false);
@@ -200,6 +288,7 @@ export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints }) 
       ctx.drawImage(img, 0, 0);
 
       if (mode === "full") {
+        drawHKAShadow(ctx, points.femoralHead, points.kneeCenter, points.ankleCenter, hkaDeviation, direction, transform.scale);
         drawLine(ctx, points.femoralHead, points.kneeCenter, "#facc15", 4);
         drawLine(ctx, points.kneeCenter,  points.ankleCenter, "#22c55e", 4);
         drawPoint(ctx, points.femoralHead,  "CFH", "#facc15");

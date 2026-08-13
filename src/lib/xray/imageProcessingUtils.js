@@ -410,12 +410,12 @@ export function detectCalibrationMarkerLineFromCanvas(canvas) {
   for (let y = margin; y < height - margin; y += step) {
     for (let x = margin; x < width - margin; x += step) {
       const value = data[(y * width + x) * 4];
-      if (value >= 208) {
+      if (value >= 180) {
         points.push({ x, y });
       }
     }
   }
-  if (points.length < 32) return null;
+  if (points.length < 20) return null;
 
   const diag = Math.hypot(width, height);
   const rhoStep = Math.max(3, Math.round(diag / 280));
@@ -435,7 +435,7 @@ export function detectCalibrationMarkerLineFromCanvas(canvas) {
       }
     }
   }
-  if (!best || best.count < 18) return null;
+  if (!best || best.count < 12) return null;
 
   const ux = -best.sin;
   const uy = best.cos;
@@ -446,7 +446,7 @@ export function detectCalibrationMarkerLineFromCanvas(canvas) {
       projection: point.x * ux + point.y * uy,
     }))
     .sort((a, b) => a.projection - b.projection);
-  if (linePoints.length < 16) return null;
+  if (linePoints.length < 10) return null;
 
   const first = linePoints[0];
   const last = linePoints[linePoints.length - 1];

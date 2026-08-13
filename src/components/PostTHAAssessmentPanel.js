@@ -154,34 +154,41 @@ function ResultCard({ label, value, range, flag = "normal", note, isDark }) {
   );
 }
 
-function CupAssessmentSummary({ cupAssessment, draftCupAssessment, onSaveDraft }) {
+function CupAssessmentSummary({ cupAssessment, draftCupAssessment, onSaveDraft, isDark = false }) {
   const active = draftCupAssessment || cupAssessment;
   const zone = Number.isFinite(Number(active?.inclination)) && Number.isFinite(Number(active?.anteversion))
     ? cupZoneStatus(Number(active.inclination), Number(active.anteversion))
     : null;
+  const wrapBg = isDark ? "rgba(217,119,6,0.12)" : "#fffbeb";
+  const wrapBorder = isDark ? "rgba(251,191,36,0.22)" : "#fde68a";
+  const titleColor = isDark ? "#fbbf24" : "#92400e";
+  const cardBg = isDark ? "rgba(255,255,255,0.06)" : "#fff";
+  const cardBorder = isDark ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.8)";
+  const labelColor = isDark ? "#64748b" : "#94a3b8";
+  const noteColor = isDark ? "#fbbf24" : "#92400e";
   return (
     <div className="px-4 py-3">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <div className="rounded-xl border p-3" style={{ background: wrapBg, borderColor: wrapBorder }}>
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[10px] font-black uppercase tracking-widest text-amber-700">Cup Assessment PostTHA</div>
+          <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: titleColor }}>Cup Assessment PostTHA</div>
           {draftCupAssessment && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[8px] font-black text-cyan-700">Live</span>}
         </div>
         {active ? (
           <>
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-white/80 bg-white p-2">
-                <div className="text-[9px] font-black uppercase text-slate-400">Inclination</div>
-                <div className="text-xl font-black text-orange-600">{Number(active.inclination).toFixed(1)}°</div>
+              <div className="rounded-lg border p-2" style={{ background: cardBg, borderColor: cardBorder }}>
+                <div className="text-[9px] font-black uppercase" style={{ color: labelColor }}>Inclination</div>
+                <div className="text-xl font-black text-orange-500">{Number(active.inclination).toFixed(1)}°</div>
               </div>
-              <div className="rounded-lg border border-white/80 bg-white p-2">
-                <div className="text-[9px] font-black uppercase text-slate-400">Anteversion</div>
-                <div className="text-xl font-black text-cyan-600">{Number(active.anteversion).toFixed(1)}°</div>
+              <div className="rounded-lg border p-2" style={{ background: cardBg, borderColor: cardBorder }}>
+                <div className="text-[9px] font-black uppercase" style={{ color: labelColor }}>Anteversion</div>
+                <div className="text-xl font-black text-cyan-500">{Number(active.anteversion).toFixed(1)}°</div>
               </div>
             </div>
-            <div className="mt-2 rounded-lg border px-3 py-2 text-[11px] font-black" style={{ background: zone?.bg || "#fff", borderColor: zone?.border || "#e2e8f0", color: zone?.color || "#64748b" }}>
+            <div className="mt-2 rounded-lg border px-3 py-2 text-[11px] font-black" style={{ background: zone?.bg || (isDark ? "rgba(255,255,255,0.06)" : "#fff"), borderColor: zone?.border || wrapBorder, color: zone?.color || titleColor }}>
               {active.zone || zone?.label || "Cup Assess"} · {active.side === "left" ? "Kiri" : "Kanan"}
             </div>
-            <p className="mt-2 text-[10px] leading-relaxed text-amber-800">
+            <p className="mt-2 text-[10px] leading-relaxed" style={{ color: noteColor }}>
               Nilai ini diambil dari ellipse cup ringan di kanvas kiri dan akan dibaca saat export PDF.
             </p>
             {draftCupAssessment && (
@@ -191,7 +198,7 @@ function CupAssessmentSummary({ cupAssessment, draftCupAssessment, onSaveDraft }
             )}
           </>
         ) : (
-          <p className="mt-2 text-[11px] leading-relaxed text-amber-800">
+          <p className="mt-2 text-[11px] leading-relaxed" style={{ color: noteColor }}>
             Posisikan ellipse cup pada kanvas kiri. Hasil inclination dan anteversion akan tampil di sini.
           </p>
         )}
@@ -200,11 +207,10 @@ function CupAssessmentSummary({ cupAssessment, draftCupAssessment, onSaveDraft }
   );
 }
 
-function LightCupAssessment({ savedData, side, onChange, transform, onEllipseChange }) {
+function LightCupAssessment({ savedData, side, onChange, transform, onEllipseChange, handleSmall = false, onHandleSmallChange }) {
   const boxRef = useRef(null);
   const [size, setSize] = useState({ w: 900, h: 580 });
   const [dragging, setDragging] = useState(null);
-  const [handleSmall, setHandleSmall] = useState(false);
   // State stored in IMAGE coordinates (image natural pixels) so it sticks to the photo
   const [imgState, setImgState] = useState(null);
 
@@ -386,7 +392,7 @@ function LightCupAssessment({ savedData, side, onChange, transform, onEllipseCha
           </g>
         ))}
         {/* Handle-size toggle — dot icon, active when small */}
-        <g className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => setHandleSmall((p) => !p)}>
+        <g className="pointer-events-auto" style={{ cursor: "pointer" }} onClick={() => onHandleSmallChange?.(!handleSmall)}>
           <rect x={82} y={10} width={28} height={28} rx={7} fill="rgba(15,23,42,0.72)" stroke={handleSmall ? "rgba(250,204,21,0.7)" : "rgba(255,255,255,0.18)"} strokeWidth={1.5} />
           <circle cx={96} cy={24} r={handleSmall ? 3 : 5.5} fill="#facc15" stroke="#fff" strokeWidth="1" />
         </g>
@@ -826,7 +832,10 @@ function buildResults(points, cupPoints, mmPerPixel, operatedSide, cupAssessment
 
   const hLenLeft = points.ltLeft && points.tdLeft && points.tdRight ? pointLineDistance(points.ltLeft, points.tdLeft, points.tdRight) : null;
   const hLenRight = points.ltRight && points.tdLeft && points.tdRight ? pointLineDistance(points.ltRight, points.tdLeft, points.tdRight) : null;
-  const lld = hLenLeft !== null && hLenRight !== null ? Math.abs(hLenRight - hLenLeft) : null;
+  const lldRaw = hLenLeft !== null && hLenRight !== null ? hLenRight - hLenLeft : null;
+  const lld = lldRaw !== null ? Math.abs(lldRaw) : null;
+  // positive lldRaw → right LT further from teardrop line → right leg longer
+  const lldLonger = lldRaw !== null ? (Math.abs(lldRaw) < 0.5 ? "equal" : lldRaw > 0 ? "right" : "left") : null;
 
   const fOffLeft = hrcLeft ? pointLineDistance(hrcLeft, points.axisLeftTop, points.axisLeftBottom) : null;
   const fOffRight = hrcRight ? pointLineDistance(hrcRight, points.axisRightTop, points.axisRightBottom) : null;
@@ -854,7 +863,7 @@ function buildResults(points, cupPoints, mmPerPixel, operatedSide, cupAssessment
   const inclination = Number.isFinite(savedInclination) ? savedInclination : measuredInclination;
   const anteversion = Number.isFinite(savedAnteversion) ? savedAnteversion : measuredAnteversion;
 
-  const pxToMm = (px) => (mmPerPixel && px !== null ? px * mmPerPixel : null);
+  const pxToMm = (px) => (mmPerPixel !== null && mmPerPixel > 0 && px !== null ? px * mmPerPixel : null);
   const mm = {
     corDx: pxToMm(corDx),
     corDy: pxToMm(corDy),
@@ -871,6 +880,7 @@ function buildResults(points, cupPoints, mmPerPixel, operatedSide, cupAssessment
     corDx,
     corDy,
     lld,
+    lldLonger,
     fOffLeft,
     fOffRight,
     fOffDelta,
@@ -1078,7 +1088,8 @@ async function exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, ope
 
   row("COR horizontal", fmtValue(results.corDx, mmPerPixel, "length", 1, displayUnit), "Target <=5 mm", results.flags.corX);
   row("COR vertical", fmtValue(results.corDy, mmPerPixel, "length", 1, displayUnit), "Target <=3 mm superior", results.flags.corY);
-  row("LLD", fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit), ">6 mm terasa, >10 mm bermasalah", results.flags.lld);
+  const lldDir = results.lldLonger === "right" ? " (Kanan lebih panjang)" : results.lldLonger === "left" ? " (Kiri lebih panjang)" : results.lldLonger === "equal" ? " (Simetris)" : "";
+  row("LLD", `${fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)}${lldDir}`, ">6 mm terasa, >10 mm bermasalah", results.flags.lld);
   row("Delta femoral offset", fmtValue(results.fOffDelta, mmPerPixel, "length", 1, displayUnit), "Target <=5 mm", results.flags.fOff);
   row("Delta global offset", fmtValue(results.gOffDelta, mmPerPixel, "length", 1, displayUnit), "Bandingkan sisi normal", results.flags.gOff);
   row("Cup inclination", fmtValue(results.inclination, mmPerPixel, "deg"), cupAssessment ? "Dari Cup Assess" : "Target sekitar 45 deg", results.flags.inc);
@@ -1134,6 +1145,7 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
   const [manualActiveIndex, setManualActiveIndex] = useState(null);
   const [draftCupAssessment, setDraftCupAssessment] = useState(null);
   const [cupEllipseState, setCupEllipseState] = useState(null);
+  const [cupHandleSmall, setCupHandleSmall] = useState(false);
 
   // Dark mode observer — watches [data-theme] attribute on <html>
   const [isDark, setIsDark] = useState(false);
@@ -1352,6 +1364,8 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                     onChange={handleCupDraftChange}
                     transform={transform}
                     onEllipseChange={setCupEllipseState}
+                    handleSmall={cupHandleSmall}
+                    onHandleSmallChange={setCupHandleSmall}
                   />
                 )}
               </div>
@@ -1433,10 +1447,34 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                       cupAssessment={cupAssessment}
                       draftCupAssessment={draftCupAssessment}
                       onSaveDraft={saveDraftCupAssessment}
+                      isDark={isDark}
                     />
                     <div className="px-4">
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[10px] leading-relaxed text-slate-500">
                         Cup Assessment ini versi ringan khusus PostTHA. Hasil live di atas dipakai oleh export PDF; tekan Simpan jika ingin menyimpan ke data workspace.
+                      </div>
+                      <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2">
+                        <div className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Ukuran Point Cup</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { small: false, label: "Normal" },
+                            { small: true, label: "Kecil" },
+                          ].map((opt) => (
+                            <button
+                              key={opt.label}
+                              type="button"
+                              onClick={() => setCupHandleSmall(opt.small)}
+                              className="rounded-lg border px-3 py-2 text-[10px] font-black"
+                              style={{
+                                background: cupHandleSmall === opt.small ? "#eff6ff" : "#f8fafc",
+                                borderColor: cupHandleSmall === opt.small ? "#3b82f6" : "#e2e8f0",
+                                color: cupHandleSmall === opt.small ? "#2563eb" : "#64748b",
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -1546,7 +1584,7 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                     <div className="grid gap-2">
                       <ResultCard isDark={isDark} label="COR Horizontal" value={fmtValue(results.corDx, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.corX} note="Rekonstruksi COR dibanding sisi kontralateral." />
                       <ResultCard isDark={isDark} label="COR Vertical" value={fmtValue(results.corDy, mmPerPixel, "length", 1, displayUnit)} range="Target <=3 mm superior" flag={results.flags.corY} note="Superior shift berlebih berisiko loosening/abductor insufficiency." />
-                      <ResultCard isDark={isDark} label="LLD" value={fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)} range=">6 mm dapat terasa, >10 mm bermasalah" flag={results.flags.lld} />
+                      <ResultCard isDark={isDark} label="LLD" value={fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)} range=">6 mm dapat terasa, >10 mm bermasalah" flag={results.flags.lld} note={results.lldLonger === "right" ? "Kanan lebih panjang" : results.lldLonger === "left" ? "Kiri lebih panjang" : results.lldLonger === "equal" ? "Simetris" : undefined} />
                       <ResultCard isDark={isDark} label="Delta Femoral Offset" value={fmtValue(results.fOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.fOff} />
                       <ResultCard isDark={isDark} label="Delta Global Offset" value={fmtValue(results.gOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Bandingkan sisi normal" flag={results.flags.gOff} />
                       <ResultCard isDark={isDark} label="Cup Inclination" value={fmtValue(results.inclination, mmPerPixel, "deg")} range="Target sekitar 45°" flag={results.flags.inc} />

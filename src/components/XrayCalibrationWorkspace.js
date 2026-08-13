@@ -115,6 +115,7 @@ import {
 } from "../lib/digitalTemplating/implantLibrary";
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import ImplantLayer from "./ImplantLayer";
+import NormmedStemLayer from "./NormmedStemLayer";
 import CalibrationWizard from "./KalibrasiWizzard";
 import FreeWarpOverlay from "./FreeWarpOverlay";
 import { SHAPE_PRESETS } from "../data/shapePresets";
@@ -8851,6 +8852,26 @@ export default function XrayCalibrationWorkspace({
           overlayCtx.lineTo(tibia10.x, tibia10.y);
           overlayCtx.stroke();
         }
+        // Shadow glow — femoral segment (amber) + tibial segment (green)
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
+        overlayCtx.lineWidth = strokeWidth + 1.5;
+        overlayCtx.setLineDash([]);
+        overlayCtx.strokeStyle = "#f59e0b44";
+        overlayCtx.shadowColor = "#f59e0b";
+        overlayCtx.shadowBlur = 9;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(femurShaft.x, femurShaft.y);
+        overlayCtx.lineTo(notch.x, notch.y);
+        overlayCtx.stroke();
+        overlayCtx.strokeStyle = "#34d39944";
+        overlayCtx.shadowColor = "#34d399";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(tibia4.x, tibia4.y);
+        overlayCtx.lineTo(tibia10.x, tibia10.y);
+        overlayCtx.stroke();
+        overlayCtx.shadowBlur = 0;
+        overlayCtx.shadowColor = "transparent";
         overlayCtx.strokeStyle = color;
         overlayCtx.fillStyle = color;
         overlayCtx.lineWidth = strokeWidth;
@@ -8906,6 +8927,32 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.save();
         overlayCtx.lineCap = "round";
         overlayCtx.lineJoin = "round";
+
+        // Shadow glow — femoral (amber) + tibial (green) crossing at knee
+        {
+          const femDx = jlaKnee.x - jlaHip.x, femDy = jlaKnee.y - jlaHip.y;
+          const femLen = Math.hypot(femDx, femDy) || 1;
+          const tibDx = jlaKnee.x - jlaAnkle.x, tibDy = jlaKnee.y - jlaAnkle.y;
+          const tibLen = Math.hypot(tibDx, tibDy) || 1;
+          const ext = Math.min(femLen, tibLen) * 0.18;
+          overlayCtx.lineWidth = strokeWidth + 1.5;
+          overlayCtx.setLineDash([]);
+          overlayCtx.strokeStyle = "#f59e0b44";
+          overlayCtx.shadowColor = "#f59e0b";
+          overlayCtx.shadowBlur = 9;
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(jlaHip.x, jlaHip.y);
+          overlayCtx.lineTo(jlaKnee.x + (femDx / femLen) * ext, jlaKnee.y + (femDy / femLen) * ext);
+          overlayCtx.stroke();
+          overlayCtx.strokeStyle = "#34d39944";
+          overlayCtx.shadowColor = "#34d399";
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(jlaAnkle.x, jlaAnkle.y);
+          overlayCtx.lineTo(jlaKnee.x + (tibDx / tibLen) * ext, jlaKnee.y + (tibDy / tibLen) * ext);
+          overlayCtx.stroke();
+          overlayCtx.shadowBlur = 0;
+          overlayCtx.shadowColor = "transparent";
+        }
 
         // Femoral mechanical axis
         overlayCtx.strokeStyle = "#facc15";
@@ -9101,6 +9148,33 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.moveTo(ankleNearKnee.x, ankleNearKnee.y);
         overlayCtx.lineTo(ankle.x, ankle.y);
         overlayCtx.stroke();
+      }
+      // Shadow glow — femoral (amber) + tibial (green) crossing at knee
+      {
+        const femDx = knee.x - hip.x, femDy = knee.y - hip.y;
+        const femLen = Math.hypot(femDx, femDy) || 1;
+        const tibDx = knee.x - ankle.x, tibDy = knee.y - ankle.y;
+        const tibLen = Math.hypot(tibDx, tibDy) || 1;
+        const ext = Math.min(femLen, tibLen) * 0.22;
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
+        overlayCtx.lineWidth = strokeWidth + 1.5;
+        overlayCtx.setLineDash([]);
+        overlayCtx.strokeStyle = "#f59e0b44";
+        overlayCtx.shadowColor = "#f59e0b";
+        overlayCtx.shadowBlur = 10;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(hip.x, hip.y);
+        overlayCtx.lineTo(knee.x + (femDx / femLen) * ext, knee.y + (femDy / femLen) * ext);
+        overlayCtx.stroke();
+        overlayCtx.strokeStyle = "#34d39944";
+        overlayCtx.shadowColor = "#34d399";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(ankle.x, ankle.y);
+        overlayCtx.lineTo(knee.x + (tibDx / tibLen) * ext, knee.y + (tibDy / tibLen) * ext);
+        overlayCtx.stroke();
+        overlayCtx.shadowBlur = 0;
+        overlayCtx.shadowColor = "transparent";
       }
       overlayCtx.strokeStyle = color;
       overlayCtx.lineWidth = strokeWidth;
@@ -10669,7 +10743,7 @@ export default function XrayCalibrationWorkspace({
           ? estimateTemplateRulerPxPerMm(workingLayerImage)
           : null;
       const templateRulerScale =
-        detectedTemplateRulerScale && mmPerPixel !== null
+        detectedTemplateRulerScale && mmPerPixel !== null && mmPerPixel > 0
           ? detectedTemplateRulerScale
           : null;
       const calibratedDisplayWidth = templateRulerScale
@@ -10680,7 +10754,7 @@ export default function XrayCalibrationWorkspace({
           )
         : null;
       const physicalDisplayWidth =
-        !templateRulerScale && physicalTemplateSize && mmPerPixel !== null
+        !templateRulerScale && physicalTemplateSize && mmPerPixel !== null && mmPerPixel > 0
           ? clamp(
               physicalTemplateSize.widthMm / mmPerPixel,
               18,
@@ -10688,7 +10762,7 @@ export default function XrayCalibrationWorkspace({
             )
           : null;
       const physicalDisplayHeight =
-        !templateRulerScale && physicalTemplateSize && mmPerPixel !== null
+        !templateRulerScale && physicalTemplateSize && mmPerPixel !== null && mmPerPixel > 0
           ? clamp(
               physicalTemplateSize.heightMm / mmPerPixel,
               18,
@@ -10844,7 +10918,7 @@ export default function XrayCalibrationWorkspace({
   );
 
   useEffect(() => {
-    if (!physicalScaleTrigger || mmPerPixel === null || !modelWidth || !modelHeight) return;
+    if (!physicalScaleTrigger || mmPerPixel === null || mmPerPixel <= 0 || !modelWidth || !modelHeight) return;
 
     const signature = `${mmPerPixel}:${modelWidth}:${modelHeight}:${physicalScaleTrigger}`;
     if (physicalTemplateScaleSignatureRef.current === signature) return;
@@ -15669,7 +15743,7 @@ export default function XrayCalibrationWorkspace({
       setNotice("Scale real size hanya untuk layer gambar/template.");
       return;
     }
-    if (mmPerPixel === null) {
+    if (mmPerPixel === null || mmPerPixel <= 0) {
       setNotice("Kalibrasi garis real dulu sebelum mengatur ukuran template.");
       return;
     }
@@ -16858,6 +16932,30 @@ export default function XrayCalibrationWorkspace({
       }).then((added) => {
         if (!added || mmPerPixel !== null) return;
         const msg = `Template "${name}" ditambahkan. Klik Calib/Ruler dan buat garis kalibrasi agar ukuran implant otomatis menyesuaikan X-ray.`;
+        if (isSimpleUiMode) { openSimpleCalibrationModal(msg); return; }
+        focusCalibrationStep(msg);
+      });
+    },
+    [addTemplateToCanvas, focusCalibrationStep, isSimpleUiMode, mmPerPixel, openSimpleCalibrationModal],
+  );
+
+  const handleAddNormmedStemLayer = useCallback(
+    ({ imageSrc, physicalWidthMm, physicalHeightMm, label }) => {
+      void addTemplateToCanvas({
+        id: `normmed-stem-${Date.now()}`,
+        name: label || "Normmed Stem",
+        imageSrc,
+        sourceWidth: 0,
+        sourceHeight: 0,
+        autoScaleFromCalibration: Boolean(physicalWidthMm || physicalHeightMm),
+        physicalSize: null,
+        physicalWidthMm: physicalWidthMm ?? null,
+        physicalHeightMm: physicalHeightMm ?? null,
+        transparentWhiteBackground: false,
+        implantViewMode: "ap",
+      }).then((added) => {
+        if (!added || mmPerPixel !== null) return;
+        const msg = `Template "${label}" ditambahkan. Klik Calib/Ruler dan buat garis kalibrasi agar ukuran stem otomatis menyesuaikan X-ray.`;
         if (isSimpleUiMode) { openSimpleCalibrationModal(msg); return; }
         focusCalibrationStep(msg);
       });
@@ -19477,7 +19575,9 @@ export default function XrayCalibrationWorkspace({
             if (result.absoluteDeviation === null) return { label: "Belum lengkap", bg: "#fee2e2", color: "#dc2626" };
             const dev = result.absoluteDeviation;
             if (dev <= 3) return { label: "Normal", bg: "#dcfce7", color: "#16a34a" };
-            return dev > 0 ? { label: "Varus", bg: "#fee2e2", color: "#dc2626" } : { label: "Valgus", bg: "#dbeafe", color: "#2563eb" };
+            return result.direction === "valgus"
+              ? { label: "Valgus", bg: "#dbeafe", color: "#2563eb" }
+              : { label: "Varus", bg: "#fee2e2", color: "#dc2626" };
           })();
 
           return (
@@ -19521,7 +19621,7 @@ export default function XrayCalibrationWorkspace({
                   {modeKey === "full" && result.absoluteDeviation !== null && (
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { label: "HKA", value: `${result.absoluteDeviation.toFixed(1)}°`, sub: result.absoluteDeviation > 0 ? "Varus" : result.absoluteDeviation < 0 ? "Valgus" : "Netral", color: accentColor },
+                        { label: "HKA", value: `${result.absoluteDeviation.toFixed(1)}°`, sub: result.absoluteDeviation <= 3 ? "Netral" : result.direction === "valgus" ? "Valgus" : "Varus", color: accentColor },
                         { label: "Normal", value: "0° ± 3°", sub: "Target alignment", color: "#16a34a" },
                         { label: "Side", value: (selectedHka.side || "right").charAt(0).toUpperCase() + (selectedHka.side || "right").slice(1), sub: "Kaki", color: "#64748b" },
                         { label: "Target", value: "+2° s.d. +3°", sub: "HTO/DFO koreksi", color: "#7c3aed" },
@@ -26281,10 +26381,17 @@ export default function XrayCalibrationWorkspace({
                   isImageBackedLayerKind(selectedCutLayer.kind),
               )}
               scaleInstruction={implantLibraryScaleInstruction}
+              calibrated={hasCalibration}
               compact={isLeftSidebarCompact}
               disabled={!image || !modelWidth || !modelHeight}
               title="Implant Layer"
               subtitle="Template lokal"
+            />
+            <NormmedStemLayer
+              onUseSelected={handleAddNormmedStemLayer}
+              calibrated={hasCalibration}
+              compact={isLeftSidebarCompact}
+              disabled={!image || !modelWidth || !modelHeight}
             />
             <div className="flex flex-col gap-1.5">
               {cutLayers.length === 0 ? (
@@ -31746,7 +31853,7 @@ export default function XrayCalibrationWorkspace({
                       transition={{ type: "spring", damping: 22, stiffness: 300 }}
                       type="button"
                       onClick={() => setSimpleQuickPanelMinimized(false)}
-                      className="pointer-events-auto absolute top-3 left-3 inline-flex items-center gap-2 rounded-[18px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
+                      className="pointer-events-auto absolute top-3 left-[92px] inline-flex items-center gap-2 rounded-[18px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
                       title="Buka Quick Panel"
                       whileTap={{ scale: 0.93 }}
                     >
@@ -31756,10 +31863,10 @@ export default function XrayCalibrationWorkspace({
                   ) : (
                     <QuickPanel
                       key="quick-full"
-                      className="pointer-events-auto absolute top-3 left-3 max-h-[calc(100vh-80px)] backdrop-blur-xl"
+                      className="pointer-events-auto absolute top-3 left-[92px] max-h-[calc(100dvh-48px)] backdrop-blur-xl"
                       statusLabel={hasCalibration ? "Ready" : "Calib"}
                       workflowStep={workflowStep}
-                      workflowMax={4}
+                      workflowMax={5}
                       measurementCount={measurementEntityCount}
                       activeTool={tool}
                       onMinimize={() => setSimpleQuickPanelMinimized(true)}
@@ -31847,8 +31954,9 @@ export default function XrayCalibrationWorkspace({
                       transition={{ type: "spring", damping: 22, stiffness: 300 }}
                       type="button"
                       onClick={() => setSimpleToolPanelMinimized(false)}
-                      className="pointer-events-auto absolute top-1/2 right-4 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-white/75 bg-[#eef2f7]/95 p-3 text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
+                      className="pointer-events-auto absolute top-1/2 !left-3 !right-auto inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-white/75 bg-[#eef2f7]/95 p-3 text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
                       title="Buka panel ikon"
+                      style={{ left: "0.75rem", right: "auto" }}
                       whileTap={{ scale: 0.93 }}
                     >
                       <Icon name="menu" className="h-4 w-4" />
@@ -31856,7 +31964,8 @@ export default function XrayCalibrationWorkspace({
                   ) : (
                     <PanelActions
                       key="tool-full"
-                      className="pointer-events-auto absolute top-1/2 right-4 max-h-[calc(100vh-190px)] -translate-y-1/2 overflow-y-auto backdrop-blur-xl"
+                      className="pointer-events-auto absolute top-1/2 !left-3 !right-auto max-h-[calc(100vh-190px)] -translate-y-1/2 overflow-y-auto backdrop-blur-xl"
+                      style={{ left: "0.75rem", right: "auto" }}
                       tools={simpleToolMenuItems}
                       activeTool={tool}
                       activeFreeLineMode={freeLineMode}

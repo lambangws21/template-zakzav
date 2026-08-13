@@ -112,7 +112,7 @@ function fitTransform(img, canvas) {
   };
 }
 
-function computeHKA(femHead, kneeCenter, ankleCenter) {
+function computeHKA(femHead, kneeCenter, ankleCenter, side = "Right") {
   if (!femHead || !kneeCenter || !ankleCenter) return null;
   const vFemUp   = { x: femHead.x - kneeCenter.x,    y: femHead.y - kneeCenter.y    };
   const vTibDown = { x: ankleCenter.x - kneeCenter.x, y: ankleCenter.y - kneeCenter.y };
@@ -124,16 +124,18 @@ function computeHKA(femHead, kneeCenter, ankleCenter) {
   const cosA  = Math.max(-1, Math.min(1, uF.x * uT.x + uF.y * uT.y));
   const angle = Math.acos(cosA) * 180 / Math.PI;
   const cross = uF.x * uT.y - uF.y * uT.x;
-  // HKA deviation from neutral (0° = straight limb, per Tanzer & Makhdom 2016)
-  // Positive deviation → Valgus, Negative → Varus
-  const deviation = Math.round((180 - angle) * 10) / 10;
+  // Radiological convention: right leg on LEFT of image, so cross > 0 → knee shifted left → VARUS for right leg.
+  // Invert vs. anatomical convention so positive deviation = valgus, negative = varus (matches measurementUtils.js).
+  const lateralitySign = side === "Left" ? 1 : -1;
+  const dirSign = cross >= 0 ? 1 : -1;
+  const deviation = Math.round(lateralitySign * dirSign * (180 - angle) * 10) / 10;
   const absD = Math.abs(deviation);
-  const deformityType = absD < 2 ? "Netral" : deviation > 0 ? "Valgus" : "Varus";
   // Thresholds based on Tanzer 2016 Figure 7 algorithm:
   // <3° = neutral (CR/PS TKA standard), 3–10° = mild-moderate (PS/CR + releases),
   // >10° = severe complex TKA (consider constrained implant)
+  const deformityType = absD < 3 ? "Netral" : deviation > 0 ? "Valgus" : "Varus";
   const hkaFlag  = absD < 3 ? "normal" : absD < 10 ? "watch" : "high";
-  const severity = absD < 3 ? "Ringan" : absD < 10 ? "Sedang" : "Berat";
+  const severity = absD < 3 ? "Normal" : absD < 10 ? "Ringan-Sedang" : "Berat";
   return { hka: Math.round(angle * 10) / 10, deviation, deformityType, hkaFlag, severity, cross };
 }
 
@@ -1053,7 +1055,285 @@ function LandmarkCanvas({
 
 // ── Annotated canvas renderer for PDF ────────────────────────────────────────
 
-function renderAnnotatedCanvas(imgEl, points, landmarkDefs, connections, displayOptions, W = 2000, H = 1400) {
+function drawAxisShadowOverlay(ctx, t, pts, hka) {
+  const { femHead: fh, kneeCenter: kc, ankleCenter: ac } = pts;
+  if (!fh || !kc || !ac) return;
+
+  const SFH = imgToScreen(fh, t);
+  const SKC = imgToScreen(kc, t);
+  const SAC = imgToScreen(ac, t);
+
+  const hkaColor = !hka
+    ? "#94a3b8"
+    : hka.hkaFlag === "normal" ? "#22d3ee"
+    : hka.hkaFlag === "watch"  ? "#fbbf24"
+    : "#f87171";
+
+  // femHead → knee direction (downward along femoral axis)
+  const femDx = SKC.x - SFH.x, femDy = SKC.y - SFH.y;
+  const femLen = Math.hypot(femDx, femDy) || 1;
+  const femUx = femDx / femLen, femUy = femDy / femLen;
+
+  // ankle → knee direction (upward along tibial axis)
+  const tibDx = SKC.x - SAC.x, tibDy = SKC.y - SAC.y;
+  const tibLen = Math.hypot(tibDx, tibDy) || 1;
+  const tibUx = tibDx / tibLen, tibUy = tibDy / tibLen;
+
+  // Short crossing extension past the knee on each axis
+  const extPast = Math.min(femLen, tibLen) * 0.28;
+
+  ctx.save();
+
+  // ── Femoral shadow: femHead → knee → slight extension into tibial zone ──
+  ctx.strokeStyle = "#f59e0b44";
+  ctx.lineWidth = 3.5;
+  ctx.setLineDash([]);
+  ctx.shadowColor = "#f59e0b";
+  ctx.shadowBlur = 7;
+  ctx.beginPath();
+  ctx.moveTo(SFH.x, SFH.y);
+  ctx.lineTo(SKC.x + femUx * extPast, SKC.y + femUy * extPast);
+  ctx.stroke();
+
+  // ── Tibial shadow: ankle → knee → slight extension into femoral zone ──
+  ctx.strokeStyle = "#34d39944";
+  ctx.shadowColor = "#34d399";
+  ctx.beginPath();
+  ctx.moveTo(SAC.x, SAC.y);
+  ctx.lineTo(SKC.x + tibUx * extPast, SKC.y + tibUy * extPast);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = "transparent";
+
+  // ── Arc at knee between the two crossing extensions ──────────────────────
+  if (hka) {
+    const arcR = Math.max(28, Math.min(56, Math.min(femLen, tibLen) * 0.20));
+
+    // Angles of the ghost extensions past the knee
+    const angFemPast = Math.atan2(femUy, femUx);
+    const angTibPast = Math.atan2(tibUy, tibUx);
+
+    let diff = angTibPast - angFemPast;
+    while (diff >  Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+
+    if (Math.abs(diff) > 0.005) {
+      ctx.strokeStyle = hkaColor + "dd";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(SKC.x, SKC.y, arcR, angFemPast, angTibPast, diff < 0);
+      ctx.stroke();
+    }
+
+    // ── Label ON the femoral axis segment, offset ~14px perpendicular ──────
+    const labelDist = Math.min(femLen * 0.42, 90);
+    // Point on femoral segment, 42% of the way from knee toward femHead
+    const lx = SKC.x - femUx * labelDist;
+    const ly = SKC.y - femUy * labelDist;
+    // Perpendicular to femoral axis (90° CCW): (-femUy, femUx)
+    const px = -femUy, py = femUx;
+    const tx = lx + px * 14;
+    const ty = ly + py * 14;
+
+    const label = hka.deformityType === "Netral"
+      ? `HKA ${hka.hka}°`
+      : `${Math.abs(hka.deviation)}° ${hka.deformityType}`;
+    ctx.font = "bold 11px sans-serif";
+    ctx.strokeStyle = "rgba(0,0,0,0.84)"; ctx.lineWidth = 3; ctx.setLineDash([]);
+    ctx.strokeText(label, tx, ty);
+    ctx.fillStyle = hkaColor;
+    ctx.fillText(label, tx, ty);
+  }
+
+  ctx.restore();
+}
+
+// ── AP cut-plan overlay: femoral valgus cut + tibial perpendicular cut ────────
+
+function drawAPCutPlan(ctx, t, pts, valgusDeg, operatedSide, hka, femOffset = 0, tibOffset = 0, femWidth = 2.5, tibWidth = 2.5) {
+  const { femHead: fh, kneeCenter: kc, ankleCenter: ac,
+          condyleLateral: cl, plateauMedial: pm, plateauLateral: pl } = pts;
+  if (!fh || !kc || !ac) return;
+
+  drawAxisShadowOverlay(ctx, t, pts, hka);
+
+  const SFH = imgToScreen(fh, t);
+  const SKC = imgToScreen(kc, t);
+  const SAC = imgToScreen(ac, t);
+  const SCL = cl ? imgToScreen(cl, t) : null;
+  const SPM = pm ? imgToScreen(pm, t) : null;
+  const SPL = pl ? imgToScreen(pl, t) : null;
+
+  const femDx = SKC.x - SFH.x, femDy = SKC.y - SFH.y;
+  const femLen = Math.hypot(femDx, femDy) || 1;
+  const uFemX = femDx / femLen, uFemY = femDy / femLen;
+  const tibDx = SAC.x - SKC.x, tibDy = SAC.y - SKC.y;
+  const tibLen = Math.hypot(tibDx, tibDy) || 1;
+  const uTibX = tibDx / tibLen, uTibY = tibDy / tibLen;
+
+  const halfLen = Math.min(femLen, tibLen) * 0.44;
+
+  // Femoral cut center: condyleLateral (or above knee) + offset along femoral axis
+  const femBaseCx = SCL ? SCL.x : SKC.x - uFemX * femLen * 0.12;
+  const femBaseCy = SCL ? SCL.y : SKC.y - uFemY * femLen * 0.12;
+  const femCutCx = femBaseCx + uFemX * femOffset * t.scale;
+  const femCutCy = femBaseCy + uFemY * femOffset * t.scale;
+
+  // Tibial cut center: plateau midpoint (or knee) + offset along tibial axis
+  const tibBaseCx = (SPM && SPL) ? (SPM.x + SPL.x) / 2 : SKC.x;
+  const tibBaseCy = (SPM && SPL) ? (SPM.y + SPL.y) / 2 : SKC.y;
+  const tibCutCx = tibBaseCx + uTibX * tibOffset * t.scale;
+  const tibCutCy = tibBaseCy + uTibY * tibOffset * t.scale;
+
+  // Femoral cut direction: perpendicular to femoral axis, tilted valgusDeg toward lateral
+  const sideSign = operatedSide === "Right" ? 1 : -1;
+  const perpFemX = sideSign === 1 ? (-uFemY) : uFemY;
+  const perpFemY = sideSign === 1 ? uFemX : (-uFemX);
+  const θ = degToRad(valgusDeg) * sideSign;
+  const femCutDirX = perpFemX * Math.cos(θ) - perpFemY * Math.sin(θ);
+  const femCutDirY = perpFemX * Math.sin(θ) + perpFemY * Math.cos(θ);
+
+  // Tibial cut direction: perpendicular to tibial axis
+  const tibCutDirX = -uTibY;
+  const tibCutDirY = uTibX;
+
+  ctx.save();
+  ctx.lineCap = "round";
+
+  // Femoral cut
+  const femColor = "#38bdf8";
+  const femGlowW = Math.max(5, femWidth * 2);
+  ctx.shadowColor = femColor; ctx.shadowBlur = 12;
+  ctx.strokeStyle = femColor + "44"; ctx.lineWidth = femGlowW; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(femCutCx - femCutDirX * halfLen, femCutCy - femCutDirY * halfLen);
+  ctx.lineTo(femCutCx + femCutDirX * halfLen, femCutCy + femCutDirY * halfLen);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = femColor; ctx.lineWidth = femWidth; ctx.setLineDash([10, 6]);
+  ctx.beginPath();
+  ctx.moveTo(femCutCx - femCutDirX * halfLen, femCutCy - femCutDirY * halfLen);
+  ctx.lineTo(femCutCx + femCutDirX * halfLen, femCutCy + femCutDirY * halfLen);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Tibial cut
+  const tibColor = "#a78bfa";
+  const tibGlowW = Math.max(5, tibWidth * 2);
+  ctx.shadowColor = tibColor; ctx.shadowBlur = 12;
+  ctx.strokeStyle = tibColor + "44"; ctx.lineWidth = tibGlowW;
+  ctx.beginPath();
+  ctx.moveTo(tibCutCx - tibCutDirX * halfLen, tibCutCy - tibCutDirY * halfLen);
+  ctx.lineTo(tibCutCx + tibCutDirX * halfLen, tibCutCy + tibCutDirY * halfLen);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = tibColor; ctx.lineWidth = tibWidth; ctx.setLineDash([10, 6]);
+  ctx.beginPath();
+  ctx.moveTo(tibCutCx - tibCutDirX * halfLen, tibCutCy - tibCutDirY * halfLen);
+  ctx.lineTo(tibCutCx + tibCutDirX * halfLen, tibCutCy + tibCutDirY * halfLen);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Labels
+  ctx.font = "bold 10px sans-serif";
+  const flx = femCutCx + femCutDirX * (halfLen + 5);
+  const fly = femCutCy + femCutDirY * (halfLen + 5);
+  ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = 3;
+  ctx.strokeText(`Femoral ${valgusDeg}°V`, flx, fly);
+  ctx.fillStyle = femColor; ctx.fillText(`Femoral ${valgusDeg}°V`, flx, fly);
+  const tlx = tibCutCx + tibCutDirX * (halfLen + 5);
+  const tly = tibCutCy + tibCutDirY * (halfLen + 5);
+  ctx.strokeText("Tibial ⊥", tlx, tly);
+  ctx.fillStyle = tibColor; ctx.fillText("Tibial ⊥", tlx, tly);
+
+  ctx.restore();
+}
+
+// ── Lateral cut-plan overlay: tibial slope cut ────────────────────────────────
+
+function drawLatCutPlan(ctx, t, latPts, slopeDeg, cutOffset = 0, cutWidth = 2.5, operatedSide = "Right") {
+  const { tibShaftTop: st, tibShaftBot: sb, slopePlateauAnt: pa, slopePlateauPost: pp } = latPts;
+  if (!st || !sb) return;
+
+  const SST = imgToScreen(st, t);
+  const SSB = imgToScreen(sb, t);
+  const SPA = pa ? imgToScreen(pa, t) : null;
+  const SPP = pp ? imgToScreen(pp, t) : null;
+
+  const axDx = SST.x - SSB.x, axDy = SST.y - SSB.y;
+  const axLen = Math.hypot(axDx, axDy) || 1;
+  const uAxX = axDx / axLen, uAxY = axDy / axLen;
+  const perpX = -uAxY, perpY = uAxX;
+
+  // Cut base center (from plateau landmarks) + offset along shaft axis
+  const cutBaseCx = (SPA && SPP) ? (SPA.x + SPP.x) / 2 : (SST.x + SSB.x) / 2;
+  const cutBaseCy = (SPA && SPP) ? (SPA.y + SPP.y) / 2 : (SST.y + SSB.y) / 2;
+  const cutCx = cutBaseCx + uAxX * cutOffset * t.scale;
+  const cutCy = cutBaseCy + uAxY * cutOffset * t.scale;
+
+  // Determine slope rotation direction based on which way posterior actually is in the image.
+  // Posterior slope = posterior side of plateau should be LOWER (higher y in canvas).
+  // If SPA and SPP are placed, use dot(perpDir, postDir) to determine sign automatically.
+  // Fall back to operatedSide convention: right leg → posterior is to the RIGHT (+1),
+  // left leg → posterior is to the LEFT (-1).
+  let slopeSign;
+  if (SPA && SPP) {
+    const postDX = SPP.x - SPA.x, postDY = SPP.y - SPA.y;
+    const dot = perpX * postDX + perpY * postDY;
+    slopeSign = dot >= 0 ? 1 : -1;
+  } else {
+    slopeSign = operatedSide === "Left" ? -1 : 1;
+  }
+
+  const θ = degToRad(slopeDeg) * slopeSign;
+  const cutDirX = perpX * Math.cos(θ) - perpY * Math.sin(θ);
+  const cutDirY = perpX * Math.sin(θ) + perpY * Math.cos(θ);
+
+  const halfLen = axLen * 0.4;
+  const cutColor = "#a78bfa";
+  const glowW = Math.max(5, cutWidth * 2);
+
+  ctx.save();
+  ctx.lineCap = "round";
+
+  ctx.shadowColor = cutColor; ctx.shadowBlur = 12;
+  ctx.strokeStyle = cutColor + "44"; ctx.lineWidth = glowW; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cutCx - cutDirX * halfLen, cutCy - cutDirY * halfLen);
+  ctx.lineTo(cutCx + cutDirX * halfLen, cutCy + cutDirY * halfLen);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = cutColor; ctx.lineWidth = cutWidth; ctx.setLineDash([10, 6]);
+  ctx.beginPath();
+  ctx.moveTo(cutCx - cutDirX * halfLen, cutCy - cutDirY * halfLen);
+  ctx.lineTo(cutCx + cutDirX * halfLen, cutCy + cutDirY * halfLen);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (slopeDeg > 0) {
+    const arcR = Math.max(18, Math.min(36, halfLen * 0.28));
+    const a0 = Math.atan2(perpY, perpX);
+    const a1 = Math.atan2(cutDirY, cutDirX);
+    let diff = a1 - a0; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
+    ctx.strokeStyle = cutColor; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(cutCx, cutCy, arcR, a0, a1, diff < 0);
+    ctx.stroke();
+    const aMid = a0 + diff / 2;
+    const lx = cutCx + Math.cos(aMid) * (arcR + 16);
+    const ly = cutCy + Math.sin(aMid) * (arcR + 16);
+    ctx.font = "bold 10px sans-serif";
+    ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = 3;
+    ctx.strokeText(`${slopeDeg}° slope`, lx, ly);
+    ctx.fillStyle = cutColor; ctx.fillText(`${slopeDeg}° slope`, lx, ly);
+  }
+
+  ctx.restore();
+}
+
+function renderAnnotatedCanvas(imgEl, points, landmarkDefs, connections, displayOptions, W = 2000, H = 1400, overlayFn = null) {
   if (!imgEl) return null;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -1067,6 +1347,8 @@ function renderAnnotatedCanvas(imgEl, points, landmarkDefs, connections, display
   const t = { scale, offsetX: offX, offsetY: offY };
 
   ctx.drawImage(imgEl, offX, offY, imgEl.naturalWidth * scale, imgEl.naturalHeight * scale);
+
+  overlayFn?.(ctx, t);
 
   if (displayOptions?.lines !== false) {
     connections.forEach(({ from, to, color, dash }) => {
@@ -1174,7 +1456,8 @@ async function exportPDF({ operatedSide, hka, alignment, plan, implantRec, imgEl
 
   // Annotated AP X-ray
   if (imgEl) {
-    const url = renderAnnotatedCanvas(imgEl, points, landmarkDefs, AP_CONNECTIONS, displayOptions, 2200, 1600);
+    const url = renderAnnotatedCanvas(imgEl, points, landmarkDefs, AP_CONNECTIONS, displayOptions, 2200, 1600,
+      (ctx, t) => drawAxisShadowOverlay(ctx, t, points, hka));
     if (url) {
       doc.addPage("a4", "landscape");
       const LW = 297, LH = 210, Lm = 10;
@@ -1211,6 +1494,368 @@ async function exportPDF({ operatedSide, hka, alignment, plan, implantRec, imgEl
   doc.save(`PreTKA_${operatedSide}_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
+// ── Inline X-ray canvas for planning step ─────────────────────────────────────
+
+function APCutPlanCanvas({
+  imageSrc, pts, valgusDeg, operatedSide, hka,
+  femOffset, setFemOffset, tibOffset, setTibOffset,
+  femWidth, setFemWidth, tibWidth, setTibWidth,
+}) {
+  const canvasRef = useRef(null);
+  const imgRef    = useRef(null);
+  const tRef      = useRef({ scale: 1, offsetX: 0, offsetY: 0 });
+  const dragRef   = useRef(null);
+  const stRef     = useRef({});
+  const [loaded, setLoaded] = useState(false);
+
+  stRef.current = { pts, valgusDeg, operatedSide, hka, femOffset, setFemOffset, tibOffset, setTibOffset, femWidth, tibWidth };
+
+  // Render function stored in ref so pointer handlers always call the latest version
+  const renderRef = useRef(null);
+  renderRef.current = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(canvas.offsetWidth * dpr);
+    const H = Math.round(canvas.offsetHeight * dpr);
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const img = imgRef.current;
+    const t = tRef.current;
+    if (!img || !loaded) {
+      ctx.fillStyle = "#0f172a"; ctx.fillRect(0, 0, W, H);
+      if (!imageSrc) {
+        ctx.fillStyle = "#38bdf888"; ctx.textAlign = "center";
+        ctx.font = `bold ${12 * dpr}px sans-serif`;
+        ctx.fillText("Upload X-Ray AP", W / 2, H / 2);
+        ctx.textAlign = "left";
+      }
+      return;
+    }
+    ctx.save(); ctx.translate(t.offsetX, t.offsetY); ctx.scale(t.scale, t.scale); ctx.drawImage(img, 0, 0); ctx.restore();
+    const { pts: p, valgusDeg: vd, operatedSide: os, hka: h, femOffset: fo, tibOffset: to, femWidth: fw, tibWidth: tw } = stRef.current;
+    drawAPCutPlan(ctx, t, p, vd, os, h, fo, to, fw, tw);
+  };
+
+  useEffect(() => {
+    if (!imageSrc) { imgRef.current = null; setLoaded(false); return; }
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      const c = canvasRef.current;
+      if (c) tRef.current = fitTransform(img, c);
+      setLoaded(true);
+    };
+    img.src = imageSrc;
+  }, [imageSrc]);
+
+  useEffect(() => { renderRef.current?.(); });
+
+  function getCutGeom(t) {
+    const { pts: p, valgusDeg: vd, operatedSide: os, femOffset: fo, tibOffset: to } = stRef.current;
+    if (!p?.femHead || !p?.kneeCenter || !p?.ankleCenter) return null;
+    const SFH = imgToScreen(p.femHead, t); const SKC = imgToScreen(p.kneeCenter, t); const SAC = imgToScreen(p.ankleCenter, t);
+    const SCL = p.condyleLateral ? imgToScreen(p.condyleLateral, t) : null;
+    const SPM = p.plateauMedial  ? imgToScreen(p.plateauMedial,  t) : null;
+    const SPL = p.plateauLateral ? imgToScreen(p.plateauLateral, t) : null;
+    const femDx = SKC.x - SFH.x, femDy = SKC.y - SFH.y;
+    const femLen = Math.hypot(femDx, femDy) || 1;
+    const uFemX = femDx / femLen, uFemY = femDy / femLen;
+    const tibDx = SAC.x - SKC.x, tibDy = SAC.y - SKC.y;
+    const tibLen = Math.hypot(tibDx, tibDy) || 1;
+    const uTibX = tibDx / tibLen, uTibY = tibDy / tibLen;
+    const femBaseCx = SCL ? SCL.x : SKC.x - uFemX * femLen * 0.12;
+    const femBaseCy = SCL ? SCL.y : SKC.y - uFemY * femLen * 0.12;
+    const femCutCx = femBaseCx + uFemX * fo * t.scale;
+    const femCutCy = femBaseCy + uFemY * fo * t.scale;
+    const tibBaseCx = (SPM && SPL) ? (SPM.x + SPL.x) / 2 : SKC.x;
+    const tibBaseCy = (SPM && SPL) ? (SPM.y + SPL.y) / 2 : SKC.y;
+    const tibCutCx = tibBaseCx + uTibX * to * t.scale;
+    const tibCutCy = tibBaseCy + uTibY * to * t.scale;
+    const sideSign = os === "Right" ? 1 : -1;
+    const perpFemX = sideSign === 1 ? -uFemY : uFemY;
+    const perpFemY = sideSign === 1 ? uFemX : -uFemX;
+    const θ = degToRad(vd) * sideSign;
+    const femCutDirX = perpFemX * Math.cos(θ) - perpFemY * Math.sin(θ);
+    const femCutDirY = perpFemX * Math.sin(θ) + perpFemY * Math.cos(θ);
+    return { femCutCx, femCutCy, femCutDirX, femCutDirY, uFemX, uFemY, tibCutCx, tibCutCy, uTibX, uTibY, tibCutDirX: -uTibY, tibCutDirY: uTibX };
+  }
+
+  function distToLine(px, py, cx, cy, dx, dy) {
+    const len = Math.hypot(dx, dy) || 1;
+    return Math.abs((px - cx) * (-dy / len) + (py - cy) * (dx / len));
+  }
+
+  function getCP(e) {
+    const c = canvasRef.current; const r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    function onDown(e) {
+      if (e.button !== 0) return;
+      const cp = getCP(e); const t = tRef.current;
+      const geom = getCutGeom(t);
+      const HIT = 20;
+      if (geom) {
+        const dFem = distToLine(cp.x, cp.y, geom.femCutCx, geom.femCutCy, geom.femCutDirX, geom.femCutDirY);
+        const dTib = distToLine(cp.x, cp.y, geom.tibCutCx, geom.tibCutCy, geom.tibCutDirX, geom.tibCutDirY);
+        if (dFem <= dTib && dFem < HIT) {
+          dragRef.current = { type: "fem", sx: cp.x, sy: cp.y, so: stRef.current.femOffset, uX: geom.uFemX, uY: geom.uFemY };
+          canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "ns-resize"; return;
+        }
+        if (dTib < HIT) {
+          dragRef.current = { type: "tib", sx: cp.x, sy: cp.y, so: stRef.current.tibOffset, uX: geom.uTibX, uY: geom.uTibY };
+          canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "ns-resize"; return;
+        }
+      }
+      dragRef.current = { type: "pan", sx: cp.x, sy: cp.y, ox: t.offsetX, oy: t.offsetY };
+      canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "grabbing";
+    }
+    function onMove(e) {
+      const g = dragRef.current; if (!g) return;
+      const cp = getCP(e); const dx = cp.x - g.sx, dy = cp.y - g.sy;
+      if (g.type === "fem") {
+        const proj = dx * g.uX + dy * g.uY;
+        stRef.current.setFemOffset(g.so + proj / tRef.current.scale);
+      } else if (g.type === "tib") {
+        const proj = dx * g.uX + dy * g.uY;
+        stRef.current.setTibOffset(g.so + proj / tRef.current.scale);
+      } else {
+        tRef.current = { ...tRef.current, offsetX: g.ox + dx, offsetY: g.oy + dy };
+        renderRef.current?.();
+      }
+    }
+    function onUp() { dragRef.current = null; canvas.style.cursor = "crosshair"; }
+    function onWheel(e) {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; const t = tRef.current; const cp = getCP(e);
+      const ns = Math.min(30, Math.max(0.1, t.scale * f));
+      tRef.current = { scale: ns, offsetX: cp.x - (cp.x - t.offsetX) * (ns / t.scale), offsetY: cp.y - (cp.y - t.offsetY) * (ns / t.scale) };
+      renderRef.current?.();
+    }
+    canvas.addEventListener("pointerdown", onDown);
+    canvas.addEventListener("pointermove", onMove);
+    canvas.addEventListener("pointerup", onUp);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }} style={{ ...glassCard, padding: 0, overflow: "hidden" }}>
+      <div className="flex items-center justify-between px-3 py-2"
+        style={{ background: "#38bdf822", borderBottom: "1px solid #38bdf833" }}>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-sky-400" />
+          <p className="text-[9px] font-black uppercase tracking-widest text-sky-400">Femoral {valgusDeg}°V + Tibial · AP</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0.5">
+            <span className="w-3 text-[8px] font-black text-sky-400">F</span>
+            <button onClick={() => setFemWidth(w => Math.max(1, +(w - 0.5).toFixed(1)))} className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-black text-sky-400 hover:bg-white/10">−</button>
+            <span className="w-5 text-center text-[9px] text-slate-300">{femWidth.toFixed(1)}</span>
+            <button onClick={() => setFemWidth(w => Math.min(10, +(w + 0.5).toFixed(1)))} className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-black text-sky-400 hover:bg-white/10">+</button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <span className="w-3 text-[8px] font-black text-violet-400">T</span>
+            <button onClick={() => setTibWidth(w => Math.max(1, +(w - 0.5).toFixed(1)))} className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-black text-violet-400 hover:bg-white/10">−</button>
+            <span className="w-5 text-center text-[9px] text-slate-300">{tibWidth.toFixed(1)}</span>
+            <button onClick={() => setTibWidth(w => Math.min(10, +(w + 0.5).toFixed(1)))} className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-black text-violet-400 hover:bg-white/10">+</button>
+          </div>
+          <button onClick={() => { setFemOffset(0); setTibOffset(0); }} title="Reset posisi"
+            className="px-1 text-[9px] font-black text-slate-400 hover:text-slate-200">↺</button>
+        </div>
+      </div>
+      <canvas ref={canvasRef} style={{ width: "100%", height: "220px", display: "block", cursor: "crosshair" }} />
+      <p className="py-1 text-center text-[8px] text-slate-500">Drag garis • Scroll zoom • Pan area kosong</p>
+    </motion.div>
+  );
+}
+
+function LatCutPlanCanvas({ imageSrc, latPts, slopeDeg, operatedSide = "Right", cutMode = "slope", setCutMode, cutOffset, setCutOffset, cutWidth, setCutWidth }) {
+  const canvasRef = useRef(null);
+  const imgRef    = useRef(null);
+  const tRef      = useRef({ scale: 1, offsetX: 0, offsetY: 0 });
+  const dragRef   = useRef(null);
+  const stRef     = useRef({});
+  const [loaded, setLoaded] = useState(false);
+
+  // Effective slope: 0 in perp mode
+  const effectiveSlopeDeg = cutMode === "perp" ? 0 : slopeDeg;
+  stRef.current = { latPts, slopeDeg: effectiveSlopeDeg, operatedSide, cutOffset, setCutOffset, cutWidth };
+
+  const renderRef = useRef(null);
+  renderRef.current = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(canvas.offsetWidth * dpr);
+    const H = Math.round(canvas.offsetHeight * dpr);
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const img = imgRef.current; const t = tRef.current;
+    if (!img || !loaded) {
+      ctx.fillStyle = "#0f172a"; ctx.fillRect(0, 0, W, H);
+      if (!imageSrc) {
+        ctx.fillStyle = "#14b8a688"; ctx.textAlign = "center";
+        ctx.font = `bold ${12 * dpr}px sans-serif`;
+        ctx.fillText("Upload Foto Lateral Lutut", W / 2, H / 2);
+        ctx.textAlign = "left";
+      }
+      return;
+    }
+    ctx.save(); ctx.translate(t.offsetX, t.offsetY); ctx.scale(t.scale, t.scale); ctx.drawImage(img, 0, 0); ctx.restore();
+    const { latPts: lp, slopeDeg: sd, operatedSide: os, cutOffset: co, cutWidth: cw } = stRef.current;
+    drawLatCutPlan(ctx, t, lp, sd, co, cw, os);
+  };
+
+  useEffect(() => {
+    if (!imageSrc) { imgRef.current = null; setLoaded(false); return; }
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      const c = canvasRef.current;
+      if (c) tRef.current = fitTransform(img, c);
+      setLoaded(true);
+    };
+    img.src = imageSrc;
+  }, [imageSrc]);
+
+  useEffect(() => { renderRef.current?.(); });
+
+  function getLatCutGeom(t) {
+    const { latPts: lp, slopeDeg: sd, operatedSide: os, cutOffset: co } = stRef.current;
+    const { tibShaftTop: st, tibShaftBot: sb, slopePlateauAnt: pa, slopePlateauPost: pp } = lp || {};
+    if (!st || !sb) return null;
+    const SST = imgToScreen(st, t); const SSB = imgToScreen(sb, t);
+    const SPA = pa ? imgToScreen(pa, t) : null; const SPP = pp ? imgToScreen(pp, t) : null;
+    const axDx = SST.x - SSB.x, axDy = SST.y - SSB.y;
+    const axLen = Math.hypot(axDx, axDy) || 1;
+    const uAxX = axDx / axLen, uAxY = axDy / axLen;
+    const perpX = -uAxY, perpY = uAxX;
+    const cutBaseCx = (SPA && SPP) ? (SPA.x + SPP.x) / 2 : (SST.x + SSB.x) / 2;
+    const cutBaseCy = (SPA && SPP) ? (SPA.y + SPP.y) / 2 : (SST.y + SSB.y) / 2;
+    const cutCx = cutBaseCx + uAxX * co * t.scale;
+    const cutCy = cutBaseCy + uAxY * co * t.scale;
+    // Same slope-sign logic as drawLatCutPlan
+    let slopeSign;
+    if (SPA && SPP) {
+      const dot = perpX * (SPP.x - SPA.x) + perpY * (SPP.y - SPA.y);
+      slopeSign = dot >= 0 ? 1 : -1;
+    } else {
+      slopeSign = os === "Left" ? -1 : 1;
+    }
+    const θ = degToRad(sd) * slopeSign;
+    const cutDirX = perpX * Math.cos(θ) - perpY * Math.sin(θ);
+    const cutDirY = perpX * Math.sin(θ) + perpY * Math.cos(θ);
+    return { cutCx, cutCy, cutDirX, cutDirY, uAxX, uAxY };
+  }
+
+  function distToLine(px, py, cx, cy, dx, dy) {
+    const len = Math.hypot(dx, dy) || 1;
+    return Math.abs((px - cx) * (-dy / len) + (py - cy) * (dx / len));
+  }
+
+  function getCP(e) {
+    const c = canvasRef.current; const r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    function onDown(e) {
+      if (e.button !== 0) return;
+      const cp = getCP(e); const t = tRef.current;
+      const geom = getLatCutGeom(t);
+      if (geom && distToLine(cp.x, cp.y, geom.cutCx, geom.cutCy, geom.cutDirX, geom.cutDirY) < 20) {
+        dragRef.current = { type: "cut", sx: cp.x, sy: cp.y, so: stRef.current.cutOffset, uX: geom.uAxX, uY: geom.uAxY };
+        canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "ns-resize"; return;
+      }
+      dragRef.current = { type: "pan", sx: cp.x, sy: cp.y, ox: tRef.current.offsetX, oy: tRef.current.offsetY };
+      canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "grabbing";
+    }
+    function onMove(e) {
+      const g = dragRef.current; if (!g) return;
+      const cp = getCP(e); const dx = cp.x - g.sx, dy = cp.y - g.sy;
+      if (g.type === "cut") {
+        const proj = dx * g.uX + dy * g.uY;
+        stRef.current.setCutOffset(g.so + proj / tRef.current.scale);
+      } else {
+        tRef.current = { ...tRef.current, offsetX: g.ox + dx, offsetY: g.oy + dy };
+        renderRef.current?.();
+      }
+    }
+    function onUp() { dragRef.current = null; canvas.style.cursor = "crosshair"; }
+    function onWheel(e) {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; const t = tRef.current; const cp = getCP(e);
+      const ns = Math.min(30, Math.max(0.1, t.scale * f));
+      tRef.current = { scale: ns, offsetX: cp.x - (cp.x - t.offsetX) * (ns / t.scale), offsetY: cp.y - (cp.y - t.offsetY) * (ns / t.scale) };
+      renderRef.current?.();
+    }
+    canvas.addEventListener("pointerdown", onDown);
+    canvas.addEventListener("pointermove", onMove);
+    canvas.addEventListener("pointerup", onUp);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }} style={{ ...glassCard, padding: 0, overflow: "hidden" }}>
+      <div className="flex items-center justify-between px-3 py-2"
+        style={{ background: "#14b8a622", borderBottom: "1px solid #14b8a633" }}>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full" style={{ background: "#14b8a6" }} />
+          <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#14b8a6" }}>
+            Tibial {cutMode === "perp" ? "⊥ 0°" : `Slope ${slopeDeg}°`} · Lateral
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Mode toggle: slope vs perpendicular */}
+          <div className="flex rounded overflow-hidden border border-white/10">
+            <button onClick={() => setCutMode?.("slope")}
+              className="px-2 py-0.5 text-[8px] font-black transition-colors"
+              style={{ background: cutMode === "slope" ? "#14b8a6" : "transparent", color: cutMode === "slope" ? "#fff" : "#14b8a6" }}>
+              {slopeDeg}° Slope
+            </button>
+            <button onClick={() => setCutMode?.("perp")}
+              className="px-2 py-0.5 text-[8px] font-black transition-colors"
+              style={{ background: cutMode === "perp" ? "#14b8a6" : "transparent", color: cutMode === "perp" ? "#fff" : "#14b8a6" }}>
+              ⊥ Perp
+            </button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => setCutWidth(w => Math.max(1, +(w - 0.5).toFixed(1)))} className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-black text-violet-400 hover:bg-white/10">−</button>
+            <span className="w-5 text-center text-[9px] text-slate-300">{cutWidth.toFixed(1)}</span>
+            <button onClick={() => setCutWidth(w => Math.min(10, +(w + 0.5).toFixed(1)))} className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-black text-violet-400 hover:bg-white/10">+</button>
+          </div>
+          <button onClick={() => setCutOffset(0)} title="Reset posisi"
+            className="px-1 text-[9px] font-black text-slate-400 hover:text-slate-200">↺</button>
+        </div>
+      </div>
+      <canvas ref={canvasRef} style={{ width: "100%", height: "220px", display: "block", cursor: "crosshair" }} />
+      <p className="py-1 text-center text-[8px] text-slate-500">Drag garis • Scroll zoom • Pan area kosong</p>
+    </motion.div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operatedSide: initSide = "Right" }) {
@@ -1226,6 +1871,16 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
   // Femoral resection angle 5–7° (Mullaji: 3–11°), tibial resection ~10mm, slope 3–7°
   const [valgusDeg,       setValgusDeg]       = useState(6);
   const [slopeDeg,        setSlopeDeg]        = useState(5);
+
+  // Cut-line interactive state (image-space pixel offsets along mechanical axis)
+  const [femCutOffset,  setFemCutOffset]  = useState(0);
+  const [tibCutOffset,  setTibCutOffset]  = useState(0);
+  const [latCutOffset,  setLatCutOffset]  = useState(0);
+  const [femCutW,       setFemCutW]       = useState(2.5);
+  const [tibCutW,       setTibCutW]       = useState(2.5);
+  const [latCutW,       setLatCutW]       = useState(2.5);
+  // Tibial lateral cut mode: "slope" uses slopeDeg, "perp" forces 0° (purely perpendicular)
+  const [latCutMode,    setLatCutMode]    = useState("slope");
   const [tibResectionMm,  setTibResectionMm]  = useState(10);
   const [implantType,     setImplantType]     = useState("PS");
   const [jointLineDev,    setJointLineDev]    = useState(0);
@@ -1307,7 +1962,7 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
   const allLatPlaced = latCompletedCount === LAT_LANDMARKS.length;
 
   // calculations
-  const hka = useMemo(() => computeHKA(points.femHead, points.kneeCenter, points.ankleCenter), [points]);
+  const hka = useMemo(() => computeHKA(points.femHead, points.kneeCenter, points.ankleCenter, operatedSide), [points, operatedSide]);
   const alignment = useMemo(() => computeTKAAlignment(points), [points]);
 
   const tibSlopeResult = useMemo(() => {
@@ -1448,6 +2103,13 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
 
     ctx.restore();
   }, [latPoints, tibSlopeResult, slopeDeg]);
+
+  // ── AP axis shadow overlay ───────────────────────────────────────────────────
+  const drawAPOverlay = useCallback((ctx, t) => {
+    drawAxisShadowOverlay(ctx, t, points, hka);
+  }, [points, hka]);
+
+  // ── Planning cut overlays (shown on actual X-ray in planning step) ────────────
 
   // ── Lateral file input ───────────────────────────────────────────────────────
   const handleLatUpload = (e) => {
@@ -1616,6 +2278,7 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
                   transform={transform}
                   setTransform={setTransform}
                   canvasRef={canvasRef}
+                  drawOverlay={drawAPOverlay}
                 />
               ) : step === "deformity" && activeView === "lateral" ? (
                 <div className="relative h-full w-full">
@@ -1660,19 +2323,28 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
                   )}
                 </div>
               ) : (
-                /* planning/result step: anatomical bone cutting view */
+                /* planning/result step: X-ray with cut-plan overlays */
                 <div className="h-full overflow-y-auto p-4" style={{ background: "#0c1526" }}>
                   <div className="grid grid-cols-2 gap-4">
-                    <BoneCuttingLateralSVG
+                    <LatCutPlanCanvas
+                      imageSrc={imageSrcLateral}
+                      latPts={latPoints}
                       slopeDeg={slopeDeg}
-                      tibResectionMm={tibResectionMm}
-                      side={operatedSide}
+                      operatedSide={operatedSide}
+                      cutMode={latCutMode}      setCutMode={setLatCutMode}
+                      cutOffset={latCutOffset}  setCutOffset={setLatCutOffset}
+                      cutWidth={latCutW}        setCutWidth={setLatCutW}
                     />
-                    <BoneCuttingAPSVG
+                    <APCutPlanCanvas
+                      imageSrc={imageSrc}
+                      pts={points}
                       valgusDeg={valgusDeg}
-                      tibResectionMm={tibResectionMm}
+                      operatedSide={operatedSide}
                       hka={hka}
-                      side={operatedSide}
+                      femOffset={femCutOffset}  setFemOffset={setFemCutOffset}
+                      tibOffset={tibCutOffset}  setTibOffset={setTibCutOffset}
+                      femWidth={femCutW}        setFemWidth={setFemCutW}
+                      tibWidth={tibCutW}        setTibWidth={setTibCutW}
                     />
                     {/* Implant rec panel */}
                     {implantRec && (
@@ -2049,13 +2721,13 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
                         {hka && alignment && (() => {
                           const maTarg = Math.round(Math.min(11, Math.max(3, 90 - alignment.MDFA)) * 2) / 2;
                           const kaTarg = 5.5;
-                          // predicted HKA deviation: 0=neutral, negative=valgus residual, positive=varus residual
+                          // predicted residual: 0=neutral, negative=varus residual (under-corrected), positive=valgus residual (over-corrected)
                           const predicted  = Math.round((valgusDeg - maTarg) * 10) / 10;
                           const predKA     = Math.round((kaTarg - maTarg) * 10) / 10;
                           const predColor  = Math.abs(predicted) < 2 ? "#34d399" : Math.abs(predicted) < 5 ? "#fbbf24" : "#f87171";
                           const predLabel  = predicted === 0 ? "Netral ✓"
-                            : predicted < 0 ? `${Math.abs(predicted)}° Valgus residual`
-                            : `${predicted}° Varus residual`;
+                            : predicted < 0 ? `${Math.abs(predicted)}° Varus residual`
+                            : `${predicted}° Valgus residual`;
                           return (
                             <div className="space-y-2 border-t pt-2.5" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
                               <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#38bdf8" }}>
@@ -2091,8 +2763,8 @@ export default function PreTKAAssessmentPanel({ open, onClose, imageSrc, operate
                                   <p className="text-[17px] font-black leading-tight my-0.5" style={{ color: "#818cf8" }}>{kaTarg}°</p>
                                   <p className="text-[8px]" style={{ color: "#64748b" }}>
                                     {predKA === 0 ? "HKA netral"
-                                      : predKA < 0 ? `${Math.abs(predKA)}° valgus residual`
-                                      : `${predKA}° varus residual`}
+                                      : predKA < 0 ? `${Math.abs(predKA)}° varus residual`
+                                      : `${predKA}° valgus residual`}
                                   </p>
                                   {valgusDeg === kaTarg && (
                                     <p className="mt-1 text-[7px] font-black" style={{ color: "#818cf8" }}>✓ AKTIF</p>

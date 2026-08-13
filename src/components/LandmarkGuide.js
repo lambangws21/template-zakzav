@@ -144,6 +144,19 @@ const APTKA_HL = {
   joint_line_lateral_kanan:   { x: 219, y: 115, c: "#38bdf8" },
 };
 
+const LATPATELLA_HL = {
+  // Lateral patella view (viewBox 0 0 200 280)
+  patellaSup:    { x: 66, y: 74,  c: "#e879f9" },
+  patellaInf:    { x: 66, y: 138, c: "#d946ef" },
+  tibTuberosity: { x: 90, y: 184, c: "#a78bfa" },
+};
+
+const SKYPATELLA_HL = {
+  // Skyline patella view (viewBox 0 0 200 160)
+  skyPatMed: { x: 68,  y: 68,  c: "#c084fc" },
+  skyPatLat: { x: 132, y: 68,  c: "#a855f7" },
+};
+
 // ── AP Hip Guide using real pelvis SVG ────────────────────────────────────────
 
 // Anatomical positions in the pelvis.svg display coordinate space
@@ -343,11 +356,15 @@ function ApHipGuide({ sideConditions = { kiri: "native", kanan: "native" }, high
 
 // ── AP Knee Guide ─────────────────────────────────────────────────────────────
 
-function ApKneeGuide({ highlightId }) {
+function ApKneeGuide({ highlightId, side = null }) {
+  // side: "right" | "left" | null (bilateral)
   const joints = [
-    { cx: 75,  isRight: false, dots: { km: "#ef4444", kl: "#f97316", pm: "#eab308", pl: "#84cc16" } },
-    { cx: 205, isRight: true,  dots: { km: "#06b6d4", kl: "#8b5cf6", pm: "#ec4899", pl: "#14b8a6" } },
+    { cx: 75,  isRight: false, label: "L", dots: { km: "#ef4444", kl: "#f97316", pm: "#eab308", pl: "#84cc16" } },
+    { cx: 205, isRight: true,  label: "R", dots: { km: "#06b6d4", kl: "#8b5cf6", pm: "#ec4899", pl: "#14b8a6" } },
   ];
+
+  const isActive = (isRight) =>
+    !side || (side === "right" && isRight) || (side === "left" && !isRight);
 
   return (
     <svg viewBox="0 0 280 210" className="w-full" style={{ maxHeight: 240, display: "block" }}>
@@ -359,36 +376,34 @@ function ApKneeGuide({ highlightId }) {
           <stop offset="100%" stopColor="#2d3f55" />
         </linearGradient>
       </defs>
-      <text x={75}  y={12} textAnchor="middle" fontSize={7} fill="#334155" fontFamily="sans-serif" fontWeight="bold">L</text>
-      <text x={205} y={12} textAnchor="middle" fontSize={7} fill="#334155" fontFamily="sans-serif" fontWeight="bold">R</text>
 
-      {(() => { const h = APKNEE_HL[highlightId]; return h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null; })()}
-      {joints.map(({ cx, dots }) => (
-        <g key={cx}>
+      {/* Active-side highlight frame */}
+      {side && joints.filter(j => isActive(j.isRight)).map(({ cx }) => (
+        <rect key={`frame-${cx}`} x={cx - 38} y={14} width={76} height={192} rx={8}
+          fill="rgba(34,211,238,0.05)" stroke="#22d3ee" strokeWidth={1.5} opacity={0.7} />
+      ))}
+
+      {joints.map(({ cx, isRight, label, dots }) => (
+        <g key={cx} opacity={isActive(isRight) ? 1 : 0.25}>
           {/* Distal femur shaft */}
           <rect x={cx - 24} y={18} width={48} height={75} rx={4}
             fill="#101e2e" stroke="#4a5e7a" strokeWidth={1.5} />
-          {/* Femur cortex highlights */}
           <line x1={cx - 20} y1={20} x2={cx - 20} y2={90} stroke="#7a9ab5" strokeWidth={1} opacity={0.4} />
           <line x1={cx + 20} y1={20} x2={cx + 20} y2={90} stroke="#7a9ab5" strokeWidth={1} opacity={0.4} />
-
           {/* Medial condyle */}
           <ellipse cx={cx - 14} cy={103} rx={16} ry={11}
             fill="#101e2e" stroke="#6b7fa0" strokeWidth={1.8} />
           {/* Lateral condyle */}
           <ellipse cx={cx + 14} cy={101} rx={14} ry={10}
             fill="#101e2e" stroke="#6b7fa0" strokeWidth={1.8} />
-          {/* Intercondylar notch shadow */}
           <ellipse cx={cx} cy={107} rx={6} ry={4} fill="#060c14" />
-
           {/* Joint space */}
           <line x1={cx - 34} y1={120} x2={cx + 34} y2={120}
             stroke="#1e293b" strokeWidth={0.8} strokeDasharray="2,3" />
-
-          {/* Tibial plateau – medial */}
+          {/* Tibial plateau medial */}
           <path d={`M ${cx - 34},120 L ${cx - 2},120 L ${cx - 2},138 L ${cx - 34},136 Z`}
             fill="#101e2e" stroke="#6b7fa0" strokeWidth={1.5} />
-          {/* Tibial plateau – lateral */}
+          {/* Tibial plateau lateral */}
           <path d={`M ${cx + 2},120 L ${cx + 34},120 L ${cx + 34},136 L ${cx + 2},138 Z`}
             fill="#101e2e" stroke="#6b7fa0" strokeWidth={1.5} />
           {/* Tibial shaft */}
@@ -396,14 +411,19 @@ function ApKneeGuide({ highlightId }) {
             fill="#101e2e" stroke="#4a5e7a" strokeWidth={1.5} />
           <line x1={cx - 16} y1={138} x2={cx - 16} y2={194} stroke="#7a9ab5" strokeWidth={1} opacity={0.4} />
           <line x1={cx + 16} y1={138} x2={cx + 16} y2={194} stroke="#7a9ab5" strokeWidth={1} opacity={0.4} />
-
+          {/* Side label */}
+          <text x={cx} y={12} textAnchor="middle" fontSize={7}
+            fill={isActive(isRight) ? "#22d3ee" : "#334155"}
+            fontFamily="sans-serif" fontWeight="bold">{label}{isActive(isRight) && side ? " ✓" : ""}</text>
           {/* Landmark dots */}
           <LmDot cx={cx - 14} cy={93}  color={dots.km} label="Kond.Med" labelPos="left"  r={4.5} />
           <LmDot cx={cx + 14} cy={91}  color={dots.kl} label="Kond.Lat" labelPos="right" r={4.5} />
-          <LmDot cx={cx - 34} cy={120} color={dots.pm} label="TP Med"  labelPos="left"  r={4.5} />
-          <LmDot cx={cx + 34} cy={120} color={dots.pl} label="TP Lat"  labelPos="right" r={4.5} />
+          <LmDot cx={cx - 34} cy={120} color={dots.pm} label="TP Med"   labelPos="left"  r={4.5} />
+          <LmDot cx={cx + 34} cy={120} color={dots.pl} label="TP Lat"   labelPos="right" r={4.5} />
         </g>
       ))}
+
+      {(() => { const h = APKNEE_HL[highlightId]; return h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null; })()}
     </svg>
   );
 }
@@ -528,11 +548,15 @@ function ApProxFemurThrGuide({ highlightId }) {
 
 // ── AP Knee TKA Guide ─────────────────────────────────────────────────────────
 
-function ApKneeTkaGuide({ highlightId }) {
+function ApKneeTkaGuide({ highlightId, side = null }) {
+  // side: "right" | "left" | null (bilateral)
   const joints = [
-    { cx: 75,  dotsF: { fcm: "#ef4444", fcl: "#f97316", ttm: "#eab308", ttl: "#84cc16", jlm: "#06b6d4", jll: "#8b5cf6" } },
-    { cx: 205, dotsF: { fcm: "#ec4899", fcl: "#14b8a6", ttm: "#a78bfa", ttl: "#34d399", jlm: "#fb923c", jll: "#38bdf8" } },
+    { cx: 75,  isRight: false, label: "L", dotsF: { fcm: "#ef4444", fcl: "#f97316", ttm: "#eab308", ttl: "#84cc16", jlm: "#06b6d4", jll: "#8b5cf6" } },
+    { cx: 205, isRight: true,  label: "R", dotsF: { fcm: "#ec4899", fcl: "#14b8a6", ttm: "#a78bfa", ttl: "#34d399", jlm: "#fb923c", jll: "#38bdf8" } },
   ];
+
+  const isActive = (isRight) =>
+    !side || (side === "right" && isRight) || (side === "left" && !isRight);
 
   return (
     <svg viewBox="0 0 280 210" className="w-full" style={{ maxHeight: 240, display: "block" }}>
@@ -543,21 +567,26 @@ function ApKneeTkaGuide({ highlightId }) {
           <stop offset="100%" stopColor="#94a3b8" />
         </linearGradient>
       </defs>
-      <text x={75}  y={12} textAnchor="middle" fontSize={7} fill="#334155" fontFamily="sans-serif" fontWeight="bold">L</text>
-      <text x={205} y={12} textAnchor="middle" fontSize={7} fill="#334155" fontFamily="sans-serif" fontWeight="bold">R</text>
 
-      {(() => { const h = APTKA_HL[highlightId]; return h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null; })()}
-      {joints.map(({ cx, dotsF: d }) => (
-        <g key={cx}>
+      {/* Active-side highlight frame */}
+      {side && joints.filter(j => isActive(j.isRight)).map(({ cx }) => (
+        <rect key={`frame-${cx}`} x={cx - 38} y={14} width={76} height={192} rx={8}
+          fill="rgba(34,211,238,0.05)" stroke="#22d3ee" strokeWidth={1.5} opacity={0.7} />
+      ))}
+
+      {joints.map(({ cx, isRight, label, dotsF: d }) => (
+        <g key={cx} opacity={isActive(isRight) ? 1 : 0.25}>
+          {/* Side label */}
+          <text x={cx} y={12} textAnchor="middle" fontSize={7}
+            fill={isActive(isRight) ? "#22d3ee" : "#334155"}
+            fontFamily="sans-serif" fontWeight="bold">{label}{isActive(isRight) && side ? " ✓" : ""}</text>
           {/* Femoral shaft */}
           <rect x={cx - 22} y={18} width={44} height={60} rx={3}
             fill="#101e2e" stroke="#4a5e7a" strokeWidth={1.5} />
-
           {/* Femoral component (metal, bright) */}
           <path d={`M ${cx - 28},78 Q ${cx - 20},70 ${cx - 12},92 Q ${cx},96 Q ${cx + 12},92 Q ${cx + 20},70 ${cx + 28},78`}
             fill="url(#metal_comp)" stroke="#e2e8f0" strokeWidth={1.5} />
-
-          {/* Tibial insert + tray */}
+          {/* Tibial insert */}
           <rect x={cx - 30} y={115} width={60} height={8} rx={2}
             fill="#64748b" stroke="#94a3b8" strokeWidth={1.2} />
           {/* Tibial tray */}
@@ -566,11 +595,9 @@ function ApKneeTkaGuide({ highlightId }) {
           {/* Tibial shaft */}
           <rect x={cx - 18} y={128} width={36} height={68} rx={3}
             fill="#101e2e" stroke="#4a5e7a" strokeWidth={1.5} />
-
-          {/* Joint space (thin gap between comp and insert) */}
+          {/* Joint space */}
           <line x1={cx - 30} y1={115} x2={cx + 30} y2={115}
             stroke="#2d3f55" strokeWidth={0.8} strokeDasharray="2,3" />
-
           {/* Landmark dots */}
           <LmDot cx={cx - 22} cy={88}  color={d.fcm} label="FC Med"  labelPos="left"  r={4} />
           <LmDot cx={cx + 22} cy={86}  color={d.fcl} label="FC Lat"  labelPos="right" r={4} />
@@ -580,6 +607,116 @@ function ApKneeTkaGuide({ highlightId }) {
           <LmDot cx={cx + 14} cy={115} color={d.jll} label="JL Lat"  labelPos="below" r={3.5} />
         </g>
       ))}
+
+      {(() => { const h = APTKA_HL[highlightId]; return h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null; })()}
+    </svg>
+  );
+}
+
+// ── Lateral Patella Guide ──────────────────────────────────────────────────────
+// viewBox 0 0 200 280 — lateral knee showing patella, Insall-Salvati ratio landmarks
+
+function LateralPatellaGuide({ highlightId }) {
+  const h = LATPATELLA_HL[highlightId];
+  return (
+    <svg viewBox="0 0 200 280" className="w-full" style={{ maxHeight: 300, display: "block" }}>
+      <rect width={200} height={280} fill="#080e18" rx={6} />
+
+      {/* ── Distal femur (lateral view, posterior aspect right) ── */}
+      {/* Femur shaft */}
+      <rect x={80} y={10} width={36} height={80} rx={5}
+        fill="#101e2e" stroke="#4a5e7a" strokeWidth={1.5} />
+      <line x1={84} y1={12} x2={84} y2={88} stroke="#7a9ab5" strokeWidth={1} opacity={0.4} />
+      <line x1={112} y1={12} x2={112} y2={88} stroke="#7a9ab5" strokeWidth={1} opacity={0.4} />
+      {/* Femoral condyle (lateral view — rounded posterior) */}
+      <ellipse cx={98} cy={100} rx={28} ry={22}
+        fill="#101e2e" stroke="#6b7fa0" strokeWidth={2} />
+      {/* Trochlear groove (anterior) */}
+      <path d="M 70,85 Q 76,72 88,68" fill="none" stroke="#4a5e7a" strokeWidth={1.5} />
+
+      {/* ── Patella ── */}
+      <ellipse cx={56} cy={88} rx={18} ry={14}
+        fill="#131f30" stroke="#7a9ab5" strokeWidth={2} />
+      {/* Patella articular surface hint */}
+      <path d="M 68,82 Q 72,88 68,94" fill="none" stroke="#4a5e7a" strokeWidth={1} opacity={0.6} />
+
+      {/* Patellar tendon */}
+      <path d="M 56,102 Q 66,124 80,146" fill="none" stroke="#5a7a9a" strokeWidth={2} strokeDasharray="4,2" />
+
+      {/* ── Tibia / Fibula ── */}
+      {/* Tibial plateau */}
+      <path d="M 52,148 L 138,148 L 138,162 L 52,162 Z"
+        fill="#101e2e" stroke="#6b7fa0" strokeWidth={1.8} />
+      {/* Tibial shaft */}
+      <rect x={62} y={162} width={44} height={108} rx={4}
+        fill="#101e2e" stroke="#4a5e7a" strokeWidth={1.5} />
+      <line x1={67} y1={164} x2={67} y2={268} stroke="#7a9ab5" strokeWidth={1} opacity={0.35} />
+      <line x1={102} y1={164} x2={102} y2={268} stroke="#7a9ab5" strokeWidth={1} opacity={0.35} />
+      {/* Tibial tuberosity prominence */}
+      <path d="M 106,148 Q 118,158 114,172 L 106,172 Z"
+        fill="#101e2e" stroke="#5a7a9a" strokeWidth={1.3} />
+
+      {/* ── Insall-Salvati reference lines ── */}
+      {/* PT length line */}
+      <line x1={46} y1={102} x2={46} y2={148}
+        stroke="#a78bfa" strokeWidth={1} strokeDasharray="2,2" opacity={0.6} />
+      <line x1={42} y1={102} x2={50} y2={102} stroke="#a78bfa" strokeWidth={1} opacity={0.6} />
+      <line x1={42} y1={148} x2={50} y2={148} stroke="#a78bfa" strokeWidth={1} opacity={0.6} />
+      <text x={34} y={128} textAnchor="middle" fontSize={5.5} fill="#a78bfa" fontFamily="sans-serif" transform="rotate(-90,34,128)">PT</text>
+
+      {/* Labels */}
+      <text x={56} y={78} textAnchor="middle" fontSize={6} fill="#94a3b8" fontFamily="sans-serif">Patella</text>
+      <text x={115} y={170} textAnchor="start" fontSize={6} fill="#94a3b8" fontFamily="sans-serif">Tub.</text>
+      <text x={115} y={178} textAnchor="start" fontSize={6} fill="#94a3b8" fontFamily="sans-serif">Tib.</text>
+
+      {/* ── Landmark dots ── */}
+      <LmDot cx={56} cy={74}  color="#e879f9" label="Patella Sup" labelPos="left"  r={5} />
+      <LmDot cx={56} cy={102} color="#d946ef" label="Patella Inf" labelPos="left"  r={5} />
+      <LmDot cx={110} cy={150} color="#a78bfa" label="Tub. Tib." labelPos="right" r={5} />
+
+      {h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null}
+    </svg>
+  );
+}
+
+// ── Skyline (Axial) Patella Guide ─────────────────────────────────────────────
+// viewBox 0 0 200 160 — axial cross-section of patellofemoral joint
+
+function SkylinePatellaGuide({ highlightId }) {
+  const h = SKYPATELLA_HL[highlightId];
+  return (
+    <svg viewBox="0 0 200 160" className="w-full" style={{ maxHeight: 200, display: "block" }}>
+      <rect width={200} height={160} fill="#080e18" rx={6} />
+
+      {/* ── Trochlear groove (femur cross-section, top) ── */}
+      <path d="M 30,40 Q 60,22 100,30 Q 140,22 170,40 Q 150,58 100,60 Q 50,58 30,40 Z"
+        fill="#101e2e" stroke="#6b7fa0" strokeWidth={2} />
+      {/* Trochlear groove notch */}
+      <path d="M 80,50 Q 100,42 120,50" fill="none" stroke="#3a5268" strokeWidth={2} />
+      <text x={100} y={22} textAnchor="middle" fontSize={6} fill="#64748b" fontFamily="sans-serif">Femur (Trochlea)</text>
+
+      {/* ── Patella (axial cross-section) ── */}
+      <ellipse cx={100} cy={100} rx={38} ry={26}
+        fill="#131f30" stroke="#7a9ab5" strokeWidth={2.2} />
+      {/* Patellar ridge (midline) */}
+      <line x1={100} y1={74} x2={100} y2={126} stroke="#3a5268" strokeWidth={1.5} opacity={0.5} />
+      {/* Articular surface curve */}
+      <path d="M 62,100 Q 100,88 138,100" fill="none" stroke="#4a6a8a" strokeWidth={1} opacity={0.6} />
+
+      {/* ── Medial / Lateral labels ── */}
+      <text x={20} y={105} textAnchor="middle" fontSize={6.5} fill="#64748b" fontFamily="sans-serif">Med</text>
+      <text x={180} y={105} textAnchor="middle" fontSize={6.5} fill="#64748b" fontFamily="sans-serif">Lat</text>
+      <text x={100} y={155} textAnchor="middle" fontSize={6} fill="#64748b" fontFamily="sans-serif">Patella — Axial (Skyline)</text>
+
+      {/* ── Joint space lines ── */}
+      <line x1={62} y1={80} x2={72} y2={72} stroke="#2d3f55" strokeWidth={0.8} strokeDasharray="2,2" opacity={0.5} />
+      <line x1={138} y1={80} x2={128} y2={72} stroke="#2d3f55" strokeWidth={0.8} strokeDasharray="2,2" opacity={0.5} />
+
+      {/* ── Landmark dots ── */}
+      <LmDot cx={68}  cy={100} color="#c084fc" label="Aspek Med" labelPos="left"  r={5} />
+      <LmDot cx={132} cy={100} color="#a855f7" label="Aspek Lat" labelPos="right" r={5} />
+
+      {h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null}
     </svg>
   );
 }
@@ -587,26 +724,40 @@ function ApKneeTkaGuide({ highlightId }) {
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const GUIDE_REGISTRY = {
-  ap_hip:                  { label: "AP Hip / Pelvis",            Component: ApHipGuide,          needsSide: true  },
-  ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: false },
-  ap_femur:                { label: "AP Femur",                   Component: ApProxFemurGuide,    needsSide: false },
-  ap_proximal_femur:       { label: "AP Proksimal Femur",         Component: ApProxFemurGuide,    needsSide: false },
-  ap_ankle:                { label: "AP Ankle",                   Component: ApKneeGuide,         needsSide: false },
-  lateral_hip:             { label: "Lateral Hip",                Component: ApProxFemurGuide,    needsSide: false },
-  lateral_knee:            { label: "Lateral Knee",               Component: ApKneeGuide,         needsSide: false },
-  ap_knee_tka:             { label: "AP Knee — Post TKA",         Component: ApKneeTkaGuide,      needsSide: false },
-  ap_proximal_femur_thr:   { label: "AP Proksimal Femur — THR",   Component: ApProxFemurThrGuide, needsSide: false },
+  ap_hip:                  { label: "AP Hip / Pelvis",            Component: ApHipGuide,          needsSide: "full"   },
+  ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: "simple" },
+  ap_femur:                { label: "AP Femur",                   Component: ApProxFemurGuide,    needsSide: false    },
+  ap_proximal_femur:       { label: "AP Proksimal Femur",         Component: ApProxFemurGuide,    needsSide: false    },
+  ap_ankle:                { label: "AP Ankle",                   Component: ApKneeGuide,         needsSide: false    },
+  lateral_hip:             { label: "Lateral Hip",                Component: ApProxFemurGuide,    needsSide: false    },
+  lateral_knee:            { label: "Lateral Knee",               Component: ApKneeGuide,         needsSide: "simple" },
+  ap_knee_tka:             { label: "AP Knee — Post TKA",         Component: ApKneeTkaGuide,      needsSide: "simple" },
+  ap_proximal_femur_thr:   { label: "AP Proksimal Femur — THR",   Component: ApProxFemurThrGuide, needsSide: false    },
+  lateral_patella:         { label: "Lateral Patella",            Component: LateralPatellaGuide, needsSide: false    },
+  sky_patella:             { label: "Skyline Patella",            Component: SkylinePatellaGuide, needsSide: false    },
 };
 
 // ── GuideContent — embeddable (no modal wrapper) ─────────────────────────────
+
+// Derive simple side ("right"|"left"|null) from sideConditions for knee guides
+function deriveSide(sideConditions) {
+  if (!sideConditions) return null;
+  const rOp = sideConditions.kanan && sideConditions.kanan !== "native";
+  const lOp = sideConditions.kiri  && sideConditions.kiri  !== "native";
+  if (rOp && !lOp) return "right";
+  if (lOp && !rOp) return "left";
+  return null;
+}
 
 export function GuideContent({ viewId, sideConditions, highlightId }) {
   const guide = GUIDE_REGISTRY[viewId];
   if (!guide) return null;
   const { Component, needsSide } = guide;
-  return needsSide
-    ? <Component sideConditions={sideConditions} highlightId={highlightId} />
-    : <Component highlightId={highlightId} />;
+  if (needsSide === "full")
+    return <Component sideConditions={sideConditions} highlightId={highlightId} />;
+  if (needsSide === "simple")
+    return <Component side={deriveSide(sideConditions)} highlightId={highlightId} />;
+  return <Component highlightId={highlightId} />;
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -648,8 +799,10 @@ export default function LandmarkGuide({ isOpen, onClose, viewId, sideConditions,
         {/* Diagram */}
         <div className="p-4">
           <div className="rounded-xl overflow-hidden border border-white/5">
-            {needsSide
+            {needsSide === "full"
               ? <Component sideConditions={sideConditions} highlightId={highlightId} />
+              : needsSide === "simple"
+              ? <Component side={deriveSide(sideConditions)} highlightId={highlightId} />
               : <Component highlightId={highlightId} />
             }
           </div>
