@@ -43,6 +43,19 @@ const QUICK_PANEL_STYLES = `
   .qpanel-btn {
     box-shadow: 1px 1px 4px rgba(148,163,184,0.18), -1px -1px 4px rgba(255,255,255,0.72);
   }
+  .qpanel-heading {
+    color: #64748b;
+  }
+  .qpanel-divider {
+    border-top: 1px solid rgba(148,163,184,0.22);
+    padding-top: 0.5rem;
+  }
+  .qpanel-workflow-title {
+    color: #0f172a;
+  }
+  .qpanel-progress-empty {
+    background: rgba(148,163,184,0.42);
+  }
   [data-theme="dark"] .qpanel-section {
     background: rgba(255,255,255,0.045);
     border-color: var(--soft-border);
@@ -62,6 +75,18 @@ const QUICK_PANEL_STYLES = `
     background: rgba(190,18,60,0.18) !important;
     border-color: rgba(251,113,133,0.28) !important;
     color: #fb7185 !important;
+  }
+  [data-theme="dark"] .qpanel-heading {
+    color: #cbd5e1 !important;
+  }
+  [data-theme="dark"] .qpanel-divider {
+    border-top-color: rgba(148,163,184,0.24);
+  }
+  [data-theme="dark"] .qpanel-workflow-title {
+    color: #f1f5f9 !important;
+  }
+  [data-theme="dark"] .qpanel-progress-empty {
+    background: rgba(148,163,184,0.24) !important;
   }
 `;
 
@@ -100,7 +125,7 @@ function Section({ title, icon: Icon, open, onToggle, children }) {
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 rounded-2xl px-1.5 py-1.5 text-left text-[9px] font-black uppercase tracking-widest text-slate-500"
+        className="qpanel-heading flex w-full items-center justify-between gap-2 rounded-2xl px-1.5 py-1.5 text-left text-[9px] font-black uppercase tracking-widest text-slate-500"
       >
         <span className="flex min-w-0 items-center gap-1.5">
           {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
@@ -129,9 +154,10 @@ function Section({ title, icon: Icon, open, onToggle, children }) {
 
 export default function QuickPanel({
   className = "",
+  leftDockMode = false,
   statusLabel = "Ready",
   workflowStep = 1,
-  workflowMax = 5,
+  workflowMax = 3,
   measurementCount = 0,
   activeTool = "move",
   onMinimize,
@@ -199,6 +225,7 @@ export default function QuickPanel({
     filteredImplants.find((item) => String(item.id) === String(selectedImplantItemId)) ||
     filteredImplants[0] ||
     null;
+  const showActionSections = !leftDockMode;
 
   const handleImplantTypeChange = (type) => {
     onSelectImplantType?.(type);
@@ -241,7 +268,7 @@ export default function QuickPanel({
       <div className="qpanel-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
       <div className="qpanel-section rounded-[18px] border px-2.5 py-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 text-[11px] font-black text-slate-900">
+          <div className="qpanel-workflow-title min-w-0 text-[12px] font-black text-slate-900">
             Step {workflowStep}/{workflowMax}
           </div>
           <div className="shrink-0 rounded-full bg-slate-900 px-2 py-0.5 text-[9px] font-black text-white">
@@ -253,7 +280,7 @@ export default function QuickPanel({
             <span
               key={index}
               className={`h-1.5 flex-1 rounded-full ${
-                index < workflowStep ? "bg-emerald-500" : "bg-slate-300/70"
+                index < workflowStep ? "bg-emerald-500" : "qpanel-progress-empty bg-slate-300/70"
               }`}
             />
           ))}
@@ -287,40 +314,49 @@ export default function QuickPanel({
               <CompactButton icon={Upload} onClick={() => { setUploadOpen(false); onUpload?.(); }}>
                 Lokal
               </CompactButton>
-              <CompactButton icon={Layers} onClick={() => { setUploadOpen(false); onUploadLayer?.(); }}>
-                Layer
-              </CompactButton>
-              <CompactButton icon={Save} disabled={!canSaveTemplate} onClick={() => { setUploadOpen(false); onSaveTemplate?.(); }}>
-                Save
-              </CompactButton>
+              {showActionSections ? (
+                <>
+                  <CompactButton icon={Layers} onClick={() => { setUploadOpen(false); onUploadLayer?.(); }}>
+                    Layer
+                  </CompactButton>
+                  <CompactButton icon={Save} disabled={!canSaveTemplate} onClick={() => { setUploadOpen(false); onSaveTemplate?.(); }}>
+                    Save
+                  </CompactButton>
+                </>
+              ) : null}
             </motion.div>
           ) : null}
         </AnimatePresence>
       </div>
 
       <div className="space-y-2">
-        <div>
-          <div className="mb-1 px-1 text-[8px] font-black uppercase tracking-widest text-slate-400">
-            Setup & Alat
+        <div className="qpanel-divider">
+          <div className="qpanel-heading mb-1 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+            {leftDockMode ? "Input & Workflow" : "Setup & Alat"}
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             <CompactButton icon={Scaling} onClick={onCalibration}>
               Kalibrasi
             </CompactButton>
-            <CompactButton icon={Layers} disabled={!canCreateLayer} onClick={onCreateLayer}>
-              Layer
-            </CompactButton>
             <CompactButton icon={Compass} active={activeToolKey === "guideBuilder"} onClick={onGuide}>
               Panduan
             </CompactButton>
-            <CompactButton icon={Move} active={activeToolKey === "move"} onClick={onMove}>
-              Move
-            </CompactButton>
+            {showActionSections ? (
+              <>
+                <CompactButton icon={Layers} disabled={!canCreateLayer} onClick={onCreateLayer}>
+                  Layer
+                </CompactButton>
+                <CompactButton icon={Move} active={activeToolKey === "move"} onClick={onMove}>
+                  Move
+                </CompactButton>
+              </>
+            ) : null}
           </div>
         </div>
 
-        <div>
-          <div className="mb-1 px-1 text-[8px] font-black uppercase tracking-widest text-slate-400">
+        {showActionSections ? (
+        <div className="qpanel-divider">
+          <div className="qpanel-heading mb-1 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
             Planning
           </div>
           <div className="grid grid-cols-2 gap-1.5">
@@ -356,7 +392,9 @@ export default function QuickPanel({
             </CompactButton>
           </div>
         </div>
+        ) : null}
 
+        {showActionSections ? (
         <Section
           title="More & Export"
           icon={Download}
@@ -424,7 +462,9 @@ export default function QuickPanel({
             Cup Assess
           </CompactButton>
         </Section>
+        ) : null}
 
+        {showActionSections ? (
         <Section
           title="Implant"
           icon={Layers}
@@ -478,6 +518,7 @@ export default function QuickPanel({
             </CompactButton>
           </div>
         </Section>
+        ) : null}
       </div>
       </div>
     </motion.div>

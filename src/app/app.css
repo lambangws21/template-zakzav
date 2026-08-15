@@ -347,6 +347,163 @@ button, [role="button"] {
 
 summary::-webkit-details-marker { display: none }
 
+/* ─── Clinical templating wizard contrast ───────────────────────────────── */
+.templating-wizard-modal {
+  color: #0f172a;
+}
+
+.wizard-card {
+  background: #eef2f7;
+  border-color: rgba(255,255,255,0.78);
+  box-shadow: 4px 4px 10px rgba(148,163,184,0.18), -4px -4px 10px rgba(255,255,255,0.76);
+}
+
+.wizard-status-card {
+  background: rgba(248,250,252,0.72);
+  border-color: rgba(203,213,225,0.7);
+}
+
+.wizard-status-success {
+  background: rgba(236,253,245,0.72);
+  border-color: rgba(16,185,129,0.38);
+}
+
+.wizard-status-warning {
+  background: rgba(255,251,235,0.78);
+  border-color: rgba(245,158,11,0.42);
+}
+
+.wizard-tip {
+  background: rgba(255,255,255,0.5);
+}
+
+.wizard-btn-secondary {
+  background: #eef2f7;
+  color: #475569;
+}
+
+[data-theme="dark"] .templating-wizard-modal {
+  background: #111827 !important;
+  border-color: rgba(148,163,184,0.24) !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.62), inset 0 1px 0 rgba(255,255,255,0.06) !important;
+}
+
+[data-theme="dark"] .templating-wizard-header,
+[data-theme="dark"] .templating-wizard-footer {
+  border-color: rgba(148,163,184,0.18) !important;
+  background: rgba(15,23,42,0.58);
+}
+
+[data-theme="dark"] .templating-wizard-modal .wizard-muted {
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .templating-wizard-modal .wizard-faint {
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .wizard-card {
+  background: rgba(30,41,59,0.96) !important;
+  border-color: rgba(148,163,184,0.22) !important;
+  box-shadow: inset 1px 1px 3px rgba(0,0,0,0.34), 0 8px 22px rgba(0,0,0,0.26) !important;
+}
+
+[data-theme="dark"] .wizard-status-success {
+  background: rgba(6,78,59,0.52) !important;
+  border-color: rgba(16,185,129,0.56) !important;
+}
+
+[data-theme="dark"] .wizard-status-warning {
+  background: rgba(30,41,59,0.96) !important;
+  border-color: rgba(245,158,11,0.72) !important;
+}
+
+[data-theme="dark"] .wizard-status-success .wizard-status-title {
+  color: #86efac !important;
+}
+
+[data-theme="dark"] .wizard-status-warning .wizard-status-title {
+  color: #fde68a !important;
+}
+
+[data-theme="dark"] .wizard-status-card .wizard-status-body {
+  color: #f1f5f9 !important;
+}
+
+[data-theme="dark"] .wizard-btn-secondary {
+  background: transparent !important;
+  border-color: rgba(148,163,184,0.28) !important;
+  color: #cbd5e1 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .wizard-btn-calibration {
+  background: #f59e0b !important;
+  border-color: #fbbf24 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="dark"] .wizard-tip {
+  background: rgba(15,23,42,0.82) !important;
+}
+
+[data-theme="dark"] .wizard-implant-card {
+  background: rgba(30,41,59,0.94) !important;
+  border-color: rgba(148,163,184,0.22) !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.24) !important;
+}
+
+[data-theme="dark"] .wizard-implant-card-selected {
+  background: rgba(8,145,178,0.22) !important;
+  border-color: rgba(34,211,238,0.68) !important;
+}
+
+/* ─── Advanced UI clinical readability ───────────────────────────────────── */
+[data-theme="dark"] .advanced-ui-shell .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .advanced-ui-shell .text-slate-600 {
+  color: #b8c7d9 !important;
+}
+
+[data-theme="dark"] .advanced-ui-shell .advanced-reset-total-button {
+  background: transparent !important;
+  border-color: rgba(251,113,133,0.42) !important;
+  color: #fb7185 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .advanced-ui-shell .advanced-reset-total-button:hover {
+  background: rgba(190,18,60,0.14) !important;
+  border-color: rgba(251,113,133,0.62) !important;
+}
+
+[data-theme="dark"] .advanced-ui-shell .advanced-calibration-status {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
+}
+
+[data-theme="dark"] .advanced-ui-shell .advanced-sidebar-toggle {
+  color: #22d3ee !important;
+}
+
+[data-theme="dark"] .advanced-ui-shell .bone-ninja-floating-toolbar,
+[data-theme="dark"] .simple-ui-shell .bone-ninja-floating-toolbar {
+  background: rgba(15,23,42,0.86) !important;
+  border-color: rgba(148,163,184,0.22) !important;
+  box-shadow:
+    0 16px 36px rgba(2,6,23,0.42),
+    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+[data-theme="dark"] .advanced-ui-shell .bone-ninja-calibration-badge,
+[data-theme="dark"] .simple-ui-shell .bone-ninja-calibration-badge {
+  box-shadow:
+    0 10px 24px rgba(2,6,23,0.36),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
 .checker-background::before {
   content: "";
   position: absolute;

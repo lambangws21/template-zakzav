@@ -196,12 +196,18 @@ export default function ManagerPanel({
   onTabChange,
   onClose,
   className = "",
+  activeElementLabel = "",
   /* Contrast / Level (shown in layer tab) */
   contrast = 100,
   level = 100,
   onContrastChange,
   onLevelChange,
   onResetContrastLevel,
+  imageAdjustmentPresets = [],
+  activeImageAdjustmentPreset = "custom",
+  onApplyImageAdjustmentPreset,
+  onFitImage,
+  onResetView,
   /* LayerManager */
   layers = [],
   selectedLayerId = null,
@@ -267,6 +273,11 @@ export default function ManagerPanel({
             Properties
           </p>
           <p className="text-sm font-black text-slate-800">{tab.label}</p>
+          {activeElementLabel ? (
+            <p className="mt-0.5 max-w-[220px] truncate text-[10px] font-bold text-slate-500">
+              Aktif: {activeElementLabel}
+            </p>
+          ) : null}
         </div>
         {onClose && (
           <button
@@ -311,7 +322,7 @@ export default function ManagerPanel({
         {activeTab === "layer" && (
           <div className="mb-2.5 rounded-[18px] border border-white/65 bg-white/30 p-2.5">
             <div className="mb-1.5 flex items-center justify-between">
-              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Gambar Utama</p>
+              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Image Adjustment</p>
               {onResetContrastLevel && (
                 <button
                   type="button"
@@ -322,6 +333,27 @@ export default function ManagerPanel({
                 </button>
               )}
             </div>
+            {imageAdjustmentPresets.length > 0 && (
+              <div className="mb-2 grid grid-cols-4 gap-1">
+                {imageAdjustmentPresets.map((preset) => {
+                  const active = activeImageAdjustmentPreset === preset.key;
+                  return (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => onApplyImageAdjustmentPreset?.(preset.key)}
+                      className={`min-h-8 rounded-xl border px-1.5 text-[8px] font-black transition ${
+                        active
+                          ? "border-slate-800 bg-slate-900 text-white shadow-[inset_1px_1px_3px_rgba(2,6,23,0.42)]"
+                          : "border-white/70 bg-[#eef2f7] text-slate-600 shadow-[1px_1px_3px_rgba(148,163,184,0.18),-1px_-1px_3px_rgba(255,255,255,0.82)]"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {[
               { label: "Contrast", value: contrast, onChange: onContrastChange },
               { label: "Level", value: level, onChange: onLevelChange },
@@ -336,6 +368,28 @@ export default function ManagerPanel({
                 <span className="w-9 text-right text-[9px] font-mono text-slate-700">{c.value}%</span>
               </label>
             ))}
+            {(onFitImage || onResetView) && (
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {onFitImage && (
+                  <button
+                    type="button"
+                    onClick={onFitImage}
+                    className="rounded-xl border border-white/70 bg-[#eef2f7] py-1.5 text-[9px] font-black text-cyan-700 shadow-[1px_1px_3px_rgba(148,163,184,0.18),-1px_-1px_3px_rgba(255,255,255,0.82)]"
+                  >
+                    Fit View
+                  </button>
+                )}
+                {onResetView && (
+                  <button
+                    type="button"
+                    onClick={onResetView}
+                    className="rounded-xl border border-white/70 bg-[#eef2f7] py-1.5 text-[9px] font-black text-slate-600 shadow-[1px_1px_3px_rgba(148,163,184,0.18),-1px_-1px_3px_rgba(255,255,255,0.82)]"
+                  >
+                    Reset 100%
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -121,6 +121,10 @@ export function drawTag(ctx, x, y, text, color, options = {}) {
   ctx.stroke();
 
   ctx.globalAlpha = textOpacity;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = options.textOutlineColor || "rgba(2, 6, 23, 0.82)";
+  ctx.lineWidth = options.textOutlineWidth ?? Math.max(2, fontSize * 0.24);
+  ctx.strokeText(text, x - width / 2 + paddingX, y);
   ctx.fillStyle = "#f8fafc";
   ctx.fillText(text, x - width / 2 + paddingX, y);
   ctx.restore();
@@ -248,5 +252,4 @@ export function escapeHtml(value) {
     return "&#39;";
   });
 }
-
 

@@ -70,11 +70,15 @@ const TOOL_ICON_MAP = {
 
 const DOCK_GROUPS = [
   {
-    key: "move",
-    label: "Move",
+    key: "xfo",
+    label: "XFO",
     icon: Move,
     tone: "text-cyan-500",
-    match: (item) => item.key === "pan",
+    match: (item) =>
+      item.key === "pan" ||
+      item.key === "cut" ||
+      item.key === "freeLine" ||
+      item.key === "freeLinePoint",
   },
   {
     key: "measure",
@@ -82,7 +86,7 @@ const DOCK_GROUPS = [
     icon: Compass,
     tone: "text-blue-500",
     match: (item) =>
-      ["draw", "angle", "circle"].includes(item.key) || item.freeLineMode,
+      ["draw", "angle", "circle"].includes(item.key),
   },
   {
     key: "planning",
@@ -91,7 +95,6 @@ const DOCK_GROUPS = [
     tone: "text-violet-500",
     match: (item) =>
       [
-        "cut",
         "hka",
         "hkaAuto",
         "tkaAssessment",
@@ -105,14 +108,14 @@ const DOCK_GROUPS = [
   },
   {
     key: "edit",
-    label: "Edit",
+    label: "Annotate",
     icon: MessageSquare,
     tone: "text-pink-500",
     match: (item) => item.key === "annotation" || item.key === "brush",
   },
   {
     key: "zakvisor",
-    label: "ZakVisor",
+    label: "X-Ray",
     icon: Zap,
     tone: "text-sky-500",
     match: (item) => item.key === "imageProcess",
