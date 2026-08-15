@@ -296,6 +296,7 @@ const ANNOTATION_COLOR_OPTIONS = [
 const TEMPLATE_INITIAL_MAX_FRACTION = 0.3;
 
 const VIEW_PAN_VISIBLE_MARGIN = 96;
+const CANVAS_EDGE_SAFE_INSET = 18;
 const DEFAULT_SNAP_SETTINGS = {
   endpoint: true,
   midpoint: true,
@@ -4565,8 +4566,8 @@ export default function XrayCalibrationWorkspace({
     const mobileNavInset = isMobileViewport && isSimpleUiMode ? 120 : 0;
     const visibleHeight = viewport.height - mobileNavInset;
 
-    const safeWidth = Math.max(viewport.width - 40, 80);
-    const safeHeight = Math.max(visibleHeight - 40, 80);
+    const safeWidth = Math.max(viewport.width - CANVAS_EDGE_SAFE_INSET * 2, 80);
+    const safeHeight = Math.max(visibleHeight - CANVAS_EDGE_SAFE_INSET * 2, 80);
     const fittedScale = Math.min(
       safeWidth / orientedSize.width,
       safeHeight / orientedSize.height,
@@ -4575,8 +4576,12 @@ export default function XrayCalibrationWorkspace({
 
     setView({
       scale: nextScale,
-      x: (viewport.width - orientedSize.width * nextScale) / 2,
-      y: (visibleHeight - orientedSize.height * nextScale) / 2,
+      x:
+        CANVAS_EDGE_SAFE_INSET +
+        (safeWidth - orientedSize.width * nextScale) / 2,
+      y:
+        CANVAS_EDGE_SAFE_INSET +
+        (safeHeight - orientedSize.height * nextScale) / 2,
     });
   }, [
     isSimpleUiMode,
@@ -4651,6 +4656,11 @@ export default function XrayCalibrationWorkspace({
 
       let nextX = normalizedView.x;
       let nextY = normalizedView.y;
+      const edgeInset = relaxed ? 0 : CANVAS_EDGE_SAFE_INSET;
+      const safeRight = viewport.width - edgeInset;
+      const safeBottom = viewport.height - edgeInset;
+      const safeWidth = Math.max(viewport.width - edgeInset * 2, 1);
+      const safeHeight = Math.max(viewport.height - edgeInset * 2, 1);
       const relaxedVisibleX = Math.min(
         VIEW_PAN_VISIBLE_MARGIN,
         Math.max(24, viewport.width * 0.3),
@@ -4676,15 +4686,15 @@ export default function XrayCalibrationWorkspace({
           nextX += viewport.width - relaxedVisibleX - minX;
         }
       } else if (boundsWidth <= viewport.width && centerSmall) {
-        nextX += (viewport.width - boundsWidth) / 2 - minX;
+        nextX += edgeInset + (safeWidth - boundsWidth) / 2 - minX;
       } else if (boundsWidth <= viewport.width) {
         if (maxX < visibleX) nextX += visibleX - maxX;
         if (minX > viewport.width - visibleX) {
           nextX += viewport.width - visibleX - minX;
         }
       } else {
-        if (minX > 0) nextX -= minX;
-        if (maxX < viewport.width) nextX += viewport.width - maxX;
+        if (minX > edgeInset) nextX += edgeInset - minX;
+        if (maxX < safeRight) nextX += safeRight - maxX;
       }
 
       if (relaxed) {
@@ -4693,15 +4703,15 @@ export default function XrayCalibrationWorkspace({
           nextY += viewport.height - relaxedVisibleY - minY;
         }
       } else if (boundsHeight <= viewport.height && centerSmall) {
-        nextY += (viewport.height - boundsHeight) / 2 - minY;
+        nextY += edgeInset + (safeHeight - boundsHeight) / 2 - minY;
       } else if (boundsHeight <= viewport.height) {
         if (maxY < visibleY) nextY += visibleY - maxY;
         if (minY > viewport.height - visibleY) {
           nextY += viewport.height - visibleY - minY;
         }
       } else {
-        if (minY > 0) nextY -= minY;
-        if (maxY < viewport.height) nextY += viewport.height - maxY;
+        if (minY > edgeInset) nextY += edgeInset - minY;
+        if (maxY < safeBottom) nextY += safeBottom - maxY;
       }
 
       if (nextX === normalizedView.x && nextY === normalizedView.y) {
@@ -18866,16 +18876,26 @@ export default function XrayCalibrationWorkspace({
       return;
     }
     const nextScale = clamp(1, MIN_SCALE, MAX_SCALE);
+    const mobileNavInset = isMobileViewport && isSimpleUiMode ? 120 : 0;
+    const visibleHeight = Math.max(viewport.height - mobileNavInset, 80);
+    const safeWidth = Math.max(viewport.width - CANVAS_EDGE_SAFE_INSET * 2, 1);
+    const safeHeight = Math.max(visibleHeight - CANVAS_EDGE_SAFE_INSET * 2, 1);
     setView(
       clampViewToViewport({
         scale: nextScale,
-        x: (viewport.width - orientedSize.width * nextScale) / 2,
-        y: (viewport.height - orientedSize.height * nextScale) / 2,
+        x:
+          CANVAS_EDGE_SAFE_INSET +
+          (safeWidth - orientedSize.width * nextScale) / 2,
+        y:
+          CANVAS_EDGE_SAFE_INSET +
+          (safeHeight - orientedSize.height * nextScale) / 2,
       }, { centerSmall: true }),
     );
     setNotice("Zoom di-reset ke 100%.");
   }, [
     clampViewToViewport,
+    isMobileViewport,
+    isSimpleUiMode,
     orientedSize.height,
     orientedSize.width,
     viewport.height,
@@ -33037,7 +33057,7 @@ export default function XrayCalibrationWorkspace({
                         transition={{ type: "spring", damping: 22, stiffness: 300 }}
                         type="button"
                         onClick={() => setSimpleRightDockMinimized(false)}
-                        className="pointer-events-auto absolute top-[74px] right-[88px] inline-flex items-center gap-2 rounded-[18px] border border-white/15 bg-slate-900/82 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-100 shadow-[0_10px_26px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+                        className="pointer-events-auto absolute top-3 right-[88px] inline-flex items-center gap-2 rounded-[18px] border border-white/15 bg-slate-900/82 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-100 shadow-[0_10px_26px_rgba(0,0,0,0.24)] backdrop-blur-xl"
                         title="Buka Action & Layer"
                         whileTap={{ scale: 0.93 }}
                       >
@@ -33051,7 +33071,7 @@ export default function XrayCalibrationWorkspace({
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: 16, scale: 0.96 }}
                         transition={{ type: "spring", damping: 24, stiffness: 280 }}
-                        className="pointer-events-auto absolute top-[74px] right-[88px] flex max-h-[calc(100dvh-96px)] w-[224px] max-w-[calc(100vw-360px)] flex-col overflow-hidden rounded-[22px] border border-white/12 bg-slate-900/78 p-2.5 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.22)] backdrop-blur-xl"
+                        className="pointer-events-auto absolute top-3 right-[88px] bottom-3 flex w-[224px] max-w-[calc(100vw-360px)] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/12 bg-slate-900/78 p-2.5 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.22)] backdrop-blur-xl"
                       >
                         <div className="mb-2 flex items-center gap-2">
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-400/15 text-cyan-200 ring-1 ring-cyan-300/25">
@@ -33076,7 +33096,7 @@ export default function XrayCalibrationWorkspace({
                           </button>
                         </div>
 
-                        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+                        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-1 pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]">
                           <section className="rounded-[18px] border border-cyan-300/15 bg-cyan-400/[0.055] p-2">
                             <p className="mb-1.5 px-1 text-[9px] font-black uppercase tracking-widest text-cyan-200">
                               Action
