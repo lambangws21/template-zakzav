@@ -98,6 +98,7 @@ const DOCK_GROUPS = [
         "hka",
         "hkaAuto",
         "tkaAssessment",
+        "normmedFemoralSizer",
         "guideBuilder",
         "cupAssessment",
         "zakAceta",
@@ -142,6 +143,41 @@ function getToolTone(item) {
   if (item.key === "preTka") return "text-sky-500";
   if (item.key === "zakAceta" || item.key === "postTHA") return "text-rose-500";
   return "text-violet-500";
+}
+
+function getPlanningSectionKey(item) {
+  if (item.planningGroup === "knee" || item.planningGroup === "hip") {
+    return item.planningGroup;
+  }
+  if (
+    [
+      "hka",
+      "hkaAuto",
+      "tkaAssessment",
+      "normmedFemoralSizer",
+      "preTka",
+      "guideBuilder",
+    ].includes(item.key)
+  ) {
+    return "knee";
+  }
+  if (["cupAssessment", "zakAceta", "postTHA", "dorr"].includes(item.key)) {
+    return "hip";
+  }
+  return "other";
+}
+
+function getFlyoutSections(group) {
+  if (!group) return [];
+  if (group.key !== "planning") {
+    return [{ key: group.key, label: null, items: group.items }];
+  }
+
+  return [
+    { key: "knee", label: "Knee", items: group.items.filter((item) => getPlanningSectionKey(item) === "knee") },
+    { key: "hip", label: "Hip", items: group.items.filter((item) => getPlanningSectionKey(item) === "hip") },
+    { key: "other", label: "Other", items: group.items.filter((item) => getPlanningSectionKey(item) === "other") },
+  ].filter((section) => section.items.length > 0);
 }
 
 function Tooltip({ label, visible }) {
@@ -227,6 +263,10 @@ export default function PanelActions({
   }, [openGroup]);
 
   const activeFlyoutGroup = groupedTools.find((group) => group.key === openGroup);
+  const activeFlyoutSections = useMemo(
+    () => getFlyoutSections(activeFlyoutGroup),
+    [activeFlyoutGroup],
+  );
 
   const flyoutStyle = (() => {
     if (!activeFlyoutGroup || !flyoutAnchor || typeof window === "undefined") {
@@ -386,38 +426,49 @@ export default function PanelActions({
                   <div className="mb-1.5 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
                     {activeFlyoutGroup.label}
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {activeFlyoutGroup.items.map((item) => {
-                      const ToolIcon = getToolIcon(item);
-                      const itemActive = isItemActive(item);
-                      return (
-                        <motion.button
-                          key={`${item.key}-${item.freeLineMode || "tool"}`}
-                          type="button"
-                          onClick={() => {
-                            if (item.disabled) return;
-                            onSelectTool?.(item);
-                            setOpenGroup(null);
-                            setFlyoutAnchor(null);
-                          }}
-                          disabled={item.disabled}
-                          className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition ${
-                            itemActive
-                              ? "border-slate-800 bg-slate-900 text-white"
-                              : "border-white/70 bg-white/38 text-slate-700 hover:bg-white/70"
-                          } disabled:cursor-not-allowed disabled:opacity-35`}
-                          whileTap={{ scale: 0.95 }}
-                          title={item.desc || item.label}
-                        >
-                          <ToolIcon
-                            className={`h-4 w-4 ${itemActive ? "text-white" : getToolTone(item)}`}
-                          />
-                          <span className="max-w-[64px] truncate text-[9px] font-black">
-                            {item.label}
-                          </span>
-                        </motion.button>
-                      );
-                    })}
+                  <div className="space-y-2">
+                    {activeFlyoutSections.map((section) => (
+                      <div key={section.key} className="space-y-1.5">
+                        {section.label ? (
+                          <div className="px-1 text-[8px] font-black uppercase tracking-widest text-slate-400">
+                            {section.label}
+                          </div>
+                        ) : null}
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {section.items.map((item) => {
+                            const ToolIcon = getToolIcon(item);
+                            const itemActive = isItemActive(item);
+                            return (
+                              <motion.button
+                                key={`${item.key}-${item.freeLineMode || "tool"}`}
+                                type="button"
+                                onClick={() => {
+                                  if (item.disabled) return;
+                                  onSelectTool?.(item);
+                                  setOpenGroup(null);
+                                  setFlyoutAnchor(null);
+                                }}
+                                disabled={item.disabled}
+                                className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition ${
+                                  itemActive
+                                    ? "border-slate-800 bg-slate-900 text-white"
+                                    : "border-white/70 bg-white/38 text-slate-700 hover:bg-white/70"
+                                } disabled:cursor-not-allowed disabled:opacity-35`}
+                                whileTap={{ scale: 0.95 }}
+                                title={item.desc || item.label}
+                              >
+                                <ToolIcon
+                                  className={`h-4 w-4 ${itemActive ? "text-white" : getToolTone(item)}`}
+                                />
+                                <span className="max-w-[64px] truncate text-[9px] font-black">
+                                  {item.label}
+                                </span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </motion.div>
               ) : null}

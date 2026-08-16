@@ -1397,25 +1397,28 @@ export default function XrayCalibrationWorkspace({
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
-    const viewportQuery = window.matchMedia("(max-width: 1023px)");
+    const phoneQuery = window.matchMedia("(max-width: 767px)");
     const tabletQuery = window.matchMedia(
       "(pointer: coarse) and (min-width: 768px) and (max-width: 1180px)",
     );
     const coarseQuery = window.matchMedia("(pointer: coarse)");
     const updateMobileState = () => {
-      const tabletViewport = tabletQuery.matches;
-      setIsMobileViewport(viewportQuery.matches || tabletViewport);
+      const hasTouchPointer =
+        coarseQuery.matches || (navigator.maxTouchPoints || 0) > 0;
+      const tabletViewport = hasTouchPointer && tabletQuery.matches;
+      const phoneViewport = hasTouchPointer && phoneQuery.matches;
+      setIsMobileViewport(phoneViewport || tabletViewport);
       setIsTabletViewport(tabletViewport);
-      setIsCoarsePointer(coarseQuery.matches);
+      setIsCoarsePointer(hasTouchPointer);
     };
 
     updateMobileState();
-    viewportQuery.addEventListener("change", updateMobileState);
+    phoneQuery.addEventListener("change", updateMobileState);
     tabletQuery.addEventListener("change", updateMobileState);
     coarseQuery.addEventListener("change", updateMobileState);
     window.addEventListener("resize", updateMobileState);
     return () => {
-      viewportQuery.removeEventListener("change", updateMobileState);
+      phoneQuery.removeEventListener("change", updateMobileState);
       tabletQuery.removeEventListener("change", updateMobileState);
       coarseQuery.removeEventListener("change", updateMobileState);
       window.removeEventListener("resize", updateMobileState);
@@ -3254,7 +3257,7 @@ export default function XrayCalibrationWorkspace({
   const getSizingLineIntent = useCallback((line) => {
     if (!line) return null;
     const signature = `${line.name || ""} ${line.type || ""}`.toLowerCase();
-    const hasSizingContext =
+    const hasDimensionOrSizingContext =
       /\b(size|sizing|width|length|height|ml|ap|normmed|gordion|tkr|baseplate|tray)\b/.test(
         signature,
       );
@@ -3263,11 +3266,26 @@ export default function XrayCalibrationWorkspace({
         signature,
       );
 
-    if (isExcluded || !hasSizingContext) return null;
-    if (/\b(femoral|femur)\b/.test(signature)) return "femoral";
-    if (/\b(tibial|tibia)\b/.test(signature)) return "tibial";
+    if (isExcluded) return null;
+
+    const selectedFemoralSizingLine =
+      normmedFemoralSizerOpen &&
+      selectedLineId !== null &&
+      line.id === selectedLineId;
+    const hasFemoralContext =
+      /\b(femoral|femur|fem|normmed|gordion|tkr|ps|cr)\b/.test(signature);
+    const hasTibialContext =
+      /\b(tibial|tibia|baseplate|tray)\b/.test(signature);
+
+    if (hasTibialContext && hasDimensionOrSizingContext) return "tibial";
+    if (
+      selectedFemoralSizingLine ||
+      (hasFemoralContext && hasDimensionOrSizingContext)
+    ) {
+      return "femoral";
+    }
     return null;
-  }, []);
+  }, [normmedFemoralSizerOpen, selectedLineId]);
 
   const getNormmedFemoralSizingForLine = useCallback(
     (line) => {
@@ -19902,6 +19920,24 @@ export default function XrayCalibrationWorkspace({
             : selectedCutLayer
               ? idleTutorialCards[3]
               : idleTutorialCards[4];
+  const openNormmedFemoralSizer = useCallback(() => {
+    const targetLine = normmedFemoralMeasurement.line;
+    if (targetLine) {
+      setSelectedLineId(targetLine.id);
+      setSelectedAngleId(null);
+      setSelectedCircleId(null);
+      setSelectedHkaId(null);
+      setSelectedCutLayerId(null);
+      triggerSelectionPulse("line", targetLine.id);
+      setNotice(
+        `Fem Size aktif memakai Line #${targetLine.id}. Hover/tap label line untuk detail size.`,
+      );
+    } else {
+      setNotice("Buat atau pilih line femoral dulu untuk cek Fem Size.");
+    }
+    setNormmedFemoralSizerOpen(true);
+  }, [normmedFemoralMeasurement.line, triggerSelectionPulse]);
+
   const simpleToolMenuItems = [
     { icon: "draw", label: "Line", desc: "Buat garis ukur. Klik titik awal lalu titik akhir pada X-ray.", key: "draw" },
     { icon: "pan", label: "Move", desc: "Geser canvas atau pilih objek/layer yang sudah dibuat.", key: "pan" },
@@ -19933,15 +19969,15 @@ export default function XrayCalibrationWorkspace({
       key: "imageProcess",
       action: "imageProcessing",
     },
-    { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto" },
-    { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment" },
-    { icon: "ruler", label: "Fem Size", desc: "Cek size femoral TKR PS Normmed dari Width, Length, atau Height.", key: "normmedFemoralSizer", action: "normmedFemoralSizer" },
-    { icon: "preTka", label: "Pre-TKA", desc: "Perencanaan pre-operasi TKA: deformitas HKA, rencana potongan femoral dan tibial.", key: "preTka", action: "preTka" },
-    { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder" },
-    { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment" },
-    { icon: "postTHA", label: "PostTHA", desc: "Analisis radiograf pasca-THA: COR, offset, LLD, inclination, dan anteversion.", key: "zakAceta", action: "zakAceta" },
+    { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto", planningGroup: "knee" },
+    { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment", planningGroup: "knee" },
+    { icon: "ruler", label: "Fem Size", desc: "Cek size femoral TKR PS Normmed dari Width, Length, atau Height.", key: "normmedFemoralSizer", action: "normmedFemoralSizer", planningGroup: "knee" },
+    { icon: "preTka", label: "Pre-TKA", desc: "Perencanaan pre-operasi TKA: deformitas HKA, rencana potongan femoral dan tibial.", key: "preTka", action: "preTka", planningGroup: "knee" },
+    { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder", planningGroup: "knee" },
+    { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment", planningGroup: "hip" },
+    { icon: "postTHA", label: "PostTHA", desc: "Analisis radiograf pasca-THA: COR, offset, LLD, inclination, dan anteversion.", key: "zakAceta", action: "zakAceta", planningGroup: "hip" },
     { icon: "brush", label: "Brush", desc: "Gunakan brush untuk hapus/blur area tertentu pada gambar atau layer.", key: "brush", action: "brushTool", disabled: !image },
-    { icon: "dorr", label: "Dorr CI", desc: "Hitung cortical index untuk klasifikasi kanal femur Dorr A/B/C.", key: "dorr", action: "dorr" },
+    { icon: "dorr", label: "Dorr CI", desc: "Hitung cortical index untuk klasifikasi kanal femur Dorr A/B/C.", key: "dorr", action: "dorr", planningGroup: "hip" },
   ];
   const simpleActionToolGroups = [
     {
@@ -19959,8 +19995,8 @@ export default function XrayCalibrationWorkspace({
       ),
     },
     {
-      key: "planning",
-      label: "Planning",
+      key: "planningKnee",
+      label: "Knee Planning",
       items: simpleToolMenuItems.filter((item) =>
         [
           "hkaAuto",
@@ -19968,6 +20004,14 @@ export default function XrayCalibrationWorkspace({
           "normmedFemoralSizer",
           "preTka",
           "guideBuilder",
+        ].includes(item.key),
+      ),
+    },
+    {
+      key: "planningHip",
+      label: "Hip Planning",
+      items: simpleToolMenuItems.filter((item) =>
+        [
           "cupAssessment",
           "zakAceta",
           "dorr",
@@ -20006,7 +20050,7 @@ export default function XrayCalibrationWorkspace({
     if (item.action === "cupAssessment") { setShowCupAssessment((v) => !v); return; }
     if (item.action === "zakAceta") { setPostThaAssessmentOpen((v) => !v); return; }
     if (item.action === "preTka") { setPreTkaAssessmentOpen((v) => !v); return; }
-    if (item.action === "normmedFemoralSizer") { setNormmedFemoralSizerOpen(true); return; }
+    if (item.action === "normmedFemoralSizer") { openNormmedFemoralSizer(); return; }
     if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
     if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
     if (item.action === "dorr") { setSimpleDesktopDorrOpen((v) => !v); return; }
@@ -33556,9 +33600,7 @@ export default function XrayCalibrationWorkspace({
                       onMove={() => handleToolChange("pan")}
                       onOpenTka={() => openSimplePlanningModal("tka")}
                       onOpenHip={() => openSimplePlanningModal("hip")}
-                      onNormmedFemoralSizer={() =>
-                        setNormmedFemoralSizerOpen(true)
-                      }
+                      onNormmedFemoralSizer={openNormmedFemoralSizer}
                       onTraumaPlanning={() => setTraumaPlanningOpen(true)}
                       onLandmarkAnnotation={() => setLandmarkAnnotationOpen(true)}
                       onHistory={undoHistory}
@@ -34447,52 +34489,57 @@ export default function XrayCalibrationWorkspace({
                           </span>
                           <span className="text-[10px] text-cyan-500">▶</span>
                         </button>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          {/* TKA */}
-                          <button type="button" onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("tka"); }}
-                            className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
-                            <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M10 2 L10 11 Q10 15 16 15 Q22 15 22 11 L22 2"/>
-                              <rect x="9" y="15" width="14" height="2.5" rx="1" fill="currentColor" opacity="0.22" strokeWidth="1.4"/>
-                              <path d="M13 17.5 L12 30"/><path d="M19 17.5 L20 30"/>
-                              <ellipse cx="7" cy="13" rx="2.5" ry="3.5" fill="currentColor" opacity="0.12" strokeWidth="1.3"/>
-                            </svg>
-                            <span className="text-[10px] font-black">TKA</span>
-                          </button>
-                          {/* HIP/THA */}
-                          <button
-                            type="button"
-                            title="Hip planning: panduan cup, stem, offset, LLD, dan parameter templating."
-                            aria-label="Hip planning"
-                            onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); }}
-                            className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
-                            <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M4 10 Q3 4 10 3 Q16 2 16 10"/>
-                              <path d="M28 10 Q29 4 22 3 Q16 2 16 10"/>
-                              <path d="M10 10 Q10 18 16 19 Q22 18 22 10"/>
-                              <circle cx="16" cy="14" r="4.5" fill="currentColor" opacity="0.15" strokeWidth="1.4"/>
-                              <path d="M19.5 17.5 L23 28"/>
-                            </svg>
-                            <span className="text-[10px] font-black">HIP</span>
-                          </button>
-                          <button type="button" onClick={() => { setSimpleMobilePanel(null); setNormmedFemoralSizerOpen(true); }}
-                            className="col-span-2 flex items-center justify-center gap-2 rounded-[18px] border border-cyan-200 bg-cyan-50 py-2.5 text-[10px] font-black text-cyan-800 shadow-[2px_2px_6px_rgba(14,165,233,0.16)]">
-                            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M3 13V3h10" />
-                              <path d="M5 11h6M5 8h5M5 5h4" />
-                            </svg>
-                            Cek Femoral Size Normmed
-                          </button>
-                          {/* Guide */}
-                          <button type="button" onClick={() => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); }}
-                            className="col-span-2 flex items-center justify-center gap-2 rounded-[18px] border border-white/70 bg-[#eef2f7] py-2.5 text-[10px] font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
-                            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 8 H14 M8 2 V14" strokeDasharray="2 1.5"/><rect x="1" y="1" width="14" height="14" rx="3"/></svg>
-                            Guide / Panduan
-                          </button>
+                        <div className="mt-2 space-y-2">
+                          <section className="rounded-[18px] border border-cyan-200/70 bg-cyan-50/45 p-2">
+                            <p className="mb-1.5 px-1 text-[8px] font-black uppercase tracking-widest text-cyan-700">Knee</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button type="button" onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("tka"); }}
+                                className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                                <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M10 2 L10 11 Q10 15 16 15 Q22 15 22 11 L22 2"/>
+                                  <rect x="9" y="15" width="14" height="2.5" rx="1" fill="currentColor" opacity="0.22" strokeWidth="1.4"/>
+                                  <path d="M13 17.5 L12 30"/><path d="M19 17.5 L20 30"/>
+                                  <ellipse cx="7" cy="13" rx="2.5" ry="3.5" fill="currentColor" opacity="0.12" strokeWidth="1.3"/>
+                                </svg>
+                                <span className="text-[10px] font-black">TKA</span>
+                              </button>
+                              <button type="button" onClick={() => { setSimpleMobilePanel(null); openNormmedFemoralSizer(); }}
+                                className="flex flex-col items-center justify-center gap-1 rounded-[18px] border border-cyan-200 bg-cyan-50 py-3 text-[10px] font-black text-cyan-800 shadow-[2px_2px_6px_rgba(14,165,233,0.16)]">
+                                <svg className="h-5 w-5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 13V3h10" />
+                                  <path d="M5 11h6M5 8h5M5 5h4" />
+                                </svg>
+                                <span>Fem Size</span>
+                              </button>
+                              <button type="button" onClick={() => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); }}
+                                className="col-span-2 flex items-center justify-center gap-2 rounded-[18px] border border-white/70 bg-[#eef2f7] py-2.5 text-[10px] font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                                <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 8 H14 M8 2 V14" strokeDasharray="2 1.5"/><rect x="1" y="1" width="14" height="14" rx="3"/></svg>
+                                Guide / Panduan
+                              </button>
+                            </div>
+                          </section>
+                          <section className="rounded-[18px] border border-violet-200/70 bg-violet-50/45 p-2">
+                            <p className="mb-1.5 px-1 text-[8px] font-black uppercase tracking-widest text-violet-700">Hip</p>
+                            <button
+                              type="button"
+                              title="Hip planning: panduan cup, stem, offset, LLD, dan parameter templating."
+                              aria-label="Hip planning"
+                              onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("hip"); }}
+                              className="flex w-full flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
+                              <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M4 10 Q3 4 10 3 Q16 2 16 10"/>
+                                <path d="M28 10 Q29 4 22 3 Q16 2 16 10"/>
+                                <path d="M10 10 Q10 18 16 19 Q22 18 22 10"/>
+                                <circle cx="16" cy="14" r="4.5" fill="currentColor" opacity="0.15" strokeWidth="1.4"/>
+                                <path d="M19.5 17.5 L23 28"/>
+                              </svg>
+                              <span className="text-[10px] font-black">HIP</span>
+                            </button>
+                          </section>
                         </div>
                         {/* HKA mode buttons */}
                         <div className="mt-2 grid gap-1.5">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">HKA · FTA · JLA</p>
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Knee Alignment · HKA · FTA · JLA</p>
                           {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => {
                             const isActive = tool === "hkaAuto" && hkaInputMode === modeItem.key;
                             const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
@@ -36437,7 +36484,10 @@ export default function XrayCalibrationWorkspace({
                   ) : null}
                 </AnimatePresence>
 
-                {!simpleMobilePanel && !isTabletViewport ? (
+                {isSimpleUiMode &&
+                isMobileViewport &&
+                !simpleMobilePanel &&
+                !isTabletViewport ? (
                   <MobileNavigation
                     className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)] z-50 px-2"
                     tabs={mobileNavigationTabs}
