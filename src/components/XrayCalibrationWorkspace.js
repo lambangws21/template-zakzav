@@ -1169,6 +1169,7 @@ export default function XrayCalibrationWorkspace({
   const brushCursorOuterRef = useRef(null);
   const brushCursorDotRef = useRef(null);
   const hoverScanLastRef = useRef(0);
+  const touchHoverDismissTimerRef = useRef(null);
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
   // Cup assessment drawn directly on canvas (image-space coords)
@@ -11611,6 +11612,131 @@ export default function XrayCalibrationWorkspace({
     [applyMainImageToWorkspace, isSimpleUiMode, openSimpleCalibrationModal],
   );
 
+  const clearTouchHoverDismissTimer = useCallback(() => {
+    if (
+      typeof window !== "undefined" &&
+      touchHoverDismissTimerRef.current !== null
+    ) {
+      window.clearTimeout(touchHoverDismissTimerRef.current);
+      touchHoverDismissTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(
+    () => () => clearTouchHoverDismissTimer(),
+    [clearTouchHoverDismissTimer],
+  );
+
+  const clearTouchHoverDetails = useCallback(() => {
+    clearTouchHoverDismissTimer();
+    setHoveredMeasurementInfo(null);
+    setLineLabelHoverInfo(null);
+    setSizingLineHoverInfo(null);
+  }, [clearTouchHoverDismissTimer]);
+
+  const scheduleTouchHoverDismiss = useCallback(() => {
+    clearTouchHoverDismissTimer();
+    if (typeof window === "undefined") return;
+    touchHoverDismissTimerRef.current = window.setTimeout(() => {
+      setHoveredMeasurementInfo(null);
+      setLineLabelHoverInfo(null);
+      setSizingLineHoverInfo(null);
+      touchHoverDismissTimerRef.current = null;
+    }, 4200);
+  }, [clearTouchHoverDismissTimer]);
+
+  const showTouchHoverDetails = useCallback(
+    (screenPoint, imagePoint) => {
+      if (!isSimpleUiMode || !isMobileViewport) return false;
+      const tooltipPoint = {
+        screenX: Math.round(screenPoint.x),
+        screenY: Math.round(screenPoint.y),
+      };
+
+      const hitLineLabelId = findLineLabelByPoint(screenPoint);
+      const hitLineId =
+        hitLineLabelId !== null && hitLineLabelId !== undefined
+          ? hitLineLabelId
+          : findClosestLineId(imagePoint);
+      const hitLine =
+        hitLineId !== null && hitLineId !== undefined
+          ? lines.find((line) => line.id === hitLineId)
+          : null;
+
+      if (hitLine) {
+        const sizingIntent = getSizingLineIntent(hitLine);
+        setHoveredMeasurementInfo(null);
+        if (sizingIntent) {
+          setLineLabelHoverInfo(null);
+          setSizingLineHoverInfo({ lineId: hitLine.id, ...tooltipPoint });
+        } else {
+          setSizingLineHoverInfo(null);
+          setLineLabelHoverInfo({ lineId: hitLine.id, ...tooltipPoint });
+        }
+        scheduleTouchHoverDismiss();
+        return true;
+      }
+
+      const hitHkaLabelId = findHkaLabelByPoint(screenPoint);
+      const hitHkaId =
+        hitHkaLabelId !== null && hitHkaLabelId !== undefined
+          ? hitHkaLabelId
+          : findClosestHkaId(imagePoint);
+      if (hitHkaId !== null && hitHkaId !== undefined) {
+        setLineLabelHoverInfo(null);
+        setSizingLineHoverInfo(null);
+        setHoveredMeasurementInfo({ type: "hka", id: hitHkaId });
+        scheduleTouchHoverDismiss();
+        return true;
+      }
+
+      const hitAngleLabelId = findAngleLabelByPoint(screenPoint);
+      const hitAngleId =
+        hitAngleLabelId !== null && hitAngleLabelId !== undefined
+          ? hitAngleLabelId
+          : findClosestAngleId(imagePoint);
+      if (hitAngleId !== null && hitAngleId !== undefined) {
+        setLineLabelHoverInfo(null);
+        setSizingLineHoverInfo(null);
+        setHoveredMeasurementInfo({ type: "angle", id: hitAngleId });
+        scheduleTouchHoverDismiss();
+        return true;
+      }
+
+      const hitCircleLabelId = findCircleLabelByPoint(screenPoint);
+      const hitCircleId =
+        hitCircleLabelId !== null && hitCircleLabelId !== undefined
+          ? hitCircleLabelId
+          : findClosestCircleId(imagePoint);
+      if (hitCircleId !== null && hitCircleId !== undefined) {
+        setLineLabelHoverInfo(null);
+        setSizingLineHoverInfo(null);
+        setHoveredMeasurementInfo({ type: "circle", id: hitCircleId });
+        scheduleTouchHoverDismiss();
+        return true;
+      }
+
+      clearTouchHoverDetails();
+      return false;
+    },
+    [
+      clearTouchHoverDetails,
+      findAngleLabelByPoint,
+      findCircleLabelByPoint,
+      findClosestAngleId,
+      findClosestCircleId,
+      findClosestHkaId,
+      findClosestLineId,
+      findHkaLabelByPoint,
+      findLineLabelByPoint,
+      getSizingLineIntent,
+      isMobileViewport,
+      isSimpleUiMode,
+      lines,
+      scheduleTouchHoverDismiss,
+    ],
+  );
+
   const handlePointerDown = useCallback(
     (event) => {
       if (!image) return;
@@ -11631,6 +11757,10 @@ export default function XrayCalibrationWorkspace({
       const isAdditiveLayerSelection =
         !isTouchLikePointer &&
         (event.shiftKey || event.metaKey || event.ctrlKey);
+
+      if (isTouchLikePointer && isSimpleUiMode && isMobileViewport) {
+        showTouchHoverDetails(point, imagePoint);
+      }
 
       if (event.button === 1 || event.button === 2) {
         interactionRef.current = {
@@ -14128,6 +14258,7 @@ export default function XrayCalibrationWorkspace({
       setHistoryPaused,
       shouldBlockTransformHandle,
       screenToImagePoint,
+      showTouchHoverDetails,
       startMobileLongPress,
       startMobilePinchGesture,
       syncMobileCanvasSelection,
