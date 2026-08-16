@@ -308,6 +308,14 @@ body {
 [data-theme="dark"] input::placeholder,
 [data-theme="dark"] textarea::placeholder { color: #4d6580 !important; }
 
+@media (max-width: 768px) {
+  input:not([type="color"]):not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* ── Dividers ────────────────────────────────────────────────────────────── */
 [data-theme="dark"] .divide-gray-200 > * + * { border-color: rgba(255,255,255,0.08) !important; }
 [data-theme="dark"] .divide-slate-200 > * + * { border-color: rgba(255,255,255,0.08) !important; }

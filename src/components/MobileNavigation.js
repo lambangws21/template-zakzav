@@ -85,7 +85,23 @@ const TAB_ACTIVE_COLORS = {
   dorr:        "text-indigo-600",
 };
 
-function Btn({ active, icon: Icon, label, children, className = "", color = "", ...rest }) {
+function Btn({
+  active,
+  icon: Icon,
+  label,
+  children,
+  className = "",
+  color = "",
+  onPointerDown,
+  ...rest
+}) {
+  const handlePointerDown = (event) => {
+    onPointerDown?.(event);
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      navigator.vibrate(8);
+    }
+  };
+
   return (
     <button
       type="button"
@@ -95,6 +111,7 @@ function Btn({ active, icon: Icon, label, children, className = "", color = "", 
       aria-label={label}
       title={label}
       {...rest}
+      onPointerDown={handlePointerDown}
     >
       {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
       {children}
@@ -126,10 +143,53 @@ export default function MobileNavigation({
   const isEditing = canvasMode === "edit";
 
   return (
-    <div className={`w-full ${className}`}>
+    <div className={`pointer-events-none w-full ${className}`}>
       <style>{NAV_STYLES}</style>
 
-      <div className="flex w-full flex-col gap-1.5 rounded-[22px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-1.5 shadow-[var(--soft-shadow-surface)] backdrop-blur-xl">
+      <div className="pointer-events-auto fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+92px)] z-[52] flex max-h-[calc(100dvh-130px)] flex-col items-end gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]">
+        <div className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl">
+          <Btn active={canvasMode === "pan"} icon={Hand} label="Pan" onClick={onPan} className="h-10 w-10" />
+          <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className="h-10 w-10" />
+        </div>
+
+        <AnimatePresence initial={false}>
+          {isEditing && (
+            <motion.div
+              initial={{ opacity: 0, x: 10, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 8, scale: 0.96 }}
+              transition={{ duration: 0.16 }}
+              className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl"
+            >
+              {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]]).map(([mode, Icon, lbl]) => (
+                <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className="h-10 w-10" />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="mnav-tray grid grid-cols-2 gap-0.5 rounded-[18px] p-1 backdrop-blur-xl">
+          <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`h-10 w-10 transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
+          <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`h-10 w-10 transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
+          <Btn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} className="h-10 w-10" />
+          <Btn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} className="h-10 w-10" />
+          <Btn icon={RotateCcw} label="Reset 100%" onClick={onResetZoom} className="h-10 w-10" />
+          <Btn icon={Maximize2} label="Fit" onClick={onFit} className="h-10 w-10" />
+        </div>
+
+        <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
+          <Btn
+            active={canvasLocked}
+            icon={canvasLocked ? Lock : LockOpen}
+            label={canvasLocked ? "Unlock" : "Lock"}
+            onClick={canvasLocked ? onUnlock : onToggleCanvasLock}
+            className="h-10 w-10"
+            color={canvasLocked ? "text-rose-500" : "text-slate-500"}
+          />
+        </div>
+      </div>
+
+      <div className="pointer-events-auto flex w-full flex-col gap-1.5 rounded-[22px] border border-[var(--soft-border)] bg-[rgba(238,242,247,0.72)] p-1.5 shadow-[var(--soft-shadow-surface)] backdrop-blur-xl dark:bg-[rgba(26,36,56,0.72)]">
 
         {/* Row 1 — tabs with icons */}
         <div
@@ -157,58 +217,6 @@ export default function MobileNavigation({
               </button>
             );
           })}
-        </div>
-
-        {/* Row 2 — canvas controls */}
-        <div className="flex items-center gap-1">
-          {/* Pan / Edit toggle */}
-          <div className="mnav-tray flex shrink-0 gap-0.5 rounded-full p-1">
-            <Btn active={canvasMode === "pan"} icon={Hand} label="Pan" onClick={onPan} className="h-8 w-8" />
-            <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className="h-8 w-8" />
-          </div>
-
-          {/* Edit-mode transform controls */}
-          <AnimatePresence initial={false}>
-            {isEditing && (
-              <motion.div
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.18 }}
-                className="mnav-tray flex shrink-0 overflow-hidden gap-0.5 rounded-full p-1"
-              >
-                {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]]).map(([mode, Icon, lbl]) => (
-                  <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className="h-8 w-8" />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Undo / Redo */}
-          <div className="mnav-tray flex shrink-0 gap-0.5 rounded-full p-1">
-            <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`h-8 w-8 transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
-            <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`h-8 w-8 transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
-          </div>
-
-          {/* Zoom controls */}
-          <div className="mnav-tray flex min-w-0 flex-1 gap-0.5 rounded-full p-1">
-            <Btn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} className="h-8 flex-1" />
-            <Btn icon={Maximize2} label="Fit" onClick={onFit} className="h-8 flex-1" />
-            <Btn icon={RotateCcw} label="Reset 100%" onClick={onResetZoom} className="h-8 flex-1" />
-            <Btn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} className="h-8 flex-1" />
-          </div>
-
-          {/* Lock */}
-          <div className="mnav-tray flex shrink-0 gap-0.5 rounded-full p-1">
-            <Btn
-              active={canvasLocked}
-              icon={canvasLocked ? Lock : LockOpen}
-              label={canvasLocked ? "Unlock" : "Lock"}
-              onClick={canvasLocked ? onUnlock : onToggleCanvasLock}
-              className="h-8 w-8"
-              color={canvasLocked ? "text-rose-500" : "text-slate-500"}
-            />
-          </div>
         </div>
 
       </div>

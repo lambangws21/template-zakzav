@@ -655,6 +655,12 @@ export default function XrayCalibrationWorkspace({
   const mobilePlanningGuidesRafUpdaterRef = useRef(null);
   const mobilePrecisionOverlayRafRef = useRef(null);
   const mobilePrecisionOverlayPendingRef = useRef(null);
+  const canvasCupRafRef = useRef(null);
+  const canvasCupRafUpdaterRef = useRef(null);
+  const cropDraftRafRef = useRef(null);
+  const cropDraftRafValueRef = useRef(null);
+  const brushPreviewRafRef = useRef(null);
+  const brushPreviewLayerIdRef = useRef(null);
   const viewportRafRef = useRef(null);
   const pendingViewportUpdateRef = useRef(null);
 
@@ -959,6 +965,8 @@ export default function XrayCalibrationWorkspace({
   const [hoveredMetricKey, setHoveredMetricKey] = useState(null);
   const [hkaSideModalOpen, setHkaSideModalOpen] = useState(false);
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
+  const [mobileMeasureSheetExpanded, setMobileMeasureSheetExpanded] =
+    useState(false);
   const [simpleManagerTab, setSimpleManagerTab] = useState("layer");
   const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
   const [simpleDesktopHkaOpen, setSimpleDesktopHkaOpen] = useState(false);
@@ -1024,6 +1032,58 @@ export default function XrayCalibrationWorkspace({
       );
     };
   }, [isSimpleUiMode]);
+
+  useEffect(() => {
+    if (
+      !isSimpleUiMode ||
+      !isMobileViewport ||
+      !idleTutorialVisible ||
+      typeof window === "undefined"
+    ) {
+      return undefined;
+    }
+
+    const dismissTimer = window.setTimeout(() => {
+      setIdleTutorialVisible(false);
+    }, 5200);
+
+    return () => window.clearTimeout(dismissTimer);
+  }, [
+    idleTutorialTick,
+    idleTutorialVisible,
+    isMobileViewport,
+    isSimpleUiMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isSimpleUiMode ||
+      typeof window === "undefined" ||
+      !window.visualViewport
+    ) {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const updateKeyboardOffset = () => {
+      const vv = window.visualViewport;
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty(
+        "--mobile-keyboard-offset",
+        `${Math.round(offset)}px`,
+      );
+    };
+
+    updateKeyboardOffset();
+    window.visualViewport.addEventListener("resize", updateKeyboardOffset);
+    window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
+
+    return () => {
+      window.visualViewport.removeEventListener("resize", updateKeyboardOffset);
+      window.visualViewport.removeEventListener("scroll", updateKeyboardOffset);
+      root.style.removeProperty("--mobile-keyboard-offset");
+    };
+  }, [isSimpleUiMode]);
   const [mobileObjectSettingsOpen, setMobileObjectSettingsOpen] =
     useState(false);
   useEffect(() => { if (!mobileObjectSettingsOpen) setMobileObjPanelPos(null); }, [mobileObjectSettingsOpen]);
@@ -1075,6 +1135,43 @@ export default function XrayCalibrationWorkspace({
   const [cupInfoModalOpen, setCupInfoModalOpen] = useState(false);
   const [cupInfoMinimized, setCupInfoMinimized] = useState(false);
   // { inclination, anteversion, side, zone, savedAt }
+
+  const scheduleCanvasCupUpdate = useCallback((updater) => {
+    if (typeof window === "undefined") {
+      setCanvasCup(updater);
+      return;
+    }
+
+    canvasCupRafUpdaterRef.current = updater;
+    if (canvasCupRafRef.current !== null) return;
+
+    canvasCupRafRef.current = window.requestAnimationFrame(() => {
+      const pendingUpdater = canvasCupRafUpdaterRef.current;
+      canvasCupRafUpdaterRef.current = null;
+      canvasCupRafRef.current = null;
+      if (pendingUpdater) {
+        setCanvasCup(pendingUpdater);
+      }
+    });
+  }, []);
+
+  const scheduleCropDraftPointsUpdate = useCallback((nextDraft) => {
+    if (typeof window === "undefined") {
+      setCropDraftPoints(nextDraft);
+      return;
+    }
+
+    cropDraftRafValueRef.current = nextDraft;
+    if (cropDraftRafRef.current !== null) return;
+
+    cropDraftRafRef.current = window.requestAnimationFrame(() => {
+      const pendingDraft = cropDraftRafValueRef.current;
+      cropDraftRafValueRef.current = null;
+      cropDraftRafRef.current = null;
+      setCropDraftPoints(pendingDraft);
+    });
+  }, []);
+
   const [simpleQuickPanelMinimized, setSimpleQuickPanelMinimized] =
     useState(false);
   const [simpleToolPanelMinimized, setSimpleToolPanelMinimized] =
@@ -2373,6 +2470,9 @@ export default function XrayCalibrationWorkspace({
         mobileAnnotationsRafRef,
         mobilePlanningGuidesRafRef,
         mobilePrecisionOverlayRafRef,
+        canvasCupRafRef,
+        cropDraftRafRef,
+        brushPreviewRafRef,
       ].forEach((rafRef) => {
         if (rafRef.current !== null) {
           window.cancelAnimationFrame(rafRef.current);
@@ -2388,6 +2488,9 @@ export default function XrayCalibrationWorkspace({
         mobileAnnotationsRafUpdaterRef,
         mobilePlanningGuidesRafUpdaterRef,
         mobilePrecisionOverlayPendingRef,
+        canvasCupRafUpdaterRef,
+        cropDraftRafValueRef,
+        brushPreviewLayerIdRef,
       ].forEach((pendingRef) => {
         pendingRef.current = null;
       });
@@ -13995,7 +14098,9 @@ export default function XrayCalibrationWorkspace({
         const sinA = Math.sin(angle);
 
         if (drag.handle === "center") {
-          setCanvasCup(prev => ({ ...prev, cx: cx + dImgX, cy: cy + dImgY }));
+          scheduleCanvasCupUpdate((prev) =>
+            prev ? { ...prev, cx: cx + dImgX, cy: cy + dImgY } : prev,
+          );
         } else if (drag.handle === "top" || drag.handle === "bottom") {
           const sign = drag.handle === "top" ? -1 : 1;
           const tipX = cx + sign * cosA * a + dImgX;
@@ -14004,12 +14109,16 @@ export default function XrayCalibrationWorkspace({
           const dy = tipY - cy;
           const newA = Math.max(8, Math.sqrt(dx * dx + dy * dy));
           const newAngle = drag.handle === "top" ? Math.atan2(dy, dx) + Math.PI : Math.atan2(dy, dx);
-          setCanvasCup(prev => ({
-            ...prev,
-            a: newA,
-            b: Math.min(prev.b, newA * 0.9),
-            angle: newAngle,
-          }));
+          scheduleCanvasCupUpdate((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  a: newA,
+                  b: Math.min(prev.b, newA * 0.9),
+                  angle: newAngle,
+                }
+              : prev,
+          );
         } else if (drag.handle === "sideR" || drag.handle === "sideL") {
           const sign = drag.handle === "sideR" ? 1 : -1;
           const tipX = cx + sign * sinA * b + dImgX;
@@ -14017,7 +14126,11 @@ export default function XrayCalibrationWorkspace({
           const dx = tipX - cx;
           const dy = tipY - cy;
           const proj = Math.abs(dx * sinA - dy * cosA);
-          setCanvasCup(prev => ({ ...prev, b: Math.max(4, Math.min(a * 0.9, proj)) }));
+          scheduleCanvasCupUpdate((prev) =>
+            prev
+              ? { ...prev, b: Math.max(4, Math.min(a * 0.9, proj)) }
+              : prev,
+          );
         }
         return;
       }
@@ -14028,7 +14141,7 @@ export default function XrayCalibrationWorkspace({
         const imagePoint = screenToImagePoint(point.x, point.y);
         interactionRef.current.endX = imagePoint.x;
         interactionRef.current.endY = imagePoint.y;
-        setCropDraftPoints({
+        scheduleCropDraftPointsUpdate({
           startX: interactionRef.current.startX,
           startY: interactionRef.current.startY,
           endX: imagePoint.x,
@@ -14371,19 +14484,36 @@ export default function XrayCalibrationWorkspace({
           const radiusInImage = brushSize / view.scale;
           const canvasRadius = radiusInImage * (strokeLayer.sourceWidth / Math.max(1, getLayerDisplaySize(strokeLayer).width));
           applyBrushToCanvas(workCanvas, canvasPt, canvasRadius, brushMode, brushStrength, brushColor);
-          scheduleCutLayersUpdate((prev) => {
-            if (interactionRef.current.mode !== "brush-stroke" || interactionRef.current.layerId !== layerId) {
-              return prev;
-            }
-            return prev.map((l) => {
-              if (l.id !== layerId) return l;
-              const copyCanvas = document.createElement("canvas");
-              copyCanvas.width = workCanvas.width;
-              copyCanvas.height = workCanvas.height;
-              copyCanvas.getContext("2d").drawImage(workCanvas, 0, 0);
-              return { ...l, image: copyCanvas, sourceX: 0, sourceY: 0 };
+          brushPreviewLayerIdRef.current = layerId;
+          if (typeof window === "undefined") {
+            setCutLayers((prev) =>
+              prev.map((l) =>
+                l.id === layerId ? { ...l, image: workCanvas, sourceX: 0, sourceY: 0 } : l,
+              ),
+            );
+          } else if (brushPreviewRafRef.current === null) {
+            brushPreviewRafRef.current = window.requestAnimationFrame(() => {
+              const previewLayerId = brushPreviewLayerIdRef.current;
+              brushPreviewLayerIdRef.current = null;
+              brushPreviewRafRef.current = null;
+              if (
+                !previewLayerId ||
+                interactionRef.current.mode !== "brush-stroke" ||
+                interactionRef.current.layerId !== previewLayerId
+              ) {
+                return;
+              }
+              const previewCanvas = brushWorkCanvasRef.current;
+              if (!previewCanvas) return;
+              setCutLayers((prev) =>
+                prev.map((l) =>
+                  l.id === previewLayerId
+                    ? { ...l, image: previewCanvas, sourceX: 0, sourceY: 0 }
+                    : l,
+                ),
+              );
             });
-          });
+          }
         }
         return;
       }
@@ -15283,7 +15413,9 @@ export default function XrayCalibrationWorkspace({
       resolveSnapWithPreview,
       scheduleAnnotationsUpdate,
       scheduleAnglesUpdate,
+      scheduleCanvasCupUpdate,
       scheduleCirclesUpdate,
+      scheduleCropDraftPointsUpdate,
       scheduleCutLayersUpdate,
       scheduleHkaUpdate,
       scheduleLinesUpdate,
@@ -15319,6 +15451,11 @@ export default function XrayCalibrationWorkspace({
     if (completedInteractionMode === "cropSelect") {
       const { startX, startY, endX, endY } = interactionRef.current;
       interactionRef.current = { mode: null };
+      if (typeof window !== "undefined" && cropDraftRafRef.current !== null) {
+        window.cancelAnimationFrame(cropDraftRafRef.current);
+        cropDraftRafRef.current = null;
+      }
+      cropDraftRafValueRef.current = null;
       setCropDraftPoints(null);
       setCropToolActive(false);
 
@@ -15348,6 +15485,11 @@ export default function XrayCalibrationWorkspace({
       const { layerId } = interactionRef.current;
       const workCanvas = brushWorkCanvasRef.current;
       interactionRef.current = { mode: null };
+      if (typeof window !== "undefined" && brushPreviewRafRef.current !== null) {
+        window.cancelAnimationFrame(brushPreviewRafRef.current);
+        brushPreviewRafRef.current = null;
+      }
+      brushPreviewLayerIdRef.current = null;
       brushWorkCanvasRef.current = null;
       brushWorkLayerIdRef.current = null;
       setHistoryPaused(false);
@@ -19152,6 +19294,11 @@ export default function XrayCalibrationWorkspace({
       setMobileObjectSettingsOpen(false);
     }
   }, [simpleMobilePanel]);
+  useEffect(() => {
+    if (simpleMobilePanel !== "tools") {
+      setMobileMeasureSheetExpanded(false);
+    }
+  }, [simpleMobilePanel]);
   const openImageProcessingModal = useCallback(() => {
     if (!image) {
       setNotice("Upload X-ray dulu sebelum membuka ZakVisor.");
@@ -19659,6 +19806,222 @@ export default function XrayCalibrationWorkspace({
     if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
     handleToolChange(item.key);
   };
+  const mobileMeasurementCategories = [
+    {
+      key: "basic",
+      label: "Basic Measurement",
+      items: [
+        {
+          key: "line",
+          title: "Ruler / Distance",
+          description: "Pengukuran jarak linear. Tap 2 titik pada X-ray.",
+          hint: "Line = tap 2 titik",
+          icon: PencilLine,
+          tool: "draw",
+        },
+        {
+          key: "angle",
+          title: "Angle / Goniometer",
+          description: "Sudut klinis, Cobb angle, atau mechanical axis angle.",
+          hint: "Angle = tap 3 titik",
+          icon: DraftingCompass,
+          tool: "angle",
+        },
+        {
+          key: "circle",
+          title: "Circle / Diameter",
+          description: "Tap pusat lalu tap tepi untuk diameter head, marker, atau referensi bundar.",
+          hint: "Circle = pusat + tepi",
+          icon: CircleDot,
+          tool: "circle",
+        },
+        {
+          key: "text",
+          title: "Text Note",
+          description: "Tap posisi di canvas, lalu isi teks dari sheet input.",
+          hint: "Text = tap posisi",
+          icon: MessageSquare,
+          tool: "annotation",
+        },
+        {
+          key: "calibration",
+          title: "Calibration Marker",
+          description: "Pilih marker/ruler, gambar garis referensi, lalu isi nilai real.",
+          hint: "Marker + 2 titik",
+          icon: Target,
+          action: "calibration",
+        },
+      ],
+    },
+    {
+      key: "hip",
+      label: "Hip & Joint Planning",
+      items: [
+        {
+          key: "lld",
+          title: "Leg Length Discrepancy (LLD)",
+          description: "Gunakan line dari acuan pelvis ke landmark femur untuk membandingkan selisih panjang tungkai.",
+          hint: "LLD pakai Line",
+          icon: RulerDimensionLine,
+          tool: "draw",
+          notice:
+            "LLD aktif: buat line acuan pelvis ke landmark femur, lalu bandingkan sisi kanan-kiri.",
+        },
+        {
+          key: "acetabular",
+          title: "Acetabular Inclination",
+          description: "Ukur sudut kemiringan cup/acetabulum dengan 3 titik.",
+          hint: "Cup angle",
+          icon: CircleDot,
+          tool: "angle",
+          notice:
+            "Acetabular Inclination aktif: tap dua acuan horizontal/teardrop dan satu garis cup untuk menghitung sudut.",
+        },
+        {
+          key: "nsa",
+          title: "Femoral Neck Shaft Angle",
+          description: "Buat sudut antara axis neck femur dan axis shaft femur.",
+          hint: "NSA = Angle",
+          icon: Bone,
+          tool: "angle",
+          notice:
+            "NSA aktif: tap titik axis femoral neck, vertex center head/neck, lalu axis shaft femur.",
+        },
+        {
+          key: "center",
+          title: "Center Finder",
+          description: "Klik 3 titik pada tepi struktur bundar untuk menghitung center otomatis.",
+          hint: "3 titik tepi",
+          icon: SplinePointer,
+          action: "centerFinder",
+        },
+      ],
+    },
+    {
+      key: "alignment",
+      label: "Trauma & Alignment",
+      items: [
+        {
+          key: "hka",
+          title: "HKA / Mechanical Axis",
+          description: "Wizard titik femoral head, knee center, dan ankle center untuk varus/valgus.",
+          hint: "HKA guided",
+          icon: Target,
+          action: "hka",
+          hkaMode: "full",
+        },
+        {
+          key: "axis",
+          title: "Axis Builder",
+          description: "Dua titik proximal dan dua titik distal untuk membuat axis dari midpoint.",
+          hint: "2 + 2 titik",
+          icon: Spline,
+          action: "axisBuilder",
+        },
+        {
+          key: "guide",
+          title: "Guide Parallel / Perpendicular",
+          description: "Buat garis bantu parallel atau perpendicular dari line/guide referensi.",
+          hint: "Pilih acuan dulu",
+          icon: SlidersHorizontal,
+          action: "guideBuilder",
+        },
+        {
+          key: "landmarks",
+          title: "Anatomical Landmarks",
+          description: "Tandai landmark tulang untuk dokumentasi dan panduan templating.",
+          hint: "Landmark",
+          icon: SplinePointer,
+          action: "landmarks",
+        },
+      ],
+    },
+  ];
+  const mobileMeasurementQuickItems = [
+    mobileMeasurementCategories[0].items[0],
+    mobileMeasurementCategories[0].items[1],
+    mobileMeasurementCategories[2].items[0],
+    mobileMeasurementCategories[0].items[3],
+  ];
+  const isMobileMeasurementItemActive = (item) => {
+    if (item.action === "hka") return tool === "hkaAuto";
+    if (item.action === "centerFinder") return tool === "centerFinder";
+    if (item.action === "axisBuilder") return tool === "axisBuilder";
+    if (item.action === "guideBuilder") return tool === "guideBuilder";
+    if (item.action === "landmarks") return landmarkAnnotationOpen;
+    if (item.action === "calibration") return simpleCalibrationModalOpen;
+    return item.tool ? tool === item.tool : false;
+  };
+  const activateMobileMeasurementItem = (item) => {
+    if (!item) return;
+    setSimpleMobilePanel(null);
+    setMobileCanvasMode("edit");
+    setMobileToolMode("move");
+    if (item.action === "calibration") {
+      openSimpleCalibrationModal(
+        "Wizard kalibrasi: pilih metode, atur ketebalan garis, gambar garis marker/ruler, lalu isi nilai referensi.",
+      );
+      return;
+    }
+    if (item.action === "landmarks") {
+      setLandmarkAnnotationOpen(true);
+      setNotice("Landmark Annotation aktif. Pilih landmark lalu tap posisi pada X-ray.");
+      return;
+    }
+    if (item.action === "hka") {
+      handleHkaModeChange(item.hkaMode || "full");
+      handleToolChange("hkaAuto");
+      return;
+    }
+    if (item.action === "centerFinder") {
+      handleToolChange("centerFinder");
+      return;
+    }
+    if (item.action === "axisBuilder") {
+      handleToolChange("axisBuilder");
+      return;
+    }
+    if (item.action === "guideBuilder") {
+      handleToolChange("guideBuilder");
+      return;
+    }
+    if (item.tool) {
+      handleToolChange(item.tool);
+      const canShowItemNotice =
+        hasCalibration || item.tool === "draw" || item.tool === "annotation";
+      if (item.notice && canShowItemNotice) {
+        setNotice(item.notice);
+      }
+    }
+  };
+  const mobileMeasurementToolActive = [
+    "draw",
+    "angle",
+    "circle",
+    "annotation",
+    "hkaAuto",
+    "centerFinder",
+    "axisBuilder",
+    "guideBuilder",
+  ].includes(tool);
+  const hasActiveMeasurementDraft = Boolean(
+    draftLine ||
+      draftAnglePoints.length ||
+      draftCirclePoints.length ||
+      draftHkaPoints.length ||
+      draftCenterFinderPoints.length ||
+      draftAxisBuilderPoints.length,
+  );
+  const clearActiveMeasurementDraft = () => {
+    setDraftLine(null);
+    setDraftAnglePoints([]);
+    setDraftCirclePoints([]);
+    setDraftHkaPoints([]);
+    setDraftCenterFinderPoints([]);
+    setDraftAxisBuilderPoints([]);
+    setGuideBuilderPreviewPoint(null);
+    setNotice("Draft measurement dibersihkan.");
+  };
   const mobileNavigationTabs = [
     {
       id: "upload",
@@ -19701,6 +20064,7 @@ export default function XrayCalibrationWorkspace({
       label: "Measure",
       onClick: () => {
         if (isSimpleUiMode) {
+          setMobileMeasureSheetExpanded(false);
           setSimpleMobilePanel((prev) => (prev === "tools" ? null : "tools"));
           return;
         }
@@ -32855,10 +33219,10 @@ export default function XrayCalibrationWorkspace({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.96 }}
                     transition={PANEL_SPRING}
-                    className={`pointer-events-auto absolute z-[37] ${
+                    className={`pointer-events-auto z-[70] ${
                       isMobileViewport
-                        ? "right-3 bottom-[calc(env(safe-area-inset-bottom)+96px)] left-3"
-                        : "right-5 bottom-5 w-[min(360px,calc(100vw-40px))]"
+                        ? "fixed left-3 right-3 top-[calc(env(safe-area-inset-top)+72px)]"
+                        : "absolute right-5 bottom-5 w-[min(360px,calc(100vw-40px))]"
                     }`}
                   >
                     <div className="overflow-hidden rounded-[22px] border border-cyan-300/70 bg-[linear-gradient(180deg,rgba(8,18,37,0.94)_0%,rgba(15,23,42,0.92)_100%)] text-white shadow-[0_18px_44px_rgba(0,0,0,0.32)] backdrop-blur-xl">
@@ -33316,12 +33680,23 @@ export default function XrayCalibrationWorkspace({
                     animate={{ y: 0 }}
                     exit={{ y: "100%" }}
                     transition={{ type: "spring", damping: 32, stiffness: 380 }}
-                    className="fixed inset-x-0 bottom-0 z-40 flex max-h-[80vh] flex-col overflow-hidden rounded-t-[28px] border border-white/75 bg-[#eef2f7]/98 shadow-[0_-8px_32px_rgba(148,163,184,0.22)] backdrop-blur-xl lg:hidden"
+                    className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl lg:hidden ${
+                      simpleMobilePanel === "tools" && !mobileMeasureSheetExpanded
+                        ? "max-h-[48vh]"
+                        : "max-h-[82vh]"
+                    }`}
                   >
                     <div className="flex shrink-0 items-center justify-center pt-2.5 pb-1.5">
                       <div className="h-1 w-10 rounded-full bg-slate-300/80" />
                     </div>
-                    <div className="overflow-y-auto" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 168px)" }}>
+                    <div
+                      className="overflow-y-auto"
+                      style={{
+                        paddingBottom: `calc(env(safe-area-inset-bottom) + var(--mobile-keyboard-offset,0px) + ${
+                          simpleMobilePanel === "tools" ? 20 : 24
+                        }px)`,
+                      }}
+                    >
                       {simpleMobilePanel === "upload" ? (
                         <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
                           <div className="mb-2.5 flex items-center justify-between">
@@ -33358,42 +33733,169 @@ export default function XrayCalibrationWorkspace({
                           </div>
                         </div>
                       ) : simpleMobilePanel === "tools" ? (
-                      <PanelActions
-                          className="mx-auto"
-                        tools={simpleToolMenuItems}
-                        activeTool={tool}
-                        activeFreeLineMode={freeLineMode}
-                        onMinimize={() => setSimpleMobilePanel(null)}
-                          onSelectTool={(item) => {
-                          if (item.action === "dorr") { setSimpleMobilePanel("dorr"); return; }
-                          if (item.action === "tkaAssessment") { setSimpleMobilePanel(null); setTkaAssessmentOpen((v) => !v); return; }
-                          if (item.action === "preTka") { setSimpleMobilePanel(null); setPreTkaAssessmentOpen((v) => !v); return; }
-                          if (item.action === "normmedFemoralSizer") { setSimpleMobilePanel(null); setNormmedFemoralSizerOpen(true); return; }
-                          setSimpleMobilePanel(null);
-                          setMobileCanvasMode("edit");
-                          if (item.action === "cupAssessment") { setShowCupAssessment(v => !v); return; }
-                          if (item.action === "zakAceta") { setPostThaAssessmentOpen((v) => !v); return; }
-                          if (item.action === "imageProcessing") { openImageProcessingModal(); return; }
-                          if (item.action === "brushTool") { setTool((prev) => prev === "brush" ? getIdleTool() : "brush"); return; }
-                          if (item.freeLineMode) { activateFreeLineMode(item.freeLineMode); return; }
-                          handleToolChange(item.key);
-                        }}
-                        onUndo={() => {
-                          setSimpleMobilePanel(null);
-                          undoHistory();
-                        }}
-                        onRedo={() => {
-                          setSimpleMobilePanel(null);
-                          redoHistory();
-                        }}
-                        canUndo={historyState.undo > 0}
-                        canRedo={historyState.redo > 0}
-                        onCupAssessment={() => { setSimpleMobilePanel(null); setShowCupAssessment(v => !v); }}
-                        cupAssessmentActive={showCupAssessment}
-                        zakAcetaActive={postThaAssessmentOpen}
-                        dorrActive={simpleMobilePanel === "dorr"}
-                        preTkaActive={preTkaAssessmentOpen}
-                      />
+                        <div className="mx-auto w-[min(94vw,430px)] px-3 pb-3 text-[var(--soft-text)]">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-500">
+                                Metode Pengukuran
+                              </p>
+                              <p className="mt-0.5 truncate text-sm font-black text-[var(--soft-text-hi)]">
+                                {mobileMeasureSheetExpanded
+                                  ? "Semua tool measurement"
+                                  : "Quick measurement"}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMobileMeasureSheetExpanded((prev) => !prev)
+                                }
+                                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-3 text-[10px] font-black text-cyan-600 shadow-[var(--soft-shadow-raised)]"
+                              >
+                                {mobileMeasureSheetExpanded ? (
+                                  <Minus className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Plus className="h-3.5 w-3.5" />
+                                )}
+                                {mobileMeasureSheetExpanded ? "Compact" : "Detail"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSimpleMobilePanel(null)}
+                                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-slate-500 shadow-[var(--soft-shadow-raised)]"
+                                aria-label="Tutup measurement"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                            {mobileMeasurementQuickItems.map((item) => {
+                              const Icon = item.icon || PencilLine;
+                              const active = isMobileMeasurementItemActive(item);
+                              return (
+                                <button
+                                  key={item.key}
+                                  type="button"
+                                  onClick={() => activateMobileMeasurementItem(item)}
+                                  className={`flex min-h-[48px] min-w-[104px] items-center gap-2 rounded-[18px] border px-3 text-left transition ${
+                                    active
+                                      ? "border-cyan-300/70 bg-cyan-400/18 text-cyan-100 shadow-[0_8px_20px_rgba(34,211,238,0.12)]"
+                                      : "border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
+                                  }`}
+                                >
+                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8">
+                                    <Icon className="h-4 w-4" />
+                                  </span>
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-[10px] font-black">
+                                      {item.title.split(" / ")[0]}
+                                    </span>
+                                    <span className="block truncate text-[8px] font-bold opacity-65">
+                                      {item.hint}
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="mt-2 rounded-[18px] border border-[var(--soft-border)] [background:var(--soft-inset-bg)] p-2 shadow-[var(--soft-shadow-inset)]">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                Quick Switch
+                              </p>
+                              <p className="truncate text-[9px] font-black text-cyan-500">
+                                {activeCanvasToolLabel}
+                              </p>
+                            </div>
+                            <div className="mt-2 grid grid-cols-4 gap-1.5">
+                              {[
+                                mobileMeasurementCategories[0].items[0],
+                                mobileMeasurementCategories[0].items[1],
+                                mobileMeasurementCategories[0].items[2],
+                                mobileMeasurementCategories[0].items[3],
+                              ].map((item) => {
+                                const active = isMobileMeasurementItemActive(item);
+                                return (
+                                  <button
+                                    key={`quick-${item.key}`}
+                                    type="button"
+                                    onClick={() => activateMobileMeasurementItem(item)}
+                                    className={`min-h-9 rounded-2xl border px-1 text-[9px] font-black ${
+                                      active
+                                        ? "border-cyan-300 bg-cyan-500 text-white"
+                                        : "border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-slate-500"
+                                    }`}
+                                  >
+                                    {item.key === "line"
+                                      ? "Line"
+                                      : item.key === "angle"
+                                        ? "Angle"
+                                        : item.key === "circle"
+                                          ? "Circle"
+                                          : "Text"}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {mobileMeasureSheetExpanded ? (
+                            <div className="mt-3 space-y-3">
+                              {mobileMeasurementCategories.map((category) => (
+                                <section key={category.key}>
+                                  <p className="mb-1.5 px-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+                                    {category.label}
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {category.items.map((item) => {
+                                      const Icon = item.icon || PencilLine;
+                                      const active = isMobileMeasurementItemActive(item);
+                                      return (
+                                        <button
+                                          key={item.key}
+                                          type="button"
+                                          onClick={() =>
+                                            activateMobileMeasurementItem(item)
+                                          }
+                                          className={`flex min-h-[60px] w-full items-center gap-3 rounded-[20px] border px-3 py-2 text-left transition ${
+                                            active
+                                              ? "border-cyan-300/70 bg-cyan-400/16 text-cyan-100"
+                                              : "border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-[var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
+                                          }`}
+                                        >
+                                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/8">
+                                            <Icon className="h-5 w-5" />
+                                          </span>
+                                          <span className="min-w-0 flex-1">
+                                            <span className="block text-[12px] font-black text-[var(--soft-text-hi)]">
+                                              {item.title}
+                                            </span>
+                                            <span className="mt-0.5 block text-[10px] font-semibold leading-4 text-slate-400">
+                                              {item.description}
+                                            </span>
+                                          </span>
+                                          <span className="shrink-0 rounded-full border border-white/10 bg-white/8 px-2 py-1 text-[8px] font-black text-cyan-500">
+                                            {item.hint}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </section>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="mt-2 rounded-[18px] border border-amber-300/35 bg-amber-400/10 px-3 py-2 text-[10px] font-semibold leading-4 text-amber-500">
+                              Compact mode hanya menampilkan tool paling sering dipakai.
+                              Tekan Detail untuk LLD, Acetabular Inclination, NSA,
+                              HKA, Axis Builder, Guide, dan Landmark.
+                            </div>
+                          )}
+                        </div>
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
                         className="w-full"
@@ -35443,64 +35945,124 @@ export default function XrayCalibrationWorkspace({
                   />
                 )}
 
-                <MobileNavigation
-                  className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 px-2 lg:hidden"
-                  tabs={mobileNavigationTabs}
-                  canvasMode={mobileCanvasMode}
-                  toolMode={mobileToolMode}
-                  canvasLocked={mobileCanvasLocked}
-                  onPan={() => {
-                    setSimpleMobilePanel(null);
-                    setMobileCanvasLocked(false);
-                    setMobileCanvasMode("pan");
-                    setMobileToolMode("move");
-                    handleToolChange("pan");
-                  }}
-                onEdit={() => {
-                  setSimpleMobilePanel(null);
-                  setMobileCanvasMode("edit");
-                    setMobileToolMode("move");
-                    handleToolChange("pan");
-                    setNotice("Edit Mode aktif. Tap objek atau titik untuk memilih, lalu geser atau pakai Fine Adjustment.");
-                  }}
-                  onToolModeChange={(nextMode) => {
-                    setSimpleMobilePanel(null);
-                    setMobileCanvasMode("edit");
-                    setMobileToolMode(nextMode);
-                    handleToolChange("pan");
-                    setNotice(
-                      nextMode === "move"
-                        ? "Tool Mode: Geser. Drag badan layer/object untuk memindahkan."
-                        : nextMode === "scale"
-                          ? "Tool Mode: Size. Drag badan layer atau handle untuk resize."
-                          : "Tool Mode: Putar. Drag badan layer atau handle rotate untuk memutar.",
-                    );
-                  }}
-                  onToggleCanvasLock={() => {
-                    setMobileCanvasLocked((prev) => {
-                      const next = !prev;
-                      if (next) {
-                        setMobileCanvasMode("edit");
-                        setNotice("Lock Canvas aktif. Canvas tidak ikut bergerak saat edit line/template.");
-                      } else {
-                        setNotice("Lock Canvas mati. Pan dan pinch canvas aktif kembali.");
-                      }
-                      return next;
-                    });
-                  }}
-                  onZoomIn={() => zoomBy(1.15)}
-                  onZoomOut={() => zoomBy(1 / 1.15)}
-                  onResetZoom={resetZoomTo100}
-                  onFit={fitImageToViewport}
-                  onUndo={undoHistory}
-                  onRedo={redoHistory}
-                  onUnlock={() => {
-                    setMobileCanvasLocked(false);
-                    resetCanvasInteractionState();
-                  }}
-                canUndo={historyState.undo > 0}
-                canRedo={historyState.redo > 0}
-              />
+                <AnimatePresence>
+                  {isSimpleUiMode &&
+                  isMobileViewport &&
+                  !simpleMobilePanel &&
+                  mobileMeasurementToolActive ? (
+                    <motion.div
+                      key="mobile-measure-quick-toolbar"
+                      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                      transition={MOBILE_PANEL_TRANSITION}
+                      className="pointer-events-auto fixed left-3 right-3 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+74px)] z-[49] rounded-[20px] border border-[var(--soft-border)] bg-[rgba(15,23,42,0.78)] px-2.5 py-2 text-white shadow-[0_10px_28px_rgba(2,6,23,0.28)] backdrop-blur-xl lg:hidden"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSimpleMobilePanel("tools");
+                            setMobileMeasureSheetExpanded(false);
+                          }}
+                          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 text-left"
+                        >
+                          <Target className="h-4 w-4 shrink-0 text-cyan-300" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-[10px] font-black uppercase tracking-wider text-cyan-200">
+                              Measure aktif
+                            </span>
+                            <span className="block truncate text-[11px] font-black">
+                              {activeCanvasToolLabel}
+                            </span>
+                          </span>
+                        </button>
+                        {selectedLine ? (
+                          <button
+                            type="button"
+                            onClick={toggleSelectedLineLock}
+                            className={`min-h-9 rounded-2xl border px-3 text-[10px] font-black ${
+                              isSelectedLineLocked
+                                ? "border-amber-300/50 bg-amber-400/16 text-amber-100"
+                                : "border-white/10 bg-white/8 text-slate-100"
+                            }`}
+                          >
+                            {isSelectedLineLocked ? "Unlock" : "Lock"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={clearActiveMeasurementDraft}
+                          disabled={!hasActiveMeasurementDraft}
+                          className="min-h-9 rounded-2xl border border-white/10 bg-white/8 px-3 text-[10px] font-black text-slate-100 disabled:opacity-35"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+
+                {!simpleMobilePanel ? (
+                  <MobileNavigation
+                    className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)] z-50 px-2 lg:hidden"
+                    tabs={mobileNavigationTabs}
+                    canvasMode={mobileCanvasMode}
+                    toolMode={mobileToolMode}
+                    canvasLocked={mobileCanvasLocked}
+                    onPan={() => {
+                      setSimpleMobilePanel(null);
+                      setMobileCanvasLocked(false);
+                      setMobileCanvasMode("pan");
+                      setMobileToolMode("move");
+                      handleToolChange("pan");
+                    }}
+                    onEdit={() => {
+                      setSimpleMobilePanel(null);
+                      setMobileCanvasMode("edit");
+                      setMobileToolMode("move");
+                      handleToolChange("pan");
+                      setNotice("Edit Mode aktif. Tap objek atau titik untuk memilih, lalu geser atau pakai Fine Adjustment.");
+                    }}
+                    onToolModeChange={(nextMode) => {
+                      setSimpleMobilePanel(null);
+                      setMobileCanvasMode("edit");
+                      setMobileToolMode(nextMode);
+                      handleToolChange("pan");
+                      setNotice(
+                        nextMode === "move"
+                          ? "Tool Mode: Geser. Drag badan layer/object untuk memindahkan."
+                          : nextMode === "scale"
+                            ? "Tool Mode: Size. Drag badan layer atau handle untuk resize."
+                            : "Tool Mode: Putar. Drag badan layer atau handle rotate untuk memutar.",
+                      );
+                    }}
+                    onToggleCanvasLock={() => {
+                      setMobileCanvasLocked((prev) => {
+                        const next = !prev;
+                        if (next) {
+                          setMobileCanvasMode("edit");
+                          setNotice("Lock Canvas aktif. Canvas tidak ikut bergerak saat edit line/template.");
+                        } else {
+                          setNotice("Lock Canvas mati. Pan dan pinch canvas aktif kembali.");
+                        }
+                        return next;
+                      });
+                    }}
+                    onZoomIn={() => zoomBy(1.15)}
+                    onZoomOut={() => zoomBy(1 / 1.15)}
+                    onResetZoom={resetZoomTo100}
+                    onFit={fitImageToViewport}
+                    onUndo={undoHistory}
+                    onRedo={redoHistory}
+                    onUnlock={() => {
+                      setMobileCanvasLocked(false);
+                      resetCanvasInteractionState();
+                    }}
+                    canUndo={historyState.undo > 0}
+                    canRedo={historyState.redo > 0}
+                  />
+                ) : null}
                 <div
                   className={`absolute top-2 left-2 z-20 flex flex-col items-start gap-1.5 sm:top-3 sm:left-3 ${
                     isSimpleUiMode ? "max-w-[190px] sm:max-w-[240px]" : "max-w-[260px]"
