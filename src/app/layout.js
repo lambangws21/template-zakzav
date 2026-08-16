@@ -7,6 +7,15 @@ export const metadata = {
   description: "Template for Next ZakZav",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+};
+
 // Runs before React hydrates — prevents flash of wrong theme
 const themeScript = `
 (function(){

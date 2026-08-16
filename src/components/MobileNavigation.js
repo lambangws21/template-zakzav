@@ -11,6 +11,7 @@ import {
   LockOpen,
   MapPin,
   Maximize2,
+  Minimize2,
   MousePointer2,
   Move,
   Redo2,
@@ -138,18 +139,28 @@ export default function MobileNavigation({
   onRedo,
   canUndo = true,
   canRedo = true,
+  isTablet = false,
+  focusMode = false,
+  onToggleFocusMode,
 }) {
   const tabCols = tabs.length || 1;
   const isEditing = canvasMode === "edit";
+  const floatingControlsClass = isTablet
+    ? "pointer-events-auto fixed right-4 top-1/2 z-[52] flex max-h-[calc(100dvh-128px)] -translate-y-1/2 flex-col items-end gap-2 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]"
+    : "pointer-events-auto fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+92px)] z-[52] flex max-h-[calc(100dvh-130px)] flex-col items-end gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]";
+  const controlButtonClass = isTablet ? "h-11 w-11" : "h-10 w-10";
+  const tabButtonClass = isTablet
+    ? "inline-flex min-h-[48px] flex-row items-center justify-center gap-1.5 rounded-xl px-2 py-1.5 transition-all"
+    : "inline-flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 transition-all";
 
   return (
     <div className={`pointer-events-none w-full ${className}`}>
       <style>{NAV_STYLES}</style>
 
-      <div className="pointer-events-auto fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+92px)] z-[52] flex max-h-[calc(100dvh-130px)] flex-col items-end gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]">
+      <div className={floatingControlsClass}>
         <div className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl">
-          <Btn active={canvasMode === "pan"} icon={Hand} label="Pan" onClick={onPan} className="h-10 w-10" />
-          <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className="h-10 w-10" />
+          <Btn active={canvasMode === "pan"} icon={Hand} label="Pan" onClick={onPan} className={controlButtonClass} />
+          <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className={controlButtonClass} />
         </div>
 
         <AnimatePresence initial={false}>
@@ -162,19 +173,19 @@ export default function MobileNavigation({
               className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl"
             >
               {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]]).map(([mode, Icon, lbl]) => (
-                <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className="h-10 w-10" />
+                <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className={controlButtonClass} />
               ))}
             </motion.div>
           )}
         </AnimatePresence>
 
         <div className="mnav-tray grid grid-cols-2 gap-0.5 rounded-[18px] p-1 backdrop-blur-xl">
-          <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`h-10 w-10 transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
-          <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`h-10 w-10 transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
-          <Btn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} className="h-10 w-10" />
-          <Btn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} className="h-10 w-10" />
-          <Btn icon={RotateCcw} label="Reset 100%" onClick={onResetZoom} className="h-10 w-10" />
-          <Btn icon={Maximize2} label="Fit" onClick={onFit} className="h-10 w-10" />
+          <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`${controlButtonClass} transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
+          <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`${controlButtonClass} transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
+          <Btn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} className={controlButtonClass} />
+          <Btn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} className={controlButtonClass} />
+          <Btn icon={RotateCcw} label="Reset 100%" onClick={onResetZoom} className={controlButtonClass} />
+          <Btn icon={Maximize2} label="Fit" onClick={onFit} className={controlButtonClass} />
         </div>
 
         <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
@@ -183,43 +194,61 @@ export default function MobileNavigation({
             icon={canvasLocked ? Lock : LockOpen}
             label={canvasLocked ? "Unlock" : "Lock"}
             onClick={canvasLocked ? onUnlock : onToggleCanvasLock}
-            className="h-10 w-10"
+            className={controlButtonClass}
             color={canvasLocked ? "text-rose-500" : "text-slate-500"}
+          />
+        </div>
+
+        <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
+          <Btn
+            active={focusMode}
+            icon={focusMode ? Minimize2 : Maximize2}
+            label={focusMode ? "Keluar Focus Canvas" : "Focus Canvas"}
+            onClick={onToggleFocusMode}
+            className={controlButtonClass}
+            color={focusMode ? "text-cyan-500" : "text-slate-500"}
           />
         </div>
       </div>
 
-      <div className="pointer-events-auto flex w-full flex-col gap-1.5 rounded-[22px] border border-[var(--soft-border)] bg-[rgba(238,242,247,0.72)] p-1.5 shadow-[var(--soft-shadow-surface)] backdrop-blur-xl dark:bg-[rgba(26,36,56,0.72)]">
-
-        {/* Row 1 — tabs with icons */}
+      {!focusMode ? (
         <div
-          className="mnav-tray grid gap-0.5 rounded-2xl p-1"
-          style={{ gridTemplateColumns: `repeat(${tabCols}, minmax(0, 1fr))` }}
+          className={`pointer-events-auto mx-auto flex w-full flex-col gap-1.5 rounded-[22px] border border-[var(--soft-border)] bg-[rgba(238,242,247,0.72)] p-1.5 shadow-[var(--soft-shadow-surface)] backdrop-blur-xl dark:bg-[rgba(26,36,56,0.72)] ${
+            isTablet ? "max-w-[660px]" : ""
+          }`}
         >
-          {tabs.map((tab) => {
-            const Icon = TAB_ICONS[tab.id];
-            const activeColor = TAB_ACTIVE_COLORS[tab.id] || "text-slate-700";
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={tab.onClick}
-                className={`inline-flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 transition-all ${
-                  tab.active
-                    ? `mnav-pressed ${activeColor}`
-                    : "text-slate-400"
-                }`}
-                aria-label={tab.ariaLabel || tab.label}
-                title={tab.title || tab.label}
-              >
-                {Icon && <Icon className="h-4 w-4 shrink-0" />}
-                <span className="truncate text-[8px] font-black tracking-wide">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
 
-      </div>
+          {/* Row 1 — tabs with icons */}
+          <div
+            className="mnav-tray grid gap-0.5 rounded-2xl p-1"
+            style={{ gridTemplateColumns: `repeat(${tabCols}, minmax(0, 1fr))` }}
+          >
+            {tabs.map((tab) => {
+              const Icon = TAB_ICONS[tab.id];
+              const activeColor = TAB_ACTIVE_COLORS[tab.id] || "text-slate-700";
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={tab.onClick}
+                  className={`${tabButtonClass} ${
+                    tab.active
+                      ? `mnav-pressed ${activeColor}`
+                      : "text-slate-400"
+                  }`}
+                  aria-label={tab.ariaLabel || tab.label}
+                  title={tab.title || tab.label}
+                >
+                  {Icon && <Icon className="h-4 w-4 shrink-0" />}
+                  <span className={`truncate font-black tracking-wide ${isTablet ? "text-[10px]" : "text-[8px]"}`}>
+                    {tab.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

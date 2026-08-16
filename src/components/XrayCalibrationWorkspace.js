@@ -821,6 +821,7 @@ export default function XrayCalibrationWorkspace({
   const [mobilePanelMode, setMobilePanelMode] = useState("workspace");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   simpleMobileViewportRef.current = isSimpleUiMode && isMobileViewport;
+  const [isTabletViewport, setIsTabletViewport] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [mobilePanelPreviewActive, setMobilePanelPreviewActive] =
     useState(false);
@@ -831,6 +832,7 @@ export default function XrayCalibrationWorkspace({
     useState(null);
   const [mobileCanvasMode, setMobileCanvasMode] = useState("pan");
   const [mobileToolMode, setMobileToolMode] = useState("move");
+  const [mobileCanvasFocusMode, setMobileCanvasFocusMode] = useState(false);
   const [mobileCanvasLocked, setMobileCanvasLocked] = useState(false);
   const {
     activePointerIdRef,
@@ -967,6 +969,7 @@ export default function XrayCalibrationWorkspace({
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
   const [mobileMeasureSheetExpanded, setMobileMeasureSheetExpanded] =
     useState(false);
+  const [mobileSheetCollapsed, setMobileSheetCollapsed] = useState(false);
   const [simpleManagerTab, setSimpleManagerTab] = useState("layer");
   const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
   const [simpleDesktopHkaOpen, setSimpleDesktopHkaOpen] = useState(false);
@@ -1065,6 +1068,18 @@ export default function XrayCalibrationWorkspace({
     }
 
     const root = document.documentElement;
+    let focusRestoreTimer = null;
+    let savedScrollX = 0;
+    let savedScrollY = 0;
+    const isTextInputTarget = (target) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName.toLowerCase();
+      if (tag === "textarea" || tag === "select") return true;
+      if (target.isContentEditable) return true;
+      if (tag !== "input") return false;
+      const type = String(target.getAttribute("type") || "text").toLowerCase();
+      return !["button", "checkbox", "color", "file", "hidden", "radio", "range", "reset", "submit"].includes(type);
+    };
     const updateKeyboardOffset = () => {
       const vv = window.visualViewport;
       const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
@@ -1073,14 +1088,45 @@ export default function XrayCalibrationWorkspace({
         `${Math.round(offset)}px`,
       );
     };
+    const handleEditableFocusIn = (event) => {
+      if (!isTextInputTarget(event.target)) return;
+      if (focusRestoreTimer !== null) {
+        window.clearTimeout(focusRestoreTimer);
+        focusRestoreTimer = null;
+      }
+      savedScrollX = window.scrollX || 0;
+      savedScrollY = window.scrollY || 0;
+      updateKeyboardOffset();
+    };
+    const handleEditableFocusOut = (event) => {
+      if (!isTextInputTarget(event.target)) return;
+      focusRestoreTimer = window.setTimeout(() => {
+        updateKeyboardOffset();
+        const vv = window.visualViewport;
+        const keyboardClosed =
+          !vv || Math.abs(window.innerHeight - vv.height - vv.offsetTop) < 24;
+        if (keyboardClosed) {
+          root.style.setProperty("--mobile-keyboard-offset", "0px");
+          window.scrollTo(savedScrollX, savedScrollY);
+        }
+      }, 180);
+    };
 
     updateKeyboardOffset();
     window.visualViewport.addEventListener("resize", updateKeyboardOffset);
     window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
+    document.addEventListener("focusin", handleEditableFocusIn, true);
+    document.addEventListener("focusout", handleEditableFocusOut, true);
 
     return () => {
+      if (focusRestoreTimer !== null) {
+        window.clearTimeout(focusRestoreTimer);
+        focusRestoreTimer = null;
+      }
       window.visualViewport.removeEventListener("resize", updateKeyboardOffset);
       window.visualViewport.removeEventListener("scroll", updateKeyboardOffset);
+      document.removeEventListener("focusin", handleEditableFocusIn, true);
+      document.removeEventListener("focusout", handleEditableFocusOut, true);
       root.style.removeProperty("--mobile-keyboard-offset");
     };
   }, [isSimpleUiMode]);
@@ -1351,18 +1397,25 @@ export default function XrayCalibrationWorkspace({
     if (typeof window === "undefined") return undefined;
 
     const viewportQuery = window.matchMedia("(max-width: 1023px)");
+    const tabletQuery = window.matchMedia(
+      "(pointer: coarse) and (min-width: 768px) and (max-width: 1180px)",
+    );
     const coarseQuery = window.matchMedia("(pointer: coarse)");
     const updateMobileState = () => {
-      setIsMobileViewport(viewportQuery.matches);
+      const tabletViewport = tabletQuery.matches;
+      setIsMobileViewport(viewportQuery.matches || tabletViewport);
+      setIsTabletViewport(tabletViewport);
       setIsCoarsePointer(coarseQuery.matches);
     };
 
     updateMobileState();
     viewportQuery.addEventListener("change", updateMobileState);
+    tabletQuery.addEventListener("change", updateMobileState);
     coarseQuery.addEventListener("change", updateMobileState);
     window.addEventListener("resize", updateMobileState);
     return () => {
       viewportQuery.removeEventListener("change", updateMobileState);
+      tabletQuery.removeEventListener("change", updateMobileState);
       coarseQuery.removeEventListener("change", updateMobileState);
       window.removeEventListener("resize", updateMobileState);
     };
@@ -4666,7 +4719,14 @@ export default function XrayCalibrationWorkspace({
 
     // On mobile simple UI, reserve space for the fixed bottom MobileNavigation
     // (~96px nav height + 10px gap + ~14px buffer = 120px, excluding safe-area-inset)
-    const mobileNavInset = isMobileViewport && isSimpleUiMode ? 120 : 0;
+    const mobileNavInset =
+      isMobileViewport && isSimpleUiMode
+        ? mobileCanvasFocusMode
+          ? 24
+          : isTabletViewport
+          ? 24
+          : 120
+        : 0;
     const visibleHeight = viewport.height - mobileNavInset;
 
     const safeWidth = Math.max(viewport.width - CANVAS_EDGE_SAFE_INSET * 2, 80);
@@ -4688,11 +4748,25 @@ export default function XrayCalibrationWorkspace({
     });
   }, [
     isSimpleUiMode,
+    mobileCanvasFocusMode,
+    isTabletViewport,
     isMobileViewport,
     orientedSize.height,
     orientedSize.width,
     viewport.height,
     viewport.width,
+  ]);
+
+  useEffect(() => {
+    if (!isSimpleUiMode || !isMobileViewport || !image) return undefined;
+    const timer = window.setTimeout(() => fitImageToViewport(), 80);
+    return () => window.clearTimeout(timer);
+  }, [
+    fitImageToViewport,
+    image,
+    isMobileViewport,
+    isSimpleUiMode,
+    mobileCanvasFocusMode,
   ]);
 
   const clampViewport = useCallback(
@@ -19292,6 +19366,8 @@ export default function XrayCalibrationWorkspace({
   useEffect(() => {
     if (simpleMobilePanel) {
       setMobileObjectSettingsOpen(false);
+      setMobileCanvasFocusMode(false);
+      setMobileSheetCollapsed(false);
     }
   }, [simpleMobilePanel]);
   useEffect(() => {
@@ -20064,7 +20140,7 @@ export default function XrayCalibrationWorkspace({
       label: "Measure",
       onClick: () => {
         if (isSimpleUiMode) {
-          setMobileMeasureSheetExpanded(false);
+          setMobileMeasureSheetExpanded(isTabletViewport);
           setSimpleMobilePanel((prev) => (prev === "tools" ? null : "tools"));
           return;
         }
@@ -25859,7 +25935,11 @@ export default function XrayCalibrationWorkspace({
       </AnimatePresence>
       <header
         className={`${SOFT_PANEL_CLASS} relative z-50 ${
-          isSimpleUiMode ? "hidden lg:flex" : "flex"
+          isSimpleUiMode
+            ? isTabletViewport
+              ? "hidden"
+              : "hidden lg:flex"
+            : "flex"
         } items-center justify-between gap-3 px-4 py-0`}
         style={{ height: 52, minHeight: 52 }}
       >
@@ -33412,7 +33492,7 @@ export default function XrayCalibrationWorkspace({
                   </AnimatePresence>
 
                   <AnimatePresence mode="wait">
-                    {simpleRightDockMinimized ? (
+                    {isTabletViewport && simpleMobilePanel ? null : simpleRightDockMinimized ? (
                       <motion.button
                         key="right-dock-mini"
                         initial={{ opacity: 0, x: 20, scale: 0.86 }}
@@ -33421,7 +33501,9 @@ export default function XrayCalibrationWorkspace({
                         transition={{ type: "spring", damping: 22, stiffness: 300 }}
                         type="button"
                         onClick={() => setSimpleRightDockMinimized(false)}
-                        className="pointer-events-auto absolute top-3 right-[88px] inline-flex items-center gap-2 rounded-[18px] border border-white/15 bg-slate-900/82 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-100 shadow-[0_10px_26px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+                        className={`pointer-events-auto absolute top-3 inline-flex items-center gap-2 rounded-[18px] border border-white/15 bg-slate-900/82 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-100 shadow-[0_10px_26px_rgba(0,0,0,0.24)] backdrop-blur-xl ${
+                          isTabletViewport ? "right-3" : "right-[88px]"
+                        }`}
                         title="Buka Action & Layer"
                         whileTap={{ scale: 0.93 }}
                       >
@@ -33435,7 +33517,11 @@ export default function XrayCalibrationWorkspace({
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: 16, scale: 0.96 }}
                         transition={{ type: "spring", damping: 24, stiffness: 280 }}
-                        className="pointer-events-auto absolute top-3 right-[88px] bottom-3 flex w-[224px] max-w-[calc(100vw-360px)] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/12 bg-slate-900/78 p-2.5 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.22)] backdrop-blur-xl"
+                        className={`pointer-events-auto absolute top-3 flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/12 bg-slate-900/78 p-2.5 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.22)] backdrop-blur-xl ${
+                          isTabletViewport
+                            ? "right-3 w-[216px] max-h-[calc(100dvh-102px)]"
+                            : "right-[88px] bottom-3 w-[224px] max-w-[calc(100vw-360px)]"
+                        }`}
                       >
                         <div className="mb-2 flex items-center gap-2">
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-400/15 text-cyan-200 ring-1 ring-cyan-300/25">
@@ -33669,28 +33755,69 @@ export default function XrayCalibrationWorkspace({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
-                    className="fixed inset-0 z-[38] bg-black/20 lg:hidden"
+                    className={`fixed inset-0 z-[38] ${
+                      isTabletViewport ? "bg-transparent" : "bg-black/20"
+                    }`}
                     onClick={() => setSimpleMobilePanel(null)}
                   />
                 )}
                 {isSimpleUiMode && isMobileViewport && simpleMobilePanel && (
                   <motion.div
                     key={`simple-mobile-panel-${simpleMobilePanel}`}
-                    initial={{ y: "100%" }}
-                    animate={{ y: 0 }}
-                    exit={{ y: "100%" }}
+                    initial={
+                      isTabletViewport ? { x: "112%", opacity: 0 } : { y: "100%" }
+                    }
+                    animate={isTabletViewport ? { x: 0, opacity: 1 } : { y: 0 }}
+                    exit={
+                      isTabletViewport ? { x: "112%", opacity: 0 } : { y: "100%" }
+                    }
                     transition={{ type: "spring", damping: 32, stiffness: 380 }}
-                    className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl lg:hidden ${
-                      simpleMobilePanel === "tools" && !mobileMeasureSheetExpanded
-                        ? "max-h-[48vh]"
-                        : "max-h-[82vh]"
+                    drag={isTabletViewport ? false : "y"}
+                    dragConstraints={{ top: 0, bottom: 180 }}
+                    dragElastic={0.08}
+                    onDragEnd={(_, info) => {
+                      if (isTabletViewport) return;
+                      if (info.offset.y > 112 || info.velocity.y > 850) {
+                        setSimpleMobilePanel(null);
+                        return;
+                      }
+                      if (info.offset.y > 44) {
+                        setMobileSheetCollapsed(true);
+                      } else {
+                        setMobileSheetCollapsed(false);
+                      }
+                    }}
+                    className={`fixed z-40 flex flex-col overflow-hidden ${
+                      isTabletViewport
+                        ? "right-3 top-[calc(env(safe-area-inset-top)+76px)] min-w-0 w-[min(340px,34vw)] max-h-[calc(100dvh-92px)] bg-transparent shadow-none"
+                        : `inset-x-0 bottom-0 rounded-t-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl ${
+                            mobileSheetCollapsed
+                              ? "max-h-[86px]"
+                              : simpleMobilePanel === "tools" && !mobileMeasureSheetExpanded
+                                ? "max-h-[48vh]"
+                                : "max-h-[82vh]"
+                          }`
                     }`}
                   >
-                    <div className="flex shrink-0 items-center justify-center pt-2.5 pb-1.5">
-                      <div className="h-1 w-10 rounded-full bg-slate-300/80" />
-                    </div>
+                    {!isTabletViewport ? (
+                      <div className="flex shrink-0 items-center justify-center px-4 pt-2.5 pb-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMobileSheetCollapsed((prev) => !prev)
+                          }
+                          className="flex min-h-7 min-w-[116px] items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
+                          aria-label={
+                            mobileSheetCollapsed ? "Buka panel" : "Collapse panel"
+                          }
+                        >
+                          <span className="h-1 w-10 rounded-full bg-slate-300/80" />
+                          {mobileSheetCollapsed ? "Buka" : "Geser"}
+                        </button>
+                      </div>
+                    ) : null}
                     <div
-                      className="overflow-y-auto"
+                      className="min-h-0 overflow-y-auto"
                       style={{
                         paddingBottom: `calc(env(safe-area-inset-bottom) + var(--mobile-keyboard-offset,0px) + ${
                           simpleMobilePanel === "tools" ? 20 : 24
@@ -33698,42 +33825,42 @@ export default function XrayCalibrationWorkspace({
                       }}
                     >
                       {simpleMobilePanel === "upload" ? (
-                        <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                          <div className="mb-2.5 flex items-center justify-between">
-                            <p className="text-xs font-black uppercase tracking-wider">Upload Xray</p>
-                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                        <div className="mobile-sheet-card">
+                          <div className="mobile-sheet-card__header">
+                            <p className="mobile-sheet-card__title">Upload Xray</p>
+                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="mobile-sheet-close">
                               <X className="h-3 w-3" />
                             </button>
                           </div>
 
                           {/* Background */}
-                          <p className="mb-1.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">Background X-ray</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <p className="mobile-sheet-card__section-title">Background X-ray</p>
+                          <div className="mobile-sheet-grid">
                             <button type="button" onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
-                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-cyan-300/70 bg-cyan-50 text-[11px] font-black text-cyan-800">
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-cyan-700">
                               <span>📂</span><span>Drive</span>
                             </button>
                             <button type="button" onClick={() => { setSimpleMobilePanel(null); mainUploadInputRef.current?.click(); }}
-                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-slate-300/60 bg-slate-800 text-[11px] font-black text-white">
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 bg-slate-800 text-white">
                               <span>💻</span><span>Lokal</span>
                             </button>
                           </div>
 
                           {/* Layer */}
-                          <p className="mt-2.5 mb-1.5 text-[8px] font-black tracking-widest text-slate-400 uppercase">+ Layer Baru</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <p className="mobile-sheet-card__section-title">+ Layer Baru</p>
+                          <div className="mobile-sheet-grid">
                             <button type="button" onClick={() => { setSimpleMobilePanel(null); setLibraryModalOpen(true); setLibraryModalMinimized(false); }}
-                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-violet-300/70 bg-violet-50 text-[11px] font-black text-violet-800">
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-violet-700">
                               <span>📂</span><span>Drive</span>
                             </button>
                             <button type="button" onClick={() => { setSimpleMobilePanel(null); layerUploadInputRef.current?.click(); }}
-                              className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl border border-violet-300/60 bg-violet-500 text-[11px] font-black text-white">
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 bg-violet-500 text-white">
                               <span>💻</span><span>Lokal</span>
                             </button>
                           </div>
                         </div>
                       ) : simpleMobilePanel === "tools" ? (
-                        <div className="mx-auto w-[min(94vw,430px)] px-3 pb-3 text-[var(--soft-text)]">
+                        <div className="mobile-sheet-card mobile-sheet-card--wide pb-3 text-[var(--soft-text)]">
                           <div className="mb-2 flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-500">
@@ -33898,7 +34025,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
-                        className="w-full"
+                        className="mobile-manager-card w-full"
                         style={{}}
                         activeTab={
                           simpleMobilePanel === "implant"
@@ -34003,16 +34130,16 @@ export default function XrayCalibrationWorkspace({
                         defaultAnnotationColor={DEFAULT_ANNOTATION_COLOR}
                       />
                     ) : simpleMobilePanel === "export" ? (
-                        <div className="mx-auto w-[min(92vw,360px)] rounded-[26px] border border-white/75 bg-[#eef2f7]/97 p-3.5 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                          <div className="mb-2.5 flex items-center justify-between">
-                            <p className="text-xs font-black uppercase tracking-wider">Export</p>
-                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                        <div className="mobile-sheet-card">
+                          <div className="mobile-sheet-card__header">
+                            <p className="mobile-sheet-card__title">Export</p>
+                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="mobile-sheet-close">
                               <X className="h-3 w-3" />
                             </button>
                           </div>
 
                           {/* Export buttons */}
-                          <div className="grid grid-cols-3 gap-1.5">
+                          <div className="grid grid-cols-3 gap-2">
                             <button type="button" onClick={() => { setSimpleMobilePanel(null); exportReportPng(); }} disabled={!image}
                               className="min-h-11 rounded-2xl border border-white/70 bg-[#eef2f7] text-[10px] font-black text-cyan-700 shadow-[2px_2px_5px_rgba(148,163,184,0.22),-1px_-1px_3px_rgba(255,255,255,0.9)] disabled:opacity-40">
                               PNG
@@ -34159,7 +34286,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : simpleMobilePanel === "dorr" ? (
                         <DorrClassificationPanel
-                          className="mx-auto w-[min(92vw,380px)]"
+                          className="mobile-sheet-card"
                           onClose={() => setSimpleMobilePanel(null)}
                           onCreateCiLines={createDorrCiMeasurementLines}
                           lines={lines.filter((l) => l.id !== calibrationLineId)}
@@ -34168,10 +34295,10 @@ export default function XrayCalibrationWorkspace({
                           hasCalibration={hasCalibration}
                         />
                       ) : (
-                      <div className="mx-auto w-[min(92vw,320px)] rounded-[24px] border border-white/75 bg-[#eef2f7]/96 p-3 text-slate-800 shadow-[5px_5px_14px_rgba(148,163,184,0.28),-5px_-5px_14px_rgba(255,255,255,0.78)] backdrop-blur-xl">
-                        <div className="mb-2.5 flex items-center justify-between">
-                          <p className="text-xs font-black uppercase tracking-wider">Planning</p>
-                          <button type="button" onClick={() => setSimpleMobilePanel(null)} className="flex h-7 w-7 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[2px_2px_5px_rgba(148,163,184,0.26),-2px_-2px_5px_rgba(255,255,255,0.8)]">
+                      <div className="mobile-sheet-card">
+                        <div className="mobile-sheet-card__header">
+                          <p className="mobile-sheet-card__title">Planning</p>
+                          <button type="button" onClick={() => setSimpleMobilePanel(null)} className="mobile-sheet-close">
                             <X className="h-3 w-3" />
                           </button>
                         </div>
@@ -34189,7 +34316,7 @@ export default function XrayCalibrationWorkspace({
                           </span>
                           <span className="text-[10px] text-cyan-500">▶</span>
                         </button>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="mt-2 grid grid-cols-2 gap-2">
                           {/* TKA */}
                           <button type="button" onClick={() => { setSimpleMobilePanel(null); openSimplePlanningModal("tka"); }}
                             className="flex flex-col items-center gap-1 rounded-[18px] border border-white/70 bg-[#eef2f7] py-3 text-slate-700 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
@@ -34307,7 +34434,10 @@ export default function XrayCalibrationWorkspace({
                     </motion.div>
                   )}
                 </AnimatePresence>
-              {isSimpleUiMode && !workflowOverlayDismissed ? (
+              {isSimpleUiMode &&
+              !workflowOverlayDismissed &&
+              !isTabletViewport &&
+              !(isMobileViewport && mobileCanvasFocusMode) ? (
                 <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-3">
                   <div
                     className={`pointer-events-auto flex w-full max-w-[min(92vw,720px)] items-center gap-2 rounded-[20px] border px-2 py-2 backdrop-blur-xl ${
@@ -34390,7 +34520,170 @@ export default function XrayCalibrationWorkspace({
                 </div>
               ) : null}
 
-              {isSimpleUiMode && isMobileViewport ? (
+              {isSimpleUiMode &&
+              isMobileViewport &&
+              isTabletViewport &&
+              !mobileCanvasFocusMode ? (
+                <div className="pointer-events-none absolute inset-x-3 top-2 z-40 flex justify-center">
+                  <div
+                    className="pointer-events-auto grid w-[min(980px,calc(100vw-1.5rem))] grid-cols-[minmax(0,1.1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-[22px] border px-2.5 py-2 backdrop-blur-xl"
+                    style={{
+                      background: isDark
+                        ? "rgba(15,23,42,0.86)"
+                        : "rgba(238,242,247,0.88)",
+                      borderColor: isDark
+                        ? "rgba(255,255,255,0.13)"
+                        : "rgba(255,255,255,0.72)",
+                      boxShadow: isDark
+                        ? "0 8px 26px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06)"
+                        : "3px 3px 12px rgba(15,23,42,0.14), -3px -3px 10px rgba(255,255,255,0.74)",
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950/80 text-sm font-black text-white">
+                        {canvasAnatomySide === "left" ? "L" : "R"}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-[11px] font-black text-[var(--soft-text-hi)]">
+                          {imageName || "Case X-ray"}
+                        </div>
+                        <div className="truncate text-[9px] font-bold text-slate-400">
+                          {simpleWorkflowSteps.find((step) => step.id === workflowStep)
+                            ?.label || "Workflow"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openSimpleCalibrationModal(
+                            hasCalibration
+                              ? "Kalibrasi aktif. Kamu tetap bisa update skala dari sini."
+                              : "UN-CALIBRATED: lakukan kalibrasi skala sebelum templating.",
+                          )
+                        }
+                        className={`ml-1 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[10px] font-black ${
+                          hasCalibration
+                            ? isDark
+                              ? "border-emerald-300/50 bg-emerald-400/16 text-emerald-200"
+                              : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                            : isDark
+                              ? "border-amber-300/60 bg-amber-400/16 text-amber-200"
+                              : "border-amber-300 bg-amber-50 text-amber-700"
+                        }`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        {hasCalibration
+                          ? `Calibrated · ${measurementUnit}`
+                          : "Uncalibrated"}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-1">
+                      {[
+                        {
+                          key: "undo",
+                          label: "Undo",
+                          icon: <Undo2 className="h-3.5 w-3.5" />,
+                          onClick: undoHistory,
+                          disabled: historyState.undo < 1,
+                        },
+                        {
+                          key: "redo",
+                          label: "Redo",
+                          icon: <Redo2 className="h-3.5 w-3.5" />,
+                          onClick: redoHistory,
+                          disabled: historyState.redo < 1,
+                        },
+                        {
+                          key: "fit",
+                          label: "Fit",
+                          icon: <Maximize2 className="h-3.5 w-3.5" />,
+                          onClick: fitImageToViewport,
+                        },
+                      ].map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={item.onClick}
+                          disabled={item.disabled}
+                          className={`flex h-9 w-9 items-center justify-center rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-slate-500 shadow-[var(--soft-shadow-raised)] transition active:scale-95 ${
+                            item.disabled ? "opacity-35" : ""
+                          }`}
+                          aria-label={item.label}
+                          title={item.label}
+                        >
+                          {item.icon}
+                        </button>
+                      ))}
+                      <div className="ml-1 flex items-center gap-1 rounded-full border border-[var(--soft-border)] [background:var(--soft-inset-bg)] p-1 shadow-[var(--soft-shadow-inset)]">
+                        {["normal", "bone", "invert"].map((presetKey) => {
+                          const preset = XRAY_VIEW_PRESETS.find(
+                            (item) => item.key === presetKey,
+                          );
+                          if (!preset) return null;
+                          const active = xrayViewPreset === presetKey;
+                          return (
+                            <button
+                              key={presetKey}
+                              type="button"
+                              onClick={() => applyXrayViewPreset(presetKey)}
+                              className={`h-7 rounded-full px-3 text-[9px] font-black transition ${
+                                active
+                                  ? "bg-cyan-500 text-white shadow-[0_5px_14px_rgba(6,182,212,0.22)]"
+                                  : "text-slate-500"
+                              }`}
+                              title={preset.label}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex min-w-0 items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSimpleMobilePanel((prev) =>
+                            prev === "upload" ? null : "upload",
+                          )
+                        }
+                        className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] font-black transition ${
+                          simpleMobilePanel === "upload"
+                            ? "border-cyan-300 bg-cyan-500 text-white"
+                            : "border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-slate-500 shadow-[var(--soft-shadow-raised)]"
+                        }`}
+                        title="Menu / Workflow"
+                      >
+                        <Menu className="h-4 w-4" />
+                        Menu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSimpleMobilePanel((prev) =>
+                            prev === "manager" ? null : "manager",
+                          )
+                        }
+                        className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] font-black transition ${
+                          simpleMobilePanel === "manager" ||
+                          simpleMobilePanel === "layer" ||
+                          simpleMobilePanel === "implant"
+                            ? "border-violet-300 bg-violet-500 text-white"
+                            : "border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-slate-500 shadow-[var(--soft-shadow-raised)]"
+                        }`}
+                        title="Layer / Planning"
+                      >
+                        <Layers className="h-4 w-4" />
+                        Layer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {isSimpleUiMode && isMobileViewport && !isTabletViewport ? (
                 <div className="pointer-events-none absolute top-2 right-2 z-30 max-w-[calc(100vw-1rem)]">
                   <div
                     className="pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-full p-1"
@@ -34743,6 +35036,7 @@ export default function XrayCalibrationWorkspace({
               isMobileViewport &&
               selectedCutLayer &&
               selectedLayerMetrics &&
+              !mobileCanvasFocusMode &&
               !simpleMobilePanel ? (
                 <motion.div
                   initial={{ opacity: 0, y: 18, scale: 0.98 }}
@@ -34924,6 +35218,7 @@ export default function XrayCalibrationWorkspace({
               {isSimpleUiMode &&
               hasMobileObjectSelection &&
               mobileObjectSettingsOpen &&
+              !mobileCanvasFocusMode &&
               !simpleMobilePanel ? (
                 <>
                   {/* backdrop — click outside to close */}
@@ -35910,7 +36205,10 @@ export default function XrayCalibrationWorkspace({
               ) : null}
 
                 {/* ── Top hint banner + workflow progress — keeps bottom canvas clear ── */}
-                {isSimpleUiMode && workflowOverlayDismissed && (
+                {isSimpleUiMode &&
+                workflowOverlayDismissed &&
+                !isTabletViewport &&
+                !(isMobileViewport && mobileCanvasFocusMode) && (
                   <div className="pointer-events-none fixed left-0 right-0 top-[calc(env(safe-area-inset-top)+62px)] z-[96] flex items-start gap-2 px-3 lg:left-auto lg:right-5 lg:top-[72px] lg:w-[min(560px,calc(100vw-2rem))] lg:px-0">
                     {/* Banner kiri — ambil sisa lebar */}
                     <div className="pointer-events-auto min-w-0 flex-1">
@@ -35949,6 +36247,7 @@ export default function XrayCalibrationWorkspace({
                   {isSimpleUiMode &&
                   isMobileViewport &&
                   !simpleMobilePanel &&
+                  !mobileCanvasFocusMode &&
                   mobileMeasurementToolActive ? (
                     <motion.div
                       key="mobile-measure-quick-toolbar"
@@ -35956,7 +36255,11 @@ export default function XrayCalibrationWorkspace({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.98 }}
                       transition={MOBILE_PANEL_TRANSITION}
-                      className="pointer-events-auto fixed left-3 right-3 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+74px)] z-[49] rounded-[20px] border border-[var(--soft-border)] bg-[rgba(15,23,42,0.78)] px-2.5 py-2 text-white shadow-[0_10px_28px_rgba(2,6,23,0.28)] backdrop-blur-xl lg:hidden"
+                      className={`pointer-events-auto fixed z-[49] rounded-[20px] border border-[var(--soft-border)] bg-[rgba(15,23,42,0.78)] px-2.5 py-2 text-white shadow-[0_10px_28px_rgba(2,6,23,0.28)] backdrop-blur-xl ${
+                        isTabletViewport
+                          ? "left-1/2 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+86px)] w-[min(520px,58vw)] -translate-x-1/2"
+                          : "left-3 right-3 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+74px)]"
+                      }`}
                     >
                       <div className="flex items-center gap-1.5">
                         <button
@@ -36003,9 +36306,9 @@ export default function XrayCalibrationWorkspace({
                   ) : null}
                 </AnimatePresence>
 
-                {!simpleMobilePanel ? (
+                {!simpleMobilePanel && !isTabletViewport ? (
                   <MobileNavigation
-                    className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)] z-50 px-2 lg:hidden"
+                    className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)] z-50 px-2"
                     tabs={mobileNavigationTabs}
                     canvasMode={mobileCanvasMode}
                     toolMode={mobileToolMode}
@@ -36061,6 +36364,19 @@ export default function XrayCalibrationWorkspace({
                     }}
                     canUndo={historyState.undo > 0}
                     canRedo={historyState.redo > 0}
+                    isTablet={isTabletViewport}
+                    focusMode={mobileCanvasFocusMode}
+                    onToggleFocusMode={() => {
+                      const next = !mobileCanvasFocusMode;
+                      setMobileCanvasFocusMode(next);
+                      if (next) {
+                        setSimpleMobilePanel(null);
+                        setMobileObjectSettingsOpen(false);
+                        setNotice("Focus Canvas aktif. Panel non-krusial disembunyikan.");
+                      } else {
+                        setNotice("Focus Canvas nonaktif. Navigasi mobile ditampilkan kembali.");
+                      }
+                    }}
                   />
                 ) : null}
                 <div
