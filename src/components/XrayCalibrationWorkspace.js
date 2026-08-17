@@ -822,6 +822,8 @@ export default function XrayCalibrationWorkspace({
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   simpleMobileViewportRef.current = isSimpleUiMode && isMobileViewport;
   const [isTabletViewport, setIsTabletViewport] = useState(false);
+  const isNativeMobileSimpleUi =
+    isSimpleUiMode && isMobileViewport && !isTabletViewport;
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [mobilePanelPreviewActive, setMobilePanelPreviewActive] =
     useState(false);
@@ -20275,8 +20277,8 @@ export default function XrayCalibrationWorkspace({
   };
   const mobileNavigationTabs = [
     {
-      id: "upload",
-      label: "Upload",
+      id: "image",
+      label: "Image",
       onClick: () => {
         if (isSimpleUiMode) {
           setSimpleMobilePanel((prev) => (prev === "upload" ? null : "upload"));
@@ -20288,27 +20290,6 @@ export default function XrayCalibrationWorkspace({
       active: isSimpleUiMode
         ? simpleMobilePanel === "upload"
         : mobileSetupPanelVisible,
-    },
-    {
-      id: "calibration",
-      label: "Calibration",
-      title: "Kalibrasi skala X-ray: ruler/marker fisik atau circle caput femur untuk mendapatkan ukuran nyata.",
-      ariaLabel: "Kalibrasi skala X-ray",
-      onClick: () => {
-        if (isSimpleUiMode) {
-          setSimpleMobilePanel(null);
-          openSimpleCalibrationModal(
-            "Wizard kalibrasi: gunakan ruler/marker atau circle caput femur, sesuaikan ke foto, lalu Simpan Kalibrasi.",
-          );
-          return;
-        }
-        setMobilePanelMode("workspace");
-        setActiveRightPanel("measure");
-        setMobileControlsOpen(true);
-      },
-      active: isSimpleUiMode
-        ? simpleCalibrationModalOpen
-        : mobileWorkspacePanelVisible && activeRightPanel === "measure",
     },
     {
       id: "measure",
@@ -20328,20 +20309,20 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "tool",
     },
     {
-      id: "manager",
-      label: "Properti",
+      id: "plan",
+      label: "Plan",
       onClick: () => {
         if (isSimpleUiMode) {
-          setSimpleMobilePanel((prev) => (prev === "manager" ? null : "manager"));
+          setSimpleMobilePanel((prev) => (prev === "planning" ? null : "planning"));
           return;
         }
         setMobilePanelMode("workspace");
-        setActiveRightPanel("tool");
+        setActiveRightPanel("planning");
         setMobileControlsOpen(true);
       },
       active: isSimpleUiMode
-        ? simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant"
-        : false,
+        ? simpleMobilePanel === "planning" || Boolean(simplePlanningModal)
+        : mobileWorkspacePanelVisible && activeRightPanel === "planning",
     },
     {
       id: "export",
@@ -20358,12 +20339,6 @@ export default function XrayCalibrationWorkspace({
       active: isSimpleUiMode
         ? simpleMobilePanel === "export"
         : mobileWorkspacePanelVisible && activeRightPanel === "planning",
-    },
-    {
-      id: "annotate",
-      label: "Anotasi",
-      onClick: () => setLandmarkAnnotationOpen(true),
-      active: landmarkAnnotationOpen,
     },
   ];
   return (
@@ -26108,6 +26083,7 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
+      {!isNativeMobileSimpleUi ? (
       <header
         className={`${SOFT_PANEL_CLASS} relative z-50 ${
           isSimpleUiMode
@@ -27284,6 +27260,7 @@ export default function XrayCalibrationWorkspace({
           ) : null}
         </div>
       </header>
+      ) : null}
 
       <motion.section
         layout
@@ -27353,6 +27330,7 @@ export default function XrayCalibrationWorkspace({
           <span className="hidden xl:inline">{showRightSidebar ? "Hide" : "Panel"}</span>
         </motion.button>
         ) : null}
+        {!isNativeMobileSimpleUi ? (
         <motion.aside
           layout={!isMobileViewport}
           initial={false}
@@ -29687,7 +29665,9 @@ export default function XrayCalibrationWorkspace({
             </div>
           </motion.div>
         </motion.aside>
+        ) : null}
 
+        {!isNativeMobileSimpleUi ? (
         <motion.aside
           layout={!isMobileViewport}
           initial={false}
@@ -32882,6 +32862,7 @@ export default function XrayCalibrationWorkspace({
             </motion.div>
           ) : null}
         </motion.aside>
+        ) : null}
 
         <motion.div
           layout
@@ -33412,7 +33393,7 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 </motion.div>
               ) : null}
-              {shouldShowCanvasCalibrationPrompt ? (
+              {!isNativeMobileSimpleUi && shouldShowCanvasCalibrationPrompt ? (
                 <motion.div
                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -33467,7 +33448,10 @@ export default function XrayCalibrationWorkspace({
                 </motion.div>
               ) : null}
               <AnimatePresence>
-                {isSimpleUiMode && idleTutorialVisible && idleTutorialCard ? (
+                {isSimpleUiMode &&
+                !isNativeMobileSimpleUi &&
+                idleTutorialVisible &&
+                idleTutorialCard ? (
                   <motion.div
                     key={`idle-tutorial-${idleTutorialTick}`}
                     initial={{ opacity: 0, y: 12, scale: 0.96 }}
@@ -34019,6 +34003,25 @@ export default function XrayCalibrationWorkspace({
                             </button>
                           </div>
 
+                          <p className="mobile-sheet-card__section-title">Kalibrasi</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimpleMobilePanel(null);
+                              openSimpleCalibrationModal(
+                                "Wizard kalibrasi: gunakan ruler/marker atau circle caput femur, sesuaikan ke foto, lalu Simpan Kalibrasi.",
+                              );
+                            }}
+                            className={`mobile-sheet-action flex w-full items-center justify-center gap-1.5 ${
+                              hasCalibration
+                                ? "text-emerald-700"
+                                : "bg-amber-500 text-slate-950"
+                            }`}
+                          >
+                            <span>{hasCalibration ? "✓" : "!"}</span>
+                            <span>{hasCalibration ? "Update Kalibrasi" : "Mulai Kalibrasi"}</span>
+                          </button>
+
                           {/* Layer */}
                           <p className="mobile-sheet-card__section-title">+ Layer Baru</p>
                           <div className="mobile-sheet-grid">
@@ -34195,6 +34198,64 @@ export default function XrayCalibrationWorkspace({
                               HKA, Axis Builder, Guide, dan Landmark.
                             </div>
                           )}
+                        </div>
+                    ) : simpleMobilePanel === "more" ? (
+                        <div className="mobile-sheet-card">
+                          <div className="mobile-sheet-card__header">
+                            <div>
+                              <p className="mobile-sheet-card__title">More</p>
+                              <p className="mt-0.5 text-[9px] font-semibold text-[var(--color-text-muted)]">
+                                Properti, anotasi, dan tool sekunder
+                              </p>
+                            </div>
+                            <button type="button" onClick={() => setSimpleMobilePanel(null)} className="mobile-sheet-close">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <div className="mobile-sheet-grid">
+                            <button
+                              type="button"
+                              onClick={() => setSimpleMobilePanel("manager")}
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-violet-700"
+                            >
+                              <span>▣</span><span>Properti</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSimpleMobilePanel("implant")}
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-indigo-700"
+                            >
+                              <span>▥</span><span>Implant</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); setLandmarkAnnotationOpen(true); }}
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-rose-700"
+                            >
+                              <span>⌖</span><span>Anotasi</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSimpleMobilePanel("dorr")}
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-indigo-700"
+                            >
+                              <span>CI</span><span>Dorr</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); setPatientCaseManagerOpen(true); }}
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-slate-700"
+                            >
+                              <span>☰</span><span>Kasus</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setSimpleMobilePanel(null); setPreOpSummaryOpen(true); }}
+                              className="mobile-sheet-action flex items-center justify-center gap-1.5 text-emerald-700"
+                            >
+                              <span>✓</span><span>Summary</span>
+                            </button>
+                          </div>
                         </div>
                     ) : (simpleMobilePanel === "manager" || simpleMobilePanel === "layer" || simpleMobilePanel === "implant") ? (
                       <ManagerPanel
@@ -34613,6 +34674,7 @@ export default function XrayCalibrationWorkspace({
                   )}
                 </AnimatePresence>
               {isSimpleUiMode &&
+              !isNativeMobileSimpleUi &&
               !workflowOverlayDismissed &&
               !isTabletViewport &&
               !(isMobileViewport && mobileCanvasFocusMode) ? (
@@ -36384,6 +36446,7 @@ export default function XrayCalibrationWorkspace({
 
                 {/* ── Top hint banner + workflow progress — keeps bottom canvas clear ── */}
                 {isSimpleUiMode &&
+                !isNativeMobileSimpleUi &&
                 workflowOverlayDismissed &&
                 !isTabletViewport &&
                 !(isMobileViewport && mobileCanvasFocusMode) && (
@@ -36543,6 +36606,18 @@ export default function XrayCalibrationWorkspace({
                       setMobileCanvasLocked(false);
                       resetCanvasInteractionState();
                     }}
+                    onMore={() => {
+                      setSimpleMobilePanel((prev) =>
+                        prev === "more" ? null : "more",
+                      );
+                    }}
+                    moreActive={
+                      simpleMobilePanel === "more" ||
+                      simpleMobilePanel === "manager" ||
+                      simpleMobilePanel === "layer" ||
+                      simpleMobilePanel === "implant" ||
+                      landmarkAnnotationOpen
+                    }
                     canUndo={historyState.undo > 0}
                     canRedo={historyState.redo > 0}
                     isTablet={isTabletViewport}

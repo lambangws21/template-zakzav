@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   CloudUpload,
   Crosshair,
@@ -12,6 +13,7 @@ import {
   MapPin,
   Maximize2,
   Minimize2,
+  MoreHorizontal,
   MousePointer2,
   Move,
   Redo2,
@@ -19,6 +21,7 @@ import {
   RotateCw,
   Ruler,
   Scaling,
+  SlidersHorizontal,
   Undo2,
   ZoomIn,
   ZoomOut,
@@ -67,23 +70,29 @@ const NAV_STYLES = `
 `;
 
 const TAB_ICONS = {
+  image:       CloudUpload,
   upload:      CloudUpload,
   calibration: Crosshair,
   measure:     Ruler,
+  plan:        Crosshair,
   manager:     Layers,
   export:      Download,
   annotate:    MapPin,
   dorr:        LensConcave,
+  more:        MoreHorizontal,
 };
 
 const TAB_ACTIVE_COLORS = {
+  image:       "text-cyan-600",
   upload:      "text-cyan-600",
   calibration: "text-amber-600",
   measure:     "text-blue-600",
+  plan:        "text-violet-600",
   manager:     "text-violet-600",
   export:      "text-emerald-600",
   annotate:    "text-rose-600",
   dorr:        "text-indigo-600",
+  more:        "text-slate-700",
 };
 
 function Btn({
@@ -142,63 +151,105 @@ export default function MobileNavigation({
   isTablet = false,
   focusMode = false,
   onToggleFocusMode,
+  onMore,
+  moreActive = false,
 }) {
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const tabCols = tabs.length || 1;
   const isEditing = canvasMode === "edit";
   const floatingControlsClass = isTablet
     ? "pointer-events-auto fixed right-4 top-1/2 z-[52] flex max-h-[calc(100dvh-128px)] -translate-y-1/2 flex-col items-end gap-2 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]"
-    : "pointer-events-auto fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+92px)] z-[52] flex max-h-[calc(100dvh-130px)] flex-col items-end gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]";
+    : "pointer-events-auto fixed right-2 top-[calc(env(safe-area-inset-top)+54px)] z-[52] flex max-h-[calc(100dvh-124px)] flex-col items-end gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:none]";
   const controlButtonClass = isTablet ? "h-11 w-11" : "h-10 w-10";
   const tabButtonClass = isTablet
     ? "inline-flex min-h-[48px] flex-row items-center justify-center gap-1.5 rounded-xl px-2 py-1.5 transition-all"
     : "inline-flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 transition-all";
+  const showFloatingControls = isTablet || controlsExpanded;
 
   return (
     <div className={`pointer-events-none w-full ${className}`}>
       <style>{NAV_STYLES}</style>
 
       <div className={floatingControlsClass}>
-        <div className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl">
-          <Btn active={canvasMode === "pan"} icon={Hand} label="Pan" onClick={onPan} className={controlButtonClass} />
-          <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className={controlButtonClass} />
-        </div>
+        {!isTablet ? (
+          <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
+            <Btn
+              active={controlsExpanded}
+              icon={controlsExpanded ? Minimize2 : SlidersHorizontal}
+              label={controlsExpanded ? "Sembunyikan kontrol" : "Kontrol canvas"}
+              onClick={() => setControlsExpanded((prev) => !prev)}
+              className={controlButtonClass}
+              color={controlsExpanded ? "text-cyan-600" : "text-slate-600"}
+            />
+          </div>
+        ) : null}
 
         <AnimatePresence initial={false}>
-          {isEditing && (
+          {showFloatingControls ? (
             <motion.div
+              key="mobile-floating-controls"
               initial={{ opacity: 0, x: 10, scale: 0.96 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 8, scale: 0.96 }}
               transition={{ duration: 0.16 }}
-              className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl"
+              className="flex flex-col items-end gap-1.5"
             >
-              {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]]).map(([mode, Icon, lbl]) => (
-                <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className={controlButtonClass} />
-              ))}
+              <div className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl">
+                <Btn
+                  active={moreActive}
+                  icon={MoreHorizontal}
+                  label="More"
+                  onClick={onMore}
+                  className={controlButtonClass}
+                  color={moreActive ? "text-slate-800" : "text-slate-600"}
+                />
+                <Btn
+                  active={focusMode}
+                  icon={focusMode ? Minimize2 : Maximize2}
+                  label={focusMode ? "Keluar Focus Canvas" : "Focus Canvas"}
+                  onClick={onToggleFocusMode}
+                  className={controlButtonClass}
+                  color={focusMode ? "text-cyan-500" : "text-slate-500"}
+                />
+              </div>
+
+              <div className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl">
+                <Btn active={canvasMode === "pan"} icon={Hand} label="Pan" onClick={onPan} className={controlButtonClass} />
+                <Btn active={isEditing} icon={MousePointer2} label="Edit" onClick={onEdit} className={controlButtonClass} />
+              </div>
+
+              {isEditing ? (
+                <div className="mnav-tray flex gap-0.5 rounded-full p-1 backdrop-blur-xl">
+                  {([["move", Move, "Geser"], ["scale", Scaling, "Skala"], ["rotate", RotateCw, "Putar"]]).map(([mode, Icon, lbl]) => (
+                    <Btn key={mode} active={toolMode === mode} icon={Icon} label={lbl} onClick={() => onToolModeChange?.(mode)} className={controlButtonClass} />
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="mnav-tray grid grid-cols-2 gap-0.5 rounded-[18px] p-1 backdrop-blur-xl">
+                <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`${controlButtonClass} transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
+                <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`${controlButtonClass} transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
+                <Btn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} className={controlButtonClass} />
+                <Btn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} className={controlButtonClass} />
+                <Btn icon={RotateCcw} label="Reset 100%" onClick={onResetZoom} className={controlButtonClass} />
+                <Btn icon={Maximize2} label="Fit" onClick={onFit} className={controlButtonClass} />
+              </div>
+
+              <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
+                <Btn
+                  active={canvasLocked}
+                  icon={canvasLocked ? Lock : LockOpen}
+                  label={canvasLocked ? "Unlock" : "Lock"}
+                  onClick={canvasLocked ? onUnlock : onToggleCanvasLock}
+                  className={controlButtonClass}
+                  color={canvasLocked ? "text-rose-500" : "text-slate-500"}
+                />
+              </div>
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
 
-        <div className="mnav-tray grid grid-cols-2 gap-0.5 rounded-[18px] p-1 backdrop-blur-xl">
-          <Btn icon={Undo2} label="Undo" onClick={onUndo} className={`${controlButtonClass} transition-opacity ${!canUndo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canUndo} />
-          <Btn icon={Redo2} label="Redo" onClick={onRedo} className={`${controlButtonClass} transition-opacity ${!canRedo ? "opacity-35 cursor-not-allowed" : ""}`} color="text-slate-600" disabled={!canRedo} />
-          <Btn icon={ZoomOut} label="Zoom Out" onClick={onZoomOut} className={controlButtonClass} />
-          <Btn icon={ZoomIn} label="Zoom In" onClick={onZoomIn} className={controlButtonClass} />
-          <Btn icon={RotateCcw} label="Reset 100%" onClick={onResetZoom} className={controlButtonClass} />
-          <Btn icon={Maximize2} label="Fit" onClick={onFit} className={controlButtonClass} />
-        </div>
-
-        <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
-          <Btn
-            active={canvasLocked}
-            icon={canvasLocked ? Lock : LockOpen}
-            label={canvasLocked ? "Unlock" : "Lock"}
-            onClick={canvasLocked ? onUnlock : onToggleCanvasLock}
-            className={controlButtonClass}
-            color={canvasLocked ? "text-rose-500" : "text-slate-500"}
-          />
-        </div>
-
+        {isTablet ? (
         <div className="mnav-tray rounded-full p-1 backdrop-blur-xl">
           <Btn
             active={focusMode}
@@ -209,6 +260,7 @@ export default function MobileNavigation({
             color={focusMode ? "text-cyan-500" : "text-slate-500"}
           />
         </div>
+        ) : null}
       </div>
 
       {!focusMode ? (
