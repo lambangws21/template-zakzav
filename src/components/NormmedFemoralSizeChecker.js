@@ -132,11 +132,11 @@ export default function NormmedFemoralSizeChecker({
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-black text-slate-900 sm:text-base">
             <Calculator className="h-4 w-4 shrink-0 text-cyan-700" />
-            <span>Femoral Size TKR PS Normmed</span>
+            <span>Normmed TKR PS/CR Femoral Size</span>
           </div>
           <p className="mt-1 text-[10px] font-semibold leading-snug text-slate-500 sm:text-xs">
             Cek ukuran femoral dari Width, Length, atau Height berdasarkan
-            tabel Gordion Total Knee System PS/CR.
+            tabel Normmed/Gordion Total Knee System PS/CR.
           </p>
         </div>
         {onClose ? (
@@ -240,7 +240,7 @@ export default function NormmedFemoralSizeChecker({
             <ToneIcon className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-black uppercase tracking-widest opacity-75">
-                Rekomendasi
+                Rekomendasi Normmed
               </div>
               <div className="mt-0.5 text-2xl font-black leading-none">
                 Size {recommended.size}
@@ -314,9 +314,9 @@ export default function NormmedFemoralSizeChecker({
       ) : null}
 
       <p className="mt-2 text-[9px] font-semibold leading-snug text-slate-400">
-        Data referensi diambil dari tabel Gordion Total Knee System PS/CR yang
-        kamu berikan. Validasi akhir tetap mengikuti evaluasi klinis dan
-        templating intra-operatif.
+        Data referensi diambil dari tabel Normmed/Gordion Total Knee System
+        PS/CR yang kamu berikan. Validasi akhir tetap mengikuti evaluasi klinis
+        dan templating intra-operatif.
       </p>
     </div>
   );

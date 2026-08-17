@@ -3258,41 +3258,62 @@ export default function XrayCalibrationWorkspace({
 
   const getSizingLineIntent = useCallback((line) => {
     if (!line) return null;
+    const nameSignature = `${line.name || ""}`.toLowerCase().trim();
     const signature = `${line.name || ""} ${line.type || ""}`.toLowerCase();
+    const compactSignature = signature.replace(/[^a-z0-9]+/g, "");
+    const compactNameSignature = nameSignature.replace(/[^a-z0-9]+/g, "");
     const hasDimensionOrSizingContext =
-      /\b(size|sizing|width|length|height|ml|ap|normmed|gordion|tkr|baseplate|tray)\b/.test(
+      /\b(size|sizing|width|length|height|lebar|panjang|tinggi|ml|m\/l|m-l|ap|a\/p|a-p|normmed|gordion|tkr|baseplate|tray)\b/.test(
         signature,
-      );
+      ) || /\b(medial\s*lateral|antero\s*posterior)\b/.test(signature);
     const isExcluded =
-      /\b(offset|axis|head|dorr|hka|ruler|guide|parallel|perpendicular)\b/.test(
+      /\b(offset|axis|head|dorr|hka|guide|parallel|perpendicular)\b/.test(
         signature,
       );
 
     if (isExcluded) return null;
 
     const selectedFemoralSizingLine =
-      normmedFemoralSizerOpen &&
+      (normmedFemoralSizerOpen || isNativeMobileSimpleUi) &&
       selectedLineId !== null &&
       line.id === selectedLineId;
     const hasFemoralContext =
       /\b(femoral|femur|fem|normmed|gordion|tkr|ps|cr)\b/.test(signature);
     const hasTibialContext =
       /\b(tibial|tibia|baseplate|tray)\b/.test(signature);
+    const hasFemoralSizeAlias =
+      /\b(femoral|femur|fem)\b.*\b(size|sizing|width|length|height|lebar|panjang|tinggi|ml|m\/l|m-l|ap|a\/p|a-p)\b/.test(
+        signature,
+      ) ||
+      /\b(size|sizing|width|length|height|lebar|panjang|tinggi|ml|m\/l|m-l|ap|a\/p|a-p)\b.*\b(femoral|femur|fem)\b/.test(
+        signature,
+      );
+    const hasStandaloneFemoralDimensionAlias =
+      /^(ml|m\/l|m-l|ap|a\/p|a-p|size|sizing|width|length|height|lebar|panjang|tinggi)$/i.test(
+        nameSignature,
+      ) ||
+      /^(ml|ap|size|sizing|width|length|height|lebar|panjang|tinggi)$/.test(
+        compactNameSignature,
+      ) ||
+      /^(ml|ap)$/.test(
+        compactSignature,
+      );
 
     if (hasTibialContext && hasDimensionOrSizingContext) return "tibial";
     if (
       selectedFemoralSizingLine ||
-      (hasFemoralContext && hasDimensionOrSizingContext)
+      hasFemoralSizeAlias ||
+      (hasFemoralContext && hasDimensionOrSizingContext) ||
+      hasStandaloneFemoralDimensionAlias
     ) {
       return "femoral";
     }
     return null;
-  }, [normmedFemoralSizerOpen, selectedLineId]);
+  }, [isNativeMobileSimpleUi, normmedFemoralSizerOpen, selectedLineId]);
 
   const getNormmedFemoralSizingForLine = useCallback(
     (line) => {
       const blockedTypes = new Set([
-        "ruler",
         "hka",
         "parallelGuide",
         "perpendicularGuide",
@@ -3331,7 +3352,7 @@ export default function XrayCalibrationWorkspace({
           title:
             sizingIntent === "tibial"
               ? "Tibial sizing"
-              : "Femoral sizing",
+              : "Normmed TKR PS/CR femoral sizing",
           sourceText,
           message: "Kalibrasi ruler/marker dulu agar line bisa dihitung ke mm.",
         };
@@ -3381,7 +3402,7 @@ export default function XrayCalibrationWorkspace({
       return {
         available: true,
         kind: "femoral",
-        title: "Femoral sizing",
+        title: "Normmed TKR PS/CR femoral sizing",
         sourceText,
         lineLengthMm,
         inferredDimension,
@@ -11685,6 +11706,9 @@ export default function XrayCalibrationWorkspace({
 
       if (hitLine) {
         const sizingIntent = getSizingLineIntent(hitLine);
+        if (isNativeMobileSimpleUi) {
+          setSelectedLineId(hitLine.id);
+        }
         setHoveredMeasurementInfo(null);
         if (sizingIntent) {
           setLineLabelHoverInfo(null);
@@ -11750,6 +11774,7 @@ export default function XrayCalibrationWorkspace({
       findHkaLabelByPoint,
       findLineLabelByPoint,
       getSizingLineIntent,
+      isNativeMobileSimpleUi,
       isMobileViewport,
       isSimpleUiMode,
       lines,
@@ -14521,39 +14546,82 @@ export default function XrayCalibrationWorkspace({
             hoveredLineLabelId !== null && hoveredLineLabelId !== undefined
               ? lines.find((line) => line.id === hoveredLineLabelId)
               : null;
-          const hoveredLineSizingIntent = getSizingLineIntent(hoveredLineLabel);
+          const hoveredBodyLineId = hoveredLineLabel
+            ? null
+            : findClosestLineId(moveImagePoint);
+          let hoveredBodyLine =
+            hoveredBodyLineId !== null && hoveredBodyLineId !== undefined
+              ? lines.find((line) => line.id === hoveredBodyLineId)
+              : null;
+          const hoveredLabelSizingIntent =
+            getSizingLineIntent(hoveredLineLabel);
+          let hoveredBodySizingIntent = hoveredLabelSizingIntent
+            ? null
+            : getSizingLineIntent(hoveredBodyLine);
+          if (!hoveredLabelSizingIntent && !hoveredBodySizingIntent) {
+            const sizingHoverThreshold = 18 / Math.max(view.scale, 0.01);
+            let closestSizingLine = null;
+            let closestSizingDistance = Infinity;
+            for (const candidateLine of lines) {
+              if (!getSizingLineIntent(candidateLine)) continue;
+              const distance = distancePointToSegment(
+                moveImagePoint,
+                candidateLine,
+              );
+              if (
+                distance <= sizingHoverThreshold &&
+                distance < closestSizingDistance
+              ) {
+                closestSizingLine = candidateLine;
+                closestSizingDistance = distance;
+              }
+            }
+            if (closestSizingLine) {
+              hoveredBodyLine = closestSizingLine;
+              hoveredBodySizingIntent = getSizingLineIntent(closestSizingLine);
+            }
+          }
+          const hoveredSizingLine = hoveredLabelSizingIntent
+            ? hoveredLineLabel
+            : hoveredBodySizingIntent
+              ? hoveredBodyLine
+              : null;
+          const hoveredLineSizingIntent =
+            hoveredLabelSizingIntent || hoveredBodySizingIntent;
+          const hoverScreenX = Math.round(point.x);
+          const hoverScreenY = Math.round(point.y);
           setLineLabelHoverInfo((cur) => {
-            if (!hoveredLineLabel || hoveredLineSizingIntent) {
+            if (!hoveredLineLabel || hoveredLabelSizingIntent) {
               return cur ? null : cur;
             }
             if (
               cur?.lineId === hoveredLineLabel.id &&
-              cur.screenX === Math.round(point.x) &&
-              cur.screenY === Math.round(point.y)
+              cur.screenX === hoverScreenX &&
+              cur.screenY === hoverScreenY
             ) {
               return cur;
             }
             return {
               lineId: hoveredLineLabel.id,
-              screenX: point.x,
-              screenY: point.y,
+              screenX: hoverScreenX,
+              screenY: hoverScreenY,
             };
           });
           setSizingLineHoverInfo((cur) => {
-            if (!hoveredLineLabel || !hoveredLineSizingIntent) {
+            if (!hoveredSizingLine || !hoveredLineSizingIntent) {
               return cur ? null : cur;
             }
             if (
-              cur?.lineId === hoveredLineLabel.id &&
-              cur.screenX === Math.round(point.x) &&
-              cur.screenY === Math.round(point.y)
+              cur?.lineId === hoveredSizingLine.id &&
+              cur.screenX === hoverScreenX &&
+              cur.screenY === hoverScreenY
             ) {
               return cur;
             }
             return {
-              lineId: hoveredLineLabel.id,
-              screenX: point.x,
-              screenY: point.y,
+              lineId: hoveredSizingLine.id,
+              screenX: hoverScreenX,
+              screenY: hoverScreenY,
             };
           });
           setHoveredMeasurementInfo((current) => {
@@ -19932,10 +20000,10 @@ export default function XrayCalibrationWorkspace({
       setSelectedCutLayerId(null);
       triggerSelectionPulse("line", targetLine.id);
       setNotice(
-        `Fem Size aktif memakai Line #${targetLine.id}. Hover/tap label line untuk detail size.`,
+        `Normmed Fem Size aktif memakai Line #${targetLine.id}. Hover/tap label line untuk detail size Normmed TKR PS/CR.`,
       );
     } else {
-      setNotice("Buat atau pilih line femoral dulu untuk cek Fem Size.");
+      setNotice("Buat atau pilih line femoral dulu untuk cek Normmed Fem Size.");
     }
     setNormmedFemoralSizerOpen(true);
   }, [normmedFemoralMeasurement.line, triggerSelectionPulse]);
@@ -19973,7 +20041,7 @@ export default function XrayCalibrationWorkspace({
     },
     { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto", planningGroup: "knee" },
     { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment", planningGroup: "knee" },
-    { icon: "ruler", label: "Fem Size", desc: "Cek size femoral TKR PS Normmed dari Width, Length, atau Height.", key: "normmedFemoralSizer", action: "normmedFemoralSizer", planningGroup: "knee" },
+    { icon: "ruler", label: "Normmed Size", desc: "Cek size femoral Normmed TKR PS/CR dari Width, Length, atau Height.", key: "normmedFemoralSizer", action: "normmedFemoralSizer", planningGroup: "knee" },
     { icon: "preTka", label: "Pre-TKA", desc: "Perencanaan pre-operasi TKA: deformitas HKA, rencana potongan femoral dan tibial.", key: "preTka", action: "preTka", planningGroup: "knee" },
     { icon: "guideBuilder", label: "Guide", desc: "Buat garis bantu parallel atau perpendicular dari line referensi.", key: "guideBuilder", planningGroup: "knee" },
     { icon: "cupAssessment", label: "Cup Assess", desc: "Nilai orientasi cup: inclination, anteversion, dan safe zone.", key: "cupAssessment", action: "cupAssessment", planningGroup: "hip" },
@@ -20341,6 +20409,45 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "planning",
     },
   ];
+  const mobileNativeLineInfoId = isNativeMobileSimpleUi
+    ? sizingLineHoverInfo?.lineId ??
+      lineLabelHoverInfo?.lineId ??
+      selectedLine?.id ??
+      null
+    : null;
+  const mobileNativeLineInfoLine =
+    mobileNativeLineInfoId !== null && mobileNativeLineInfoId !== undefined
+      ? lines.find((line) => line.id === mobileNativeLineInfoId) || null
+      : null;
+  const mobileNativeLineSizing = mobileNativeLineInfoLine
+    ? getNormmedFemoralSizingForLine(mobileNativeLineInfoLine)
+    : null;
+  const mobileNativeLinePreset = mobileNativeLineInfoLine?.type || "normal";
+  const mobileNativeLinePresetInfo =
+    HIP_FUNCTION_SUMMARY_BY_KEY[mobileNativeLinePreset] ?? null;
+  const mobileNativeLineColor = mobileNativeLineInfoLine
+    ? mobileNativeLineInfoLine.color || lineTypeColor(mobileNativeLinePreset)
+    : "#06b6d4";
+  const mobileNativeLineMeasurement = mobileNativeLineInfoLine
+    ? (() => {
+        const px = getLineLength(mobileNativeLineInfoLine);
+        return px > 0 && mmPerPixel ? formatMeasurementFromPx(px) : null;
+      })()
+    : null;
+  const mobileNativeLineTitle = mobileNativeLineInfoLine
+    ? mobileNativeLineInfoLine.name || `Line #${mobileNativeLineInfoLine.id}`
+    : "";
+  const mobileNativeFemurSizeLabel =
+    mobileNativeLineSizing?.available && mobileNativeLineSizing?.primary
+      ? `Size ${mobileNativeLineSizing.primary.size}`
+      : null;
+  const mobileNativeSizingLengthLabel =
+    mobileNativeLineSizing?.available &&
+    Number.isFinite(mobileNativeLineSizing.lineLengthMm)
+      ? `${mobileNativeLineSizing.lineLengthMm
+          .toFixed(2)
+          .replace(/\.?0+$/, "")} mm`
+      : null;
   return (
     <div
       className={`flex w-screen max-w-none flex-col gap-0 px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 lg:px-3 ${
@@ -20396,7 +20503,7 @@ export default function XrayCalibrationWorkspace({
       </AnimatePresence>
       {/* ── Line Label Hover Tooltip ─────────────────────────────────────── */}
       <AnimatePresence>
-        {lineLabelHoverInfo && (() => {
+        {lineLabelHoverInfo && !isNativeMobileSimpleUi && (() => {
           const line = lines.find((l) => l.id === lineLabelHoverInfo.lineId);
           if (!line) return null;
           if (getSizingLineIntent(line)) return null;
@@ -20506,7 +20613,7 @@ export default function XrayCalibrationWorkspace({
 
       {/* -- Femoral/Tibial Sizing Hover Tooltip ----------------------------- */}
       <AnimatePresence>
-        {sizingLineHoverInfo && (() => {
+        {sizingLineHoverInfo && !isNativeMobileSimpleUi && (() => {
           const line = lines.find((item) => item.id === sizingLineHoverInfo.lineId);
           if (!line) return null;
           const sizing = getNormmedFemoralSizingForLine(line);
@@ -20555,7 +20662,7 @@ export default function XrayCalibrationWorkspace({
                     className="rounded-md px-1.5 py-0.5 text-[9px] font-black tracking-widest text-white uppercase"
                     style={{ background: color }}
                   >
-                    {sizing.kind === "tibial" ? "TIBIA SIZE" : "FEM SIZE"}
+                    {sizing.kind === "tibial" ? "TIBIA SIZE" : "NORMMED FEM SIZE"}
                   </span>
                   <span className="truncate text-[8px] font-bold text-slate-400">
                     {sizing.sourceText}
@@ -20587,7 +20694,7 @@ export default function XrayCalibrationWorkspace({
                         {sizing.primary ? (
                           <div className="text-right">
                             <div className="text-[8px] font-black tracking-widest text-slate-400 uppercase">
-                              Rekomendasi
+                              Rekomendasi Normmed
                             </div>
                             <div className="text-xl font-black" style={{ color }}>
                               Size {sizing.primary.size}
@@ -20634,8 +20741,9 @@ export default function XrayCalibrationWorkspace({
                   )}
 
                   <p className="mt-1.5 text-[8px] font-semibold leading-snug text-slate-400">
-                    Aktif hanya untuk line bernama Femoral/Tibia dengan Width,
-                    Length, Height, ML, AP, Size, atau Baseplate.
+                    Rekomendasi femoral memakai tabel Normmed/Gordion TKR
+                    PS/CR. Aktif untuk Line/Ruler bernama Fem Size, Femur ML,
+                    ML, AP, Width, Length, Height, atau Tibia/Baseplate.
                   </p>
                 </div>
               </div>
@@ -25581,7 +25689,7 @@ export default function XrayCalibrationWorkspace({
                         setSimplePlanningModal(null);
                         handleToolChange("draw");
                         setNotice(
-                          "Buat line ukur femoral Width/Length/Height, lalu buka Fem Size untuk cek size Normmed.",
+                          "Buat line ukur femoral Width/Length/Height, lalu buka Normmed Size untuk cek rekomendasi Normmed TKR PS/CR.",
                         );
                       }}
                     />
@@ -25688,7 +25796,7 @@ export default function XrayCalibrationWorkspace({
                   setNormmedFemoralSizerOpen(false);
                   handleToolChange("draw");
                   setNotice(
-                    "Buat line ukur femoral Width/Length/Height, lalu buka Fem Size untuk cek size Normmed.",
+                    "Buat line ukur femoral Width/Length/Height, lalu buka Normmed Size untuk cek rekomendasi Normmed TKR PS/CR.",
                   );
                 }}
                 onClose={() => setNormmedFemoralSizerOpen(false)}
@@ -34570,7 +34678,7 @@ export default function XrayCalibrationWorkspace({
                                   <path d="M3 13V3h10" />
                                   <path d="M5 11h6M5 8h5M5 5h4" />
                                 </svg>
-                                <span>Fem Size</span>
+                                <span>Normmed Size</span>
                               </button>
                               <button type="button" onClick={() => { setSimpleMobilePanel(null); setSimpleGuideModalOpen(true); }}
                                 className="col-span-2 flex items-center justify-center gap-2 rounded-[18px] border border-white/70 bg-[#eef2f7] py-2.5 text-[10px] font-black text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]">
@@ -35463,7 +35571,11 @@ export default function XrayCalibrationWorkspace({
                 <>
                   {/* backdrop — click outside to close */}
                   <div
-                    className="pointer-events-auto absolute inset-0 z-39"
+                    className={`absolute inset-0 z-39 ${
+                      isNativeMobileSimpleUi && !selectedCutLayer && selectedLine
+                        ? "pointer-events-none"
+                        : "pointer-events-auto"
+                    }`}
                     onClick={() => setMobileObjectSettingsOpen(false)}
                   />
                 <motion.div
@@ -35472,7 +35584,11 @@ export default function XrayCalibrationWorkspace({
                   exit={{ opacity: 0, y: 14, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
                   data-mobj=""
-                  className="pointer-events-auto absolute z-40 max-h-[min(40vh,340px)] w-[min(90vw,400px)] overflow-y-auto rounded-[22px] p-2 backdrop-blur-md"
+                  className={`pointer-events-auto absolute z-40 overflow-y-auto backdrop-blur-md ${
+                    isNativeMobileSimpleUi && !selectedCutLayer && selectedLine
+                      ? "max-h-[min(30vh,220px)] w-[min(72vw,286px)] rounded-[18px] p-1.5"
+                      : "max-h-[min(40vh,340px)] w-[min(90vw,400px)] rounded-[22px] p-2"
+                  }`}
                   style={{
                     background: isDark ? "rgba(15,23,42,0.92)" : "rgba(235,240,247,0.94)",
                     border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(255,255,255,0.45)",
@@ -35480,7 +35596,9 @@ export default function XrayCalibrationWorkspace({
                     color: isDark ? "#c8d5e8" : "#1e293b",
                     ...(mobileObjPanelPos
                       ? { left: mobileObjPanelPos.x, top: mobileObjPanelPos.y, transform: "none" }
-                      : { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 60px)", transform: "translateX(-50%)" }),
+                      : isNativeMobileSimpleUi && !selectedCutLayer && selectedLine
+                        ? { left: 10, top: 64, transform: "none" }
+                        : { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 60px)", transform: "translateX(-50%)" }),
                   }}
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -35894,7 +36012,193 @@ export default function XrayCalibrationWorkspace({
                     </div>
                   ) : null}
 
-                  {!selectedCutLayer && selectedLine ? (
+                  {isNativeMobileSimpleUi && !selectedCutLayer && selectedLine ? (
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
+                        <input
+                          value={selectedLine.name || ""}
+                          onChange={(event) =>
+                            setLines((prev) =>
+                              prev.map((line) =>
+                                line.id === selectedLine.id
+                                  ? { ...line, name: event.target.value }
+                                  : line,
+                              ),
+                            )
+                          }
+                          className="min-h-8 min-w-0 rounded-xl border border-white/45 bg-white/28 px-2 text-[11px] font-black text-slate-700 outline-none"
+                          placeholder={`Line #${selectedLine.id}`}
+                        />
+                        <span
+                          className="rounded-full px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white"
+                          style={{
+                            background:
+                              selectedLine.color ||
+                              lineTypeColor(selectedLine.type || "normal"),
+                          }}
+                        >
+                          {lineTypeLabel(selectedLine.type || "normal")}
+                        </span>
+                      </div>
+                      <div className="rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                            Width
+                          </span>
+                          <span className="font-mono text-[10px] font-black text-slate-600">
+                            {Number(selectedLine.strokeWidth || DEFAULT_LINE_STROKE_WIDTH).toFixed(1)}x
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[28px_1fr_28px] items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLines((prev) =>
+                                prev.map((line) =>
+                                  line.id === selectedLine.id
+                                    ? {
+                                        ...line,
+                                        strokeWidth: clamp(
+                                          Number(line.strokeWidth || DEFAULT_LINE_STROKE_WIDTH) - 0.5,
+                                          0.5,
+                                          8,
+                                        ),
+                                      }
+                                    : line,
+                                ),
+                              )
+                            }
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/55 bg-[#eef2f7]/62 text-[13px] font-black text-slate-600"
+                            aria-label="Kurangi lebar line"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="range"
+                            min={0.5}
+                            max={8}
+                            step={0.5}
+                            value={Number(selectedLine.strokeWidth || DEFAULT_LINE_STROKE_WIDTH)}
+                            onChange={(event) =>
+                              setLines((prev) =>
+                                prev.map((line) =>
+                                  line.id === selectedLine.id
+                                    ? {
+                                        ...line,
+                                        strokeWidth: Number(event.target.value),
+                                      }
+                                    : line,
+                                ),
+                              )
+                            }
+                            className="h-2 w-full accent-cyan-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLines((prev) =>
+                                prev.map((line) =>
+                                  line.id === selectedLine.id
+                                    ? {
+                                        ...line,
+                                        strokeWidth: clamp(
+                                          Number(line.strokeWidth || DEFAULT_LINE_STROKE_WIDTH) + 0.5,
+                                          0.5,
+                                          8,
+                                        ),
+                                      }
+                                    : line,
+                                ),
+                              )
+                            }
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/55 bg-[#eef2f7]/62 text-[13px] font-black text-slate-600"
+                            aria-label="Tambah lebar line"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1">
+                          {LINE_COLOR_OPTIONS.slice(0, 7).map((color) => (
+                            <button
+                              key={`native-line-color-${color}`}
+                              type="button"
+                              onClick={() =>
+                                setLines((prev) =>
+                                  prev.map((line) =>
+                                    line.id === selectedLine.id
+                                      ? { ...line, color }
+                                      : line,
+                                  ),
+                                )
+                              }
+                              className={`h-6 w-6 rounded-full border transition ${
+                                (selectedLine.color ||
+                                  lineTypeColor(selectedLine.type || "normal")) === color
+                                  ? "border-white ring-2 ring-cyan-300"
+                                  : "border-white/55"
+                              }`}
+                              style={{ background: color }}
+                              aria-label={`Warna line ${color}`}
+                            />
+                          ))}
+                          <label className="relative inline-flex h-6 w-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70">
+                            <span
+                              className="h-4 w-4 rounded-full"
+                              style={{
+                                background:
+                                  "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
+                              }}
+                            />
+                            <input
+                              type="color"
+                              value={
+                                selectedLine.color ||
+                                lineTypeColor(selectedLine.type || "normal")
+                              }
+                              onChange={(event) =>
+                                setLines((prev) =>
+                                  prev.map((line) =>
+                                    line.id === selectedLine.id
+                                      ? { ...line, color: event.target.value }
+                                      : line,
+                                  ),
+                                )
+                              }
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                              aria-label="Custom line color"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={toggleSelectedLineLock}
+                          className="min-h-8 rounded-[14px] border border-white/50 bg-[#eef2f7]/62 text-[9px] font-black text-slate-700"
+                        >
+                          {isSelectedLineLocked ? "Unlock" : "Lock"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSimpleCalibrationModal()}
+                          className="min-h-8 rounded-[14px] border border-cyan-200/60 bg-cyan-50/80 text-[9px] font-black text-cyan-800"
+                        >
+                          Calib
+                        </button>
+                        <button
+                          type="button"
+                          onClick={removeSelectedLine}
+                          className="min-h-8 rounded-[14px] border border-rose-200 bg-rose-50/90 text-[9px] font-black text-rose-600"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!isNativeMobileSimpleUi && !selectedCutLayer && selectedLine ? (
                     <div className="space-y-2">
                       <label className="block rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
                         <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
@@ -36493,7 +36797,7 @@ export default function XrayCalibrationWorkspace({
                     <motion.div
                       key="mobile-measure-quick-toolbar"
                       initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.98 }}
                       transition={MOBILE_PANEL_TRANSITION}
                       className={`pointer-events-auto fixed z-[49] rounded-[20px] border border-[var(--soft-border)] bg-[rgba(15,23,42,0.78)] px-2.5 py-2 text-white shadow-[0_10px_28px_rgba(2,6,23,0.28)] backdrop-blur-xl ${
@@ -36542,6 +36846,197 @@ export default function XrayCalibrationWorkspace({
                         >
                           Clear
                         </button>
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+
+                <AnimatePresence>
+                  {isNativeMobileSimpleUi &&
+                  mobileNativeLineInfoLine &&
+                  !simpleMobilePanel &&
+                  !mobileCanvasFocusMode &&
+                  !mobileObjectSettingsOpen ? (
+                    <motion.div
+                      key={`mobile-native-line-info-${mobileNativeLineInfoLine.id}`}
+                      initial={{ opacity: 0, x: -10, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -8, scale: 0.97 }}
+                      transition={MOBILE_PANEL_TRANSITION}
+                      className="pointer-events-auto fixed left-3 top-[calc(env(safe-area-inset-top)+72px)] z-[48] w-[min(72vw,286px)] overflow-hidden rounded-[18px] border border-white/10 bg-slate-950/78 text-white shadow-[0_12px_32px_rgba(2,6,23,0.36)] backdrop-blur-xl"
+                    >
+                      <div
+                        className="flex items-start gap-2 px-2.5 py-2"
+                        style={{
+                          background: `linear-gradient(135deg, ${mobileNativeLineColor}24, rgba(15,23,42,0.14))`,
+                          borderBottom: `1px solid ${mobileNativeLineColor}40`,
+                        }}
+                      >
+                        <span
+                          className="mt-0.5 h-7 w-1.5 shrink-0 rounded-full"
+                          style={{ background: mobileNativeLineColor }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-white"
+                              style={{ background: mobileNativeLineColor }}
+                            >
+                              {mobileNativeLineSizing
+                                ? mobileNativeLineSizing.kind === "tibial"
+                                  ? "Tibia Size"
+                                  : "Normmed Fem Size"
+                                : lineTypeLabel(mobileNativeLinePreset)}
+                            </span>
+                            {isLineLocked(mobileNativeLineInfoLine.id) ? (
+                              <span className="rounded-full border border-amber-300/30 bg-amber-400/14 px-1.5 py-0.5 text-[8px] font-black text-amber-100">
+                                Lock
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[13px] font-black text-white">
+                                {mobileNativeLineTitle}
+                              </p>
+                              <p className="mt-0.5 truncate text-[9px] font-semibold text-slate-300">
+                                {mobileNativeLinePresetInfo?.shortLabel ||
+                                  mobileNativeLineSizing?.sourceText ||
+                                  `Line #${mobileNativeLineInfoLine.id}`}
+                              </p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p
+                                className="font-mono text-[13px] font-black"
+                                style={{ color: mobileNativeLineColor }}
+                              >
+                                {mobileNativeFemurSizeLabel ||
+                                  mobileNativeLineMeasurement ||
+                                  "Belum kalibrasi"}
+                              </p>
+                              <p className="text-[8px] font-bold uppercase tracking-wider text-slate-500">
+                                {mobileNativeFemurSizeLabel
+                                  ? mobileNativeSizingLengthLabel || "femur"
+                                  : hasCalibration
+                                    ? measurementUnit
+                                    : "no scale"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearTouchHoverDetails();
+                            if (selectedLineId === mobileNativeLineInfoLine.id) {
+                              setSelectedLineId(null);
+                            }
+                          }}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8 text-slate-300"
+                          aria-label="Tutup info line"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="px-2.5 py-2">
+                        {mobileNativeLineSizing ? (
+                          <div className="mb-1.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-[14px] border border-white/10 bg-white/7 px-2 py-1.5">
+                            <div className="min-w-0">
+                              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">
+                                {mobileNativeLineSizing.title}
+                              </p>
+                              <p className="truncate text-[10px] font-semibold text-slate-300">
+                                {mobileNativeLineSizing.available
+                                  ? `${mobileNativeSizingLengthLabel || "-"} · ${mobileNativeLineSizing.inferredDimension || "width"}`
+                                  : mobileNativeLineSizing.message}
+                              </p>
+                            </div>
+                            {mobileNativeLineSizing.primary ? (
+                              <div className="rounded-2xl bg-white/10 px-2 py-1 text-center">
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">
+                                  Normmed
+                                </p>
+                                <p className="text-lg font-black" style={{ color: mobileNativeLineColor }}>
+                                  {mobileNativeLineSizing.primary.size}
+                                </p>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : mobileNativeLinePresetInfo ? (
+                          <p className="mb-1.5 line-clamp-1 rounded-[14px] border border-white/10 bg-white/7 px-2 py-1.5 text-[9px] font-semibold leading-4 text-slate-300">
+                            {mobileNativeLinePresetInfo.detail}
+                          </p>
+                        ) : null}
+
+                        <div className="grid grid-cols-4 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedLineId(mobileNativeLineInfoLine.id);
+                              triggerSelectionPulse("line", mobileNativeLineInfoLine.id);
+                              setMobileCanvasMode("edit");
+                              setMobileToolMode("move");
+                              setMobileObjectSettingsOpen(true);
+                              clearTouchHoverDetails();
+                            }}
+                            className="min-h-8 rounded-[14px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
+                          >
+                            Detail
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const targetId = mobileNativeLineInfoLine.id;
+                              const willUnlock = lockedLineIds.has(targetId);
+                              setSelectedLineId(targetId);
+                              triggerSelectionPulse("line", targetId);
+                              setLockedLineIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(targetId)) {
+                                  next.delete(targetId);
+                                } else {
+                                  next.add(targetId);
+                                }
+                                return next;
+                              });
+                              setNotice(
+                                willUnlock
+                                  ? "Lock dibuka. Garis bisa diubah kembali."
+                                  : "Garis di-lock. Posisi dan ukurannya tidak bisa diubah.",
+                              );
+                            }}
+                            className="min-h-8 rounded-[14px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
+                          >
+                            {isLineLocked(mobileNativeLineInfoLine.id) ? "Unlock" : "Lock"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedLineId(mobileNativeLineInfoLine.id);
+                              triggerSelectionPulse("line", mobileNativeLineInfoLine.id);
+                              clearTouchHoverDetails();
+                              openSimpleCalibrationModal(
+                                "Line ini dipilih sebagai referensi. Isi nilai real lalu Simpan Kalibrasi.",
+                              );
+                            }}
+                            className="min-h-8 rounded-[14px] border border-cyan-300/25 bg-cyan-400/14 text-[8px] font-black text-cyan-100"
+                          >
+                            Calib
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedLineId(mobileNativeLineInfoLine.id);
+                              triggerSelectionPulse("line", mobileNativeLineInfoLine.id);
+                              clearTouchHoverDetails();
+                              setNormmedFemoralSizerOpen(true);
+                            }}
+                            className="min-h-8 rounded-[14px] border border-emerald-300/25 bg-emerald-400/14 text-[8px] font-black text-emerald-100"
+                          >
+                            Size
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   ) : null}
