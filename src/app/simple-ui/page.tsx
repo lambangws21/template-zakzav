@@ -1,12 +1,8 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import SimpleWorkspace from "../simple/SimpleWorkspace";
 import { useEffect } from "react";
 
-const SimpleCalibrationWorkspace = dynamic(
-  () => import("@/components/XrayCalibrationWorkspace"),
-  { ssr: false }
-);
 
 export default function SimpleUiPage() {
   useEffect(() => {
@@ -41,7 +37,7 @@ export default function SimpleUiPage() {
 
   return (
     <main className="relative h-[100dvh] w-screen overflow-hidden bg-[#f3f6fa]">
-      <SimpleCalibrationWorkspace simpleUiMode />
+      <SimpleWorkspace />
     </main>
   );
 }

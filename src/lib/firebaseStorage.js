@@ -1,12 +1,10 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getDownloadURL, getStorage, list, ref } from "firebase/storage";
 
-const DEFAULT_BUCKET_URL = "gs://data-ok-b4091.firebasestorage.app";
-
 const bucketEnv =
   process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
   process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-  DEFAULT_BUCKET_URL;
+  "";
 const bucketName = String(bucketEnv || "")
   .replace(/^gs:\/\//, "")
   .trim();

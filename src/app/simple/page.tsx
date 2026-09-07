@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import SimpleWorkspace from "./SimpleWorkspace";
 
 export default function SimplePage() {
-  redirect("/simple-ui");
+  return <SimpleWorkspace />;
 }

@@ -139,6 +139,7 @@ export default function ImagingWorkspaceShell() {
           >
             <XrayCalibrationWorkspace
               simpleUiMode={isSimple}
+              planningUi={isSimple}
               onOpenSimpleUi={isMobile ? undefined : () => setActiveWorkspace("simple")}
               onOpenAdvancedUi={isMobile ? undefined : () => setActiveWorkspace("photo")}
             />

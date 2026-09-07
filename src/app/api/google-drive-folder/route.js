@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApprovedUser } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,6 +66,8 @@ async function resolveFolderName(folderId) {
 }
 
 export async function GET(request) {
+  const authResult = await requireApprovedUser(request);
+  if (authResult.error) return authResult.error;
   const { searchParams } = new URL(request.url);
 
   // Accept a single id= OR comma-separated ids= for batch resolve

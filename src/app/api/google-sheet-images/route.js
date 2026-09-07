@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdmin, requireApprovedUser } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,18 @@ const READ_ACTIONS = new Set([
   "read_patient_cases",
   "readpatientcases",
 ]);
+const APPROVED_USER_MUTATION_ACTIONS = new Set([
+  "create_patient_case",
+  "update_patient_case",
+  "delete_patient_case",
+  "create_implant_usage",
+  "update_implant_usage_submission",
+  "savechecklist",
+  "upload_image",
+  "upload_report",
+]);
+const authorizeRead = (request) => requireApprovedUser(request);
+const authorizeMutation = (request) => requireAdmin(request);
 
 function isAllowedRemote(url) {
   try {
@@ -55,6 +68,10 @@ function normalizeAction(value) {
 function isReadAction(value) {
   const action = normalizeAction(value);
   return READ_ACTIONS.has(action) || READ_ACTIONS.has(action.replace(/_/g, ""));
+}
+
+function isApprovedUserMutation(value) {
+  return APPROVED_USER_MUTATION_ACTIONS.has(normalizeAction(value));
 }
 
 function getRemoteOk(parsed) {
@@ -207,6 +224,8 @@ async function readRequestJson(request) {
 
 export async function GET(request) {
   try {
+    const authResult = await authorizeRead(request);
+    if (authResult.error) return authResult.error;
     const { searchParams } = new URL(request.url);
     const remoteUrl = String(searchParams.get("url") || "").trim();
     if (!remoteUrl) {
@@ -240,6 +259,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const payload = await readRequestJson(request);
+    const authResult = isReadAction(payload?.action) || isApprovedUserMutation(payload?.action)
+      ? await authorizeRead(request)
+      : await authorizeMutation(request);
+    if (authResult.error) return authResult.error;
     const remoteUrl = String(payload?.url || "").trim();
     if (!remoteUrl) {
       return NextResponse.json({ ok: false, error: "Field url wajib diisi." }, { status: 400 });
@@ -274,6 +297,8 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     const payload = await readRequestJson(request);
+    const authResult = await authorizeMutation(request);
+    if (authResult.error) return authResult.error;
     const remoteUrl = String(payload?.url || "").trim();
     if (!remoteUrl) {
       return NextResponse.json({ ok: false, error: "Field url wajib diisi." }, { status: 400 });
@@ -305,6 +330,8 @@ export async function PUT(request) {
 export async function DELETE(request) {
   try {
     const payload = await readRequestJson(request);
+    const authResult = await authorizeMutation(request);
+    if (authResult.error) return authResult.error;
     const remoteUrl = String(payload?.url || "").trim();
     if (!remoteUrl) {
       return NextResponse.json({ ok: false, error: "Field url wajib diisi." }, { status: 400 });

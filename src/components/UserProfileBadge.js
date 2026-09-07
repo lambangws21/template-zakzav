@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { LogOut, Shield, ChevronDown, BarChart2 } from "lucide-react";
+import { LogOut, Shield, ChevronDown, BarChart2, UserCog } from "lucide-react";
 import { logOut } from "@/lib/authServices";
 import { useAuth } from "@/context/AuthContext";
 
@@ -147,6 +148,15 @@ function ProfileDropdown({ user, anchorRef, onClose, onLogout, onAnalytics }) {
 
         {/* Actions */}
         <div className="p-2 space-y-0.5">
+          <Link
+            href="/admin/users"
+            onClick={onClose}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[11px] font-black transition hover:bg-cyan-500/10"
+            style={{ color: "var(--soft-text-hi)" }}
+          >
+            <UserCog className="h-3.5 w-3.5 shrink-0 text-cyan-500" />
+            Persetujuan Akun
+          </Link>
           {onAnalytics && (
             <button
               type="button"

@@ -4,6 +4,7 @@ import {
   getFirebaseAdminStorageBucket,
   hasFirebaseAdminConfig,
 } from "@/lib/firebaseAdmin";
+import { requireApprovedUser } from "@/lib/serverAuth";
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|svg)$/i;
 
@@ -22,6 +23,8 @@ function isImageLikeFile(file) {
 export const runtime = "nodejs";
 
 export async function GET(request) {
+  const authResult = await requireApprovedUser(request);
+  if (authResult.error) return authResult.error;
   if (!hasFirebaseAdminConfig) {
     return NextResponse.json(
       {
@@ -38,7 +41,7 @@ export async function GET(request) {
     const prefix = String(searchParams.get("prefix") || "").replace(/^\/+/, "");
     const maxResults = Math.max(1, Math.min(200, toInt(searchParams.get("limit"), 80)));
     const pageToken = searchParams.get("pageToken") || undefined;
-    const signedUrlHours = Math.max(1, Math.min(24, toInt(searchParams.get("signedHours"), 12)));
+    const signedUrlMinutes = Math.max(5, Math.min(15, toInt(searchParams.get("signedMinutes"), 10)));
 
     const bucket = getFirebaseAdminStorageBucket();
     if (!bucket) {
@@ -55,7 +58,7 @@ export async function GET(request) {
       autoPaginate: false,
     });
 
-    const expiry = Date.now() + signedUrlHours * 60 * 60 * 1000;
+    const expiry = Date.now() + signedUrlMinutes * 60 * 1000;
     const items = (
       await Promise.all(
         files.map(async (file) => {
@@ -91,7 +94,7 @@ export async function GET(request) {
       prefix,
       count: items.length,
       nextPageToken: response?.nextPageToken || null,
-      signedUrlHours,
+      signedUrlMinutes,
       items,
     });
   } catch (error) {

@@ -140,6 +140,10 @@ import TraumaPlanningPanel from "./TraumaPlanningPanel";
 import LandmarkAnnotationPanel from "./LandmarkAnnotationPanel";
 import DriveImplantLibraryPanel from "./DriveImplantLibraryPanel";
 import PatientCaseManager from "./PatientCaseManager";
+import PlanningWorkspace, { PlanningCorrectionControls } from "@/app/simple/PlanningWorkspace";
+import planningStyles from "@/app/simple/PlanningWorkspace.module.css";
+import { TKA_PLANNING_REFERENCE, THA_PLANNING_REFERENCE } from "@/app/simple/planningReference";
+import { createPlanningSession } from "@/lib/planningWorkspace";
 import TemplatingAnalytics from "./TemplatingAnalytics";
 import NavClock from "./workspace/NavClock";
 import Icon from "./workspace/Icon";
@@ -307,11 +311,11 @@ const DEFAULT_SNAP_SETTINGS = {
   shiftOnlyDesktop: false,
 };
 const LEFT_SIDEBAR_MIN_WIDTH = 130;
-const LEFT_SIDEBAR_MAX_WIDTH = 420;
-const LEFT_SIDEBAR_DEFAULT_WIDTH = 260;
+const LEFT_SIDEBAR_MAX_WIDTH = 300;
+const LEFT_SIDEBAR_DEFAULT_WIDTH = 210;
 const RIGHT_SIDEBAR_MIN_WIDTH = 130;
-const RIGHT_SIDEBAR_MAX_WIDTH = 460;
-const RIGHT_SIDEBAR_DEFAULT_WIDTH = 280;
+const RIGHT_SIDEBAR_MAX_WIDTH = 320;
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 240;
 
 const SIDEBAR_ICON_GRID_CLASS =
   "grid gap-1.5 [grid-template-columns:repeat(auto-fit,minmax(40px,1fr))]";
@@ -576,10 +580,12 @@ const VERTICAL_LINE_PRESETS = new Set(["hipLength", "lld"]);
 
 export default function XrayCalibrationWorkspace({
   simpleUiMode = false,
+  planningUi = false,
   onOpenSimpleUi,
   onOpenAdvancedUi,
 } = {}) {
   const isSimpleUiMode = Boolean(simpleUiMode);
+  const isPlanningLayout = isSimpleUiMode && planningUi;
   const { isDark, toggle: toggleDarkMode } = useTheme();
   const containerRef = useRef(null);
   const calibrationPanelRef = useRef(null);
@@ -677,7 +683,7 @@ export default function XrayCalibrationWorkspace({
   const [compareImageName, setCompareImageName] = useState("");
   const [compareMode, setCompareMode] = useState(false);
   const [imageName, setImageName] = useState("");
-  const [tool, setTool] = useState("draw");
+  const [tool, setTool] = useState(planningUi ? "pan" : "draw");
   const [canvasViewport, setCanvasViewport] = useState({
     x: 0,
     y: 0,
@@ -871,7 +877,9 @@ export default function XrayCalibrationWorkspace({
   const [lineLabelHoverInfo, setLineLabelHoverInfo] = useState(null);
   const [sizingLineHoverInfo, setSizingLineHoverInfo] = useState(null);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
-  const [activeRightPanel, setActiveRightPanel] = useState("tool");
+  const [activeRightPanel, setActiveRightPanel] = useState("measure");
+  const [showMoreDesktopTools, setShowMoreDesktopTools] = useState(false);
+  const [canvasToolbarOpen, setCanvasToolbarOpen] = useState(false);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
     LEFT_SIDEBAR_DEFAULT_WIDTH,
   );
@@ -948,6 +956,10 @@ export default function XrayCalibrationWorkspace({
   const [simpleLayerFloatingPopup, setSimpleLayerFloatingPopup] =
     useState(null);
   const [simplePlanningModal, setSimplePlanningModal] = useState(null);
+  const [planningProcedure, setPlanningProcedure] = useState("tka");
+  const [planningSessions, setPlanningSessions] = useState(() => ({
+    tka: createPlanningSession(), hip: createPlanningSession(),
+  }));
   const [simpleGuideModalOpen, setSimpleGuideModalOpen] = useState(false);
   const [templatingWizardOpen, setTemplatingWizardOpen] = useState(false);
   const [workflowOverlayDismissed, setWorkflowOverlayDismissed] = useState(false);
@@ -1041,7 +1053,6 @@ export default function XrayCalibrationWorkspace({
   useEffect(() => {
     if (
       !isSimpleUiMode ||
-      !isMobileViewport ||
       !idleTutorialVisible ||
       typeof window === "undefined"
     ) {
@@ -1056,7 +1067,6 @@ export default function XrayCalibrationWorkspace({
   }, [
     idleTutorialTick,
     idleTutorialVisible,
-    isMobileViewport,
     isSimpleUiMode,
   ]);
 
@@ -1227,6 +1237,7 @@ export default function XrayCalibrationWorkspace({
     useState(false);
   const [simpleRightDockMinimized, setSimpleRightDockMinimized] =
     useState(false);
+  const [simpleMoreToolsOpen, setSimpleMoreToolsOpen] = useState(false);
   const [simpleWizardOpen, setSimpleWizardOpen] = useState(false);
   const [notice, setNotice] = useState(
     "Upload gambar lalu tarik garis. Garis yang sudah ada bisa di-adjust dengan drag titik ujung atau geser garis.",
@@ -3775,6 +3786,8 @@ export default function XrayCalibrationWorkspace({
       showLeftSidebar,
       showRightSidebar,
       planNote,
+      planningProcedure,
+      planningSessions,
       planSteps: planSteps.slice(-60),
       planningGuides: planningGuides.slice(-60),
       planningGuideMode,
@@ -3793,6 +3806,8 @@ export default function XrayCalibrationWorkspace({
       activityLog: activityLogRef.current.slice(-120),
     }),
     [
+      planningProcedure,
+      planningSessions,
       actualMmInput,
       actualUnit,
       calibrationDraftStrokeWidth,
@@ -4762,7 +4777,7 @@ export default function XrayCalibrationWorkspace({
     // On mobile simple UI, reserve space for the fixed bottom MobileNavigation
     // (~96px nav height + 10px gap + ~14px buffer = 120px, excluding safe-area-inset)
     const mobileNavInset =
-      isMobileViewport && isSimpleUiMode
+      isMobileViewport && isSimpleUiMode && !isPlanningLayout
         ? mobileCanvasFocusMode
           ? 24
           : isTabletViewport
@@ -4789,6 +4804,7 @@ export default function XrayCalibrationWorkspace({
         (safeHeight - orientedSize.height * nextScale) / 2,
     });
   }, [
+    isPlanningLayout,
     isSimpleUiMode,
     mobileCanvasFocusMode,
     isTabletViewport,
@@ -4800,7 +4816,7 @@ export default function XrayCalibrationWorkspace({
   ]);
 
   useEffect(() => {
-    if (!isSimpleUiMode || !isMobileViewport || !image) return undefined;
+    if (isPlanningLayout || !isSimpleUiMode || !isMobileViewport || !image) return undefined;
     const timer = window.setTimeout(() => fitImageToViewport(), 80);
     return () => window.clearTimeout(timer);
   }, [
@@ -4809,6 +4825,7 @@ export default function XrayCalibrationWorkspace({
     isMobileViewport,
     isSimpleUiMode,
     mobileCanvasFocusMode,
+    isPlanningLayout,
   ]);
 
   const clampViewport = useCallback(
@@ -5338,14 +5355,19 @@ export default function XrayCalibrationWorkspace({
       setActiveRightPanel("measure");
       setMobilePanelMode("workspace");
       setTool(getIdleTool());
-      setSimplePlanningModal(nextMode);
+      if (isPlanningLayout) {
+        setPlanningProcedure(nextMode);
+        setSimplePlanningModal(null);
+      } else {
+        setSimplePlanningModal(nextMode);
+      }
       setNotice(
         nextMode === "hip"
           ? "Planning HIP dibuka. Pilih preset offset/LLD, lalu gambar atau pilih line di canvas."
           : "Planning TKA dibuka. Pilih line acuan, atur mode guide, lalu buat guide.",
       );
     },
-    [getIdleTool],
+    [getIdleTool, isPlanningLayout],
   );
 
   const focusExportStep = useCallback(() => {
@@ -6733,6 +6755,11 @@ export default function XrayCalibrationWorkspace({
         setShowLeftSidebar(payload.showLeftSidebar ?? false);
         setShowRightSidebar(payload.showRightSidebar ?? false);
         setPlanNote(payload.planNote || "");
+        setPlanningProcedure(payload.planningProcedure === "hip" ? "hip" : "tka");
+        setPlanningSessions({
+          tka: { ...createPlanningSession(), ...payload.planningSessions?.tka },
+          hip: { ...createPlanningSession(), ...payload.planningSessions?.hip },
+        });
         setPlanSteps(
           Array.isArray(payload.planSteps) ? payload.planSteps.slice(-60) : [],
         );
@@ -11159,6 +11186,7 @@ export default function XrayCalibrationWorkspace({
       setMeasurementUnit("cm");
       setLinePreset("normal");
       setPlanNote("");
+      setPlanningSessions({ tka: createPlanningSession(), hip: createPlanningSession() });
       setPlanSteps([]);
       setPlanningGuides([]);
       setSelectedPlanningGuideId(null);
@@ -17159,6 +17187,7 @@ export default function XrayCalibrationWorkspace({
 
   const resetWorkspaceState = useCallback(
     ({ clearImage = false } = {}) => {
+      setPlanningSessions({ tka: createPlanningSession(), hip: createPlanningSession() });
       if (clearImage && objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
@@ -19420,15 +19449,17 @@ export default function XrayCalibrationWorkspace({
     };
   }, []);
 
-  const effectiveShowLeftSidebar = showLeftSidebar && !isSimpleUiMode;
-  const effectiveShowRightSidebar = showRightSidebar && !isSimpleUiMode;
+  const effectiveShowLeftSidebar =
+    showLeftSidebar && !isSimpleUiMode && !hasCalibration;
+  const effectiveShowRightSidebar =
+    showRightSidebar && !isSimpleUiMode && hasCalibration;
   const desktopSectionClass =
     effectiveShowLeftSidebar && effectiveShowRightSidebar
-      ? "lg:[grid-template-columns:var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
+      ? "lg:[grid-template-columns:var(--right-sidebar-width)_var(--left-sidebar-width)_minmax(0,1fr)]"
       : effectiveShowLeftSidebar
         ? "lg:[grid-template-columns:var(--left-sidebar-width)_minmax(0,1fr)]"
         : effectiveShowRightSidebar
-          ? "lg:[grid-template-columns:minmax(0,1fr)_var(--right-sidebar-width)]"
+          ? "lg:[grid-template-columns:var(--right-sidebar-width)_minmax(0,1fr)]"
           : "lg:grid-cols-1";
   const isLeftSidebarCompact = leftSidebarWidth <= 170;
   const isLeftSidebarNarrow = leftSidebarWidth <= 220;
@@ -20409,6 +20440,168 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "planning",
     },
   ];
+  const planningMeasurements = useMemo(() => {
+    if (!isPlanningLayout) return [];
+    const linear = (pixels) => hasCalibration ? pixels * mmPerPixel : null;
+    const entries = lines.filter((line) => line.id !== calibrationLineId).map((line) => ({
+      id: `line:${line.id}`, name: line.name || `${lineTypeLabel(line.type)} #${line.id}`,
+      metric: line.name || null, unit: "mm", value: linear(getLineLength(line)),
+    }));
+    angles.forEach((angle) => entries.push({
+      id: `angle:${angle.id}`, name: angle.name || `Angle #${angle.id}`, metric: angle.name || null,
+      unit: "deg", value: getAngleDegrees(angle.p1, angle.p2, angle.p3),
+    }));
+    circles.forEach((circle) => entries.push({
+      id: `circle:${circle.id}`, name: circle.name || `Diameter #${circle.id}`, metric: circle.name || null,
+      unit: "mm", value: linear(circle.radius * 2),
+    }));
+    hkaSets.slice().reverse().forEach((hka) => {
+      const result = getHkaMeasurementResult(hka);
+      const add = (metric, value) => entries.push({
+        id: `hka:${hka.id}:${metric}`, metric, name: `${metric} / ${hka.side || "right"} #${hka.id}`,
+        value, unit: "deg", side: hka.side || "right",
+      });
+      if (result.jla) {
+        add("mLDFA", result.jla.LDFA); add("mMPTA", result.jla.MPTA); add("JLCA", result.jla.JLCA);
+      }
+      if (result.mode === "full" && result.signedDeviation !== null) add("mFA-mTA", result.signedDeviation);
+      if (hka.hip && hka.knee && hka.ankle && hasCalibration) {
+        const dx = hka.ankle.x - hka.hip.x;
+        const dy = hka.ankle.y - hka.hip.y;
+        const length = Math.hypot(dx, dy);
+        if (length > 0) entries.push({
+          id: `hka:${hka.id}:MAD`, metric: "MAD", name: `MAD / ${hka.side || "right"} #${hka.id}`,
+          unit: "mm", side: hka.side || "right",
+          value: (dx * (hka.knee.y - hka.hip.y) - dy * (hka.knee.x - hka.hip.x)) / length * mmPerPixel,
+        });
+      }
+    });
+    lineIntersectionAngleOverlays.forEach((entry) => entries.push({
+      id: `intersection:${entry.key}`, name: `Interline ${entry.lineAId} / ${entry.lineBId}`,
+      metric: null, unit: "deg", value: entry.angleDeg,
+    }));
+    if (canvasCup?.a > 0) {
+      const raw = ((canvasCup.angle * 180 / Math.PI) % 180 + 180) % 180;
+      entries.push({ id: "cup:inclination", metric: "Cup Inclination", name: "Cup inclination", unit: "deg", value: raw > 90 ? 180 - raw : raw });
+      entries.push({ id: "cup:anteversion", metric: "Cup Anteversion", name: "Cup anteversion", unit: "deg", value: Math.asin(Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a))) * 180 / Math.PI });
+    }
+    const lldLines = lines.filter((line) => line.type === "lld");
+    if (lldLines.length >= 2) entries.push({
+      id: "derived:lld", name: "LLD / selisih dua line LLD", metric: "LLD", unit: "mm",
+      value: linear(Math.abs(getLineLength(lldLines[0]) - getLineLength(lldLines[1]))),
+    });
+    return entries;
+  }, [isPlanningLayout, lines, angles, circles, hkaSets, calibrationLineId, hasCalibration, mmPerPixel, lineTypeLabel, lineIntersectionAngleOverlays, canvasCup]);
+  const planningSession = planningSessions[planningProcedure];
+  const updatePlanningSession = (next) => {
+    setPlanningSessions((current) => ({ ...current, [planningProcedure]: next }));
+    if (next.side) {
+      setCanvasAnatomySide(next.side);
+      setHkaSide(next.side);
+      setCanvasCupSide(next.side);
+      setValgusCutSide(next.side === "left" ? "Left" : "Right");
+    }
+  };
+  const selectPlanningProcedure = (next) => {
+    setPlanningProcedure(next);
+    setMeasureAnatomyTab(next === "hip" ? "hip" : "knee");
+    handleToolChange("pan");
+    const side = planningSessions[next].side;
+    if (side) { setCanvasAnatomySide(side); setHkaSide(side); setCanvasCupSide(side); }
+  };
+  const openPlanningProperties = () => {
+    if (selectedCutLayer) openLayerSettingsModal(selectedCutLayer.id);
+    else if (hasMobileObjectSelection) openSimpleColorPanel();
+    else openImageProcessingModal();
+  };
+  const savePlanningLocally = async () => {
+    try {
+      const payload = buildStoryPayload();
+      if (mainImageFileRef.current) payload.mainImageSrc = await readFileAsDataUrl(mainImageFileRef.current);
+      else if (mainImageSrc?.startsWith("blob:")) payload.mainImageSrc = await readFileAsDataUrl(await (await fetch(mainImageSrc)).blob());
+      for (const layer of payload.cutLayers) {
+        const original = cutLayers.find((item) => item.id === layer.id);
+        if (original?.imageSrc?.startsWith("blob:")) layer.imageSrc = await readFileAsDataUrl(await (await fetch(original.imageSrc)).blob());
+        else if (original?.image && !layer.imageSrc && original.kind === "free-cut") {
+          const canvas = document.createElement("canvas");
+          canvas.width = original.image.naturalWidth || original.image.width;
+          canvas.height = original.image.naturalHeight || original.image.height;
+          canvas.getContext("2d").drawImage(original.image, 0, 0);
+          layer.imageSrc = canvas.toDataURL("image/png");
+        }
+      }
+      if (compareImageSrc?.startsWith("blob:")) payload.compareImageSrc = await readFileAsDataUrl(await (await fetch(compareImageSrc)).blob());
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
+      const link = document.createElement("a"); link.href = url; link.download = "zakzav-planning.json"; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      saveStoryNow();
+    } catch { setNotice("Project gagal disimpan. Coba kembali."); }
+  };
+  const planningActions = {
+    upload: () => mainUploadInputRef.current?.click(), library: () => setLibraryModalOpen(true),
+    calibrate: () => openSimpleCalibrationModal(), properties: openPlanningProperties,
+    freeCut: () => handleToolChange("cut"), implantLibrary: () => openSimpleImplantTemplateOverlay(),
+    report: () => setPreOpReportModalOpen(true), saveLocal: savePlanningLocally,
+    saveCloud: () => setGoogleDriveUploadModalOpen(true), snapshot: exportReportPng,
+    fit: fitImageToViewport, zoomReset: resetZoomTo100,
+  };
+  const planningTools = [
+    { id: "upload", label: "Upload X-ray", icon: Upload, action: planningActions.upload },
+    { id: "calibration", label: "Kalibrasi", icon: RulerDimensionLine, action: planningActions.calibrate },
+    { id: "move", label: "Move / Edit", icon: SplinePointer, action: () => { setMobileCanvasMode("edit"); setMobileToolMode("move"); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "edit" },
+    { id: "pan", label: "Pan Canvas", icon: HandGrab, action: () => { setMobileCanvasMode("pan"); setMobileCanvasLocked(false); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "pan" },
+    { id: "ruler", label: "Ruler", icon: RulerDimensionLine, action: () => { setLinePreset("ruler"); handleToolChange("draw"); }, active: tool === "draw" && linePreset === "ruler" },
+    { id: "line", label: "Lines", icon: PencilLine, action: () => handleLinePresetChange("normal"), active: tool === "draw" && linePreset === "normal" },
+    { id: "angle", label: "Angle", icon: DraftingCompass, action: () => handleToolChange("angle"), active: tool === "angle" },
+    { id: "interline", label: "Interline Angle", icon: DraftingCompass, action: () => { handleLinePresetChange("normal"); setNotice("Buat dua line berpotongan. Sudut perpotongan tampil di canvas dan dapat dipilih sebagai sumber IAA di Planning Log."); } },
+    { id: "circle", label: "Circle", icon: CircleDot, action: () => handleToolChange("circle"), active: tool === "circle" },
+    { id: "cut", label: "Free Cut", icon: Slice, action: planningActions.freeCut, active: tool === "cut" },
+    { id: "flip", label: "Quick Flip", icon: FlipHorizontal2, action: () => setFlipX((prev) => !prev), active: flipX },
+    { id: "text", label: "Insert Text", icon: MessageSquare, action: () => handleToolChange("annotation"), active: tool === "annotation" },
+    { id: "undo", label: "Undo", icon: Undo2, action: undoHistory, disabled: historyState.undo < 1 },
+    { id: "redo", label: "Redo", icon: Redo2, action: redoHistory, disabled: historyState.redo < 1 },
+    { id: "delete", label: "Delete selection", icon: Trash2, action: removeSelectedLine, disabled: !hasMobileObjectSelection },
+    { id: "snapshot", label: "Snapshot PNG", icon: Camera, action: exportReportPng },
+    { id: "report", label: "Create Report", icon: Download, action: planningActions.report },
+    { id: "local", label: "Save locally", icon: Save, action: savePlanningLocally },
+    { id: "cloud", label: "Save to cloud", icon: Upload, action: planningActions.saveCloud },
+  ].map((item) => ({ ...item, disabled: item.disabled || (!image && item.id !== "upload") }));
+  const startPlanningHka = (mode) => { setHkaInputMode(mode); handleToolChange("hkaAuto", { skipHkaSidePrompt: Boolean(planningSession.side) }); };
+  const planningAnalysisTools = planningProcedure === "tka" ? [
+    { id: "hka", label: "Mechanical Axis", icon: Target, action: () => startPlanningHka("full") },
+    { id: "jla", label: "Joint Angles", icon: DraftingCompass, action: () => startPlanningHka("jla") },
+    { id: "fta", label: "FTA", icon: PencilLine, action: () => startPlanningHka("fta") },
+    { id: "axis", label: "Anatomical Axis", icon: Target, action: () => handleToolChange("axisBuilder") },
+  ] : [
+    { id: "reference", label: "Pelvic Line", icon: PencilLine, action: () => handleLinePresetChange("normal") },
+    { id: "center", label: "Head Center", icon: Target, action: () => handleToolChange("centerFinder") },
+    { id: "fo", label: "Femoral Offset", icon: RulerDimensionLine, action: () => handleLinePresetChange("femoralOffset") },
+    { id: "lld", label: "LLD", icon: RulerDimensionLine, action: () => handleLinePresetChange("lld") },
+    { id: "ccd", label: "CCD / Angle", icon: DraftingCompass, action: () => handleToolChange("angle") },
+    { id: "fhd", label: "Head Diameter", icon: CircleDot, action: () => handleToolChange("circle") },
+    { id: "cup", label: "Cup Assessment", icon: CircleDot, action: () => setShowCupAssessment((open) => !open) },
+  ];
+  const guideDistanceField = (label, value, onChange, min, max) => ({
+    label: `${label} (${hasCalibration ? "mm" : "px"})`, value: Number((value * (mmPerPixel || 1)).toFixed(2)),
+    min: min * (mmPerPixel || 1), max: max * (mmPerPixel || 1), step: 0.5,
+    onChange: (next) => onChange(clamp(next / (mmPerPixel || 1), min, max)),
+  });
+  const planningCorrectionFields = planningGuideMode === "valgusCut" ? [
+    { label: "Angle (deg)", value: valgusCutAngleDeg, onChange: setValgusCutAngleDeg, min: 0, max: 20, step: 0.5 },
+    { label: "Side", value: valgusCutSide, onChange: setValgusCutSide, options: ["Right", "Left"] },
+    guideDistanceField("Resection height", valgusCutOffsetPx, setValgusCutOffsetPx, 0, 400),
+    guideDistanceField("Length", valgusCutLineLengthPx, setValgusCutLineLengthPx, 20, 800),
+  ] : planningGuideMode === "tibialSlope" ? [
+    { label: "Slope (deg)", value: tibialSlopeDeg, onChange: setTibialSlopeDeg, min: 0, max: 20, step: 0.5 },
+    { label: "Posterior", value: tibialPosteriorSide, onChange: setTibialPosteriorSide, options: ["Right", "Left"] },
+    guideDistanceField("Offset", tibialSlopeOffsetPx, setTibialSlopeOffsetPx, 0, 400),
+    guideDistanceField("Length", tibialSlopeLineLengthPx, setTibialSlopeLineLengthPx, 20, 800),
+  ] : [
+    { label: "Angle (deg)", value: tibialCutAngleDeg, onChange: setTibialCutAngleDeg, min: 0, max: 20, step: 0.5 },
+    { label: "Direction", value: tibialCutDirection, onChange: setTibialCutDirection, options: ["Valgus", "Varus"] },
+    guideDistanceField("Resection height", tibialCutOffsetPx, setTibialCutOffsetPx, 0, 400),
+    guideDistanceField("Length", tibialCutLineLengthPx, setTibialCutLineLengthPx, 20, 800),
+  ];
   const mobileNativeLineInfoId = isNativeMobileSimpleUi
     ? sizingLineHoverInfo?.lineId ??
       lineLabelHoverInfo?.lineId ??
@@ -20450,7 +20643,8 @@ export default function XrayCalibrationWorkspace({
       : null;
   return (
     <div
-      className={`flex w-screen max-w-none flex-col gap-0 px-0 py-0 text-slate-700 sm:gap-2 sm:px-2 lg:px-3 ${
+      data-planning-layout={isPlanningLayout || undefined}
+      className={`${isPlanningLayout ? planningStyles.host : ""} flex w-screen max-w-none flex-col gap-0 px-0 py-0 text-slate-700 ${
         isSimpleUiMode ? "simple-ui-shell" : "advanced-ui-shell"
       } ${
         isSimpleUiMode
@@ -20460,7 +20654,7 @@ export default function XrayCalibrationWorkspace({
       style={{ background: "var(--soft-surface-bg)" }}
     >
       <ModalStarter
-        open={showStartupCalibrationAlert}
+        open={showStartupCalibrationAlert && !isPlanningLayout}
         onExit={goToCalibrationPanel}
         onConfirm={goToCalibrationPanel}
         onStartTemplating={() => openSimpleImplantTemplateOverlay()}
@@ -20768,7 +20962,7 @@ export default function XrayCalibrationWorkspace({
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
-        {whatsNewModalOpen ? (
+        {whatsNewModalOpen && !isPlanningLayout ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -26191,7 +26385,23 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
-      {!isNativeMobileSimpleUi ? (
+      {isPlanningLayout ? (
+        <header className="planning-app-header">
+          <strong>ZakZav <span>Templating</span></strong>
+          <span className="planning-case-name">{imageName || "Kasus baru"}</span>
+          <button type="button" className={hasCalibration ? "planning-calibrated" : "planning-pending"}
+            onClick={() => openSimpleCalibrationModal()} disabled={!image}>
+            {hasCalibration ? `Calibrated / ${measurementUnit}` : "Uncalibrated"}
+          </button>
+          <div className="planning-account">
+            {onOpenAdvancedUi && <button type="button" className="planning-advanced" onClick={onOpenAdvancedUi}>Advanced UI</button>}
+            <button type="button" onClick={toggleDarkMode} aria-label={isDark ? "Light mode" : "Dark mode"}>
+              {isDark ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+            <LogoutButton variant="header" />
+          </div>
+        </header>
+      ) : !isNativeMobileSimpleUi ? (
       <header
         className={`${SOFT_PANEL_CLASS} relative z-50 ${
           isSimpleUiMode
@@ -27355,6 +27565,15 @@ export default function XrayCalibrationWorkspace({
               </button>
             </>
           ) : null}
+          {isSimpleUiMode ? (
+            <button
+              type="button"
+              onClick={() => setSimpleGuideModalOpen(true)}
+              className={`${SOFT_RAISED_CLASS} hidden rounded-full px-3 py-1.5 text-[10px] font-black text-cyan-700 sm:inline-flex`}
+            >
+              Panduan
+            </button>
+          ) : null}
           <ThemeToggle className="hidden sm:block ml-1" />
           <UserProfileBadge className="ml-1" onAnalytics={() => { try { const c = JSON.parse(localStorage.getItem("zakzav_patient_cases_v1") || "[]"); setWsAnalyticsCases(c); } catch {} setWsAnalyticsOpen(true); }} />
           {!isSimpleUiMode ? (
@@ -27372,7 +27591,7 @@ export default function XrayCalibrationWorkspace({
 
       <motion.section
         layout
-        className={`relative grid min-h-0 flex-1 gap-0 overflow-hidden lg:gap-2 ${desktopSectionClass}`}
+        className={`relative grid min-h-0 flex-1 gap-0 overflow-hidden ${desktopSectionClass}`}
         style={{
           "--left-sidebar-width": `${leftSidebarWidth}px`,
           "--right-sidebar-width": `${rightSidebarWidth}px`,
@@ -27389,7 +27608,7 @@ export default function XrayCalibrationWorkspace({
             <div className="mx-auto h-full w-[2px] rounded-full bg-slate-200 transition hover:bg-slate-400" />
           </div>
         ) : null}
-        {!isSimpleUiMode ? (
+        {!isSimpleUiMode && !hasCalibration ? (
         <motion.button
           type="button"
           onClick={() => setShowLeftSidebar((prev) => !prev)}
@@ -27411,10 +27630,10 @@ export default function XrayCalibrationWorkspace({
         {effectiveShowRightSidebar ? (
           <div
             role="separator"
-            aria-label="Resize menu kanan"
+            aria-label="Resize panel tools kiri"
             onPointerDown={startSidebarResize("right")}
-            className="absolute top-0 bottom-0 z-20 hidden w-3 translate-x-1/2 cursor-col-resize lg:block"
-            style={{ right: rightSidebarWidth }}
+            className="absolute top-0 bottom-0 z-20 hidden w-3 -translate-x-1/2 cursor-col-resize lg:block"
+            style={{ left: rightSidebarWidth }}
           >
             <div className="mx-auto h-full w-[2px] rounded-full bg-slate-200 transition hover:bg-slate-400" />
           </div>
@@ -27423,19 +27642,20 @@ export default function XrayCalibrationWorkspace({
         <motion.button
           type="button"
           onClick={() => setShowRightSidebar((prev) => !prev)}
+          disabled={!hasCalibration}
           whileHover={BUTTON_HOVER}
           whileTap={BUTTON_TAP}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className={`advanced-sidebar-toggle absolute top-1/2 z-30 hidden h-11 min-w-11 translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1 rounded-full px-2 text-[9px] font-black transition lg:flex ${SOFT_RAISED_CLASS} text-cyan-700`}
-          style={{ right: showRightSidebar ? rightSidebarWidth : 12 }}
-          aria-label={showRightSidebar ? "Hide menu kanan" : "Show menu kanan"}
-          title={showRightSidebar ? "Hide menu kanan" : "Show menu kanan"}
+          className={`advanced-sidebar-toggle absolute top-1/2 z-30 hidden h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1 rounded-full px-2 text-[9px] font-black transition disabled:cursor-not-allowed disabled:opacity-35 lg:flex ${SOFT_RAISED_CLASS} text-cyan-700`}
+          style={{ left: effectiveShowRightSidebar ? rightSidebarWidth : 12 }}
+          aria-label={effectiveShowRightSidebar ? "Sembunyikan panel tools" : "Tampilkan panel tools"}
+          title={hasCalibration ? (effectiveShowRightSidebar ? "Sembunyikan panel tools kiri" : "Tampilkan panel tools kiri") : "Selesaikan kalibrasi untuk membuka tools"}
         >
           <Icon
-            name={showRightSidebar ? "moveRight" : "moveLeft"}
+            name={effectiveShowRightSidebar ? "moveLeft" : "moveRight"}
             className="h-4 w-4"
           />
-          <span className="hidden xl:inline">{showRightSidebar ? "Hide" : "Panel"}</span>
+          <span className="hidden xl:inline">{effectiveShowRightSidebar ? "Hide" : "Panel"}</span>
         </motion.button>
         ) : null}
         {!isNativeMobileSimpleUi ? (
@@ -27609,7 +27829,7 @@ export default function XrayCalibrationWorkspace({
           </div>
 
           <div
-            className="order-8 grid grid-cols-1 gap-2"
+            className={`${hasCalibration ? "grid" : "hidden"} order-8 grid-cols-1 gap-2`}
             style={{ order: 8 }}
           >
             <motion.div
@@ -27695,7 +27915,7 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0 }}
               transition={PANEL_SPRING}
               ref={exportPanelRef}
-              className={SOFT_SECTION_CLASS}
+              className={`${hasPlanningOutput ? "" : "hidden"} ${SOFT_SECTION_CLASS}`}
             >
               <div className="flex items-center gap-1.5">
                 <Icon name="export" className="h-4 w-4 text-slate-600" />
@@ -27956,8 +28176,8 @@ export default function XrayCalibrationWorkspace({
           <motion.div
             layout
             transition={PANEL_SPRING}
-            className={`order-6 ${SOFT_SECTION_CLASS}`}
-            style={{ order: 6 }}
+            className="hidden"
+            aria-hidden="true"
           >
             <div className="flex items-center gap-1.5">
               <Icon name="preset" className="h-4 w-4 text-slate-600" />
@@ -29789,7 +30009,7 @@ export default function XrayCalibrationWorkspace({
                 }
               : { y: 0, opacity: 1, scale: 1 }
           }
-          className={`fixed inset-x-0 bottom-0 z-40 order-3 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] ${SOFT_FLOAT_SURFACE_CLASS} ${
+          className={`fixed inset-x-0 bottom-0 z-40 order-3 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] [scrollbar-gutter:stable] ${SOFT_FLOAT_SURFACE_CLASS} ${
             mobileWorkspacePanelVisible
               ? "pointer-events-auto"
               : "pointer-events-none"
@@ -29803,7 +30023,7 @@ export default function XrayCalibrationWorkspace({
             isMobileViewport && mobilePanelPreviewActive
               ? "!backdrop-blur-0 !max-h-0 !overflow-visible !rounded-none !border-transparent !bg-transparent !pb-0 !shadow-none [&>*]:pointer-events-none [&>*]:opacity-0"
               : ""
-          } ${effectiveShowRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
+          } ${effectiveShowRightSidebar ? "lg:pointer-events-auto lg:static lg:inset-auto lg:z-auto lg:order-1 lg:flex lg:h-[calc(100vh-132px)] lg:max-h-[calc(100vh-132px)] lg:min-h-0 lg:overflow-y-auto lg:rounded-[28px] lg:opacity-100 lg:shadow-none" : "lg:hidden"}`}
         >
           <div className="sticky top-0 z-10 -ml-2 -mx-3 -mt-3 mb-2 grid grid-cols-[1fr_auto_1fr] items-center px-3 py-2 backdrop-blur lg:hidden">
             <span />
@@ -29852,19 +30072,55 @@ export default function XrayCalibrationWorkspace({
               Panel
             </button>
           </div>
-          <div className={`${SIDEBAR_TAB_GRID_CLASS} p-1 ${SOFT_INSET_CLASS}`}>
+          <div className={`${SOFT_SECTION_CLASS} space-y-2`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                Quick Tools
+              </span>
+              <span className="text-[9px] font-bold text-slate-400">Action & Layer</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { key: "pan", icon: "pan", label: "Move", onClick: () => handleToolChange("pan"), active: tool === "pan" },
+                { key: "cut", icon: "cut", label: "Free Cut", onClick: () => handleToolChange("cut"), active: tool === "cut" },
+                { key: "line", icon: "draw", label: "Line", onClick: () => handleToolChange("draw"), active: tool === "draw" },
+                { key: "angle", icon: "angle", label: "Angle", onClick: () => handleToolChange("angle"), active: tool === "angle" },
+                { key: "circle", icon: "circle", label: "Circle", onClick: () => handleToolChange("circle"), active: tool === "circle" },
+                { key: "hka", icon: "hka", label: "HKA", onClick: () => handleToolChange("hkaAuto"), active: tool === "hkaAuto" },
+              ].map((item) => (
+                <ToolIconButton
+                  key={`quick-${item.key}`}
+                  icon={item.icon}
+                  label={item.label}
+                  onClick={item.onClick}
+                  active={item.active}
+                  className="h-9 w-full"
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setShowCupAssessment((prev) => !prev)}
+                className={`${showCupAssessment ? SOFT_DARK_BUTTON_CLASS : SOFT_RAISED_CLASS} col-span-2 flex h-9 items-center justify-center gap-2 px-2 text-[10px] font-black text-violet-700`}
+              >
+                <Icon name="cupAssessment" className="h-4 w-4" />
+                Cup Assess
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMoreDesktopTools((prev) => !prev)}
+              className={`${SOFT_RAISED_CLASS} w-full px-3 py-2 text-[10px] font-black text-cyan-700`}
+              aria-expanded={showMoreDesktopTools}
+            >
+              {showMoreDesktopTools ? "− Tutup Lainnya" : "+ More Tools"}
+            </button>
+          </div>
+          <div className={`${showMoreDesktopTools ? "grid" : "hidden"} ${SIDEBAR_TAB_GRID_CLASS} p-1 ${SOFT_INSET_CLASS}`}>
             {[
               {
-                id: "tool",
-                label: "TOOL",
-                shortLabel: "T",
-                activeClass: `${SOFT_PRESSED_CLASS} text-cyan-700`,
-                idleClass: `${SOFT_RAISED_CLASS} text-cyan-700`,
-              },
-              {
                 id: "measure",
-                label: "MEASURE",
-                shortLabel: "M",
+                label: "Tools",
+                shortLabel: "T",
                 activeClass: `${SOFT_PRESSED_CLASS} text-emerald-700`,
                 idleClass: `${SOFT_RAISED_CLASS} text-emerald-700`,
               },
@@ -29874,6 +30130,13 @@ export default function XrayCalibrationWorkspace({
                 shortLabel: "P",
                 activeClass: `${SOFT_PRESSED_CLASS} text-amber-700`,
                 idleClass: `${SOFT_RAISED_CLASS} text-amber-700`,
+              },
+              {
+                id: "tool",
+                label: "Templates & Layers",
+                shortLabel: "L",
+                activeClass: `${SOFT_PRESSED_CLASS} text-cyan-700`,
+                idleClass: `${SOFT_RAISED_CLASS} text-cyan-700`,
               },
             ].map((tab) => {
               const isActive = activeRightPanel === tab.id;
@@ -29896,7 +30159,7 @@ export default function XrayCalibrationWorkspace({
             })}
           </div>
 
-          {activeRightPanel === "tool" ? (
+          {showMoreDesktopTools && activeRightPanel === "tool" ? (
             <motion.div
               layout
               initial={{ opacity: 0, x: 12 }}
@@ -30354,7 +30617,7 @@ export default function XrayCalibrationWorkspace({
             </motion.div>
           ) : null}
 
-          {activeRightPanel === "measure" ? (
+          {showMoreDesktopTools && activeRightPanel === "measure" ? (
             <motion.div
               layout
               initial={{ opacity: 0, x: 12 }}
@@ -32810,7 +33073,7 @@ export default function XrayCalibrationWorkspace({
             </motion.div>
           ) : null}
 
-          {activeRightPanel === "planning" ? (
+          {showMoreDesktopTools && activeRightPanel === "planning" ? (
             <motion.div
               layout
               initial={{ opacity: 0, x: 12 }}
@@ -32975,19 +33238,41 @@ export default function XrayCalibrationWorkspace({
         <motion.div
           layout
           transition={PANEL_SPRING}
-          className={`order-1 min-h-0 overflow-hidden p-0 lg:order-2 lg:p-2 ${SOFT_PANEL_CLASS}`}
+          data-planning-frame={isPlanningLayout || undefined}
+          className={`order-1 flex min-h-0 flex-col overflow-hidden p-0 lg:order-2 lg:p-1 ${SOFT_PANEL_CLASS}`}
         >
+          <PlanningWorkspace enabled={isPlanningLayout} procedure={planningProcedure} onProcedure={selectPlanningProcedure}
+            reference={planningProcedure === "tka" ? TKA_PLANNING_REFERENCE : THA_PLANNING_REFERENCE}
+            session={planningSession} onSession={updatePlanningSession}
+            measurements={planningMeasurements} imageName={imageName} hasImage={Boolean(image)} calibrated={hasCalibration}
+            tools={planningTools} actions={planningActions} analysisTools={planningAnalysisTools}
+            correctionControls={planningProcedure === "tka" ? <PlanningCorrectionControls
+              modes={[{ key: "valgusCut", label: "Distal Femoral Cut" }, { key: "tibialCut", label: "Proximal Tibial Cut" }, { key: "tibialSlope", label: "Tibia Slope [LAT]" }]}
+              mode={planningGuideMode} onMode={setPlanningGuideMode} fields={planningCorrectionFields}
+              canApply={Boolean(selectedPlanningGuide || selectedLine)} editing={Boolean(selectedPlanningGuide)}
+              onApply={selectedPlanningGuide ? () => updateSelectedPlanningGuide() : addPlanningGuideFromSelectedLine}
+            /> : <button type="button" className="planning-inline-action" onClick={() => handleLinePresetChange("normal")}>Femoral neck osteotomy line</button>}
+            catalog={LOCAL_IMPLANT_LIBRARY} selectedImplantId={selectedImplantLibraryId}
+            onSelectImplant={setSelectedImplantLibraryId} onInsertImplant={useSelectedImplantLibraryAsLayer}
+            layers={templateInventoryRows.map((row) => { const layer = cutLayers.find((item) => item.id === row.id); return { ...row, hidden: Boolean(layer?.hidden), locked: Boolean(layer?.lockScale), kind: layer?.kind === "free-cut" ? "crop" : "implant" }; })}
+            onSelectLayer={(id) => { setSelectedCutLayerId(id); openLayerSettingsModal(id); }}
+            onUpdateLayer={(id, patch) => updateLayerById(id, "locked" in patch ? { lockScale: patch.locked } : patch)}
+            annotations={annotations} guides={planningGuideRows} note={planNote} onNote={setPlanNote}
+            status={notice} zoom={Math.round(view.scale * 100)} toolLabel={activeToolLabel} isDark={isDark}
+          >
           <div
-            className={`grid gap-0 lg:gap-2 ${compareMode ? "lg:grid-cols-2" : "grid-cols-1"}`}
+            data-planning-viewports={isPlanningLayout || undefined}
+            className={`grid min-h-0 flex-1 gap-0 lg:gap-1 ${compareMode ? "lg:grid-cols-2" : "grid-cols-1"}`}
           >
             <div
               ref={containerRef}
+              data-planning-canvas={isPlanningLayout || undefined}
               className={`relative w-full touch-none overflow-hidden overscroll-none ${
                 isDark ? "bg-slate-950/95" : "bg-slate-800/90"
               } sm:rounded-lg sm:border sm:border-slate-300 ${
                 isSimpleUiMode
-                  ? "h-[100dvh] min-h-[100dvh] sm:h-[100dvh] sm:min-h-[100dvh] lg:h-[calc(100vh-156px)] lg:min-h-[420px]"
-                  : "h-[calc(100dvh-108px)] min-h-[460px] sm:h-[70vh] sm:min-h-[420px] lg:h-[calc(100vh-156px)]"
+                  ? "h-[100dvh] min-h-[100dvh] sm:h-[100dvh] sm:min-h-[100dvh] lg:h-full lg:min-h-0"
+                  : "h-[calc(100dvh-108px)] min-h-[460px] sm:h-[70vh] sm:min-h-[420px] lg:h-full lg:min-h-0"
               }`}
               style={{
                 touchAction: "none",
@@ -33501,7 +33786,7 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 </motion.div>
               ) : null}
-              {!isNativeMobileSimpleUi && shouldShowCanvasCalibrationPrompt ? (
+              {!isPlanningLayout && !isNativeMobileSimpleUi && shouldShowCanvasCalibrationPrompt ? (
                 <motion.div
                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -33647,7 +33932,7 @@ export default function XrayCalibrationWorkspace({
                 </AnimatePresence>
               )}
 
-              {isSimpleUiMode ? (
+              {isSimpleUiMode && !isPlanningLayout ? (
                 <div className="pointer-events-none absolute inset-0 z-20 hidden lg:block">
                   <AnimatePresence mode="wait">
                   {simpleQuickPanelMinimized ? (
@@ -33659,7 +33944,7 @@ export default function XrayCalibrationWorkspace({
                       transition={{ type: "spring", damping: 22, stiffness: 300 }}
                       type="button"
                       onClick={() => setSimpleQuickPanelMinimized(false)}
-                      className="pointer-events-auto absolute top-[74px] left-4 inline-flex items-center gap-2 rounded-[18px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
+                      className="pointer-events-auto absolute top-3 left-16 inline-flex items-center gap-2 rounded-[18px] border border-white/75 bg-[#eef2f7]/95 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-600 shadow-[3px_3px_8px_rgba(148,163,184,0.28),-3px_-3px_8px_rgba(255,255,255,0.76)] backdrop-blur-xl"
                       title="Buka Quick Panel"
                       whileTap={{ scale: 0.93 }}
                     >
@@ -33670,11 +33955,7 @@ export default function XrayCalibrationWorkspace({
                     <QuickPanel
                       key="quick-full"
                       leftDockMode
-                      className={`pointer-events-auto absolute left-4 ${
-                        cropRect && hasCalibration
-                          ? "top-[126px] max-h-[calc(100dvh-148px)]"
-                          : "top-[74px] max-h-[calc(100dvh-96px)]"
-                      } backdrop-blur-xl`}
+                      className="pointer-events-auto absolute top-3 left-16 backdrop-blur-xl"
                       statusLabel={hasCalibration ? "Ready" : "Calib"}
                       workflowStep={workflowStep}
                       workflowMax={simpleWorkflowSteps.length}
@@ -33796,9 +34077,6 @@ export default function XrayCalibrationWorkspace({
                             <p className="truncate text-[10px] font-black uppercase tracking-widest text-slate-300">
                               Action & Layer
                             </p>
-                            <p className="truncate text-[9px] font-bold text-slate-500">
-                              Tools kanan
-                            </p>
                           </div>
                           <button
                             type="button"
@@ -33817,17 +34095,14 @@ export default function XrayCalibrationWorkspace({
                               Action
                             </p>
                             <div className="space-y-2">
-                              {simpleActionToolGroups.map((group) => (
-                                <div key={group.key} className="space-y-1">
-                                  <div className="px-1 text-[8px] font-black uppercase tracking-widest text-slate-500">
-                                    {group.label}
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    {group.items.map((item) => {
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {simpleToolMenuItems
+                                  .filter((item) => ["pan", "draw", "angle", "hkaAuto", "cupAssessment"].includes(item.key))
+                                  .map((item) => {
                                       const itemActive = isSimpleActionToolActive(item);
                                       return (
                                         <button
-                                          key={`${group.key}-${item.key}-${item.freeLineMode || item.action || "tool"}`}
+                                          key={`primary-${item.key}`}
                                           type="button"
                                           disabled={item.disabled}
                                           onClick={() => handleSimpleActionToolSelect(item)}
@@ -33845,14 +34120,46 @@ export default function XrayCalibrationWorkspace({
                                           <span className="truncate">{item.label}</span>
                                         </button>
                                       );
+                                  })}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setSimpleMoreToolsOpen((prev) => !prev)}
+                                className="w-full rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-3 py-2 text-[9px] font-black text-cyan-100 transition hover:bg-cyan-400/16"
+                                aria-expanded={simpleMoreToolsOpen}
+                              >
+                                {simpleMoreToolsOpen ? "− Tutup Lainnya" : "+ More Tools"}
+                              </button>
+                              {simpleMoreToolsOpen ? (
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {simpleToolMenuItems
+                                    .filter((item) => !["pan", "draw", "angle", "hkaAuto", "cupAssessment", "imageProcess"].includes(item.key))
+                                    .map((item) => {
+                                      const itemActive = isSimpleActionToolActive(item);
+                                      return (
+                                        <button
+                                          key={`more-${item.key}`}
+                                          type="button"
+                                          disabled={item.disabled}
+                                          onClick={() => handleSimpleActionToolSelect(item)}
+                                          title={item.desc || item.label}
+                                          className={`flex min-h-8 items-center justify-center gap-1.5 rounded-2xl border px-2 text-[9px] font-black transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                                            itemActive
+                                              ? "border-cyan-300/60 bg-cyan-400/18 text-cyan-50"
+                                              : "border-white/10 bg-white/6 text-slate-300 hover:bg-white/10"
+                                          }`}
+                                        >
+                                          <Icon name={getSimpleActionToolIconName(item)} className="h-3.5 w-3.5 shrink-0" />
+                                          <span className="truncate">{item.label}</span>
+                                        </button>
+                                      );
                                     })}
-                                  </div>
                                 </div>
-                              ))}
+                              ) : null}
                             </div>
                           </section>
 
-                          <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-2">
+                          <section className="hidden" aria-hidden="true">
                             <p className="mb-1.5 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
                               X-Ray Filter
                             </p>
@@ -33874,7 +34181,7 @@ export default function XrayCalibrationWorkspace({
                             </div>
                           </section>
 
-                          <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-2">
+                          <section className={`${simpleMoreToolsOpen ? "" : "hidden"} rounded-[18px] border border-white/10 bg-white/[0.04] p-2`}>
                             <p className="mb-1.5 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
                               Layer & Template
                             </p>
@@ -33920,7 +34227,7 @@ export default function XrayCalibrationWorkspace({
                             </div>
                           </section>
 
-                          <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-2">
+                          <section className={`${simpleMoreToolsOpen ? "" : "hidden"} rounded-[18px] border border-white/10 bg-white/[0.04] p-2`}>
                             <p className="mb-1.5 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
                               Export & Reset
                             </p>
@@ -34585,7 +34892,9 @@ export default function XrayCalibrationWorkspace({
                           {/* Stats */}
                           <div className="mt-2.5 flex gap-1.5">
                             {[
-                              { label: `${measurementRows.length} Ukur` },
+                              ...(measurementRows.length > 0
+                                ? [{ label: `${measurementRows.length} Ukur` }]
+                                : []),
                               { label: `${cutLayers.length} Layer` },
                               { label: `Calib ${hasCalibration ? "✓" : "–"}` },
                             ].map((s) => (
@@ -34784,6 +35093,7 @@ export default function XrayCalibrationWorkspace({
               {isSimpleUiMode &&
               !isNativeMobileSimpleUi &&
               !workflowOverlayDismissed &&
+              !isPlanningLayout &&
               !isTabletViewport &&
               !(isMobileViewport && mobileCanvasFocusMode) ? (
                 <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-3">
@@ -34871,6 +35181,7 @@ export default function XrayCalibrationWorkspace({
               {isSimpleUiMode &&
               isMobileViewport &&
               isTabletViewport &&
+              !isPlanningLayout &&
               !mobileCanvasFocusMode ? (
                 <div className="pointer-events-none absolute inset-x-3 top-2 z-40 flex justify-center">
                   <div
@@ -35031,7 +35342,7 @@ export default function XrayCalibrationWorkspace({
                 </div>
               ) : null}
 
-              {isSimpleUiMode && isMobileViewport && !isTabletViewport ? (
+              {isSimpleUiMode && !isPlanningLayout && isMobileViewport && !isTabletViewport ? (
                 <div className="pointer-events-none absolute top-2 right-2 z-30 max-w-[calc(100vw-1rem)]">
                   <div
                     className="pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-full p-1"
@@ -36752,6 +37063,7 @@ export default function XrayCalibrationWorkspace({
                 {isSimpleUiMode &&
                 !isNativeMobileSimpleUi &&
                 workflowOverlayDismissed &&
+                !isPlanningLayout &&
                 !isTabletViewport &&
                 !(isMobileViewport && mobileCanvasFocusMode) && (
                   <div className="pointer-events-none fixed left-0 right-0 top-[calc(env(safe-area-inset-top)+62px)] z-[96] flex items-start gap-2 px-3 lg:left-auto lg:right-5 lg:top-[72px] lg:w-[min(560px,calc(100vw-2rem))] lg:px-0">
@@ -37046,7 +37358,7 @@ export default function XrayCalibrationWorkspace({
                 isMobileViewport &&
                 !simpleMobilePanel &&
                 !isTabletViewport ? (
-                  <MobileNavigation
+                  !isPlanningLayout && <MobileNavigation
                     className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)] z-50 px-2"
                     tabs={mobileNavigationTabs}
                     canvasMode={mobileCanvasMode}
@@ -37131,6 +37443,7 @@ export default function XrayCalibrationWorkspace({
                   />
                 ) : null}
                 <div
+                  hidden={isPlanningLayout}
                   className={`absolute top-2 left-2 z-20 flex flex-col items-start gap-1.5 sm:top-3 sm:left-3 ${
                     isSimpleUiMode ? "max-w-[190px] sm:max-w-[240px]" : "max-w-[260px]"
                   }`}
@@ -37164,11 +37477,8 @@ export default function XrayCalibrationWorkspace({
                               : "UN-CALIBRATED: lakukan kalibrasi skala sebelum templating agar ukuran implant aman.",
                           )
                         }
-                        className={`bone-ninja-calibration-badge inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[10px] font-black uppercase tracking-wide shadow-[0_8px_20px_rgba(2,6,23,0.24)] backdrop-blur-md ${
-                          hasCalibration
-                            ? "border-emerald-300/70 bg-emerald-500/18 text-emerald-100"
-                            : "border-amber-300/75 bg-amber-500/20 text-amber-100"
-                        }`}
+                        className="hidden"
+                        aria-hidden="true"
                         title={hasCalibration ? "Kalibrasi aktif" : "Kalibrasi belum aktif"}
                       >
                         <span
@@ -37187,27 +37497,55 @@ export default function XrayCalibrationWorkspace({
                       </button>
                   </div>
                   <div
-                    className="hidden max-w-[68px] truncate rounded-full border border-white/50 bg-slate-950/56 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-slate-100 shadow-[0_4px_12px_rgba(2,6,23,0.14)] backdrop-blur-md sm:block"
+                    className="hidden"
+                    aria-hidden="true"
                     title={`Tool: ${activeCanvasToolLabel}`}
                   >
                     {activeCanvasToolLabel}
                   </div>
                   {cropRect && hasCalibration ? (
-                    <div className="hidden rounded-full border border-amber-300/60 bg-amber-950/64 px-2.5 py-1 text-[10px] font-black text-amber-100 shadow-[0_5px_16px_rgba(2,6,23,0.18)] backdrop-blur-md sm:block">
+                    <div className="hidden" aria-hidden="true">
                       Crop aktif: verifikasi skala
                     </div>
                   ) : null}
                 </div>
+                {!canvasToolbarOpen && !isPlanningLayout ? (
+                  <button
+                    type="button"
+                    onClick={() => setCanvasToolbarOpen(true)}
+                    className={`absolute right-3 bottom-3 z-20 hidden h-8 items-center gap-1.5 rounded-full px-3 text-[9px] font-black text-cyan-700 ${SOFT_FLOAT_SURFACE_CLASS} ${
+                      isSimpleUiMode ? "sm:flex" : "lg:flex"
+                    }`}
+                    title="Buka kontrol zoom, filter, undo, dan redo"
+                    aria-label="Buka kontrol canvas"
+                  >
+                    <Icon name="settings" className="h-3.5 w-3.5" />
+                    Kontrol
+                  </button>
+                ) : null}
                 <div
-                  className={`absolute z-20 hidden max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-x-auto p-1.5 ${
-                    isSimpleUiMode
-                      ? "bone-ninja-floating-toolbar top-3 left-1/2 -translate-x-1/2 sm:flex"
-                      : "bone-ninja-floating-toolbar top-3 left-1/2 -translate-x-1/2 lg:flex"
+                  hidden={isPlanningLayout}
+                  className={`absolute z-20 max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-x-auto p-1.5 ${
+                    canvasToolbarOpen
+                      ? isSimpleUiMode
+                        ? "bone-ninja-floating-toolbar bottom-[calc(env(safe-area-inset-bottom)+82px)] left-1/2 hidden -translate-x-1/2 sm:flex"
+                        : "bone-ninja-floating-toolbar bottom-3 left-1/2 hidden -translate-x-1/2 lg:flex"
+                      : "hidden"
                   } ${SOFT_FLOAT_SURFACE_CLASS}`}
                 >
                   <span className="shrink-0 px-2 text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">
                     X-Ray
                   </span>
+                <motion.button
+                  type="button"
+                  onClick={() => setCanvasToolbarOpen(false)}
+                  whileTap={BUTTON_TAP}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center ${SOFT_RAISED_CLASS} text-slate-500`}
+                  aria-label="Minimalkan kontrol canvas"
+                  title="Minimalkan toolbar"
+                >
+                  <Icon name="close" className="h-3.5 w-3.5" />
+                </motion.button>
                 <motion.button
                   type="button"
                   onClick={() => zoomBy(1.15)}
@@ -37260,30 +37598,46 @@ export default function XrayCalibrationWorkspace({
                 >
                   <Maximize2 className="h-4 w-4" strokeWidth={2} />
                 </motion.button>
-                <div className="mx-1 h-6 w-px bg-slate-300/70" />
                 <select
                   value={
                     XRAY_VIEW_PRESETS.some((preset) => preset.key === xrayViewPreset)
                       ? xrayViewPreset
                       : "custom"
                   }
-                  onChange={(event) => {
-                    triggerMobileHaptic();
-                    applyXrayViewPreset(event.target.value);
-                  }}
-                  className={`${SOFT_RAISED_CLASS} h-7 max-w-[94px] rounded-full border-0 bg-transparent px-2 text-[9px] font-black text-slate-700 outline-none`}
-                  aria-label="X-ray view preset"
-                  title="X-ray view preset"
+                  onChange={(event) => applyXrayViewPreset(event.target.value)}
+                  className={`${SOFT_INPUT_CLASS} h-7 max-w-28 shrink-0 px-2 text-[9px] font-black`}
+                  aria-label="Filter X-ray"
+                  title="Filter X-ray"
                 >
-                  <option value="custom" disabled>
-                    Custom
-                  </option>
+                  <option value="custom" disabled>Filter custom</option>
                   {XRAY_VIEW_PRESETS.map((preset) => (
-                    <option key={preset.key} value={preset.key}>
+                    <option key={`bottom-filter-${preset.key}`} value={preset.key}>
                       {preset.label}
                     </option>
                   ))}
                 </select>
+                <motion.button
+                  type="button"
+                  onClick={undoHistory}
+                  disabled={historyState.undo <= 0}
+                  whileTap={BUTTON_TAP}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-35 ${SOFT_RAISED_CLASS}`}
+                  aria-label="Undo"
+                  title="Undo"
+                >
+                  <Icon name="undo" className="h-3.5 w-3.5" />
+                </motion.button>
+                <motion.button
+                  type="button"
+                  onClick={redoHistory}
+                  disabled={historyState.redo <= 0}
+                  whileTap={BUTTON_TAP}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-35 ${SOFT_RAISED_CLASS}`}
+                  aria-label="Redo"
+                  title="Redo"
+                >
+                  <Icon name="redo" className="h-3.5 w-3.5" />
+                </motion.button>
                 <motion.button
                   type="button"
                   onClick={() =>
@@ -37305,6 +37659,8 @@ export default function XrayCalibrationWorkspace({
                   <RulerDimensionLine className="h-3.5 w-3.5" strokeWidth={2.2} />
                   Scale
                 </motion.button>
+                {hasCalibration ? (
+                  <>
                 <motion.button
                   type="button"
                   onClick={() => handleToolChange("draw")}
@@ -37389,8 +37745,10 @@ export default function XrayCalibrationWorkspace({
                   <Bone className="h-3.5 w-3.5" strokeWidth={2.2} />
                   Implant
                 </motion.button>
+                  </>
+                ) : null}
               </div>
-              {image && measurementEntityCount > 0 ? (
+              {image && measurementEntityCount > 0 && !isPlanningLayout ? (
                 <div
                   className={`pointer-events-auto absolute z-20 rounded-[18px] border border-white/10 bg-slate-950/64 p-2 text-slate-100 shadow-[0_12px_26px_rgba(2,6,23,0.30)] backdrop-blur-xl ${
                     isSimpleUiMode
@@ -37455,7 +37813,7 @@ export default function XrayCalibrationWorkspace({
                 </div>
               ) : null}
               {/* ── Canvas skeleton — pulsing when no image loaded ── */}
-              {!image && (
+              {!image && !isPlanningLayout && (
                 <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
                   <div className="absolute inset-0 bg-[#e8edf4]" />
                   <div
@@ -37940,6 +38298,7 @@ export default function XrayCalibrationWorkspace({
             {compareMode ? (
               <div
                 ref={compareContainerRef}
+                data-planning-canvas={isPlanningLayout || undefined}
                 className={`relative h-[34vh] min-h-[220px] w-full overflow-hidden ${
                   isDark ? "bg-slate-950/95" : "bg-slate-800/90"
                 } sm:h-[68vh] sm:min-h-[420px] sm:rounded-lg sm:border sm:border-slate-300 lg:h-[calc(100vh-170px)]`}
@@ -37955,15 +38314,16 @@ export default function XrayCalibrationWorkspace({
               </div>
             ) : null}
           </div>
-          <div className="mt-2 hidden flex-wrap items-center gap-2 text-[11px] text-slate-600 sm:flex">
-            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
+          </PlanningWorkspace>
+          <div className={`${isPlanningLayout ? "hidden" : "hidden sm:flex"} h-8 shrink-0 flex-wrap items-center gap-1.5 overflow-hidden text-[11px] leading-none text-slate-600`}>
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-0.5`}>
               Zoom {(view.scale * 100).toFixed(0)}%
             </span>
-            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-0.5`}>
               {activeToolLabel}
             </span>
             <span
-              className={`advanced-calibration-status inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-black ${
+              className={`advanced-calibration-status inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-black ${
                 hasCalibration
                   ? "border-emerald-300/70 bg-emerald-50 text-emerald-700"
                   : "border-amber-300/80 bg-amber-50 text-amber-800"
@@ -37977,12 +38337,12 @@ export default function XrayCalibrationWorkspace({
               />
               {hasCalibration ? `Calibrated: ${measurementUnit}` : "Uncalibrated"}
             </span>
-            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-0.5`}>
               Calib: {calibrationMode === "line" ? "Line" : "Zoom%"}
             </span>
-            <span className={`${SOFT_RAISED_CLASS} px-2 py-1`}>History</span>
+            <span className={`${SOFT_RAISED_CLASS} px-2 py-0.5`}>History</span>
             {compareMode ? (
-              <span className={`${SOFT_RAISED_CLASS} px-2 py-1 text-cyan-700`}>
+              <span className={`${SOFT_RAISED_CLASS} px-2 py-0.5 text-cyan-700`}>
                 Compare ON
               </span>
             ) : null}

@@ -3,8 +3,6 @@ import { resolve } from "node:path";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 
-const DEFAULT_BUCKET = "data-ok-b4091.firebasestorage.app";
-
 function normalizeBucket(bucketInput) {
   const raw = String(bucketInput || "").trim();
   if (!raw) return "";
@@ -69,7 +67,7 @@ const storageBucket = normalizeBucket(
   process.env.FIREBASE_STORAGE_BUCKET ||
     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
     process.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    DEFAULT_BUCKET,
+    "",
 );
 
 const databaseURL =

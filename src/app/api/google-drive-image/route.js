@@ -8,6 +8,7 @@ import {
 } from "@/lib/googleDriveImage";
 
 export const runtime = "nodejs";
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 async function buildNoImageResponse(status = 200) {
   try {
@@ -46,7 +47,33 @@ function buildCandidates({ driveId, id, src, url }) {
     return buildGoogleDriveImageCandidates(effectiveSrc);
   }
 
-  return [effectiveSrc];
+  return [];
+}
+
+async function readLimitedBody(response) {
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > MAX_IMAGE_BYTES) throw new Error("Image terlalu besar.");
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_IMAGE_BYTES) {
+      await reader.cancel();
+      throw new Error("Image terlalu besar.");
+    }
+    chunks.push(value);
+  }
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 }
 
 export async function GET(request) {
@@ -83,7 +110,7 @@ export async function GET(request) {
         contentType === "application/octet-stream";
       if (!isImage) continue;
 
-      const body = await response.arrayBuffer();
+      const body = await readLimitedBody(response);
       if (!body.byteLength) continue;
 
       return new NextResponse(body, {
@@ -93,7 +120,6 @@ export async function GET(request) {
           "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
           "Access-Control-Allow-Origin": "*",
           "X-Content-Type-Options": "nosniff",
-          "X-Drive-Image-Candidate": candidate,
         },
       });
     } catch {

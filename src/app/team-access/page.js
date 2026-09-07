@@ -11,6 +11,12 @@ import {
 
 const TEAM_ENTRIES = [
   {
+    key: "account-admin",
+    title: "Admin Persetujuan Akun",
+    description: "Tinjau dan setujui akun pengguna yang baru mendaftar.",
+    path: "/admin/users",
+  },
+  {
     key: "xray",
     title: "X-ray Calibration",
     description: "Kalibrasi X-ray dan pengukuran gambar.",

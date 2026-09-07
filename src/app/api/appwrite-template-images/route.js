@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApprovedUser } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 
@@ -51,6 +52,8 @@ function normalizeFile(file, config) {
 }
 
 export async function GET(request) {
+  const authResult = await requireApprovedUser(request);
+  if (authResult.error) return authResult.error;
   const config = readConfig();
   if (!config.endpoint || !config.projectId || !config.bucketId) {
     return NextResponse.json(

@@ -233,6 +233,42 @@ export default function QuickPanel({
     if (firstItem) onSelectImplantItemId?.(firstItem.id);
   };
 
+  if (leftDockMode) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: -12, scale: 0.97 }}
+        animate={{ opacity: 1, x: 0, scale: 1 }}
+        exit={{ opacity: 0, x: -10, scale: 0.97 }}
+        className={`qpanel flex max-w-[calc(100vw-32px)] items-center gap-1.5 rounded-[18px] border border-[var(--soft-float-border)] [background:var(--soft-float-bg)] p-1.5 shadow-[var(--soft-shadow-float)] backdrop-blur-xl ${className}`}
+      >
+        <style>{QUICK_PANEL_STYLES}</style>
+        <span className="shrink-0 rounded-full bg-slate-900 px-2.5 py-1.5 text-[10px] font-black text-white">
+          Step {workflowStep}/{workflowMax}
+        </span>
+        <CompactButton icon={Upload} onClick={onUpload} className="min-h-8 px-2.5">
+          + Upload
+        </CompactButton>
+        <CompactButton icon={Scaling} onClick={onCalibration} className="min-h-8 px-2.5">
+          Kalibrasi
+        </CompactButton>
+        {measurementCount > 0 ? (
+          <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-black text-emerald-700">
+            {measurementCount} Ukur
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={onMinimize}
+          className="qpanel-btn flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/70 bg-white/36 text-xs font-black text-slate-500"
+          aria-label="Minimize Quick Panel"
+          title="Minimize"
+        >
+          −
+        </button>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -14, scale: 0.96 }}
