@@ -5,7 +5,7 @@ import {
   ArrowLeft, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, CloudUpload, Download, Eye, EyeOff, FileText, Focus,
   ImagePlus, Layers, ListOrdered, Lock, LockOpen, PanelLeftClose,
-  PanelRightClose, Plus, Ruler, SlidersHorizontal, Target, X,
+  PanelRightClose, Play, Plus, Ruler, SlidersHorizontal, Target, X,
 } from "lucide-react";
 import {
   capturePlanningInitial, completePlanningStep, formatPlanningValue,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/planningWorkspace";
 import styles from "./PlanningWorkspace.module.css";
 import PlanningToolGroups from "./PlanningToolGroups";
+import { GuideContent } from "@/components/LandmarkGuide";
 
 function Action({ icon: Icon, children, active, className = "", ...props }) {
   return <button type="button" className={`${styles.button} ${active ? styles.active : ""} ${className}`} {...props}>
@@ -42,7 +43,7 @@ export default function PlanningWorkspace({
   measurements, imageName, hasImage, calibrated, tools, actions, analysisTools,
   correctionControls, catalog, selectedImplantId, onSelectImplant, onInsertImplant,
   layers, onSelectLayer, onUpdateLayer, annotations, guides, note, onNote,
-  status, zoom, toolLabel, isDark,
+  status, zoom, toolLabel, isDark, onToggleMeasurementLabel, onRenameMeasurement,
 }) {
   const [workflowOpen, setWorkflowOpen] = useState(true);
   const [stepExpanded, setStepExpanded] = useState(true);
@@ -55,9 +56,32 @@ export default function PlanningWorkspace({
   const [brand, setBrand] = useState("");
   const [system, setSystem] = useState("");
   const [component, setComponent] = useState("");
+  const [guideItemId, setGuideItemId] = useState(null);
+  const [guideMinimized, setGuideMinimized] = useState(false);
+  const [guideStepIndex, setGuideStepIndex] = useState(0);
   const drag = useRef(null);
   const sheetRef = useRef(null);
+  const previousAnalysisRef = useRef({ procedure, signature: "" });
   const rows = useMemo(() => resolvePlanningRows(procedure, session, measurements), [procedure, session, measurements]);
+  const displayedMeasurementRows = useMemo(() => {
+    const clinicalRows = rows.filter((row) => Number.isFinite(row.value)).map((row) => ({ ...row, clinical: true }));
+    const clinicalSourceIds = new Set(clinicalRows.map((row) => row.sourceId).filter(Boolean));
+    const supplementalRows = measurements
+      .filter((item) => Number.isFinite(item.value) && !clinicalSourceIds.has(item.id))
+      .map((item) => ({
+        key: `measurement:${item.id}`,
+        name: item.name || item.metric || "Measurement",
+        detail: item.metric ? `${item.metric} · hasil pengukuran aktif` : "Hasil pengukuran aktif pada canvas",
+        unit: item.unit,
+        value: item.value,
+        initial: null,
+        sourceId: item.id,
+        sourceLineIds: Array.isArray(item.sourceLineIds) ? item.sourceLineIds : [],
+        sourceShowLabel: item.sourceShowLabel !== false,
+        clinical: false,
+      }));
+    return [...clinicalRows, ...supplementalRows];
+  }, [measurements, rows]);
   const available = catalog.filter((item) => procedure === "tka" ? item.type === "knee" : item.type !== "knee");
   const brands = [...new Set(available.map((item) => item.brand))];
   const systems = [...new Set(available.filter((item) => !brand || item.brand === brand).map((item) => item.system))];
@@ -67,11 +91,46 @@ export default function PlanningWorkspace({
   const completedSteps = getCompletedPlanningSteps(session, canProceed);
   const firstIncompleteStep = reference.workflow.findIndex((_, index) => !completedSteps.has(index));
   const nextRequiredStep = firstIncompleteStep < 0 ? reference.workflow.length - 1 : firstIncompleteStep;
+  const analysisSignature = analysisTools.map((item) => `${item.complete ? "1" : "0"}:${item.progress || ""}`).join("|");
+  const firstIncompleteAnalysis = analysisTools.findIndex((item) => !item.complete);
+  const activeAnalysisIndex = firstIncompleteAnalysis < 0 ? analysisTools.length - 1 : firstIncompleteAnalysis;
+  const analysisDoneCount = analysisTools.filter((item) => item.complete).length;
+  const activeAnalysisItem = analysisTools[activeAnalysisIndex] || null;
+  const activeAnalysisItemId = activeAnalysisItem?.id || null;
+  const activeAnalysisItemComplete = Boolean(activeAnalysisItem?.complete);
+  const guideItem = analysisTools.find((item) => item.id === guideItemId) || null;
+  const guideSteps = guideItem?.guideSteps || [];
+  const guideStep = guideSteps[Math.min(guideStepIndex, Math.max(0, guideSteps.length - 1))] || null;
+  const liveGuideStep = guideItem?.liveProgress?.current;
   const prerequisites = !hasImage ? "Upload X-ray terlebih dahulu." : !session.side
     ? "Pilih sisi tubuh dan selesaikan kalibrasi terlebih dahulu."
     : "Selesaikan kalibrasi marker terlebih dahulu.";
 
-  useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); setStepExpanded(true); }, [procedure]);
+  useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); setStepExpanded(true); setGuideItemId(null); }, [procedure]);
+  useEffect(() => {
+    if (!enabled || session.step !== 1 || !activeAnalysisItem || activeAnalysisItem.complete) return;
+    setGuideItemId(activeAnalysisItem.id);
+    setGuideMinimized(true);
+    setGuideStepIndex(0);
+  }, [activeAnalysisItem?.id, enabled, procedure, session.step]);
+  useEffect(() => {
+    if (!Number.isFinite(liveGuideStep) || guideSteps.length === 0) return;
+    setGuideStepIndex(Math.min(liveGuideStep, guideSteps.length - 1));
+  }, [guideItemId, guideSteps.length, liveGuideStep]);
+  useEffect(() => {
+    const previous = previousAnalysisRef.current;
+    const analysisAdvanced = previous.procedure === procedure && previous.signature &&
+      previous.signature !== analysisSignature;
+    previousAnalysisRef.current = { procedure, signature: analysisSignature };
+    if (!enabled || session.step !== 1 || !analysisAdvanced) return;
+    setStepExpanded(true);
+    setWorkflowOpen(true);
+    if (activeAnalysisItemId && !activeAnalysisItemComplete) {
+      setGuideItemId(activeAnalysisItemId);
+      setGuideMinimized(true);
+    }
+    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
+  }, [activeAnalysisItemComplete, activeAnalysisItemId, analysisSignature, enabled, procedure, session.step]);
   useEffect(() => {
     if (!enabled || session.step !== 0 || !canProceed || session.completedSteps?.includes(0)) return;
     const next = completePlanningStep(session, 0, 1);
@@ -160,16 +219,47 @@ export default function PlanningWorkspace({
         <fieldset className={styles.setupFields}><legend>Body side & calibration</legend>
         <div className={styles.segment} aria-label="Body side">
           {["left", "right"].map((side) => <Action key={side} active={session.side === side} aria-pressed={session.side === side}
-            onClick={() => onSession({ ...session, side, initial: session.side === side ? session.initial : null })}>{side === "left" ? "L / Left" : "R / Right"}</Action>)}
+            onClick={() => onSession(session.side === side ? session : {
+              ...session, side, step: 0, bindings: {}, initial: null, completedSteps: [],
+            })}>{side === "left" ? "L / Left" : "R / Right"}</Action>)}
         </div>
         <Action icon={Ruler} className={calibrated ? styles.success : styles.warning} disabled={!hasImage}
           onClick={() => activate(actions.calibrate)}>{calibrated ? "Skala terkalibrasi" : "Kalibrasi marker"}</Action>
+        <Action icon={Layers} disabled={!hasImage || !calibrated}
+          onClick={() => activate(actions.implantLibrary)}>Langsung ke Implant Template</Action>
         </fieldset>
         {!canProceed && <p className={styles.prerequisite} role="status">{prerequisites}</p>}
       </>}
       {session.step === 1 && <>
-        <div className={styles.buttonGrid}>{analysisTools.map((item) => <Action key={item.id} icon={item.icon}
-          onClick={() => activate(item.action)}>{item.label}</Action>)}</div>
+        <div className={styles.analysisHeading}>
+          <span>{procedure === "tka" ? "Knee Axis Analysis" : "Pelvic Analysis"}</span>
+          <strong>{session.side === "left" ? "L / Left" : "R / Right"} · {analysisDoneCount}/{analysisTools.length}</strong>
+        </div>
+        <ol className={styles.analysisSteps}>
+          {analysisTools.map((item, index) => {
+            const current = index === activeAnalysisIndex;
+            const available = canProceed;
+            return <li key={item.id}>
+              <button type="button" disabled={!available} aria-current={current ? "step" : undefined}
+                onClick={() => {
+                  setGuideItemId(item.id);
+                  setGuideMinimized(true);
+                  setGuideStepIndex(0);
+                  activate(item.action);
+                }}>
+                <span className={styles.analysisNumber}>{item.complete ? <Check size={14} /> : index + 1}</span>
+                <span><strong>{item.label}</strong><small>{item.instruction}</small></span>
+                {item.progress && <em>{item.progress}</em>}
+                {!available && <Lock size={13} />}
+                {current && !item.complete && <ArrowRight size={14} />}
+              </button>
+            </li>;
+          })}
+        </ol>
+        <div className={styles.analysisBypass}>
+          <span>Analysis bersifat opsional untuk templating cepat.</span>
+          <Action icon={Layers} disabled={!calibrated} onClick={() => activate(actions.implantLibrary)}>Buka Implant Template</Action>
+        </div>
         <Action icon={Target} disabled={!rows.some((row) => row.value !== null)} onClick={saveInitial}>
           {session.initial ? "Rekam ulang Initial" : "Rekam Initial"}
         </Action>
@@ -233,27 +323,46 @@ export default function PlanningWorkspace({
       </div>
       <div id="planning-log-content" role="tabpanel" aria-labelledby={`planning-tab-${logTab}`}>
       {logTab === "measurements" && <>
-      <div className={styles.sectionHeading}><strong>Measurements</strong><span>{rows.filter((r) => r.value !== null).length} / {rows.length}</span></div>
+      <div className={styles.sectionHeading}><strong>Measurements</strong><span>{displayedMeasurementRows.length} terukur</span></div>
       <div className={styles.measurementScroll} role="region" aria-label="Measurement values" tabIndex={0}>
       <table className={styles.measurements}><thead><tr><th>Parameter</th><th>Initial</th><th>Planned</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.key}>
-          <th><button type="button" title={row.detail} onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
-            aria-expanded={metricEditor === row.key}>{row.key}<ChevronDown size={12} /></button></th>
-          <td>{formatPlanningValue(session.initial ? row.initial : row.value, row.unit)}</td>
-          <td className={row.value !== row.initial && session.initial ? styles.changed : ""}>{formatPlanningValue(session.initial ? row.value : null, row.unit)}</td>
+        <tbody>{displayedMeasurementRows.length === 0 ? <tr><td colSpan={3} className={styles.emptyMeasurement}>Belum ada pengukuran.</td></tr> : displayedMeasurementRows.map((row) => <tr key={row.key}>
+          <th><span className={styles.metricNameCell}><button type="button" title={`${row.detail}. Klik untuk mengubah info.`}
+            onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)} aria-expanded={metricEditor === row.key}>
+            {row.clinical ? row.key : row.name}<ChevronDown size={12} />
+          </button>
+            {row.sourceLineIds.length > 0 && <button type="button" className={styles.metricLabelToggle}
+              title={row.sourceShowLabel ? "Sembunyikan bacaan di canvas" : "Tampilkan bacaan di canvas"}
+              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} bacaan ${row.key} di canvas`}
+              onClick={() => onToggleMeasurementLabel?.(row.sourceLineIds, row.sourceShowLabel)}>
+              {row.sourceShowLabel ? <Eye size={13} /> : <EyeOff size={13} />}
+            </button>}</span></th>
+          <td>{formatPlanningValue(row.clinical && session.initial ? row.initial : row.value, row.unit)}</td>
+          <td className={row.clinical && row.value !== row.initial && session.initial ? styles.changed : ""}>{formatPlanningValue(row.clinical && session.initial ? row.value : null, row.unit)}</td>
         </tr>)}</tbody>
       </table>
       </div>
       {metricEditor && (() => {
-        const row = rows.find((item) => item.key === metricEditor);
+        const row = displayedMeasurementRows.find((item) => item.key === metricEditor);
         if (!row) return null;
+        const sourceMeasurement = measurements.find((item) => item.id === row.sourceId);
+        const editableMeasurementId = /^(line|angle|circle):/.test(sourceMeasurement?.id || "")
+          ? sourceMeasurement.id
+          : null;
+        const displayName = sourceMeasurement?.name || row.name || row.key;
         return <div className={styles.metricEditor}>
-          <strong>{row.key}</strong><p>{row.detail}</p>
-          <label>Sumber pengukuran<select value={session.bindings?.[row.key] || ""}
+          <strong>{row.clinical ? row.key : row.name}</strong><p>{row.detail}</p>
+          {editableMeasurementId && <label>Nama info
+            <input key={`${row.key}:${displayName}`} type="text" defaultValue={displayName} maxLength={80}
+              onBlur={(event) => onRenameMeasurement?.(editableMeasurementId, event.target.value.trim() || displayName)}
+              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+          </label>}
+          {row.clinical && <label>Sumber pengukuran<select value={session.bindings?.[row.key] || ""}
             onChange={(e) => onSession({ ...session, bindings: { ...session.bindings, [row.key]: e.target.value } })}>
             <option value="">Otomatis dari pengukuran berlabel</option>
             {measurements.filter((m) => m.unit === row.unit).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select></label>
+          </select></label>}
+          {row.sourceLineIds.length > 1 && <p>Hasil ini dihitung dari beberapa line. Ubah nama setiap line melalui item pengukuran sumbernya.</p>}
         </div>;
       })()}
       {!session.initial && <Action icon={Target} disabled={!rows.some((r) => r.value !== null)} onClick={saveInitial}>Rekam Initial</Action>}
@@ -299,6 +408,58 @@ export default function PlanningWorkspace({
       <div className={styles.canvas}>
         {children}
         {session.side && <span className={styles.sideMarker}>{session.side === "left" ? "L" : "R"}</span>}
+        {session.step === 1 && guideItem && <aside className={styles.canvasGuide} data-minimized={guideMinimized} aria-label={`Petunjuk ${guideItem.label}`}>
+          <div className={styles.canvasGuideHeader}>
+            <span><Target size={15} /><span><strong>{guideItem.label}</strong>
+              {guideItem.activePoint && <small>{guideItem.activePoint}</small>}
+            </span></span>
+            <div>
+              <button type="button" onClick={() => setGuideMinimized((value) => !value)}
+                aria-label={guideMinimized ? "Buka petunjuk" : "Minimalkan petunjuk"}>{guideMinimized ? "+" : "−"}</button>
+              <button type="button" onClick={() => setGuideItemId(null)} aria-label="Tutup petunjuk"><X size={14} /></button>
+            </div>
+          </div>
+          {guideItem.liveProgress && <div className={styles.guideProgress}>
+            <span style={{ width: `${guideItem.liveProgress.percent}%` }} />
+            <small>{guideItem.liveProgress.label}</small>
+          </div>}
+          {!guideMinimized && <>
+            <div className={styles.guideVisual}>
+              {guideItem.guideView ? <GuideContent viewId={guideItem.guideView}
+                sideConditions={{ kanan: "native", kiri: "native" }} highlightId={guideStep?.id || guideItem.highlightId} />
+                : guideItem.guideImage ? <img src={guideItem.guideImage} alt={`Diagram titik ${guideItem.label}`} /> : null}
+            </div>
+            {guideStep && <div className={styles.guideStepNav}>
+              <Action icon={ChevronLeft} aria-label="Landmark sebelumnya" disabled={guideStepIndex === 0}
+                onClick={() => setGuideStepIndex((index) => Math.max(0, index - 1))} />
+              <span><small>Landmark {guideStepIndex + 1}/{guideSteps.length}</small><strong>{guideStep.label}</strong></span>
+              <Action icon={ChevronRight} aria-label="Landmark berikutnya" disabled={guideStepIndex >= guideSteps.length - 1}
+                onClick={() => setGuideStepIndex((index) => Math.min(guideSteps.length - 1, index + 1))} />
+            </div>}
+            {guideStep && <div className={styles.guideCurrentStep}>
+              <div><span>Langkah {guideStepIndex + 1} dari {guideSteps.length}</span>
+                {guideStep.side && <em data-side={guideStep.side}>{guideStep.side === "left" ? "KIRI" : "KANAN"}</em>}
+              </div>
+              <strong>{guideStep.shortLabel ? `${guideStep.shortLabel} · ` : ""}{guideStep.label}</strong>
+              <p>Tap tepat pada landmark ini di gambar X-ray pasien. Setelah dipilih, wizard otomatis lanjut ke titik berikutnya.</p>
+            </div>}
+            {guideSteps.length > 1 && <ol className={styles.guideSequence} aria-label="Urutan landmark">
+              {guideSteps.map((step, index) => <li key={`${step.id}-${index}`}
+                data-state={index < guideStepIndex ? "done" : index === guideStepIndex ? "active" : "pending"}>
+                <span>{index < guideStepIndex ? <Check size={11} /> : index + 1}</span>
+                <small>{step.shortLabel || step.label}</small>
+              </li>)}
+            </ol>}
+            <p>{guideItem.instruction}</p>
+            {guideItem.points?.length > 0 && <ol className={styles.guidePoints}>
+              {guideItem.points.map((point, index) => <li key={point}><span>{index + 1}</span>{point}</li>)}
+            </ol>}
+            {guideItem.liveProgress
+              ? <div className={styles.guideActiveNotice}><Target size={14} />Wizard aktif · pilih landmark yang disorot</div>
+              : <Action icon={Play} onClick={() => { setGuideMinimized(false); activate(guideItem.action); }}>Mulai wizard landmark</Action>}
+            <small>Diagram bersifat panduan. Sesuaikan titik dengan anatomi pada X-ray pasien.</small>
+          </>}
+        </aside>}
         {!hasImage && <div className={styles.emptyCanvas}>
           <ImagePlus size={32} /><h2>{reference.fullLabel}</h2>
           <Action icon={ImagePlus} onClick={actions.upload}>Upload X-ray</Action>

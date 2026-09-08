@@ -22,25 +22,25 @@ const TYPE_KEYS = Object.keys(IMPLANT_LIBRARY_TYPE_LABELS);
 const IMPLANT_LAYER_STYLES = `
   .implant-layer-card {
     background: #eef2f7;
-    box-shadow: 5px 5px 14px rgba(148,163,184,0.28), -5px -5px 14px rgba(255,255,255,0.78);
-    border: 1px solid rgba(255,255,255,0.78);
+    box-shadow: 0 4px 14px rgba(15,23,42,0.10);
+    border: 1px solid #cbd5e1;
     color: #1e293b;
   }
   .implant-layer-soft {
-    background: #eef2f7;
-    box-shadow: 3px 3px 8px rgba(148,163,184,0.25), -3px -3px 8px rgba(255,255,255,0.78);
-    border: 1px solid rgba(255,255,255,0.72);
+    background: #f8fafc;
+    box-shadow: none;
+    border: 1px solid #cbd5e1;
   }
   .implant-layer-inset {
-    background: #edf1f6;
-    box-shadow: inset 2.5px 2.5px 6px rgba(148,163,184,0.28), inset -2.5px -2.5px 6px rgba(255,255,255,0.86);
-    border: 1px solid rgba(255,255,255,0.82);
+    background: #f8fafc;
+    box-shadow: none;
+    border: 1px solid #cbd5e1;
   }
   .implant-layer-active {
     background: #1f2937;
     color: #ffffff;
-    box-shadow: inset 2px 2px 5px rgba(0,0,0,0.28), 2px 2px 7px rgba(30,41,59,0.16);
-    border-color: rgba(15,23,42,0.6);
+    box-shadow: none;
+    border-color: #0f172a;
   }
   .implant-layer-label-hi { color: #0f172a; }
   .implant-layer-label-md { color: #475569; }
@@ -50,20 +50,20 @@ const IMPLANT_LAYER_STYLES = `
   .implant-layer-metric {
     background: rgba(255,255,255,0.42);
     border: 1px solid rgba(255,255,255,0.65);
-    box-shadow: inset 1.5px 1.5px 3px rgba(148,163,184,0.16), inset -1.5px -1.5px 3px rgba(255,255,255,0.76);
+    box-shadow: none;
   }
   .implant-layer-btn-use {
     border: 1px solid #6ee7b7;
     background: rgba(209,250,229,0.80);
     color: #065f46;
-    box-shadow: 3px 3px 8px rgba(16,185,129,0.14), -3px -3px 8px rgba(255,255,255,0.78);
+    box-shadow: none;
   }
   .implant-layer-btn-use:hover { background: rgba(187,247,208,0.9); }
   .implant-layer-btn-replace {
     border: 1px solid #a5f3fc;
     background: rgba(207,250,254,0.75);
     color: #0e7490;
-    box-shadow: 3px 3px 8px rgba(6,182,212,0.12), -3px -3px 8px rgba(255,255,255,0.78);
+    box-shadow: none;
   }
   .implant-layer-btn-replace:hover { background: rgba(165,243,252,0.9); }
   .implant-layer-hint { color: #64748b; }
@@ -71,24 +71,24 @@ const IMPLANT_LAYER_STYLES = `
   /* ─── Dark mode ─────────────────────────────────────────── */
   [data-theme="dark"] .implant-layer-card {
     background: rgba(15,23,42,0.92);
-    box-shadow: 4px 4px 18px rgba(0,0,0,0.55), -2px -2px 8px rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 5px 16px rgba(0,0,0,0.28);
+    border: 1px solid rgba(148,163,184,0.28);
     color: #e2e8f0;
   }
   [data-theme="dark"] .implant-layer-soft {
     background: rgba(30,41,59,0.80);
-    box-shadow: 3px 3px 8px rgba(0,0,0,0.40), -2px -2px 6px rgba(255,255,255,0.03);
+    box-shadow: none;
     border: 1px solid rgba(255,255,255,0.09);
   }
   [data-theme="dark"] .implant-layer-inset {
     background: rgba(8,14,28,0.70);
-    box-shadow: inset 2px 2px 6px rgba(0,0,0,0.50), inset -1px -1px 4px rgba(255,255,255,0.04);
+    box-shadow: none;
     border: 1px solid rgba(255,255,255,0.07);
   }
   [data-theme="dark"] .implant-layer-active {
     background: rgba(14,165,233,0.18);
     color: #38bdf8;
-    box-shadow: inset 1px 1px 4px rgba(0,0,0,0.35);
+    box-shadow: none;
     border-color: rgba(14,165,233,0.35);
   }
   [data-theme="dark"] .implant-layer-label-hi { color: #f1f5f9; }
@@ -105,14 +105,14 @@ const IMPLANT_LAYER_STYLES = `
     border: 1px solid rgba(52,211,153,0.30);
     background: rgba(6,78,59,0.55);
     color: #6ee7b7;
-    box-shadow: 0 2px 10px rgba(16,185,129,0.18);
+    box-shadow: none;
   }
   [data-theme="dark"] .implant-layer-btn-use:hover { background: rgba(6,78,59,0.75); }
   [data-theme="dark"] .implant-layer-btn-replace {
     border: 1px solid rgba(34,211,238,0.28);
     background: rgba(8,51,68,0.55);
     color: #67e8f9;
-    box-shadow: 0 2px 10px rgba(6,182,212,0.16);
+    box-shadow: none;
   }
   [data-theme="dark"] .implant-layer-btn-replace:hover { background: rgba(8,51,68,0.75); }
   [data-theme="dark"] .implant-layer-hint { color: #475569; }
@@ -177,7 +177,7 @@ export default function ImplantLayer({
 
   return (
     <section
-      className={`implant-layer-card w-full rounded-[30px] p-4 ${
+      className={`implant-layer-card w-full rounded-xl p-4 ${
         compact ? "space-y-3" : "space-y-4"
       } ${className}`}
     >
@@ -186,7 +186,7 @@ export default function ImplantLayer({
       {/* Header */}
       <div className={`implant-layer-divider flex items-start justify-between gap-3 border-b pb-3`}>
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="implant-layer-soft flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-cyan-500">
+          <div className="implant-layer-soft flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-cyan-600">
             <FolderOpen className="h-4 w-4" />
           </div>
           <div className="min-w-0">
@@ -234,7 +234,7 @@ export default function ImplantLayer({
       ) : null}
 
       {/* Type tabs */}
-      <div className="implant-layer-inset gap-1.5 rounded-2xl p-1.5" style={{ display: "grid", gridTemplateColumns: `repeat(${TYPE_KEYS.length}, minmax(0, 1fr))` }}>
+      <div className="implant-layer-inset flex gap-1.5 overflow-x-auto rounded-lg p-1.5" role="tablist" aria-label="Kategori implant">
         {TYPE_KEYS.map((type) => {
           const label = IMPLANT_LIBRARY_TYPE_LABELS[type];
           const isActive = normalizedType === type;
@@ -243,7 +243,7 @@ export default function ImplantLayer({
               key={`implant-layer-type-${type}`}
               type="button"
               onClick={() => handleTypeChange(type)}
-              className={`min-h-10 rounded-xl px-2 text-[10px] font-black uppercase transition-all ${
+              className={`min-h-10 min-w-[76px] flex-1 rounded-md px-2 text-[10px] font-black uppercase transition-colors ${
                 isActive ? "implant-layer-active" : "implant-layer-soft implant-layer-label-md"
               }`}
               title={label}
@@ -263,7 +263,7 @@ export default function ImplantLayer({
           <select
             value={selectedItem?.id || ""}
             onChange={(event) => onSelectItemId?.(event.target.value)}
-            className="implant-layer-inset implant-layer-select w-full cursor-pointer appearance-none rounded-2xl px-3 py-3 pr-9 text-xs font-bold outline-none"
+            className="implant-layer-inset implant-layer-select w-full cursor-pointer appearance-none rounded-lg px-3 py-3 pr-9 text-xs font-bold outline-none focus:border-cyan-500"
             style={{ colorScheme: "dark" }}
             title="Pilih implant lokal"
           >
@@ -349,21 +349,21 @@ export default function ImplantLayer({
           type="button"
           onClick={onUseSelected}
           disabled={disabled || !selectedItem}
-          className="implant-layer-btn-use flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          className="implant-layer-btn-use flex min-h-12 w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           title={calibrated ? "Tambahkan implant sebagai layer template baru" : "Kalibrasi belum aktif — ukuran implant mungkin tidak akurat"}
         >
           {calibrated ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
-          Pakai
+          Tambah Layer
         </button>
         <button
           type="button"
           onClick={onReplaceSelected}
           disabled={disabled || !selectedItem || !canReplaceSelected}
-          className="implant-layer-btn-replace flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          className="implant-layer-btn-replace flex min-h-12 w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           title="Ganti layer/template aktif tanpa mengubah posisi dan ukuran tampilan"
         >
           <FolderOpen className="h-4 w-4" />
-          Ganti
+          Ganti Aktif
         </button>
       </div>
 

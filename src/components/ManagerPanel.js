@@ -222,6 +222,7 @@ export default function ManagerPanel({
   onSelectLine,
   onRenameLine,
   onChangeLineColor,
+  onToggleLineLabel,
   getLineLength,
   formatMeasurementFromPx,
   lineTypeLabel,
@@ -413,6 +414,7 @@ export default function ManagerPanel({
             onSelectLine={onSelectLine}
             onRenameLine={onRenameLine}
             onChangeLineColor={onChangeLineColor}
+            onToggleLineLabel={onToggleLineLabel}
             getLineLength={getLineLength}
             formatMeasurementFromPx={formatMeasurementFromPx}
             lineTypeLabel={lineTypeLabel}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, Pencil, RefreshCcw, Trash2, Minus, Plus } from "lucide-react";
+import { Check, Eye, EyeOff, Pencil, RefreshCcw, Trash2, Minus, Plus } from "lucide-react";
 
 function IconBtn({ icon: Icon, label, active = false, className = "", ...props }) {
   return (
@@ -31,6 +31,7 @@ export default function LineManager({
   onSelectLine,
   onRenameLine,
   onChangeLineColor,
+  onToggleLineLabel,
   getLineLength,
   formatMeasurementFromPx,
   lineTypeLabel,
@@ -214,6 +215,15 @@ export default function LineManager({
                       }}
                     />
                   )}
+                  <IconBtn
+                    icon={line.showLabel === false ? EyeOff : Eye}
+                    label={line.showLabel === false ? "Tampilkan hasil line di canvas" : "Sembunyikan hasil line di canvas"}
+                    active={line.showLabel !== false}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleLineLabel?.(line.id);
+                    }}
+                  />
                 </div>
               </div>
             );

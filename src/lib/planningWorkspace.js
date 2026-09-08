@@ -39,13 +39,13 @@ export const PLANNING_METRICS = {
     ["IAA", "deg", "Interline angle"],
   ],
   hip: [
-    ["LLD", "mm", "Limb length discrepancy"],
-    ["FO L", "mm", "Femoral offset kiri"],
-    ["FO R", "mm", "Femoral offset kanan"],
-    ["CCD L", "deg", "Neck-shaft angle kiri"],
-    ["CCD R", "deg", "Neck-shaft angle kanan"],
-    ["FHD L", "mm", "Femoral head diameter kiri"],
-    ["FHD R", "mm", "Femoral head diameter kanan"],
+    ["LLD", "mm", "Selisih absolut Hip Length kanan dan kiri. Hip Length adalah jarak tegak lurus lesser trochanter ke interteardrop line."],
+    ["FO L", "mm", "Jarak tegak lurus pusat femoral head kiri ke anatomical axis femur kiri."],
+    ["FO R", "mm", "Jarak tegak lurus pusat femoral head kanan ke anatomical axis femur kanan."],
+    ["CCD L", "deg", "Sudut neck-shaft kiri dari tiga titik: pusat head, vertex neck-shaft, dan pusat shaft distal."],
+    ["CCD R", "deg", "Sudut neck-shaft kanan dari tiga titik: pusat head, vertex neck-shaft, dan pusat shaft distal."],
+    ["FHD L", "mm", "Diameter femoral head kiri dari titik pusat ke tepi korteks."],
+    ["FHD R", "mm", "Diameter femoral head kanan dari titik pusat ke tepi korteks."],
     ["Cup Inclination", "deg", "Inklinasi cup"],
     ["Cup Anteversion", "deg", "Anteversi cup"],
   ],
@@ -55,13 +55,16 @@ export const PLANNING_METRICS = {
 export function resolvePlanningRows(procedure, session, measurements) {
   return PLANNING_METRICS[procedure].map(([key, unit, detail]) => {
     const binding = session.bindings?.[key];
+    const hasExplicitMetricSide = /\s[LR]$/.test(key);
     const source = binding
       ? measurements.find((item) => item.id === binding && item.unit === unit)
       : measurements.find((item) => item.metric === key && item.unit === unit &&
-          (!item.side || item.side === session.side));
+          (!item.side || hasExplicitMetricSide || item.side === session.side));
     return {
       key, unit, detail, sourceId: source?.id || "",
       value: Number.isFinite(source?.value) ? source.value : null,
+      sourceLineIds: Array.isArray(source?.sourceLineIds) ? source.sourceLineIds : [],
+      sourceShowLabel: source?.sourceShowLabel !== false,
       initial: Number.isFinite(session.initial?.values?.[key])
         ? session.initial.values[key] : null,
     };

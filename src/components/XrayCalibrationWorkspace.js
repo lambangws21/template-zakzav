@@ -119,6 +119,11 @@ import NormmedStemLayer from "./NormmedStemLayer";
 import CalibrationWizard from "./KalibrasiWizzard";
 import FreeWarpOverlay from "./FreeWarpOverlay";
 import { SHAPE_PRESETS } from "../data/shapePresets";
+import { pelvicLandmarkId } from "../data/pelvicLandmarks";
+import {
+  buildPelvicAnalysisMeasurements,
+  PELVIC_ANALYSIS_LANDMARKS,
+} from "../lib/xray/pelvicAnalysis";
 import LayerManager from "./LayerManager";
 import LineManager from "./LineManager";
 import DorrClassificationPanel from "./DorrClassificationPanel";
@@ -629,6 +634,8 @@ export default function XrayCalibrationWorkspace({
   const nextLineIdRef = useRef(1);
   const nextAngleIdRef = useRef(1);
   const nextCircleIdRef = useRef(1);
+  const planningAngleMetricRef = useRef(null);
+  const planningCircleMetricRef = useRef(null);
   const nextHkaIdRef = useRef(1);
   const hkaCompletionFiredRef = useRef(false);
   const pendingHkaUpdateIdRef = useRef(null);
@@ -724,6 +731,8 @@ export default function XrayCalibrationWorkspace({
   const [draftCirclePoints, setDraftCirclePoints] = useState([]);
   const [draftCenterFinderPoints, setDraftCenterFinderPoints] = useState([]);
   const [draftAxisBuilderPoints, setDraftAxisBuilderPoints] = useState([]);
+  const [draftPelvicAnalysisPoints, setDraftPelvicAnalysisPoints] = useState([]);
+  const pelvicAnalysisCompletionRef = useRef(false);
   const [guideBuilderMode, setGuideBuilderMode] = useState("parallel");
   const [guideBuilderPreviewPoint, setGuideBuilderPreviewPoint] =
     useState(null);
@@ -956,6 +965,7 @@ export default function XrayCalibrationWorkspace({
   const [simpleLayerFloatingPopup, setSimpleLayerFloatingPopup] =
     useState(null);
   const [simplePlanningModal, setSimplePlanningModal] = useState(null);
+  const [planningImplantModalOpen, setPlanningImplantModalOpen] = useState(false);
   const [planningProcedure, setPlanningProcedure] = useState("tka");
   const [planningSessions, setPlanningSessions] = useState(() => ({
     tka: createPlanningSession(), hip: createPlanningSession(),
@@ -1182,6 +1192,7 @@ export default function XrayCalibrationWorkspace({
   const brushCursorDotRef = useRef(null);
   const hoverScanLastRef = useRef(0);
   const touchHoverDismissTimerRef = useRef(null);
+  const desktopHoverSessionRef = useRef({ key: null, startedAt: 0 });
   const [showCupAssessment, setShowCupAssessment] = useState(false);
   const [savedCupAssessment, setSavedCupAssessment] = useState(null);
   // Cup assessment drawn directly on canvas (image-space coords)
@@ -2090,6 +2101,7 @@ export default function XrayCalibrationWorkspace({
       const nextLine = {
         ...lineInput,
         id: nextLineIdRef.current,
+        side: lineInput.side || canvasAnatomySide,
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -2114,7 +2126,7 @@ export default function XrayCalibrationWorkspace({
       }
       return nextLine;
     },
-    [isCoarsePointer, triggerSelectionPulse],
+    [canvasAnatomySide, isCoarsePointer, triggerSelectionPulse],
   );
 
   const appendCenterFinderCircle = useCallback(
@@ -2123,11 +2135,14 @@ export default function XrayCalibrationWorkspace({
       const nextCircle = {
         ...circleInput,
         id: nextCircleIdRef.current,
+        side: circleInput.side || canvasAnatomySide,
+        metric: circleInput.metric || planningCircleMetricRef.current,
         strokeWidth: Number.isFinite(circleInput.strokeWidth)
           ? circleInput.strokeWidth
           : DEFAULT_CIRCLE_STROKE_WIDTH,
         source: circleInput.source || "centerFinder",
       };
+      planningCircleMetricRef.current = null;
       nextCircleIdRef.current += 1;
       setCircles((prev) => [...prev, nextCircle]);
       setSelectedCircleId(nextCircle.id);
@@ -2143,7 +2158,7 @@ export default function XrayCalibrationWorkspace({
       triggerSelectionPulse("circle", nextCircle.id);
       return nextCircle;
     },
-    [triggerSelectionPulse],
+    [canvasAnatomySide, triggerSelectionPulse],
   );
 
   const appendCircleMeasurement = useCallback(
@@ -2152,11 +2167,14 @@ export default function XrayCalibrationWorkspace({
       const nextCircle = {
         ...circleInput,
         id: nextCircleIdRef.current,
+        side: circleInput.side || canvasAnatomySide,
+        metric: circleInput.metric || planningCircleMetricRef.current,
         strokeWidth: Number.isFinite(circleInput.strokeWidth)
           ? circleInput.strokeWidth
           : DEFAULT_CIRCLE_STROKE_WIDTH,
         source: circleInput.source || "diameter",
       };
+      planningCircleMetricRef.current = null;
       nextCircleIdRef.current += 1;
       setCircles((prev) => [...prev, nextCircle]);
       setSelectedCircleId(nextCircle.id);
@@ -2171,7 +2189,7 @@ export default function XrayCalibrationWorkspace({
       triggerSelectionPulse("circle", nextCircle.id);
       return nextCircle;
     },
-    [triggerSelectionPulse],
+    [canvasAnatomySide, triggerSelectionPulse],
   );
 
   useEffect(() => {
@@ -2411,6 +2429,13 @@ export default function XrayCalibrationWorkspace({
     setLines((prev) =>
       prev.map((l) => (l.id === lineId ? { ...l, color } : l)),
     );
+  }, []);
+
+  const toggleLineLabelById = useCallback((lineId) => {
+    setLines((previous) => previous.map((line) =>
+      line.id === lineId ? { ...line, showLabel: line.showLabel === false } : line,
+    ));
+    setNotice("Tampilan hasil line di canvas diperbarui.");
   }, []);
 
   const scheduleMobileStateUpdate = useCallback(
@@ -3018,6 +3043,7 @@ export default function XrayCalibrationWorkspace({
 
   const selectedLengthPx = selectedLine ? getLineLength(selectedLine) : 0;
   const hasCalibration = mmPerPixel !== null;
+  const hideSavedCalibrationLine = hasCalibration && !simpleCalibrationModalOpen;
   const calibrationReferenceLine = useMemo(
     () =>
       lines.find((line) => line.id === calibrationLineId) ||
@@ -5221,6 +5247,13 @@ export default function XrayCalibrationWorkspace({
       setSimpleGuideModalOpen(false);
       setSelectedImplantType((current) => current || "cup");
 
+      if (isPlanningLayout) {
+        setSimpleMobilePanel(null);
+        setPlanningImplantModalOpen(true);
+        setNotice("Implant template dibuka. Pilih komponen dan ukuran, lalu tambahkan ke canvas.");
+        return;
+      }
+
       if (isMobileViewport) {
         setSimpleMobilePanel("implant");
         setNotice("Implant template dibuka.");
@@ -5233,7 +5266,7 @@ export default function XrayCalibrationWorkspace({
       setSimpleDesktopEditFotoOpen(false);
       setNotice("Implant template overlay dibuka.");
     },
-    [hasCalibration, image, isMobileViewport, openSimpleCalibrationModal],
+    [hasCalibration, image, isMobileViewport, isPlanningLayout, openSimpleCalibrationModal],
   );
 
   const detectCalibrationMarker = useCallback(() => {
@@ -5787,7 +5820,7 @@ export default function XrayCalibrationWorkspace({
   const handleToolChange = useCallback(
     (nextTool, options = {}) => {
       const requiresCalibration =
-        nextTool === "angle" || nextTool === "circle" || nextTool === "hkaAuto";
+        nextTool === "angle" || nextTool === "circle" || nextTool === "hkaAuto" || nextTool === "pelvicAnalysis";
       const allowMagnificationCircle =
         nextTool === "circle" && calibrationModeRef.current === "magnification";
       if (requiresCalibration && !hasCalibration && !allowMagnificationCircle) {
@@ -5839,12 +5872,17 @@ export default function XrayCalibrationWorkspace({
       if (nextTool !== "axisBuilder") {
         setDraftAxisBuilderPoints([]);
       }
+      if (nextTool !== "pelvicAnalysis") {
+        setDraftPelvicAnalysisPoints([]);
+        pelvicAnalysisCompletionRef.current = false;
+      }
       if (nextTool !== "guideBuilder") {
         setGuideBuilderPreviewPoint(null);
       }
       if (
         nextTool !== "centerFinder" &&
         nextTool !== "axisBuilder" &&
+        nextTool !== "pelvicAnalysis" &&
         nextTool !== "guideBuilder"
       ) {
         setToolConfigModal(null);
@@ -5861,6 +5899,11 @@ export default function XrayCalibrationWorkspace({
         setNotice(
           "Axis Builder aktif. Klik 2 titik proximal lalu 2 titik distal. Axis dibuat dari midpoint kedua segmen.",
         );
+      } else if (nextTool === "pelvicAnalysis") {
+        setDraftPelvicAnalysisPoints([]);
+        pelvicAnalysisCompletionRef.current = false;
+        const first = PELVIC_ANALYSIS_LANDMARKS[0];
+        setNotice(`Pelvic Analysis 1/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${first.label}.`);
       } else if (nextTool === "guideBuilder") {
         setNotice(
           guideBuilderReference
@@ -7449,6 +7492,7 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const line of lines) {
+        if (hideSavedCalibrationLine && line.id === calibrationLineId) continue;
         const distance = distancePointToSegment(imagePoint, line);
         if (distance <= thresholdInImage && distance < minDistance) {
           minDistance = distance;
@@ -7458,7 +7502,7 @@ export default function XrayCalibrationWorkspace({
 
       return pickedId;
     },
-    [isCoarsePointer, lines, view.scale],
+    [calibrationLineId, hideSavedCalibrationLine, isCoarsePointer, lines, view.scale],
   );
 
   const findClosestPlanningGuideId = useCallback(
@@ -7609,6 +7653,7 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const line of lines) {
+        if (hideSavedCalibrationLine && line.id === calibrationLineId) continue;
         const handles = [
           { key: "start", x: line.x1, y: line.y1 },
           { key: "end", x: line.x2, y: line.y2 },
@@ -7628,13 +7673,14 @@ export default function XrayCalibrationWorkspace({
 
       return pickedHandle;
     },
-    [isCoarsePointer, lines, view.scale],
+    [calibrationLineId, hideSavedCalibrationLine, isCoarsePointer, lines, view.scale],
   );
 
   const findLineLabelByPoint = useCallback(
     (screenPoint) => {
       for (let index = lines.length - 1; index >= 0; index -= 1) {
         const line = lines[index];
+        if (line.showLabel === false || (hideSavedCalibrationLine && line.id === calibrationLineId)) continue;
         const start = imageToScreenPoint(line.x1, line.y1);
         const end = imageToScreenPoint(line.x2, line.y2);
         const labelX =
@@ -7658,7 +7704,7 @@ export default function XrayCalibrationWorkspace({
       }
       return null;
     },
-    [getLineLabelText, imageToScreenPoint, lines],
+    [calibrationLineId, getLineLabelText, hideSavedCalibrationLine, imageToScreenPoint, lines],
   );
 
   const findAngleLabelByPoint = useCallback(
@@ -8951,7 +8997,7 @@ export default function XrayCalibrationWorkspace({
           overlayCtx.restore();
 
           // Label HRC di atas lingkaran luar
-          drawTag(overlayCtx, mx, my - rOuter - 10, "HRC", opts.color, {
+          if (line.showLabel !== false) drawTag(overlayCtx, mx, my - rOuter - 10, "HRC", opts.color, {
             bgOpacity: 0.9, fontSize: 8, paddingX: 3, paddingY: 1.5, radius: 3,
           });
         }
@@ -8998,7 +9044,7 @@ export default function XrayCalibrationWorkspace({
 
       const offsetX = line.labelOffsetX ?? DEFAULT_LINE_LABEL_OFFSET_X;
       const offsetY = line.labelOffsetY ?? DEFAULT_LINE_LABEL_OFFSET_Y;
-      if (Math.abs(offsetX) > 2 || Math.abs(offsetY) > 2) {
+      if (line.showLabel !== false && (Math.abs(offsetX) > 2 || Math.abs(offsetY) > 2)) {
         overlayCtx.save();
         overlayCtx.beginPath();
         overlayCtx.moveTo(lineMidX, lineMidY);
@@ -9011,7 +9057,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.restore();
       }
 
-      drawTag(overlayCtx, midX, midY, label, opts.color, {
+      if (line.showLabel !== false) drawTag(overlayCtx, midX, midY, label, opts.color, {
         bgOpacity: Math.max(
           0.2,
           Math.min(
@@ -9025,7 +9071,7 @@ export default function XrayCalibrationWorkspace({
         paddingY: 2,
         radius: 4,
       });
-      if (opts.calibrationReference) {
+      if (line.showLabel !== false && opts.calibrationReference) {
         drawTag(
           overlayCtx,
           midX,
@@ -9049,6 +9095,7 @@ export default function XrayCalibrationWorkspace({
       const isPulsing =
         selectionPulse?.type === "line" && selectionPulse.id === line.id;
       const isCalibration = line.id === calibrationLineId;
+      if (isCalibration && hideSavedCalibrationLine) continue;
       const isCalibrationReference =
         calibrationMode === "line" && calibrationReferenceLine?.id === line.id;
       const isLocked = isLineLocked(line.id);
@@ -10615,6 +10662,49 @@ export default function XrayCalibrationWorkspace({
       );
     }
 
+    if (draftPelvicAnalysisPoints.length > 0) {
+      overlayCtx.save();
+      overlayCtx.lineWidth = 1.8;
+      overlayCtx.setLineDash([7, 4]);
+      const previewPairs = [
+        [0, 1],
+        [2, 4], [3, 5],
+        [2, 6], [3, 7],
+        [8, 9], [10, 11],
+      ];
+      previewPairs.forEach(([startIndex, endIndex]) => {
+        if (!draftPelvicAnalysisPoints[endIndex]) return;
+        const start = imageToScreenPoint(
+          draftPelvicAnalysisPoints[startIndex].x,
+          draftPelvicAnalysisPoints[startIndex].y,
+        );
+        const end = imageToScreenPoint(
+          draftPelvicAnalysisPoints[endIndex].x,
+          draftPelvicAnalysisPoints[endIndex].y,
+        );
+        overlayCtx.strokeStyle = startIndex === 0 ? "#14b8a6" : "#38bdf8";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.stroke();
+      });
+      overlayCtx.setLineDash([]);
+      draftPelvicAnalysisPoints.forEach((point, index) => {
+        const screenPoint = imageToScreenPoint(point.x, point.y);
+        const definition = PELVIC_ANALYSIS_LANDMARKS[index];
+        const color = definition.side === "right" ? "#22d3ee" : "#a78bfa";
+        overlayCtx.fillStyle = color;
+        overlayCtx.strokeStyle = "rgba(2,6,23,0.9)";
+        overlayCtx.lineWidth = 2;
+        overlayCtx.beginPath();
+        overlayCtx.arc(screenPoint.x, screenPoint.y, isCoarsePointer ? 7 : 5, 0, Math.PI * 2);
+        overlayCtx.fill();
+        overlayCtx.stroke();
+        drawTag(overlayCtx, screenPoint.x, screenPoint.y - 15, definition.shortLabel, color);
+      });
+      overlayCtx.restore();
+    }
+
     if (draftHkaPoints.length > 0) {
       const draftDef = getHkaModeDefinition(hkaInputMode);
       overlayCtx.save();
@@ -10933,6 +11023,7 @@ export default function XrayCalibrationWorkspace({
     invertImage,
     draftAnglePoints,
     draftAxisBuilderPoints,
+    draftPelvicAnalysisPoints,
     draftCenterFinderPoints,
     draftCirclePoints,
     draftCut,
@@ -10946,6 +11037,7 @@ export default function XrayCalibrationWorkspace({
     flipX,
     flipY,
     hkaSets,
+    hideSavedCalibrationLine,
     image,
     imageHeight,
     imageProcessingMode,
@@ -11152,6 +11244,8 @@ export default function XrayCalibrationWorkspace({
       setDraftCirclePoints([]);
       setDraftCenterFinderPoints([]);
       setDraftAxisBuilderPoints([]);
+      setDraftPelvicAnalysisPoints([]);
+      pelvicAnalysisCompletionRef.current = false;
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
       setDraftFreeLineTargetLayerId(null);
@@ -11713,7 +11807,7 @@ export default function XrayCalibrationWorkspace({
       setLineLabelHoverInfo(null);
       setSizingLineHoverInfo(null);
       touchHoverDismissTimerRef.current = null;
-    }, 4200);
+    }, 3000);
   }, [clearTouchHoverDismissTimer]);
 
   const showTouchHoverDetails = useCallback(
@@ -11817,6 +11911,8 @@ export default function XrayCalibrationWorkspace({
       if (!image) return;
 
       event.preventDefault();
+      clearTouchHoverDetails();
+      desktopHoverSessionRef.current = { key: null, startedAt: 0 };
       captureMobilePointer(event);
       interactionCanvasRectRef.current =
         overlayCanvasRef.current?.getBoundingClientRect() || null;
@@ -12948,7 +13044,9 @@ export default function XrayCalibrationWorkspace({
         }
       }
 
-      const hitPlanningGuideLabelId = findPlanningGuideLabelByPoint(point);
+      const hitPlanningGuideLabelId = tool === "pan"
+        ? findPlanningGuideLabelByPoint(point)
+        : null;
       if (hitPlanningGuideLabelId !== null) {
         const targetGuide = planningGuides.find(
           (guide) => guide.id === hitPlanningGuideLabelId,
@@ -12987,8 +13085,9 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const assistPlanningGuideHandleHit =
-        findMobilePlanningGuideHandleAssistHit(point);
+      const assistPlanningGuideHandleHit = tool === "pan"
+        ? findMobilePlanningGuideHandleAssistHit(point)
+        : null;
       if (assistPlanningGuideHandleHit) {
         const targetGuide = planningGuides.find(
           (guide) => guide.id === assistPlanningGuideHandleHit.guideId,
@@ -13026,7 +13125,9 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const hitPlanningGuideHandle = findClosestPlanningGuideHandle(imagePoint);
+      const hitPlanningGuideHandle = tool === "pan"
+        ? findClosestPlanningGuideHandle(imagePoint)
+        : null;
       if (hitPlanningGuideHandle) {
         const targetGuide = planningGuides.find(
           (guide) => guide.id === hitPlanningGuideHandle.guideId,
@@ -13065,7 +13166,9 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const hitPlanningGuideId = findClosestPlanningGuideId(imagePoint);
+      const hitPlanningGuideId = tool === "pan"
+        ? findClosestPlanningGuideId(imagePoint)
+        : null;
       if (hitPlanningGuideId !== null) {
         const targetGuide = planningGuides.find(
           (guide) => guide.id === hitPlanningGuideId,
@@ -13105,7 +13208,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const hitLineLabelId = findLineLabelByPoint(point);
+      const hitLineLabelId = tool === "pan" ? findLineLabelByPoint(point) : null;
       if (hitLineLabelId !== null) {
         const targetLine = lines.find((line) => line.id === hitLineLabelId);
         if (!targetLine) return;
@@ -13147,7 +13250,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const hitAngleLabelId = findAngleLabelByPoint(point);
+      const hitAngleLabelId = tool === "pan" ? findAngleLabelByPoint(point) : null;
       if (hitAngleLabelId !== null) {
         const targetAngle = angles.find((angle) => angle.id === hitAngleLabelId);
         if (!targetAngle) return;
@@ -13184,7 +13287,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const hitHkaLabelId = findHkaLabelByPoint(point);
+      const hitHkaLabelId = tool === "pan" ? findHkaLabelByPoint(point) : null;
       if (hitHkaLabelId !== null) {
         const targetItem = hkaSets.find((item) => item.id === hitHkaLabelId);
         if (!targetItem) return;
@@ -13221,7 +13324,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const hitCircleLabelId = findCircleLabelByPoint(point);
+      const hitCircleLabelId = tool === "pan" ? findCircleLabelByPoint(point) : null;
       if (hitCircleLabelId !== null) {
         const targetCircle = circles.find((c) => c.id === hitCircleLabelId);
         if (!targetCircle) return;
@@ -13249,7 +13352,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericHitHandle = findClosestHandle(imagePoint);
+      const genericHitHandle = tool === "pan" ? findClosestHandle(imagePoint) : null;
       if (genericHitHandle) {
         const targetLine = lines.find(
           (line) => line.id === genericHitHandle.lineId,
@@ -13284,7 +13387,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericHitLineId = findClosestLineId(imagePoint);
+      const genericHitLineId = tool === "pan" ? findClosestLineId(imagePoint) : null;
       if (genericHitLineId !== null) {
         const targetLine = lines.find((line) => line.id === genericHitLineId);
         if (!targetLine) return;
@@ -13326,7 +13429,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericAngleHandle = findClosestAngleHandle(boundedPoint);
+      const genericAngleHandle = tool === "pan" ? findClosestAngleHandle(boundedPoint) : null;
       if (genericAngleHandle) {
         const targetAngle = angles.find(
           (angle) => angle.id === genericAngleHandle.angleId,
@@ -13367,7 +13470,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericAngleId = findClosestAngleId(imagePoint);
+      const genericAngleId = tool === "pan" ? findClosestAngleId(imagePoint) : null;
       if (genericAngleId !== null) {
         setMobilePanelMode("workspace");
         setActiveRightPanel("measure");
@@ -13388,7 +13491,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericCircleHandle = findClosestCircleHandle(boundedPoint);
+      const genericCircleHandle = tool === "pan" ? findClosestCircleHandle(boundedPoint) : null;
       if (genericCircleHandle) {
         const targetCircle = circles.find(
           (circle) => circle.id === genericCircleHandle.circleId,
@@ -13438,7 +13541,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericCircleId = findClosestCircleId(imagePoint);
+      const genericCircleId = tool === "pan" ? findClosestCircleId(imagePoint) : null;
       if (genericCircleId !== null) {
         setMobilePanelMode("workspace");
         setActiveRightPanel("measure");
@@ -13459,7 +13562,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericHkaHandle = findClosestHkaHandle(boundedPoint);
+      const genericHkaHandle = tool === "pan" ? findClosestHkaHandle(boundedPoint) : null;
       if (genericHkaHandle) {
         setMobilePanelMode("workspace");
         setActiveRightPanel("measure");
@@ -13496,7 +13599,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericHkaId = findClosestHkaId(imagePoint);
+      const genericHkaId = tool === "pan" ? findClosestHkaId(imagePoint) : null;
       if (genericHkaId !== null) {
         setMobilePanelMode("workspace");
         setActiveRightPanel("measure");
@@ -13517,9 +13620,9 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const allowGenericLayerTransformHandle =
+      const allowGenericLayerTransformHandle = tool === "pan" &&
         !(isSimpleUiMode && isMobileViewport && isTouchLikePointer) ||
-        mobileToolMode !== "move";
+        (tool === "pan" && mobileToolMode !== "move");
       const genericCutLayerHandle = allowGenericLayerTransformHandle
         ? findCutLayerHandle(imagePoint)
         : null;
@@ -13583,7 +13686,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const genericCutLayerId = findCutLayerByPoint(imagePoint);
+      const genericCutLayerId = tool === "pan" ? findCutLayerByPoint(imagePoint) : null;
       if (genericCutLayerId !== null) {
         const targetLayer = cutLayers.find(
           (layer) => layer.id === genericCutLayerId,
@@ -13725,11 +13828,62 @@ export default function XrayCalibrationWorkspace({
         !hasCalibration &&
         (tool === "angle" ||
           (tool === "circle" && calibrationModeRef.current !== "magnification") ||
-          tool === "hkaAuto")
+          tool === "hkaAuto" ||
+          tool === "pelvicAnalysis")
       ) {
         focusCalibrationStep(
           "Kalibrasi wajib sebelum memakai Angle/Circle/HKA.",
         );
+        return;
+      }
+
+      if (tool === "pelvicAnalysis") {
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        const next = [...draftPelvicAnalysisPoints, snappedPlacementPoint];
+        if (next.length < PELVIC_ANALYSIS_LANDMARKS.length) {
+          const landmark = PELVIC_ANALYSIS_LANDMARKS[next.length];
+          setDraftPelvicAnalysisPoints(next);
+          setNotice(
+            `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${landmark.label}.`,
+          );
+          return;
+        }
+        if (pelvicAnalysisCompletionRef.current) return;
+        pelvicAnalysisCompletionRef.current = true;
+        const analysisId = `pelvic-${Date.now()}`;
+        const generated = buildPelvicAnalysisMeasurements(next, analysisId);
+        generated.lines.forEach((line) => appendLineMeasurement(line));
+        const generatedAngles = generated.angles.map((angle) => ({
+          ...angle,
+          id: nextAngleIdRef.current++,
+          color: DEFAULT_ANGLE_COLOR,
+          labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
+          labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
+          resultOpacity: DEFAULT_LABEL_OPACITY,
+          strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
+        }));
+        const generatedCircles = generated.circles.map((circle) => ({
+          ...circle,
+          id: nextCircleIdRef.current++,
+          color: DEFAULT_CIRCLE_COLOR,
+          labelOffsetX: 0,
+          labelOffsetY: 0,
+          resultOpacity: DEFAULT_LABEL_OPACITY,
+          strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
+        }));
+        setAngles((previous) => [...previous, ...generatedAngles]);
+        setCircles((previous) => [...previous, ...generatedCircles]);
+        setDraftPelvicAnalysisPoints([]);
+        setNotice(
+          `Pelvic Analysis selesai. ${generated.lines.length} line, CCD kanan/kiri, dan diameter head kanan/kiri dibuat sekaligus.`,
+        );
+        setTool(getIdleTool());
+        if (shouldUseMobileOneShotTool) setMobileControlsOpen(false);
         return;
       }
 
@@ -13910,6 +14064,8 @@ export default function XrayCalibrationWorkspace({
 
           const nextAngle = {
             id: nextAngleIdRef.current,
+            side: canvasAnatomySide,
+            metric: planningAngleMetricRef.current,
             p1: next[0],
             p2: next[1],
             p3: next[2],
@@ -13919,6 +14075,7 @@ export default function XrayCalibrationWorkspace({
             resultOpacity: DEFAULT_LABEL_OPACITY,
             strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
           };
+          planningAngleMetricRef.current = null;
           nextAngleIdRef.current += 1;
           setAngles((items) => [...items, nextAngle]);
           setSelectedAngleId(nextAngle.id);
@@ -14258,11 +14415,13 @@ export default function XrayCalibrationWorkspace({
       draftCirclePoints,
       draftFreeLine,
       draftLine,
+      draftPelvicAnalysisPoints,
       angles,
       appendCenterFinderCircle,
       appendCircleMeasurement,
       appendLineMeasurement,
       captureMobilePointer,
+      canvasAnatomySide,
       findClosestAngleHandle,
       findClosestAngleId,
       findAngleLabelByPoint,
@@ -14283,6 +14442,7 @@ export default function XrayCalibrationWorkspace({
       getMobileHkaHandleAssistGeometry,
       getMobilePlanningGuideHandleAssistGeometry,
       clearActiveCanvasSelection,
+      clearTouchHoverDetails,
       findAnnotationByPoint,
       findAnnotationPointerByPoint,
       findLineLabelByPoint,
@@ -14363,6 +14523,13 @@ export default function XrayCalibrationWorkspace({
   const handlePointerMove = useCallback(
     (event) => {
       if (!image) return;
+
+      if (
+        interactionRef.current?.mode &&
+        (hoveredMeasurementInfo || lineLabelHoverInfo || sizingLineHoverInfo)
+      ) {
+        clearTouchHoverDetails();
+      }
 
       // ── Cup Assessment drag update ──────────────────────────────────────────
       if (interactionRef.current?.mode === "cupDrag" && canvasCupDragRef.current) {
@@ -14618,10 +14785,31 @@ export default function XrayCalibrationWorkspace({
               : null;
           const hoveredLineSizingIntent =
             hoveredLabelSizingIntent || hoveredBodySizingIntent;
+          const hoveredResultKey = hoveredSizingLine
+            ? `sizing:${hoveredSizingLine.id}`
+            : hoveredLineLabel
+              ? `line:${hoveredLineLabel.id}`
+              : hoveredHkaId !== null
+                ? `hka:${hoveredHkaId}`
+                : hoveredAngleId !== null
+                  ? `angle:${hoveredAngleId}`
+                  : hoveredCircleId !== null
+                    ? `circle:${hoveredCircleId}`
+                    : null;
+          if (!hoveredResultKey) {
+            desktopHoverSessionRef.current = { key: null, startedAt: 0 };
+          } else if (desktopHoverSessionRef.current.key !== hoveredResultKey) {
+            desktopHoverSessionRef.current = { key: hoveredResultKey, startedAt: now };
+            scheduleTouchHoverDismiss();
+          }
+          const hoverResultExpired = Boolean(
+            hoveredResultKey &&
+            now - desktopHoverSessionRef.current.startedAt >= 3000,
+          );
           const hoverScreenX = Math.round(point.x);
           const hoverScreenY = Math.round(point.y);
           setLineLabelHoverInfo((cur) => {
-            if (!hoveredLineLabel || hoveredLabelSizingIntent) {
+            if (!hoveredLineLabel || hoveredLabelSizingIntent || hoverResultExpired) {
               return cur ? null : cur;
             }
             if (
@@ -14638,7 +14826,7 @@ export default function XrayCalibrationWorkspace({
             };
           });
           setSizingLineHoverInfo((cur) => {
-            if (!hoveredSizingLine || !hoveredLineSizingIntent) {
+            if (!hoveredSizingLine || !hoveredLineSizingIntent || hoverResultExpired) {
               return cur ? null : cur;
             }
             if (
@@ -14655,6 +14843,7 @@ export default function XrayCalibrationWorkspace({
             };
           });
           setHoveredMeasurementInfo((current) => {
+            if (hoverResultExpired) return current ? null : current;
             if (hoveredHkaId !== null) {
               if (current?.type === "hka" && current.id === hoveredHkaId) {
                 return current;
@@ -14741,6 +14930,7 @@ export default function XrayCalibrationWorkspace({
           tool === "draw" ||
           tool === "centerFinder" ||
           tool === "axisBuilder" ||
+          tool === "pelvicAnalysis" ||
           tool === "angle" ||
           tool === "circle" ||
           tool === "hkaAuto" ||
@@ -15705,6 +15895,7 @@ export default function XrayCalibrationWorkspace({
       circles,
       clearMobileLongPress,
       clearSnapPreview,
+      clearTouchHoverDetails,
       beginMobilePrecisionEdit,
       draftCirclePoints,
       draftCut,
@@ -15725,6 +15916,7 @@ export default function XrayCalibrationWorkspace({
       getMobileGestureSnapshot,
       getSizingLineIntent,
       hoveredMeasurementInfo,
+      lineLabelHoverInfo,
       image,
       isMobileViewport,
       isSimpleUiMode,
@@ -15743,6 +15935,7 @@ export default function XrayCalibrationWorkspace({
       scheduleHkaUpdate,
       scheduleLinesUpdate,
       schedulePlanningGuidesUpdate,
+      scheduleTouchHoverDismiss,
       scheduleViewportUpdate,
       screenToImagePoint,
       sizingLineHoverInfo,
@@ -16040,14 +16233,13 @@ export default function XrayCalibrationWorkspace({
   );
 
   const handlePointerLeave = useCallback(() => {
-    setHoveredMeasurementInfo(null);
-    setLineLabelHoverInfo(null);
-    setSizingLineHoverInfo(null);
+    clearTouchHoverDetails();
+    desktopHoverSessionRef.current = { key: null, startedAt: 0 };
     if (interactionRef.current.mode && activePointerIdRef.current !== null) {
       return;
     }
     handlePointerUp();
-  }, [handlePointerUp]);
+  }, [clearTouchHoverDetails, handlePointerUp]);
 
   const handleCanvasPointerMove = useCallback((e) => {
     if (tool === "brush") {
@@ -17211,6 +17403,8 @@ export default function XrayCalibrationWorkspace({
       setDraftCirclePoints([]);
       setDraftCenterFinderPoints([]);
       setDraftAxisBuilderPoints([]);
+      setDraftPelvicAnalysisPoints([]);
+      pelvicAnalysisCompletionRef.current = false;
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
       setDraftFreeLineTargetLayerId(null);
@@ -17249,6 +17443,7 @@ export default function XrayCalibrationWorkspace({
       setSimpleLayerDropdownOpen(false);
       setSimpleLayerFloatingPopup(null);
       setSimplePlanningModal(null);
+      setPlanningImplantModalOpen(false);
       setSimpleGuideModalOpen(false);
       setSimpleMobilePanel(null);
       setMobileObjectSettingsOpen(false);
@@ -19138,7 +19333,8 @@ export default function XrayCalibrationWorkspace({
         Boolean(draftCut?.points?.length) ||
         Boolean(draftFreeLine?.points?.length) ||
         draftCenterFinderPoints.length > 0 ||
-        draftAxisBuilderPoints.length > 0;
+        draftAxisBuilderPoints.length > 0 ||
+        draftPelvicAnalysisPoints.length > 0;
 
       if (
         event.code === "Space" &&
@@ -19203,7 +19399,8 @@ export default function XrayCalibrationWorkspace({
           draftCut?.points?.length ||
           draftFreeLine?.points?.length ||
           draftCenterFinderPoints.length ||
-          draftAxisBuilderPoints.length)
+          draftAxisBuilderPoints.length ||
+          draftPelvicAnalysisPoints.length)
       ) {
         event.preventDefault();
         const cancelMessage = draftLine
@@ -19220,7 +19417,9 @@ export default function XrayCalibrationWorkspace({
                     ? "Center Finder dibatalkan."
                     : draftAxisBuilderPoints.length
                       ? "Axis Builder dibatalkan."
-                      : "Free cut dibatalkan.";
+                      : draftPelvicAnalysisPoints.length
+                        ? "Pelvic Analysis dibatalkan."
+                        : "Free cut dibatalkan.";
         setDraftLine(null);
         setDraftAnglePoints([]);
         setDraftCirclePoints([]);
@@ -19229,6 +19428,8 @@ export default function XrayCalibrationWorkspace({
         setDraftFreeLine(null);
         setDraftCenterFinderPoints([]);
         setDraftAxisBuilderPoints([]);
+        setDraftPelvicAnalysisPoints([]);
+        pelvicAnalysisCompletionRef.current = false;
         setGuideBuilderPreviewPoint(null);
         setHistoryPaused(false);
         setNotice(cancelMessage);
@@ -19494,6 +19695,8 @@ export default function XrayCalibrationWorkspace({
               ? "Center"
               : tool === "axisBuilder"
                 ? "Axis"
+                : tool === "pelvicAnalysis"
+                  ? "Pelvic"
                 : tool === "guideBuilder"
                   ? "Guide"
                   : tool === "angle"
@@ -19518,6 +19721,8 @@ export default function XrayCalibrationWorkspace({
             ? "Mode: Circle"
             : tool === "hkaAuto"
               ? "Mode: HKA"
+              : tool === "pelvicAnalysis"
+                ? `Mode: Pelvic ${draftPelvicAnalysisPoints.length}/${PELVIC_ANALYSIS_LANDMARKS.length}`
               : tool === "freeLine"
                 ? freeLineMode === "point"
                   ? "Mode: Point Shape"
@@ -19739,6 +19944,7 @@ export default function XrayCalibrationWorkspace({
     if (tool === "angle") return `Angle ${draftAnglePoints.length}/3`;
     if (tool === "circle") return `Circle ${Math.min(draftCirclePoints.length, 1)}/2`;
     if (tool === "hkaAuto") return `HKA ${draftHkaPoints.length}`;
+    if (tool === "pelvicAnalysis") return `Pelvic ${draftPelvicAnalysisPoints.length}/${PELVIC_ANALYSIS_LANDMARKS.length}`;
     if (tool === "annotation") return "Text";
     if (tool === "freeLine") return "Free Line";
     if (tool === "pan") return mobileCanvasMode === "edit" ? "Edit Object" : "Move";
@@ -20356,6 +20562,7 @@ export default function XrayCalibrationWorkspace({
     "hkaAuto",
     "centerFinder",
     "axisBuilder",
+    "pelvicAnalysis",
     "guideBuilder",
   ].includes(tool);
   const hasActiveMeasurementDraft = Boolean(
@@ -20364,7 +20571,8 @@ export default function XrayCalibrationWorkspace({
       draftCirclePoints.length ||
       draftHkaPoints.length ||
       draftCenterFinderPoints.length ||
-      draftAxisBuilderPoints.length,
+      draftAxisBuilderPoints.length ||
+      draftPelvicAnalysisPoints.length,
   );
   const clearActiveMeasurementDraft = () => {
     setDraftLine(null);
@@ -20373,6 +20581,8 @@ export default function XrayCalibrationWorkspace({
     setDraftHkaPoints([]);
     setDraftCenterFinderPoints([]);
     setDraftAxisBuilderPoints([]);
+    setDraftPelvicAnalysisPoints([]);
+    pelvicAnalysisCompletionRef.current = false;
     setGuideBuilderPreviewPoint(null);
     setNotice("Draft measurement dibersihkan.");
   };
@@ -20442,20 +20652,24 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "planning",
     },
   ];
+  const planningSession = planningSessions[planningProcedure];
   const planningMeasurements = useMemo(() => {
     if (!isPlanningLayout) return [];
     const linear = (pixels) => hasCalibration ? pixels * mmPerPixel : null;
-    const entries = lines.filter((line) => line.id !== calibrationLineId).map((line) => ({
+    const sideSuffix = (item) => String(item.side || planningSession.side || "right").toLowerCase() === "left" ? "L" : "R";
+    const entries = lines.map((line) => ({
       id: `line:${line.id}`, name: line.name || `${lineTypeLabel(line.type)} #${line.id}`,
-      metric: line.name || null, unit: "mm", value: linear(getLineLength(line)),
+      metric: line.metric || (line.type === "femoralOffset" ? `FO ${sideSuffix(line)}` : line.name || null),
+      side: line.side, type: line.type, unit: "mm", value: linear(getLineLength(line)),
+      sourceLineIds: [line.id], sourceShowLabel: line.showLabel !== false,
     }));
     angles.forEach((angle) => entries.push({
-      id: `angle:${angle.id}`, name: angle.name || `Angle #${angle.id}`, metric: angle.name || null,
-      unit: "deg", value: getAngleDegrees(angle.p1, angle.p2, angle.p3),
+      id: `angle:${angle.id}`, name: angle.name || `Angle #${angle.id}`, metric: angle.metric || angle.name || null,
+      side: angle.side, unit: "deg", value: getAngleDegrees(angle.p1, angle.p2, angle.p3),
     }));
     circles.forEach((circle) => entries.push({
-      id: `circle:${circle.id}`, name: circle.name || `Diameter #${circle.id}`, metric: circle.name || null,
-      unit: "mm", value: linear(circle.radius * 2),
+      id: `circle:${circle.id}`, name: circle.name || `Diameter #${circle.id}`, metric: circle.metric || circle.name || null,
+      side: circle.side, source: circle.source, unit: "mm", value: linear(circle.radius * 2),
     }));
     hkaSets.slice().reverse().forEach((hka) => {
       const result = getHkaMeasurementResult(hka);
@@ -20487,14 +20701,17 @@ export default function XrayCalibrationWorkspace({
       entries.push({ id: "cup:inclination", metric: "Cup Inclination", name: "Cup inclination", unit: "deg", value: raw > 90 ? 180 - raw : raw });
       entries.push({ id: "cup:anteversion", metric: "Cup Anteversion", name: "Cup anteversion", unit: "deg", value: Math.asin(Math.min(0.9999, Math.abs(canvasCup.b / canvasCup.a))) * 180 / Math.PI });
     }
-    const lldLines = lines.filter((line) => line.type === "lld");
-    if (lldLines.length >= 2) entries.push({
+    const lldLines = lines.filter((line) => line.type === "lld" || line.type === "hipLength");
+    const rightLengthLine = lldLines.find((line) => String(line.side).toLowerCase() === "right");
+    const leftLengthLine = lldLines.find((line) => String(line.side).toLowerCase() === "left");
+    if (rightLengthLine && leftLengthLine) entries.push({
       id: "derived:lld", name: "LLD / selisih dua line LLD", metric: "LLD", unit: "mm",
-      value: linear(Math.abs(getLineLength(lldLines[0]) - getLineLength(lldLines[1]))),
+      value: linear(Math.abs(getLineLength(rightLengthLine) - getLineLength(leftLengthLine))),
+      sourceLineIds: [rightLengthLine.id, leftLengthLine.id],
+      sourceShowLabel: rightLengthLine.showLabel !== false && leftLengthLine.showLabel !== false,
     });
     return entries;
-  }, [isPlanningLayout, lines, angles, circles, hkaSets, calibrationLineId, hasCalibration, mmPerPixel, lineTypeLabel, lineIntersectionAngleOverlays, canvasCup]);
-  const planningSession = planningSessions[planningProcedure];
+  }, [isPlanningLayout, lines, angles, circles, hkaSets, calibrationLineId, hasCalibration, mmPerPixel, lineTypeLabel, lineIntersectionAngleOverlays, canvasCup, planningSession.side]);
   const updatePlanningSession = (next) => {
     setPlanningSessions((current) => ({ ...current, [planningProcedure]: next }));
     if (next.side) {
@@ -20554,9 +20771,9 @@ export default function XrayCalibrationWorkspace({
     { id: "pan", label: "Pan Canvas", icon: HandGrab, action: () => { setMobileCanvasMode("pan"); setMobileCanvasLocked(false); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "pan" },
     { id: "ruler", label: "Ruler", icon: RulerDimensionLine, action: () => { setLinePreset("ruler"); handleToolChange("draw"); }, active: tool === "draw" && linePreset === "ruler" },
     { id: "line", label: "Lines", icon: PencilLine, action: () => handleLinePresetChange("normal"), active: tool === "draw" && linePreset === "normal" },
-    { id: "angle", label: "Angle", icon: DraftingCompass, action: () => handleToolChange("angle"), active: tool === "angle" },
+    { id: "angle", label: "Angle", icon: DraftingCompass, action: () => { planningAngleMetricRef.current = null; handleToolChange("angle"); }, active: tool === "angle" },
     { id: "interline", label: "Interline Angle", icon: DraftingCompass, action: () => { handleLinePresetChange("normal"); setNotice("Buat dua line berpotongan. Sudut perpotongan tampil di canvas dan dapat dipilih sebagai sumber IAA di Planning Log."); } },
-    { id: "circle", label: "Circle", icon: CircleDot, action: () => handleToolChange("circle"), active: tool === "circle" },
+    { id: "circle", label: "Circle", icon: CircleDot, action: () => { planningCircleMetricRef.current = null; handleToolChange("circle"); }, active: tool === "circle" },
     { id: "cut", label: "Free Cut", icon: Slice, action: planningActions.freeCut, active: tool === "cut" },
     { id: "flip", label: "Quick Flip", icon: FlipHorizontal2, action: () => setFlipX((prev) => !prev), active: flipX },
     { id: "text", label: "Insert Text", icon: MessageSquare, action: () => handleToolChange("annotation"), active: tool === "annotation" },
@@ -20569,19 +20786,148 @@ export default function XrayCalibrationWorkspace({
     { id: "cloud", label: "Save to cloud", icon: Upload, action: planningActions.saveCloud },
   ].map((item) => ({ ...item, disabled: item.disabled || (!image && item.id !== "upload") }));
   const startPlanningHka = (mode) => { setHkaInputMode(mode); handleToolChange("hkaAuto", { skipHkaSidePrompt: Boolean(planningSession.side) }); };
+  const matchesPlanningSide = (item) =>
+    !item?.side || String(item.side).toLowerCase() === planningSession.side;
+  const sideHkaSets = hkaSets.filter(matchesPlanningSide);
+  const sideLines = lines.filter(matchesPlanningSide);
+  const sideAngles = angles.filter(matchesPlanningSide);
+  const sideCircles = circles.filter(matchesPlanningSide);
+  const planningSideKey = planningSession.side === "left" ? "kiri" : "kanan";
+  const planningTkaGuideImage = planningSession.side === "left"
+    ? "/tka/ap-view-kiri.svg"
+    : "/tka/ap-view-kanan.svg";
+  const planningGuideProgress = (count, total) => ({
+    current: Math.min(count, total),
+    label: `${Math.min(count, total)}/${total} titik`,
+    percent: Math.min(100, (Math.min(count, total) / Math.max(1, total)) * 100),
+  });
+  const planningHkaGuideState = (mode) => {
+    const definition = getHkaModeDefinition(mode);
+    const isActive = tool === "hkaAuto" && hkaInputMode === mode;
+    const nextPoint = isActive ? definition.points[draftHkaPoints.length] : null;
+    return isActive ? {
+      activePoint: nextPoint ? `Titik berikutnya: ${nextPoint.shortLabel} · ${nextPoint.promptLabel}` : "Landmark selesai",
+      liveProgress: planningGuideProgress(draftHkaPoints.length, definition.points.length),
+    } : {};
+  };
+  const planningLineGuideState = (type) => {
+    const isActive = tool === "draw" && linePreset === type;
+    return isActive ? {
+      activePoint: draftLine ? "Titik berikutnya: titik akhir" : "Titik berikutnya: titik awal",
+      liveProgress: planningGuideProgress(draftLine ? 1 : 0, 2),
+    } : {};
+  };
+  const pelvicGuideStep = (key, label, side = planningSession.side, extra = {}) => ({
+    id: pelvicLandmarkId(key, side),
+    label,
+    side,
+    ...extra,
+  });
+  const startBilateralHipAngle = (side) => {
+    setCanvasAnatomySide(side);
+    planningAngleMetricRef.current = `CCD ${side === "left" ? "L" : "R"}`;
+    handleToolChange("angle");
+  };
+  const startBilateralHeadDiameter = (side) => {
+    setCanvasAnatomySide(side);
+    planningCircleMetricRef.current = `FHD ${side === "left" ? "L" : "R"}`;
+    handleToolChange("circle");
+  };
   const planningAnalysisTools = planningProcedure === "tka" ? [
-    { id: "hka", label: "Mechanical Axis", icon: Target, action: () => startPlanningHka("full") },
-    { id: "jla", label: "Joint Angles", icon: DraftingCompass, action: () => startPlanningHka("jla") },
-    { id: "fta", label: "FTA", icon: PencilLine, action: () => startPlanningHka("fta") },
-    { id: "axis", label: "Anatomical Axis", icon: Target, action: () => handleToolChange("axisBuilder") },
+    { id: "hka", label: "Mechanical Axis", icon: Target, action: () => startPlanningHka("full"),
+      ...planningHkaGuideState("full"),
+      complete: sideHkaSets.some((item) => (item.mode || "full") === "full"), instruction: "Pilih Femoral Head Center, Knee Center, lalu Ankle Center.",
+      guideImage: planningTkaGuideImage,
+      points: ["Pusat kepala femur", "Pusat lutut / intercondylar notch", "Pusat ankle / talar dome"] },
+    { id: "jla", label: "Joint Angles", icon: DraftingCompass, action: () => startPlanningHka("jla"),
+      ...planningHkaGuideState("jla"),
+      complete: sideHkaSets.some((item) => item.mode === "jla"), instruction: "Tentukan landmark LDFA, MPTA, dan joint line.",
+      guideView: "ap_knee", highlightId: `kondilus_medial_femur_${planningSideKey}`,
+      points: ["Kondilus femur medial dan lateral", "Plateau tibia medial dan lateral", "Pastikan joint line melintasi kedua landmark"] },
+    { id: "fta", label: "FTA", icon: PencilLine, action: () => startPlanningHka("fta"),
+      ...planningHkaGuideState("fta"),
+      complete: sideHkaSets.some((item) => item.mode === "fta"), instruction: "Buat anatomical femoral dan tibial axis untuk FTA.",
+      guideImage: planningTkaGuideImage,
+      points: ["Dua titik pada sumbu anatomi femur", "Pusat sendi lutut", "Dua titik pada sumbu anatomi tibia"] },
+    { id: "axis", label: "Anatomical Axis", icon: Target, action: () => handleToolChange("axisBuilder"),
+      ...(tool === "axisBuilder" ? {
+        activePoint: draftAxisBuilderPoints.length < 2
+          ? `Segmen proksimal: titik ${draftAxisBuilderPoints.length + 1} dari 2`
+          : `Segmen distal: titik ${Math.min(2, draftAxisBuilderPoints.length - 1)} dari 2`,
+        liveProgress: planningGuideProgress(draftAxisBuilderPoints.length, 4),
+      } : {}),
+      complete: sideLines.some((item) => item.type === "axis"), instruction: "Tap dua titik proximal dan dua titik distal pada shaft.",
+      guideView: "ap_femur", highlightId: "femoral_neck_center",
+      points: ["Titik tengah kanal pada bagian proksimal", "Titik tengah kanal pada bagian distal", "Garis harus mengikuti pusat shaft femur"] },
   ] : [
-    { id: "reference", label: "Pelvic Line", icon: PencilLine, action: () => handleLinePresetChange("normal") },
-    { id: "center", label: "Head Center", icon: Target, action: () => handleToolChange("centerFinder") },
-    { id: "fo", label: "Femoral Offset", icon: RulerDimensionLine, action: () => handleLinePresetChange("femoralOffset") },
-    { id: "lld", label: "LLD", icon: RulerDimensionLine, action: () => handleLinePresetChange("lld") },
-    { id: "ccd", label: "CCD / Angle", icon: DraftingCompass, action: () => handleToolChange("angle") },
-    { id: "fhd", label: "Head Diameter", icon: CircleDot, action: () => handleToolChange("circle") },
-    { id: "cup", label: "Cup Assessment", icon: CircleDot, action: () => setShowCupAssessment((open) => !open) },
+    { id: "pelvic", label: "Pelvic Mechanical Analysis", icon: Target, action: () => handleToolChange("pelvicAnalysis"),
+      ...(tool === "pelvicAnalysis" ? {
+        activePoint: `Titik berikutnya: ${PELVIC_ANALYSIS_LANDMARKS[draftPelvicAnalysisPoints.length]?.shortLabel || "Selesai"} · ${PELVIC_ANALYSIS_LANDMARKS[draftPelvicAnalysisPoints.length]?.label || "semua landmark lengkap"}`,
+        liveProgress: planningGuideProgress(draftPelvicAnalysisPoints.length, PELVIC_ANALYSIS_LANDMARKS.length),
+      } : {}),
+      complete: lines.some((item) => Boolean(item.pelvicAnalysisId)),
+      instruction: "Tap 16 landmark secara berurutan. Setelah titik terakhir, garis mekanis, CCD, dan diameter head kanan/kiri dibuat sekaligus.",
+      guideImage: "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
+      guideSteps: PELVIC_ANALYSIS_LANDMARKS.map((item) => pelvicGuideStep(item.guideKey, item.label, item.side, { shortLabel: item.shortLabel })),
+      points: [] },
+    { id: "ccd-right", label: "CCD kanan", icon: DraftingCompass, action: () => startBilateralHipAngle("right"),
+      ...(tool === "angle" && planningAngleMetricRef.current === "CCD R" ? {
+        activePoint: `Titik sudut ${Math.min(3, draftAnglePoints.length + 1)} dari 3`,
+        liveProgress: planningGuideProgress(draftAnglePoints.length, 3),
+      } : {}),
+      complete: angles.some((item) => item.metric === "CCD R"), instruction: "Kanan: tap pusat head, vertex neck-shaft, lalu sumbu shaft distal.",
+      guideView: "pelvic_marked", highlightId: pelvicLandmarkId("femoral_head_center", "right"),
+      guideSteps: [
+        pelvicGuideStep("femoral_head_center", "Pusat femoral head kanan", "right"),
+        pelvicGuideStep("greater_trochanter_inferior", "Vertex neck-shaft kanan", "right"),
+        pelvicGuideStep("femoral_shaft_distal_center", "Pusat shaft femur kanan", "right"),
+      ],
+      points: ["Pusat femoral head", "Pusat femoral neck sebagai vertex", "Titik pada sumbu shaft femur"] },
+    { id: "ccd-left", label: "CCD kiri", icon: DraftingCompass, action: () => startBilateralHipAngle("left"),
+      ...(tool === "angle" && planningAngleMetricRef.current === "CCD L" ? {
+        activePoint: `Titik sudut ${Math.min(3, draftAnglePoints.length + 1)} dari 3`,
+        liveProgress: planningGuideProgress(draftAnglePoints.length, 3),
+      } : {}),
+      complete: angles.some((item) => item.metric === "CCD L"), instruction: "Kiri: tap pusat head, vertex neck-shaft, lalu sumbu shaft distal.",
+      guideView: "pelvic_marked", highlightId: pelvicLandmarkId("femoral_head_center", "left"),
+      guideSteps: [
+        pelvicGuideStep("femoral_head_center", "Pusat femoral head kiri", "left"),
+        pelvicGuideStep("greater_trochanter_inferior", "Vertex neck-shaft kiri", "left"),
+        pelvicGuideStep("femoral_shaft_distal_center", "Pusat shaft femur kiri", "left"),
+      ],
+      points: ["Pusat femoral head", "Pusat femoral neck sebagai vertex", "Titik pada sumbu shaft femur"] },
+    { id: "fhd-right", label: "Diameter head kanan", icon: CircleDot, action: () => startBilateralHeadDiameter("right"),
+      ...(tool === "circle" && planningCircleMetricRef.current === "FHD R" ? {
+        activePoint: draftCirclePoints.length ? "Titik berikutnya: tepi femoral head" : "Titik berikutnya: pusat femoral head",
+        liveProgress: planningGuideProgress(draftCirclePoints.length, 2),
+      } : {}),
+      complete: circles.some((item) => item.metric === "FHD R"), instruction: "Kanan: tap pusat lalu tepi korteks femoral head.",
+      guideView: "pelvic_marked", highlightId: pelvicLandmarkId("femoral_head_center", "right"),
+      guideSteps: [
+        pelvicGuideStep("femoral_head_center", "Pusat femoral head kanan", "right"),
+        pelvicGuideStep("femoral_head_lateral_edge", "Tepi femoral head kanan", "right"),
+      ],
+      points: ["Tap pusat femoral head", "Tap tepi terluar femoral head", "Sesuaikan lingkaran agar mengikuti korteks"] },
+    { id: "fhd-left", label: "Diameter head kiri", icon: CircleDot, action: () => startBilateralHeadDiameter("left"),
+      ...(tool === "circle" && planningCircleMetricRef.current === "FHD L" ? {
+        activePoint: draftCirclePoints.length ? "Titik berikutnya: tepi femoral head" : "Titik berikutnya: pusat femoral head",
+        liveProgress: planningGuideProgress(draftCirclePoints.length, 2),
+      } : {}),
+      complete: circles.some((item) => item.metric === "FHD L"), instruction: "Kiri: tap pusat lalu tepi korteks femoral head.",
+      guideView: "pelvic_marked", highlightId: pelvicLandmarkId("femoral_head_center", "left"),
+      guideSteps: [
+        pelvicGuideStep("femoral_head_center", "Pusat femoral head kiri", "left"),
+        pelvicGuideStep("femoral_head_lateral_edge", "Tepi femoral head kiri", "left"),
+      ],
+      points: ["Tap pusat femoral head", "Tap tepi terluar femoral head", "Sesuaikan lingkaran agar mengikuti korteks"] },
+    { id: "cup", label: "Cup Assessment", icon: CircleDot, action: () => setShowCupAssessment((open) => !open),
+      complete: Boolean(savedCupAssessment && matchesPlanningSide(savedCupAssessment)), instruction: "Sesuaikan elips pada rim cup lalu simpan inclination dan anteversion.",
+      guideView: "pelvic_marked", highlightId: pelvicLandmarkId("acetabular_inferomedial_rim", planningSession.side),
+      guideSteps: [
+        pelvicGuideStep("femoral_head_superior_edge", "Acuan rim superior"),
+        pelvicGuideStep("acetabular_inferomedial_rim", "Rim acetabulum inferomedial"),
+      ],
+      points: ["Tandai rim cup superior-lateral", "Tandai rim cup superior-medial", "Sesuaikan elips terhadap bukaan cup lalu simpan"] },
   ];
   const guideDistanceField = (label, value, onChange, min, max) => ({
     label: `${label} (${hasCalibration ? "mm" : "px"})`, value: Number((value * (mmPerPixel || 1)).toFixed(2)),
@@ -22526,7 +22872,7 @@ export default function XrayCalibrationWorkspace({
               className={
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
-                    ? "simple-layer-settings-modal pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(94vw,420px)] overflow-y-auto rounded-[24px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-3 [color:var(--soft-text)] shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl"
+                    ? "simple-layer-settings-modal pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(92vw,390px)] overflow-y-auto rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-3 [color:var(--soft-text)] backdrop-blur-lg"
                     : "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-5 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
@@ -22603,7 +22949,7 @@ export default function XrayCalibrationWorkspace({
                   className={
                     toolConfigModal === "layerSettings"
                       ? isSimpleUiMode
-                        ? "rounded-full border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-3 py-1.5 text-[11px] font-bold text-[var(--soft-text)] shadow-[var(--soft-shadow-raised)] transition hover:text-[var(--soft-text-hi)]"
+                        ? "rounded-md border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-3 py-1.5 text-[11px] font-bold text-[var(--soft-text)] transition hover:border-cyan-500 hover:text-[var(--soft-text-hi)]"
                         : "rounded-full border border-white/70 bg-[#eef2f7] px-5 py-2 text-xs font-semibold text-slate-700 shadow-[4px_4px_10px_rgba(148,163,184,0.42),-4px_-4px_10px_rgba(255,255,255,0.82)] transition hover:text-slate-950"
                       : `${SOFT_TEXT_BUTTON_CLASS} px-2 py-1 text-[10px]`
                   }
@@ -24713,6 +25059,83 @@ export default function XrayCalibrationWorkspace({
           openSimpleImplantTemplateOverlay();
         }}
       />
+
+      {isPlanningLayout && planningImplantModalOpen && typeof document !== "undefined"
+        ? createPortal(
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-5"
+              role="presentation"
+              onMouseDown={() => setPlanningImplantModalOpen(false)}
+            >
+              <motion.section
+                initial={{ y: 28, opacity: 0, scale: 0.98 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 28 }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Implant Template"
+                onMouseDown={(event) => event.stopPropagation()}
+                className={`implant-template-modal flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-[18px] border sm:max-w-[860px] sm:rounded-xl ${
+                  isDark
+                    ? "border-slate-600 bg-slate-900 text-slate-100"
+                    : "border-slate-300 bg-[#eef2f7] text-slate-900"
+                }`}
+              >
+                <header className={`flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 ${isDark ? "border-slate-700" : "border-slate-300"}`}>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-black">Implant Template</h2>
+                    <p className={`mt-0.5 text-[10px] ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                      Pilih cup, stem, atau komponen lain. Ukuran mengikuti skala kalibrasi aktif.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPlanningImplantModalOpen(false)}
+                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg border ${isDark ? "border-slate-600 bg-slate-800" : "border-white bg-white/70"}`}
+                    aria-label="Tutup Implant Template"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </header>
+                <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 md:grid-cols-2">
+                  <ImplantLayer
+                    items={LOCAL_IMPLANT_LIBRARY}
+                    selectedType={selectedImplantType}
+                    selectedItemId={selectedImplantLibraryId}
+                    onSelectType={setSelectedImplantType}
+                    onSelectItemId={setSelectedImplantLibraryId}
+                    onUseSelected={() => {
+                      useSelectedImplantLibraryAsLayer();
+                      setPlanningImplantModalOpen(false);
+                    }}
+                    onReplaceSelected={() => {
+                      replaceSelectedLayerWithSelectedImplant();
+                      setPlanningImplantModalOpen(false);
+                    }}
+                    canReplaceSelected={Boolean(selectedCutLayer && isImageBackedLayerKind(selectedCutLayer.kind))}
+                    scaleInstruction={implantLibraryScaleInstruction}
+                    calibrated={hasCalibration}
+                    disabled={!image || !modelWidth || !modelHeight}
+                    title="Implant Layer"
+                    subtitle="Template lokal"
+                  />
+                  <NormmedStemLayer
+                    onUseSelected={(item) => {
+                      handleAddNormmedStemLayer(item);
+                      setPlanningImplantModalOpen(false);
+                    }}
+                    calibrated={hasCalibration}
+                    disabled={!image || !modelWidth || !modelHeight}
+                  />
+                </div>
+              </motion.section>
+            </motion.div>,
+            document.body,
+          )
+        : null}
 
       {/* ── Floating pill: ruler adjustment mode ── */}
       <AnimatePresence>
@@ -27472,6 +27895,7 @@ export default function XrayCalibrationWorkspace({
                       onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
                       onRenameLine={renameLineById}
                       onChangeLineColor={changeLineColorById}
+                      onToggleLineLabel={toggleLineLabelById}
                       getLineLength={getLineLength}
                       formatMeasurementFromPx={formatMeasurementFromPx}
                       lineTypeLabel={lineTypeLabel}
@@ -31049,9 +31473,10 @@ export default function XrayCalibrationWorkspace({
                   lines={lines}
                   selectedLineId={selectedLineId}
                   onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
-                  onRenameLine={renameLineById}
-                  onChangeLineColor={changeLineColorById}
-                  getLineLength={getLineLength}
+                      onRenameLine={renameLineById}
+                      onChangeLineColor={changeLineColorById}
+                      onToggleLineLabel={toggleLineLabelById}
+                      getLineLength={getLineLength}
                   formatMeasurementFromPx={formatMeasurementFromPx}
                   lineTypeLabel={lineTypeLabel}
                   className="mx-1 mb-1"
@@ -33262,6 +33687,30 @@ export default function XrayCalibrationWorkspace({
             onUpdateLayer={(id, patch) => updateLayerById(id, "locked" in patch ? { lockScale: patch.locked } : patch)}
             annotations={annotations} guides={planningGuideRows} note={planNote} onNote={setPlanNote}
             status={notice} zoom={Math.round(view.scale * 100)} toolLabel={activeToolLabel} isDark={isDark}
+            onToggleMeasurementLabel={(lineIds, currentlyVisible) => {
+              const idSet = new Set(lineIds);
+              setLines((previous) => previous.map((line) => idSet.has(line.id)
+                ? { ...line, showLabel: !currentlyVisible }
+                : line));
+              setNotice(currentlyVisible ? "Bacaan line disembunyikan; garis tetap tampil." : "Bacaan line ditampilkan kembali.");
+            }}
+            onRenameMeasurement={(measurementId, name) => {
+              const [kind, ...idParts] = String(measurementId).split(":");
+              const objectId = idParts.join(":");
+              if (kind === "line") {
+                const line = lines.find((item) => String(item.id) === objectId);
+                if (line) renameLineById(line.id, name);
+              } else if (kind === "angle") {
+                setAngles((previous) => previous.map((item) => String(item.id) === objectId
+                  ? { ...item, name }
+                  : item));
+              } else if (kind === "circle") {
+                setCircles((previous) => previous.map((item) => String(item.id) === objectId
+                  ? { ...item, name }
+                  : item));
+              }
+              setNotice(`Nama info pengukuran diubah menjadi “${name}”.`);
+            }}
           >
           <div
             data-planning-viewports={isPlanningLayout || undefined}
@@ -33324,7 +33773,7 @@ export default function XrayCalibrationWorkspace({
                   {isMobileViewport ? (
                     <div className="max-w-[calc(100vw-20px)]">
                       <div
-                        className={`flex items-center gap-1 rounded-full px-1.5 py-1 ${SOFT_FLOAT_SURFACE_CLASS} text-slate-700`}
+                        className="layer-floating-toolbar flex items-center gap-1 rounded-xl px-1.5 py-1 text-slate-700"
                       >
                         <button
                           type="button"
@@ -33410,7 +33859,7 @@ export default function XrayCalibrationWorkspace({
                     </div>
                   ) : (
                     <div
-                      className={`flex max-w-[calc(100vw-28px)] items-center gap-1 rounded-full px-2 py-1.5 ${SOFT_FLOAT_SURFACE_CLASS} text-slate-700`}
+                      className="layer-floating-toolbar flex max-w-[calc(100vw-28px)] items-center gap-1 rounded-xl px-2 py-1.5 text-slate-700"
                     >
                       <button
                         type="button"
@@ -33529,11 +33978,11 @@ export default function XrayCalibrationWorkspace({
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -6, scale: 0.98 }}
                         transition={MOBILE_PANEL_TRANSITION}
-                        className="pointer-events-auto mt-1.5 w-[min(76vw,300px)] rounded-[20px] border border-white/58 bg-[#eef2f7]/88 p-2 text-slate-700 shadow-[2px_2px_8px_rgba(148,163,184,0.18)] backdrop-blur-md"
+                        className="layer-template-popover pointer-events-auto mt-1.5 w-[min(86vw,340px)] rounded-xl border p-3 text-slate-700 backdrop-blur-md"
                       >
                         <div className="mb-1.5 flex items-center justify-between gap-2">
                           <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
-                            Ganti Template
+                            Ganti Template Layer
                           </span>
                           <button
                             type="button"
@@ -33544,7 +33993,15 @@ export default function XrayCalibrationWorkspace({
                             <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
+                        <div className="mb-2 rounded-lg border border-slate-300/70 bg-white/55 px-2.5 py-2 dark:border-slate-600 dark:bg-slate-900/40">
+                          <div className="text-[8px] font-bold tracking-wider text-slate-500 uppercase">Layer saat ini</div>
+                          <div className="mt-0.5 truncate text-[10px] font-black text-slate-800">
+                            {selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)}
+                          </div>
+                        </div>
                         <div className="space-y-2">
+                          <label className="block text-[9px] font-bold text-slate-500">
+                            Template pengganti
                           <div className="grid grid-cols-[1fr_auto] gap-1.5">
                             <select
                               value={selectedImplantLibraryId}
@@ -33552,7 +34009,7 @@ export default function XrayCalibrationWorkspace({
                                 setSelectedImplantLibraryId(event.target.value)
                               }
                               disabled={!canReplaceSelectedTemplateLayer}
-                              className="min-h-9 min-w-0 rounded-2xl border border-white/70 bg-[#edf1f6] px-2 text-[10px] font-black text-slate-700 outline-none shadow-[inset_1.5px_1.5px_3px_rgba(148,163,184,0.24),inset_-1.5px_-1.5px_3px_rgba(255,255,255,0.82)] disabled:opacity-45"
+                              className="mt-1 min-h-10 min-w-0 rounded-lg border border-slate-300 bg-white/75 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-cyan-500 disabled:opacity-45"
                               title="Pilih template pengganti"
                             >
                               {LOCAL_IMPLANT_LIBRARY.map((item) => (
@@ -33571,11 +34028,12 @@ export default function XrayCalibrationWorkspace({
                                 setSimpleLayerFloatingPopup(null);
                               }}
                               disabled={!canReplaceSelectedTemplateLayer}
-                              className="min-h-9 rounded-2xl border border-white/70 bg-slate-900 px-3 text-[9px] font-black text-white shadow-[2px_2px_6px_rgba(15,23,42,0.18)] disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-1 min-h-10 rounded-lg border border-slate-900 bg-slate-900 px-3 text-[9px] font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Ganti
                             </button>
                           </div>
+                          </label>
                           <div>
                             <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black text-slate-500">
                               <span>
@@ -34033,6 +34491,7 @@ export default function XrayCalibrationWorkspace({
                       onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
                       onRenameLine={renameLineById}
                       onChangeLineColor={changeLineColorById}
+                      onToggleLineLabel={toggleLineLabelById}
                       getLineLength={getLineLength}
                       formatMeasurementFromPx={formatMeasurementFromPx}
                       lineTypeLabel={lineTypeLabel}
@@ -34725,9 +35184,10 @@ export default function XrayCalibrationWorkspace({
                         lines={lines.filter((l) => l.id !== calibrationLineId)}
                         selectedLineId={selectedLineId}
                         onSelectLine={(id) => { setSelectedLineId(id); setNotice(`Line #${id} dipilih.`); }}
-                        onRenameLine={renameLineById}
-                        onChangeLineColor={changeLineColorById}
-                        getLineLength={getLineLength}
+                      onRenameLine={renameLineById}
+                      onChangeLineColor={changeLineColorById}
+                      onToggleLineLabel={toggleLineLabelById}
+                      getLineLength={getLineLength}
                         formatMeasurementFromPx={formatMeasurementFromPx}
                         lineTypeLabel={lineTypeLabel}
                         hkaSets={hkaSets}

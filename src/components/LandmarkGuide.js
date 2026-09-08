@@ -2,6 +2,7 @@
 
 import { X } from "lucide-react";
 import { createPortal } from "react-dom";
+import { PELVIC_LANDMARK_BY_ID, PELVIC_LANDMARK_IMAGE } from "@/data/pelvicLandmarks";
 
 // ── Shared SVG primitives ─────────────────────────────────────────────────────
 
@@ -721,9 +722,30 @@ function SkylinePatellaGuide({ highlightId }) {
   );
 }
 
+function MarkedPelvicGuide({ highlightId }) {
+  const active = PELVIC_LANDMARK_BY_ID[highlightId] || null;
+  const { width, height, src } = PELVIC_LANDMARK_IMAGE;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: 380, display: "block" }}>
+      <image href={src} x={0} y={0} width={width} height={height} />
+      {active ? <HighlightRing cx={active.x} cy={active.y} color={active.markerColor} /> : null}
+      {active ? (
+        <g pointerEvents="none">
+          <rect x={8} y={8} width={Math.min(220, width - 16)} height={28} rx={5} fill="#06101c" opacity={0.9} />
+          <text x={18} y={26} fill="#ffffff" fontSize={10} fontFamily="sans-serif" fontWeight="700">
+            {active.side === "left" ? "L" : "R"} · {active.label}
+          </text>
+        </g>
+      ) : null}
+    </svg>
+  );
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const GUIDE_REGISTRY = {
+  pelvic_marked:            { label: "AP Pelvis — Marked Landmarks", Component: MarkedPelvicGuide, needsSide: false },
   ap_hip:                  { label: "AP Hip / Pelvis",            Component: ApHipGuide,          needsSide: "full"   },
   ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: "simple" },
   ap_femur:                { label: "AP Femur",                   Component: ApProxFemurGuide,    needsSide: false    },
