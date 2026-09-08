@@ -8,7 +8,8 @@ import {
   PanelRightClose, Plus, Ruler, SlidersHorizontal, Target, X,
 } from "lucide-react";
 import {
-  capturePlanningInitial, formatPlanningValue, resolvePlanningRows,
+  capturePlanningInitial, completePlanningStep, formatPlanningValue,
+  getCompletedPlanningSteps, resolvePlanningRows,
 } from "@/lib/planningWorkspace";
 import styles from "./PlanningWorkspace.module.css";
 import PlanningToolGroups from "./PlanningToolGroups";
@@ -63,11 +64,22 @@ export default function PlanningWorkspace({
   const choices = available.filter((item) => (!brand || item.brand === brand) && (!system || item.system === system) && (!component || item.type === component));
   const selectedImplant = choices.find((item) => item.id === selectedImplantId);
   const canProceed = hasImage && calibrated && Boolean(session.side);
+  const completedSteps = getCompletedPlanningSteps(session, canProceed);
+  const firstIncompleteStep = reference.workflow.findIndex((_, index) => !completedSteps.has(index));
+  const nextRequiredStep = firstIncompleteStep < 0 ? reference.workflow.length - 1 : firstIncompleteStep;
   const prerequisites = !hasImage ? "Upload X-ray terlebih dahulu." : !session.side
     ? "Pilih sisi tubuh dan selesaikan kalibrasi terlebih dahulu."
     : "Selesaikan kalibrasi marker terlebih dahulu.";
 
   useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); setStepExpanded(true); }, [procedure]);
+  useEffect(() => {
+    if (!enabled || session.step !== 0 || !canProceed || session.completedSteps?.includes(0)) return;
+    const next = completePlanningStep(session, 0, 1);
+    onSession(next);
+    setStepExpanded(true);
+    setWorkflowOpen(true);
+    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
+  }, [canProceed, enabled, onSession, session]);
   useEffect(() => {
     if (!sheet) return;
     const handler = (event) => { if (event.key === "Escape") setSheet(null); };
@@ -79,14 +91,28 @@ export default function PlanningWorkspace({
   if (!enabled) return children;
 
   const activate = (action) => { setSheet(null); action(); };
+  const revealWorkflow = () => {
+    setWorkflowOpen(true);
+    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
+  };
+  const finishStep = (index, patch = {}, nextStep = index + 1) => {
+    onSession(completePlanningStep({ ...session, ...patch }, index, nextStep));
+    setStepExpanded(true);
+    revealWorkflow();
+  };
   const saveInitial = () => {
     const initial = capturePlanningInitial(rows);
-    if (initial) onSession({ ...session, initial });
+    if (initial) finishStep(1, { initial }, 2);
   };
   const changeStep = (index, toggle = false) => {
-    if (index > 0 && !canProceed) return;
+    const available = index === 0 || completedSteps.has(index) || (canProceed && index <= nextRequiredStep);
+    if (!available) return;
     setStepExpanded((current) => toggle && index === session.step ? !current : true);
     onSession({ ...session, step: index });
+  };
+  const insertSelectedImplant = () => {
+    onInsertImplant();
+    finishStep(3, {}, 4);
   };
 
   const implantList = <div className={styles.layerList}>
@@ -114,13 +140,13 @@ export default function PlanningWorkspace({
           id={`workflow-step-${procedure}-${index}`}
           aria-expanded={session.step === index && stepExpanded}
           aria-controls={`workflow-content-${procedure}-${index}`}
-          aria-disabled={index > 0 && !canProceed}
+          aria-disabled={index > 0 && (!canProceed || (!completedSteps.has(index) && index > nextRequiredStep))}
           title={index > 0 && !canProceed ? prerequisites : item.title}
           onClick={() => changeStep(index, true)}>
           <span className={styles.stepNumber}>{index + 1}</span><span>{item.title}
-            <small>{session.step === index ? "In progress" : index === 0 && canProceed ? "Completed" : index === 1 && session.initial ? "Initial recorded" : index > 0 && !canProceed ? "Setup required" : "Pending"}</small></span>
-          {index === 0 && canProceed && session.step !== index && <Check size={18} />}
-          {index > 0 && !canProceed && <Lock size={15} />}
+            <small>{session.step === index ? "In progress" : completedSteps.has(index) ? "Completed" : index > 0 && (!canProceed || index > nextRequiredStep) ? "Complete previous step" : "Pending"}</small></span>
+          {completedSteps.has(index) && session.step !== index && <Check size={18} />}
+          {index > 0 && (!canProceed || (!completedSteps.has(index) && index > nextRequiredStep)) && <Lock size={15} />}
           {session.step === index && (stepExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
         </button>
     {session.step === index && stepExpanded && <div className={styles.stepContent}
@@ -168,7 +194,7 @@ export default function PlanningWorkspace({
           <img src={selectedImplant.imageSrc} alt={selectedImplant.label} />
           <span>{selectedImplant.system}<strong>Size {selectedImplant.size}</strong></span>
         </div>}
-        <Action icon={Plus} disabled={!calibrated || !selectedImplant} onClick={() => activate(onInsertImplant)}>Insert Implant</Action>
+        <Action icon={Plus} disabled={!calibrated || !selectedImplant} onClick={insertSelectedImplant}>Insert Implant</Action>
         <Action icon={Layers} onClick={() => activate(actions.implantLibrary)}>Library & layer settings</Action>
       </div>}
       {session.step === 4 && implantList}
@@ -187,9 +213,10 @@ export default function PlanningWorkspace({
     </div>
     <div className={styles.stepFooter}>
       <Action icon={ChevronLeft} aria-label="Langkah sebelumnya" disabled={session.step === 0} onClick={() => changeStep(session.step - 1)} />
-      <Action icon={session.step === 5 ? FileText : ArrowRight} disabled={!canProceed}
-        onClick={() => session.step === 5 ? activate(actions.report) : changeStep(session.step + 1)}>
-        {session.step === 5 ? "Create Report" : "Lanjut"}
+      <Action icon={session.step === 5 ? FileText : ArrowRight}
+        disabled={!canProceed || (session.step === 1 && !session.initial) || session.step === 3}
+        onClick={() => session.step === 5 ? activate(actions.report) : finishStep(session.step)}>
+        {session.step === 5 ? "Create Report" : session.step === 3 ? "Masukkan implant" : "Selesai & Lanjut"}
       </Action>
     </div>
   </>;

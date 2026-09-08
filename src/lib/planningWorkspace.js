@@ -1,5 +1,27 @@
 export function createPlanningSession() {
-  return { step: 0, side: null, bindings: {}, initial: null };
+  return { step: 0, side: null, bindings: {}, initial: null, completedSteps: [] };
+}
+
+export function getCompletedPlanningSteps(session, setupComplete = false) {
+  const completed = new Set(
+    Array.isArray(session?.completedSteps)
+      ? session.completedSteps.filter((step) => Number.isInteger(step) && step >= 0 && step <= 5)
+      : [],
+  );
+  // Projects saved before completedSteps existed still restore to the right point.
+  if (setupComplete) completed.add(0);
+  if (session?.initial) completed.add(1);
+  return completed;
+}
+
+export function completePlanningStep(session, step, nextStep = step + 1) {
+  const completed = getCompletedPlanningSteps(session);
+  completed.add(step);
+  return {
+    ...session,
+    completedSteps: [...completed].sort((a, b) => a - b),
+    step: Math.max(0, Math.min(5, nextStep)),
+  };
 }
 
 export const PLANNING_METRICS = {

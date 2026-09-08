@@ -19,7 +19,7 @@ export default function AppAuthGate({ children }) {
     if (!user && !isPublic) {
       router.replace("/login");
     } else if (user && isPublic && userStatus !== "pending") {
-      router.replace("/");
+      router.replace("/simple");
     }
   }, [user, loading, pathname, router, userStatus, authError]);
 
