@@ -11,6 +11,7 @@ import {
   capturePlanningInitial, formatPlanningValue, resolvePlanningRows,
 } from "@/lib/planningWorkspace";
 import styles from "./PlanningWorkspace.module.css";
+import PlanningToolGroups from "./PlanningToolGroups";
 
 function Action({ icon: Icon, children, active, className = "", ...props }) {
   return <button type="button" className={`${styles.button} ${active ? styles.active : ""} ${className}`} {...props}>
@@ -43,6 +44,7 @@ export default function PlanningWorkspace({
   status, zoom, toolLabel, isDark,
 }) {
   const [workflowOpen, setWorkflowOpen] = useState(true);
+  const [stepExpanded, setStepExpanded] = useState(true);
   const [logOpen, setLogOpen] = useState(true);
   const [sheet, setSheet] = useState(null);
   const [expanded, setExpanded] = useState(false);
@@ -60,10 +62,12 @@ export default function PlanningWorkspace({
   const systems = [...new Set(available.filter((item) => !brand || item.brand === brand).map((item) => item.system))];
   const choices = available.filter((item) => (!brand || item.brand === brand) && (!system || item.system === system) && (!component || item.type === component));
   const selectedImplant = choices.find((item) => item.id === selectedImplantId);
-  const step = reference.workflow[session.step] || reference.workflow[0];
   const canProceed = hasImage && calibrated && Boolean(session.side);
+  const prerequisites = !hasImage ? "Upload X-ray terlebih dahulu." : !session.side
+    ? "Pilih sisi tubuh dan selesaikan kalibrasi terlebih dahulu."
+    : "Selesaikan kalibrasi marker terlebih dahulu.";
 
-  useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); }, [procedure]);
+  useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); setStepExpanded(true); }, [procedure]);
   useEffect(() => {
     if (!sheet) return;
     const handler = (event) => { if (event.key === "Escape") setSheet(null); };
@@ -79,8 +83,9 @@ export default function PlanningWorkspace({
     const initial = capturePlanningInitial(rows);
     if (initial) onSession({ ...session, initial });
   };
-  const changeStep = (index) => {
+  const changeStep = (index, toggle = false) => {
     if (index > 0 && !canProceed) return;
+    setStepExpanded((current) => toggle && index === session.step ? !current : true);
     onSession({ ...session, step: index });
   };
 
@@ -102,33 +107,39 @@ export default function PlanningWorkspace({
       <h2>{reference.fullLabel}</h2></div>
       <Action icon={PanelLeftClose} className={styles.desktopOnly} onClick={() => setWorkflowOpen(false)} aria-label="Tutup workflow" />
     </div>
+    <div className={styles.workflowBody}>
     <ol className={styles.steps} aria-label="Planning workflow">
       {reference.workflow.map((item, index) => <li key={item.title}>
         <button type="button" aria-current={session.step === index ? "step" : undefined}
-          disabled={index > 0 && !canProceed} onClick={() => changeStep(index)}>
+          id={`workflow-step-${procedure}-${index}`}
+          aria-expanded={session.step === index && stepExpanded}
+          aria-controls={`workflow-content-${procedure}-${index}`}
+          aria-disabled={index > 0 && !canProceed}
+          title={index > 0 && !canProceed ? prerequisites : item.title}
+          onClick={() => changeStep(index, true)}>
           <span className={styles.stepNumber}>{index + 1}</span><span>{item.title}
-            <small>{session.step === index ? "In progress" : index === 0 && canProceed ? "Completed" : index === 1 && session.initial ? "Initial recorded" : "Pending"}</small></span>
+            <small>{session.step === index ? "In progress" : index === 0 && canProceed ? "Completed" : index === 1 && session.initial ? "Initial recorded" : index > 0 && !canProceed ? "Setup required" : "Pending"}</small></span>
           {index === 0 && canProceed && session.step !== index && <Check size={18} />}
           {index > 0 && !canProceed && <Lock size={15} />}
-          {session.step === index && <ChevronRight size={14} />}
+          {session.step === index && (stepExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
         </button>
-      </li>)}
-    </ol>
-    <div className={styles.stepContent}>
-      <div className={styles.sectionHeading}><span>{session.step + 1} / 6</span><strong>{step.title}</strong></div>
+    {session.step === index && stepExpanded && <div className={styles.stepContent}
+      id={`workflow-content-${procedure}-${index}`} role="region" aria-labelledby={`workflow-step-${procedure}-${index}`}>
       {session.step === 0 && <>
         <div className={styles.buttonGrid}>
           <Action icon={ImagePlus} onClick={() => activate(actions.upload)}>Upload X-ray</Action>
           <Action icon={CloudUpload} onClick={() => activate(actions.library)}>Buka Drive</Action>
         </div>
         <p className={styles.fileName}>{imageName || "Belum ada gambar"}</p>
-        <label className={styles.fieldLabel}>Body side</label>
+        <fieldset className={styles.setupFields}><legend>Body side & calibration</legend>
         <div className={styles.segment} aria-label="Body side">
           {["left", "right"].map((side) => <Action key={side} active={session.side === side} aria-pressed={session.side === side}
             onClick={() => onSession({ ...session, side, initial: session.side === side ? session.initial : null })}>{side === "left" ? "L / Left" : "R / Right"}</Action>)}
         </div>
         <Action icon={Ruler} className={calibrated ? styles.success : styles.warning} disabled={!hasImage}
           onClick={() => activate(actions.calibrate)}>{calibrated ? "Skala terkalibrasi" : "Kalibrasi marker"}</Action>
+        </fieldset>
+        {!canProceed && <p className={styles.prerequisite} role="status">{prerequisites}</p>}
       </>}
       {session.step === 1 && <>
         <div className={styles.buttonGrid}>{analysisTools.map((item) => <Action key={item.id} icon={item.icon}
@@ -170,6 +181,9 @@ export default function PlanningWorkspace({
           <Action icon={ImagePlus} onClick={actions.snapshot} disabled={!hasImage}>Snapshot PNG</Action>
         </div>
       </>}
+    </div>}
+      </li>)}
+    </ol>
     </div>
     <div className={styles.stepFooter}>
       <Action icon={ChevronLeft} aria-label="Langkah sebelumnya" disabled={session.step === 0} onClick={() => changeStep(session.step - 1)} />
@@ -193,6 +207,7 @@ export default function PlanningWorkspace({
       <div id="planning-log-content" role="tabpanel" aria-labelledby={`planning-tab-${logTab}`}>
       {logTab === "measurements" && <>
       <div className={styles.sectionHeading}><strong>Measurements</strong><span>{rows.filter((r) => r.value !== null).length} / {rows.length}</span></div>
+      <div className={styles.measurementScroll} role="region" aria-label="Measurement values" tabIndex={0}>
       <table className={styles.measurements}><thead><tr><th>Parameter</th><th>Initial</th><th>Planned</th></tr></thead>
         <tbody>{rows.map((row) => <tr key={row.key}>
           <th><button type="button" title={row.detail} onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
@@ -201,6 +216,7 @@ export default function PlanningWorkspace({
           <td className={row.value !== row.initial && session.initial ? styles.changed : ""}>{formatPlanningValue(session.initial ? row.value : null, row.unit)}</td>
         </tr>)}</tbody>
       </table>
+      </div>
       {metricEditor && (() => {
         const row = rows.find((item) => item.key === metricEditor);
         if (!row) return null;
@@ -214,7 +230,7 @@ export default function PlanningWorkspace({
         </div>;
       })()}
       {!session.initial && <Action icon={Target} disabled={!rows.some((r) => r.value !== null)} onClick={saveInitial}>Rekam Initial</Action>}
-      <section className={styles.logSection}><h2>{procedure === "tka" ? "Correction Settings" : "Femoral Resection"}</h2>{correctionControls}</section>
+      <section className={`${styles.logSection} ${styles.correctionSection}`}><h2>{procedure === "tka" ? "Correction Settings" : "Femoral Resection"}</h2>{correctionControls}</section>
       </>}
       {logTab === "implants" && <section className={styles.logSection}><h2>Selected Implants & Fragments</h2>{implantList}
         <Action icon={Plus} disabled={!canProceed} onClick={() => { changeStep(3); if (sheet) setSheet("workflow"); else setWorkflowOpen(true); }}>Insert Implants</Action>
@@ -242,16 +258,17 @@ export default function PlanningWorkspace({
         <select aria-label="Planning procedure" value={procedure} onChange={(e) => onProcedure(e.target.value)}>
           <option value="tka">Bicondylar Knee / TKA</option><option value="hip">Hip Planning / THA</option>
         </select>
+        <ChevronDown size={18} className={styles.selectChevron} aria-hidden="true" />
       </label>
       <div className={styles.fileTools}>{fileTools.map((item) => <Action key={item.id} icon={item.icon} title={item.label} aria-label={item.label}
         disabled={item.disabled} onClick={() => activate(item.action)}><span>{item.label}</span></Action>)}</div>
       <Action icon={Focus} onClick={() => { setFocus(!focus); setSheet(null); }} aria-pressed={focus} aria-label="Focus canvas" />
     </div>
     <div className={styles.toolbar}>
-      <div className={styles.toolStrip} role="toolbar" aria-label="Planning tools">{toolButtons}</div>
+      <PlanningToolGroups key={procedure} tools={tools} onAction={activate} />
     </div>
     <div className={styles.body} data-left={workflowOpen && !focus} data-right={logOpen && !focus}>
-      <aside className={`${styles.workflow} ${styles.desktopPanel}`} hidden={!workflowOpen || focus}>{workflow}</aside>
+      <aside className={`${styles.workflow} ${styles.desktopPanel}`} hidden={!workflowOpen || focus}>{sheet !== "workflow" && workflow}</aside>
       <div className={styles.canvas}>
         {children}
         {session.side && <span className={styles.sideMarker}>{session.side === "left" ? "L" : "R"}</span>}
@@ -270,7 +287,7 @@ export default function PlanningWorkspace({
           <button type="button" onClick={actions.zoomReset} title="Reset zoom 100%">{zoom}%</button>
         </div>
       </div>
-      <aside className={`${styles.log} ${styles.desktopPanel}`} hidden={!logOpen || focus}>{log}</aside>
+      <aside className={`${styles.log} ${styles.desktopPanel}`} hidden={!logOpen || focus}>{sheet !== "log" && log}</aside>
     </div>
     <div className={styles.mobileNav}>
       <Action icon={ListOrdered} onClick={() => setSheet(sheet === "workflow" ? null : "workflow")} active={sheet === "workflow"}>Workflow</Action>
@@ -288,7 +305,7 @@ export default function PlanningWorkspace({
           onPointerCancel={() => { drag.current = null; }}><span /></button>
         <Action icon={X} aria-label="Tutup panel" onClick={() => setSheet(null)} />
       </div>
-      <div className={styles.sheetContent}>{sheet === "workflow" ? workflow : sheet === "log" ? log : <>
+      <div className={styles.sheetContent} data-section={sheet}>{sheet === "workflow" ? workflow : sheet === "log" ? log : <>
         <h2>Measurement & Tools</h2><div className={styles.buttonGrid}>{toolButtons}</div>
         <h2>{procedure === "tka" ? "Knee Axis Analysis" : "Pelvic Analysis"}</h2>
         <div className={styles.buttonGrid}>{analysisTools.map((item) => <Action key={item.id} icon={item.icon} onClick={() => activate(item.action)}>{item.label}</Action>)}</div>

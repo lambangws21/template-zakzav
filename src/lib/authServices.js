@@ -4,13 +4,13 @@ import {
   signOut,
 } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import { auth, db } from "./firebaseClient";
+import { auth, db, requireFirebaseAuth } from "./firebaseClient";
 
 export { auth, db };
 
 export async function signInWithEmail(email, password) {
   try {
-    const credential = await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(requireFirebaseAuth(), email, password);
     return { user: credential.user, error: null };
   } catch (err) {
     return { user: null, error: err.message };
@@ -19,7 +19,7 @@ export async function signInWithEmail(email, password) {
 
 export async function signUpWithEmail(email, password) {
   try {
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    const credential = await createUserWithEmailAndPassword(requireFirebaseAuth(), email, password);
     const user = credential.user;
 
     await setDoc(doc(db, "users", user.uid), {
@@ -43,5 +43,5 @@ export async function signUpWithEmail(email, password) {
 }
 
 export function logOut() {
-  return signOut(auth);
+  return signOut(requireFirebaseAuth());
 }

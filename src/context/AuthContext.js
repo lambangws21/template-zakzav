@@ -4,13 +4,15 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db, logOut } from "@/lib/authServices";
+import { firebaseClientError } from "@/lib/firebaseClient";
 
-const AuthContext = createContext({ user: null, loading: true, userStatus: null });
+const AuthContext = createContext({ user: null, loading: true, userStatus: null, authError: null });
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userStatus, setUserStatus] = useState(null);
+  const [authError, setAuthError] = useState(null);
   const inactivityTimer = useRef(null);
   const unsubDoc = useRef(null);
 
@@ -22,6 +24,11 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
+    if (!auth || !db) {
+      setAuthError(firebaseClientError || "Firebase Auth tidak tersedia.");
+      setLoading(false);
+      return;
+    }
     const nativeFetch = window.fetch.bind(window);
     window.fetch = async (input, init = {}) => {
       const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -90,7 +97,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, userStatus }}>
+    <AuthContext.Provider value={{ user, loading, userStatus, authError }}>
       {children}
     </AuthContext.Provider>
   );

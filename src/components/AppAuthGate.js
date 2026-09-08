@@ -9,19 +9,19 @@ import { logOut } from "@/lib/authServices";
 const PUBLIC_PATHS = ["/login"];
 
 export default function AppAuthGate({ children }) {
-  const { user, loading, userStatus } = useAuth();
+  const { user, loading, userStatus, authError } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || authError) return;
     const isPublic = PUBLIC_PATHS.includes(pathname);
     if (!user && !isPublic) {
       router.replace("/login");
     } else if (user && isPublic && userStatus !== "pending") {
       router.replace("/");
     }
-  }, [user, loading, pathname, router, userStatus]);
+  }, [user, loading, pathname, router, userStatus, authError]);
 
   if (loading) {
     return (
@@ -34,6 +34,21 @@ export default function AppAuthGate({ children }) {
           <span className="text-xs font-semibold text-slate-400">Memuat sesi...</span>
         </div>
       </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center p-6">
+        <div role="alert" className="w-full max-w-md space-y-3">
+          <h1 className="text-lg font-semibold">Konfigurasi login belum siap</h1>
+          <p className="break-words text-sm">{authError}</p>
+          <p className="text-sm">
+            Lengkapi NEXT_PUBLIC_FIREBASE_* pada environment deployment, lalu build
+            dan deploy ulang. Workspace tetap terkunci sampai autentikasi tersedia.
+          </p>
+        </div>
+      </main>
     );
   }
 

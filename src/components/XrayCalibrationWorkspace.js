@@ -8656,6 +8656,7 @@ export default function XrayCalibrationWorkspace({
       modelWidth <= 0 ||
       modelHeight <= 0
     ) {
+      if (isPlanningLayout) return;
       overlayCtx.fillStyle = "rgba(15, 23, 42, 0.8)";
       overlayCtx.font = "15px Inter, sans-serif";
       overlayCtx.textAlign = "center";
@@ -10951,6 +10952,7 @@ export default function XrayCalibrationWorkspace({
     imageToScreenPoint,
     imageWidth,
     isCoarsePointer,
+    isPlanningLayout,
     planningGuides,
     level,
     lineTypeColor,
@@ -26390,7 +26392,8 @@ export default function XrayCalibrationWorkspace({
           <strong>ZakZav <span>Templating</span></strong>
           <span className="planning-case-name">{imageName || "Kasus baru"}</span>
           <button type="button" className={hasCalibration ? "planning-calibrated" : "planning-pending"}
-            onClick={() => openSimpleCalibrationModal()} disabled={!image}>
+            title={image ? "Buka pengaturan kalibrasi marker" : "Upload X-ray untuk mulai kalibrasi"}
+            onClick={() => image ? openSimpleCalibrationModal() : mainUploadInputRef.current?.click()}>
             {hasCalibration ? `Calibrated / ${measurementUnit}` : "Uncalibrated"}
           </button>
           <div className="planning-account">

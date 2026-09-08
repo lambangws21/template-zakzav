@@ -15,10 +15,28 @@ const missingConfig = Object.entries(firebaseConfig)
   .filter(([, value]) => !String(value || "").trim())
   .map(([key]) => key);
 
-if (missingConfig.length > 0) {
-  throw new Error(`Konfigurasi Firebase client belum lengkap: ${missingConfig.join(", ")}`);
+export let firebaseClientError = missingConfig.length > 0
+  ? `Konfigurasi Firebase client belum lengkap: ${missingConfig.join(", ")}`
+  : null;
+
+// Client Components are also imported during prerender. Auth starts only in the browser.
+export let auth = null;
+export let db = null;
+if (typeof window !== "undefined" && !firebaseClientError) {
+  try {
+    const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (error) {
+    auth = null;
+    db = null;
+    firebaseClientError = `Firebase client gagal diinisialisasi: ${error.message}`;
+  }
 }
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export function requireFirebaseAuth() {
+  if (!auth || !db) {
+    throw new Error(firebaseClientError || "Firebase Auth hanya tersedia di browser.");
+  }
+  return auth;
+}
