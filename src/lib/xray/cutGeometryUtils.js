@@ -103,6 +103,7 @@ export function buildFreeCutLayerFromPoints({
   polygonPoints,
   layerId,
   name,
+  maskFeatherPx,
 }) {
   if (
     typeof document === "undefined" ||
@@ -154,8 +155,10 @@ export function buildFreeCutLayerFromPoints({
   maskCanvas.height = height;
   const maskCtx = maskCanvas.getContext("2d");
   if (maskCtx) {
-    const feather = Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
-    maskCtx.filter = `blur(${feather}px)`;
+    const feather = Number.isFinite(maskFeatherPx)
+      ? Math.max(0, maskFeatherPx)
+      : Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
+    if (feather > 0) maskCtx.filter = `blur(${feather}px)`;
     maskCtx.fillStyle = "#ffffff";
     tracePolygonPath(maskCtx, normalizedPoints);
     maskCtx.fill();
@@ -539,5 +542,4 @@ export function buildTibialCutGeometry(anchorStart, anchorEnd, params) {
     cutCenter,
   };
 }
-
 

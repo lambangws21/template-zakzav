@@ -145,3 +145,153 @@ export function computeJLA({
     jloFlag,
   };
 }
+
+function dot(point, axis) {
+  return point.x * axis.x + point.y * axis.y;
+}
+
+function buildResectionLine(pointA, pointB, axis, depthMm, mmPerPixel) {
+  const depthPx = depthMm / mmPerPixel;
+  const tangent = { x: -axis.y, y: axis.x };
+  const aProjection = dot(pointA, axis);
+  const bProjection = dot(pointB, axis);
+  const cutProjection = Math.max(aProjection, bProjection) + depthPx;
+  const midpoint = {
+    x: (pointA.x + pointB.x) / 2,
+    y: (pointA.y + pointB.y) / 2,
+  };
+  const centerShift = cutProjection - dot(midpoint, axis);
+  const center = {
+    x: midpoint.x + axis.x * centerShift,
+    y: midpoint.y + axis.y * centerShift,
+  };
+  const landmarkWidth = Math.hypot(pointB.x - pointA.x, pointB.y - pointA.y);
+  const halfLength = Math.max(landmarkWidth * 0.72, 24 / mmPerPixel);
+
+  return {
+    start: {
+      x: center.x - tangent.x * halfLength,
+      y: center.y - tangent.y * halfLength,
+    },
+    end: {
+      x: center.x + tangent.x * halfLength,
+      y: center.y + tangent.y * halfLength,
+    },
+    center,
+    depthA: Math.max(0, (cutProjection - aProjection) * mmPerPixel),
+    depthB: Math.max(0, (cutProjection - bProjection) * mmPerPixel),
+  };
+}
+
+/**
+ * Creates a geometric TKA resection preview from completed JLA landmarks.
+ * The values are planning aids and intentionally remain user-verifiable.
+ */
+export function computeTkaResectionPlan({
+  hka,
+  mmPerPixel,
+  femoralResectionMm = 9,
+  tibialResectionMm = 8,
+  alignmentMode = "mechanical",
+  customTargetHkaDeg = 0,
+}) {
+  if (!hka || !Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return null;
+  const required = [
+    "hip", "knee", "ankle", "femCondyleMedial", "femCondyleLateral",
+    "tibPlateauMedial", "tibPlateauLateral",
+  ];
+  if (required.some((key) => !hka[key])) return null;
+
+  const femoralVector = {
+    x: hka.hip.x - hka.knee.x,
+    y: hka.hip.y - hka.knee.y,
+  };
+  const tibialVector = {
+    x: hka.ankle.x - hka.knee.x,
+    y: hka.ankle.y - hka.knee.y,
+  };
+  const femoralAxis = normalize(femoralVector);
+  const tibialAxis = normalize(tibialVector);
+  if (!femoralAxis || !tibialAxis) return null;
+
+  const jla = computeJLA({
+    femoralHead: hka.hip,
+    kneeCenter: hka.knee,
+    ankleCenter: hka.ankle,
+    femCondyleMedial: hka.femCondyleMedial,
+    femCondyleLateral: hka.femCondyleLateral,
+    tibPlateauMedial: hka.tibPlateauMedial,
+    tibPlateauLateral: hka.tibPlateauLateral,
+  });
+  if (!jla) return null;
+
+  const femoral = buildResectionLine(
+    hka.femCondyleMedial,
+    hka.femCondyleLateral,
+    femoralAxis,
+    femoralResectionMm,
+    mmPerPixel,
+  );
+  const tibial = buildResectionLine(
+    hka.tibPlateauMedial,
+    hka.tibPlateauLateral,
+    tibialAxis,
+    tibialResectionMm,
+    mmPerPixel,
+  );
+
+  const femurDown = { x: -femoralAxis.x, y: -femoralAxis.y };
+  const cross = tibialAxis.x * femurDown.y - tibialAxis.y * femurDown.x;
+  const alignmentDot = Math.max(-1, Math.min(1, dot(tibialAxis, femurDown)));
+  const signedCorrectionDeg = Math.atan2(cross, alignmentDot) * DEG;
+  const normalizedAlignmentMode = ["mechanical", "preserve", "custom"].includes(
+    alignmentMode,
+  )
+    ? alignmentMode
+    : "mechanical";
+  const targetHkaDeg = normalizedAlignmentMode === "preserve"
+    ? jla.cpakHKA
+    : normalizedAlignmentMode === "custom"
+      ? Math.max(-10, Math.min(10, Number(customTargetHkaDeg) || 0))
+      : 0;
+  const targetLabel = normalizedAlignmentMode === "preserve"
+    ? "Preserve measured anatomy"
+    : normalizedAlignmentMode === "custom"
+      ? "Custom alignment target"
+      : "Mechanical alignment";
+  const plannedMetrics = normalizedAlignmentMode === "mechanical"
+    ? { "mFA-mTA": 0, MAD: 0, mLDFA: 90, mMPTA: 90, JLCA: 0 }
+    : normalizedAlignmentMode === "preserve"
+      ? {
+          "mFA-mTA": jla.cpakHKA,
+          mLDFA: jla.LDFA,
+          mMPTA: jla.MPTA,
+          JLCA: jla.JLCA,
+        }
+      : { "mFA-mTA": targetHkaDeg };
+
+  return {
+    alignmentMode: normalizedAlignmentMode,
+    target: `${targetLabel} ${targetHkaDeg.toFixed(1)} deg`,
+    targetLabel,
+    targetHkaDeg,
+    plannedMetrics,
+    jla,
+    femoral: {
+      ...femoral,
+      medialMm: Math.round(femoral.depthA * 10) / 10,
+      lateralMm: Math.round(femoral.depthB * 10) / 10,
+      targetAngleDeg: 90,
+    },
+    tibial: {
+      ...tibial,
+      medialMm: Math.round(tibial.depthA * 10) / 10,
+      lateralMm: Math.round(tibial.depthB * 10) / 10,
+      targetAngleDeg: 90,
+    },
+    tibialPreviewRotationDeg: Math.max(
+      -15,
+      Math.min(15, signedCorrectionDeg - targetHkaDeg),
+    ),
+  };
+}

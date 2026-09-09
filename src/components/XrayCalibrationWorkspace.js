@@ -104,7 +104,7 @@ import {
   classifyAlignment,
 } from "../lib/hka/hkaCalculator";
 import { calculateFTA, predictHKAAFromFTA } from "../lib/hka/ftaCalculator";
-import { computeJLA } from "../lib/hka/jlaCalculator";
+import { computeJLA, computeTkaResectionPlan } from "../lib/hka/jlaCalculator";
 import useMobileCanvasGestures from "../hooks/useMobileCanvasGestures";
 import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
 import DriveImageWithFallback from "./DriveImageWithFallback";
@@ -520,8 +520,8 @@ const HKA_INFO_BUBBLES = {
   },
   jla: {
     key: "jla",
-    title: "JLA",
-    subtitle: "Joint Line Analysis",
+    title: "Kine Line",
+    subtitle: "Knee alignment lines",
     tagline: "LDFA · MPTA · JLCA · CPAK",
     color: "#4338ca",
     colorLight: "#eef2ff",
@@ -1284,6 +1284,10 @@ export default function XrayCalibrationWorkspace({
   const [tibialCutDirection, setTibialCutDirection] = useState("Valgus");
   const [tibialCutOffsetPx, setTibialCutOffsetPx] = useState(10);
   const [tibialCutLineLengthPx, setTibialCutLineLengthPx] = useState(90);
+  const [tkaFemoralResectionMm, setTkaFemoralResectionMm] = useState(9);
+  const [tkaTibialResectionMm, setTkaTibialResectionMm] = useState(8);
+  const [tkaAlignmentMode, setTkaAlignmentMode] = useState("mechanical");
+  const [tkaCustomTargetHkaDeg, setTkaCustomTargetHkaDeg] = useState(0);
   const [planningGuideLabelOffsetX, setPlanningGuideLabelOffsetX] = useState(
     DEFAULT_GUIDE_LABEL_OFFSET_X,
   );
@@ -1876,6 +1880,28 @@ export default function XrayCalibrationWorkspace({
       jla: measurement.jla ?? null,
     };
   }, [selectedHka]);
+  const activeTkaJointAngles = useMemo(() => {
+    if (selectedHka?.mode === "jla") return selectedHka;
+    return [...hkaSets].reverse().find((item) => item.mode === "jla") || null;
+  }, [hkaSets, selectedHka]);
+  const tkaResectionPlan = useMemo(
+    () => computeTkaResectionPlan({
+      hka: activeTkaJointAngles,
+      mmPerPixel,
+      femoralResectionMm: tkaFemoralResectionMm,
+      tibialResectionMm: tkaTibialResectionMm,
+      alignmentMode: tkaAlignmentMode,
+      customTargetHkaDeg: tkaCustomTargetHkaDeg,
+    }),
+    [
+      activeTkaJointAngles,
+      mmPerPixel,
+      tkaFemoralResectionMm,
+      tkaTibialResectionMm,
+      tkaAlignmentMode,
+      tkaCustomTargetHkaDeg,
+    ],
+  );
   const selectedLayerCanApplyRealSize =
     isImageBackedLayerKind(selectedCutLayer?.kind) &&
     mmPerPixel !== null &&
@@ -3738,6 +3764,12 @@ export default function XrayCalibrationWorkspace({
         maskPoints: Array.isArray(layer.maskPoints)
           ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
+        alignmentSimulation: layer.alignmentSimulation || null,
+        alignmentMaskPolygons: Array.isArray(layer.alignmentMaskPolygons)
+          ? layer.alignmentMaskPolygons.map((polygon) =>
+              polygon.map((point) => cloneMaskPoint(point)),
+            )
+          : null,
       })),
     [cutLayers],
   );
@@ -3829,6 +3861,10 @@ export default function XrayCalibrationWorkspace({
       tibialCutDirection,
       tibialCutOffsetPx,
       tibialCutLineLengthPx,
+      tkaAlignmentMode,
+      tkaCustomTargetHkaDeg,
+      tkaFemoralResectionMm,
+      tkaTibialResectionMm,
       activityLog: activityLogRef.current.slice(-120),
     }),
     [
@@ -3898,6 +3934,10 @@ export default function XrayCalibrationWorkspace({
       tibialSlopeDeg,
       tibialSlopeLineLengthPx,
       tibialSlopeOffsetPx,
+      tkaAlignmentMode,
+      tkaCustomTargetHkaDeg,
+      tkaFemoralResectionMm,
+      tkaTibialResectionMm,
       tool,
       valgusCutAngleDeg,
       valgusCutLineLengthPx,
@@ -6640,6 +6680,20 @@ export default function XrayCalibrationWorkspace({
                           Number.isFinite(point.x) && Number.isFinite(point.y),
                       )
                   : null,
+                alignmentSimulation: layer.alignmentSimulation || null,
+                alignmentMaskPolygons: Array.isArray(
+                  layer.alignmentMaskPolygons,
+                )
+                  ? layer.alignmentMaskPolygons.map((polygon) =>
+                      polygon
+                        .map((point) => cloneMaskPoint(point))
+                        .filter(
+                          (point) =>
+                            Number.isFinite(point.x) &&
+                            Number.isFinite(point.y),
+                        ),
+                    )
+                  : null,
               };
 
               if (isImageBackedLayerKind(baseLayer.kind)) {
@@ -6826,6 +6880,20 @@ export default function XrayCalibrationWorkspace({
         setTibialCutDirection(payload.tibialCutDirection || "Valgus");
         setTibialCutOffsetPx(Number(payload.tibialCutOffsetPx) || 10);
         setTibialCutLineLengthPx(Number(payload.tibialCutLineLengthPx) || 90);
+        setTkaAlignmentMode(
+          ["mechanical", "preserve", "custom"].includes(payload.tkaAlignmentMode)
+            ? payload.tkaAlignmentMode
+            : "mechanical",
+        );
+        setTkaCustomTargetHkaDeg(
+          clamp(Number(payload.tkaCustomTargetHkaDeg) || 0, -10, 10),
+        );
+        setTkaFemoralResectionMm(
+          clamp(Number(payload.tkaFemoralResectionMm) || 9, 1, 20),
+        );
+        setTkaTibialResectionMm(
+          clamp(Number(payload.tkaTibialResectionMm) || 8, 1, 20),
+        );
         setActivityLog(
           Array.isArray(payload.activityLog)
             ? payload.activityLog.slice(-120)
@@ -7237,6 +7305,11 @@ export default function XrayCalibrationWorkspace({
         ...layer,
         maskPoints: Array.isArray(layer.maskPoints)
           ? layer.maskPoints.map((point) => cloneMaskPoint(point))
+          : null,
+        alignmentMaskPolygons: Array.isArray(layer.alignmentMaskPolygons)
+          ? layer.alignmentMaskPolygons.map((polygon) =>
+              polygon.map((point) => cloneMaskPoint(point)),
+            )
           : null,
       })),
       selectedCutLayerExtraIds,
@@ -8594,6 +8667,26 @@ export default function XrayCalibrationWorkspace({
         );
       }
 
+      const alignmentMaskLayer = cutLayers.find(
+        (layer) =>
+          !layer.hidden &&
+          Array.isArray(layer.alignmentMaskPolygons) &&
+          layer.alignmentMaskPolygons.length > 0,
+      );
+      if (alignmentMaskLayer) {
+        imageCtx.save();
+        imageCtx.globalCompositeOperation = "destination-out";
+        imageCtx.globalAlpha = 1;
+        imageCtx.filter = "none";
+        imageCtx.fillStyle = "#000000";
+        for (const polygon of alignmentMaskLayer.alignmentMaskPolygons) {
+          if (!Array.isArray(polygon) || polygon.length < 3) continue;
+          tracePolygonPath(imageCtx, polygon);
+          imageCtx.fill();
+        }
+        imageCtx.restore();
+      }
+
       for (const layer of cutLayers) {
         if (layer.hidden) continue;
         const cachedLayerData = layerDisplayData.get(layer.id);
@@ -9543,6 +9636,9 @@ export default function XrayCalibrationWorkspace({
       // ── JLA mode rendering ─────────────────────────────────────────────────
       if (item.mode === "jla") {
         if (!item.hip || !item.knee || !item.ankle) continue;
+        const compactForResection = cutLayers.some(
+          (layer) => !layer.hidden && Boolean(layer.alignmentSimulation),
+        );
         const jlaHip   = imageToScreenPoint(item.hip.x,   item.hip.y);
         const jlaKnee  = imageToScreenPoint(item.knee.x,  item.knee.y);
         const jlaAnkle = imageToScreenPoint(item.ankle.x, item.ankle.y);
@@ -9602,7 +9698,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
 
         // Condyle line dashed (MFC–LFC extended)
-        if (jlaMFC && jlaLFC) {
+        if (!compactForResection && jlaMFC && jlaLFC) {
           const condExt = jlaExtendLine(jlaMFC, jlaLFC, 100);
           overlayCtx.strokeStyle = "#00b7ff";
           overlayCtx.lineWidth = Math.max(1, strokeWidth - 0.5);
@@ -9615,7 +9711,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // Plateau line dashed (MTP–LTP extended)
-        if (jlaMTP && jlaLTP) {
+        if (!compactForResection && jlaMTP && jlaLTP) {
           const platExt = jlaExtendLine(jlaMTP, jlaLTP, 100);
           overlayCtx.strokeStyle = "#00ffcc";
           overlayCtx.lineWidth = Math.max(1, strokeWidth - 0.5);
@@ -9658,7 +9754,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // JLCA arc at condyle × plateau intersection
-        if (jlaMFC && jlaLFC && jlaMTP && jlaLTP) {
+        if (!compactForResection && jlaMFC && jlaLFC && jlaMTP && jlaLTP) {
           const jlcaV = jlaLineIntersect(jlaMFC, jlaLFC, jlaMTP, jlaLTP);
           if (jlcaV) {
             const cDir = { x: jlaLFC.x - jlaMFC.x, y: jlaLFC.y - jlaMFC.y };
@@ -9684,14 +9780,16 @@ export default function XrayCalibrationWorkspace({
 
         overlayCtx.restore();
 
-        drawTag(
-          overlayCtx,
-          jlaKnee.x + labelOffsetX,
-          jlaKnee.y + labelOffsetY,
-          getHkaCanvasLabelText(measurement, showExpandedInfo),
-          color,
-          { bgOpacity: showExpandedInfo ? 0.72 : 0.34, borderOpacity: showExpandedInfo ? 0.96 : 0.82, fontSize: 9, paddingX: 4, paddingY: 2, radius: 4 },
-        );
+        if (!compactForResection) {
+          drawTag(
+            overlayCtx,
+            jlaKnee.x + labelOffsetX,
+            jlaKnee.y + labelOffsetY,
+            getHkaCanvasLabelText(measurement, showExpandedInfo),
+            color,
+            { bgOpacity: showExpandedInfo ? 0.72 : 0.34, borderOpacity: showExpandedInfo ? 0.96 : 0.82, fontSize: 9, paddingX: 4, paddingY: 2, radius: 4 },
+          );
+        }
         continue;
       }
 
@@ -18322,7 +18420,7 @@ export default function XrayCalibrationWorkspace({
       const result = getHkaMeasurementResult(activeHka);
       title =
         result.mode === "jla"
-          ? "Joint Line Analysis"
+          ? "Kine Line"
           : result.mode === "fta"
             ? "Femorotibial Axis"
             : "Mechanical Axis";
@@ -18820,6 +18918,360 @@ export default function XrayCalibrationWorkspace({
     valgusCutLineLengthPx,
     valgusCutOffsetPx,
     valgusCutSide,
+  ]);
+
+  const addPlanningGuideFromJointAngles = useCallback(() => {
+    if (!activeTkaJointAngles || !tkaResectionPlan) {
+      setNotice("Selesaikan Kine Line sebelum membuat cutting guide otomatis.");
+      return;
+    }
+
+    const isFemoral = planningGuideMode === "valgusCut";
+    const anchorStart = isFemoral
+      ? activeTkaJointAngles.hip
+      : activeTkaJointAngles.knee;
+    const anchorEnd = isFemoral
+      ? activeTkaJointAngles.knee
+      : activeTkaJointAngles.ankle;
+    const side = activeTkaJointAngles.side === "left" ? "Left" : "Right";
+    const nextGuide = {
+      id: createTemplatingId(),
+      kind: planningGuideMode,
+      anchorStart: { ...anchorStart },
+      anchorEnd: { ...anchorEnd },
+      hidden: false,
+      strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
+      labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
+      labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
+      labelOpacity: DEFAULT_LABEL_OPACITY,
+      customColor: false,
+      source: "joint-angles",
+    };
+
+    if (planningGuideMode === "valgusCut") {
+      Object.assign(nextGuide, {
+        angleDeg: valgusCutAngleDeg,
+        offsetPx: valgusCutOffsetPx,
+        lineLengthPx: valgusCutLineLengthPx,
+        side,
+      });
+    } else if (planningGuideMode === "tibialSlope") {
+      Object.assign(nextGuide, {
+        angleDeg: tibialSlopeDeg,
+        offsetPx: tibialSlopeOffsetPx,
+        lineLengthPx: tibialSlopeLineLengthPx,
+        posteriorSide: side,
+      });
+    } else {
+      Object.assign(nextGuide, {
+        angleDeg: tibialCutAngleDeg,
+        offsetPx: tibialCutOffsetPx,
+        lineLengthPx: tibialCutLineLengthPx,
+        direction: tibialCutDirection,
+      });
+    }
+
+    nextGuide.color = getPlanningGuideAutoColor(nextGuide);
+    setPlanningGuides((previous) => [...previous, nextGuide]);
+    focusPlanningGuideCanvas(nextGuide.id, { openPanel: false });
+    setNotice(
+      `${isFemoral ? "Distal femoral" : planningGuideMode === "tibialSlope" ? "Tibial slope" : "Proximal tibial"} cutting guide dibuat dari Kine Line.`,
+    );
+  }, [
+    activeTkaJointAngles,
+    focusPlanningGuideCanvas,
+    getPlanningGuideAutoColor,
+    planningGuideMode,
+    tibialCutAngleDeg,
+    tibialCutDirection,
+    tibialCutLineLengthPx,
+    tibialCutOffsetPx,
+    tibialSlopeDeg,
+    tibialSlopeLineLengthPx,
+    tibialSlopeOffsetPx,
+    tkaResectionPlan,
+    valgusCutAngleDeg,
+    valgusCutLineLengthPx,
+    valgusCutOffsetPx,
+  ]);
+
+  const createTkaNormalAlignmentPreview = useCallback(() => {
+    if (!image || !activeTkaJointAngles || !tkaResectionPlan || mmPerPixel === null) {
+      setNotice("Selesaikan Kine Line dan kalibrasi sebelum membuat simulasi reseksi.");
+      return;
+    }
+
+    const corridor = (
+      start,
+      end,
+      startHalfWidth,
+      endHalfWidth,
+      startExtension = 0,
+      endExtension = 0,
+    ) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (!length) return null;
+      const ux = dx / length;
+      const uy = dy / length;
+      const nx = -uy;
+      const ny = ux;
+      const a = { x: start.x - ux * startExtension, y: start.y - uy * startExtension };
+      const b = { x: end.x + ux * endExtension, y: end.y + uy * endExtension };
+      return [
+        { x: a.x + nx * startHalfWidth, y: a.y + ny * startHalfWidth },
+        { x: b.x + nx * endHalfWidth, y: b.y + ny * endHalfWidth },
+        { x: b.x - nx * endHalfWidth, y: b.y - ny * endHalfWidth },
+        { x: a.x - nx * startHalfWidth, y: a.y - ny * startHalfWidth },
+      ];
+    };
+    const nearestCutSides = (positiveSide, cutLine) => {
+      const startDistance = Math.hypot(
+        cutLine.start.x - positiveSide.x,
+        cutLine.start.y - positiveSide.y,
+      );
+      const endDistance = Math.hypot(
+        cutLine.end.x - positiveSide.x,
+        cutLine.end.y - positiveSide.y,
+      );
+      return startDistance <= endDistance
+        ? { positive: cutLine.start, negative: cutLine.end }
+        : { positive: cutLine.end, negative: cutLine.start };
+    };
+    const corridorToCutLine = (
+      start,
+      axisEnd,
+      startHalfWidth,
+      cutLine,
+      startExtension,
+    ) => {
+      const dx = axisEnd.x - start.x;
+      const dy = axisEnd.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (!length) return null;
+      const ux = dx / length;
+      const uy = dy / length;
+      const nx = -uy;
+      const ny = ux;
+      const a = {
+        x: start.x - ux * startExtension,
+        y: start.y - uy * startExtension,
+      };
+      const positiveSide = {
+        x: a.x + nx * startHalfWidth,
+        y: a.y + ny * startHalfWidth,
+      };
+      const cutSides = nearestCutSides(positiveSide, cutLine);
+      return [
+        positiveSide,
+        cutSides.positive,
+        cutSides.negative,
+        {
+          x: a.x - nx * startHalfWidth,
+          y: a.y - ny * startHalfWidth,
+        },
+      ];
+    };
+    const corridorFromCutLine = (
+      axisStart,
+      end,
+      endHalfWidth,
+      cutLine,
+      endExtension,
+    ) => {
+      const dx = end.x - axisStart.x;
+      const dy = end.y - axisStart.y;
+      const length = Math.hypot(dx, dy);
+      if (!length) return null;
+      const ux = dx / length;
+      const uy = dy / length;
+      const nx = -uy;
+      const ny = ux;
+      const b = {
+        x: end.x + ux * endExtension,
+        y: end.y + uy * endExtension,
+      };
+      const positiveSide = {
+        x: b.x + nx * endHalfWidth,
+        y: b.y + ny * endHalfWidth,
+      };
+      const cutSides = nearestCutSides(positiveSide, cutLine);
+      return [
+        cutSides.positive,
+        positiveSide,
+        {
+          x: b.x - nx * endHalfWidth,
+          y: b.y - ny * endHalfWidth,
+        },
+        cutSides.negative,
+      ];
+    };
+    const femoralWidth = Math.hypot(
+      activeTkaJointAngles.femCondyleLateral.x - activeTkaJointAngles.femCondyleMedial.x,
+      activeTkaJointAngles.femCondyleLateral.y - activeTkaJointAngles.femCondyleMedial.y,
+    );
+    const tibialWidth = Math.hypot(
+      activeTkaJointAngles.tibPlateauLateral.x - activeTkaJointAngles.tibPlateauMedial.x,
+      activeTkaJointAngles.tibPlateauLateral.y - activeTkaJointAngles.tibPlateauMedial.y,
+    );
+    const extension = Math.max(10, 12 / mmPerPixel);
+    const femoralProximalHalfWidth = Math.max(11 / mmPerPixel, femoralWidth * 0.4);
+    const femoralDistalHalfWidth = Math.max(18 / mmPerPixel, femoralWidth * 0.7);
+    const tibialProximalHalfWidth = Math.max(16 / mmPerPixel, tibialWidth * 0.72);
+    const tibialDistalHalfWidth = Math.max(9 / mmPerPixel, tibialWidth * 0.34);
+    const femoralMaskPolygon = corridor(
+      activeTkaJointAngles.hip,
+      activeTkaJointAngles.knee,
+      femoralProximalHalfWidth,
+      femoralDistalHalfWidth,
+      extension,
+      extension,
+    );
+    const tibialMaskPolygon = corridor(
+      activeTkaJointAngles.knee,
+      activeTkaJointAngles.ankle,
+      tibialProximalHalfWidth,
+      tibialDistalHalfWidth,
+      extension,
+      extension,
+    );
+    const femoralPolygon = corridorToCutLine(
+      activeTkaJointAngles.hip,
+      activeTkaJointAngles.knee,
+      femoralProximalHalfWidth,
+      tkaResectionPlan.femoral,
+      extension,
+    );
+    const tibialPolygon = corridorFromCutLine(
+      activeTkaJointAngles.knee,
+      activeTkaJointAngles.ankle,
+      tibialDistalHalfWidth,
+      tkaResectionPlan.tibial,
+      extension,
+    );
+    if (!femoralMaskPolygon || !tibialMaskPolygon || !femoralPolygon || !tibialPolygon) {
+      setNotice("Landmark axis tidak valid. Periksa kembali titik Kine Line.");
+      return;
+    }
+
+    const previewToken = `tka-alignment-${Date.now()}`;
+    const femoralId = nextCutLayerIdRef.current;
+    const tibialId = femoralId + 1;
+    const femoralLayer = buildFreeCutLayerFromPoints({
+      sourceImage: image,
+      sourceOffsetX: cropRect?.x || 0,
+      sourceOffsetY: cropRect?.y || 0,
+      polygonPoints: femoralPolygon,
+      layerId: femoralId,
+      name: "Simulasi Distal Femur",
+      maskFeatherPx: 0,
+    });
+    const tibialLayer = buildFreeCutLayerFromPoints({
+      sourceImage: image,
+      sourceOffsetX: cropRect?.x || 0,
+      sourceOffsetY: cropRect?.y || 0,
+      polygonPoints: tibialPolygon,
+      layerId: tibialId,
+      name: "Simulasi Proksimal Tibia",
+      maskFeatherPx: 0,
+    });
+    if (!femoralLayer || !tibialLayer) {
+      setNotice("Free-cut preview gagal dibuat. Periksa landmark dan area gambar.");
+      return;
+    }
+
+    const rotation = tkaResectionPlan.tibialPreviewRotationDeg;
+    const radians = (rotation * Math.PI) / 180;
+    const pivot = activeTkaJointAngles.knee;
+    const centerVector = {
+      x: tibialLayer.centerX - pivot.x,
+      y: tibialLayer.centerY - pivot.y,
+    };
+    const rotatedCenter = {
+      x: pivot.x + centerVector.x * Math.cos(radians) - centerVector.y * Math.sin(radians),
+      y: pivot.y + centerVector.x * Math.sin(radians) + centerVector.y * Math.cos(radians),
+    };
+    const alignmentMaskPolygons = [femoralMaskPolygon, tibialMaskPolygon];
+    const previewLayers = [
+      {
+        ...femoralLayer,
+        alignmentSimulation: previewToken,
+        alignmentMaskPolygons,
+        lockScale: true,
+      },
+      {
+        ...tibialLayer,
+        alignmentSimulation: previewToken,
+        alignmentMaskPolygons,
+        centerX: rotatedCenter.x,
+        centerY: rotatedCenter.y,
+        rotation,
+        lockScale: true,
+      },
+    ];
+    nextCutLayerIdRef.current += 2;
+
+    const distalLineId = nextLineIdRef.current;
+    const tibialLineId = distalLineId + 1;
+    nextLineIdRef.current += 2;
+    const previewLines = [
+      {
+        id: distalLineId,
+        x1: tkaResectionPlan.femoral.start.x,
+        y1: tkaResectionPlan.femoral.start.y,
+        x2: tkaResectionPlan.femoral.end.x,
+        y2: tkaResectionPlan.femoral.end.y,
+        name: "Distal Femoral Resection",
+        metric: "Distal Femoral Resection",
+        type: "normal",
+        color: "#ef4444",
+        showLabel: false,
+        alignmentSimulation: previewToken,
+        labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
+        labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
+        labelOpacity: DEFAULT_LABEL_OPACITY,
+        strokeWidth: 2.4,
+      },
+      {
+        id: tibialLineId,
+        x1: tkaResectionPlan.tibial.start.x,
+        y1: tkaResectionPlan.tibial.start.y,
+        x2: tkaResectionPlan.tibial.end.x,
+        y2: tkaResectionPlan.tibial.end.y,
+        name: "Proximal Tibial Resection",
+        metric: "Proximal Tibial Resection",
+        type: "normal",
+        color: "#22c55e",
+        showLabel: false,
+        alignmentSimulation: previewToken,
+        labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
+        labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
+        labelOpacity: DEFAULT_LABEL_OPACITY,
+        strokeWidth: 2.4,
+      },
+    ];
+
+    setCutLayers((previous) => [
+      ...previous.filter((layer) => !layer.alignmentSimulation),
+      ...previewLayers,
+    ]);
+    setLines((previous) => [
+      ...previous.filter((line) => !line.alignmentSimulation),
+      ...previewLines,
+    ]);
+    setSelectedCutLayerId(null);
+    setSelectedLineId(null);
+    setSelectedHkaId(activeTkaJointAngles.id);
+    setNotice(
+      `Preview ${tkaResectionPlan.targetLabel.toLowerCase()} dibuat untuk target mFA-mTA ${tkaResectionPlan.targetHkaDeg.toFixed(1)}°. Rotasi tibia ${rotation.toFixed(1)}°. Verifikasi landmark dan nilai reseksi sebelum digunakan.`,
+    );
+  }, [
+    activeTkaJointAngles,
+    cropRect,
+    image,
+    mmPerPixel,
+    tkaResectionPlan,
   ]);
 
   const removePlanningGuide = useCallback((guideId) => {
@@ -20278,7 +20730,7 @@ export default function XrayCalibrationWorkspace({
       key: "imageProcess",
       action: "imageProcessing",
     },
-    { icon: "hka", label: "HKA", desc: "Buka panduan alignment HKA/FTA/JLA untuk analisis mechanical axis.", key: "hkaAuto", planningGroup: "knee" },
+    { icon: "hka", label: "HKA", desc: "Buka HKA, FTA, dan Kine Line untuk analisis alignment mekanis.", key: "hkaAuto", planningGroup: "knee" },
     { icon: "ruler", label: "Post-TKA", desc: "Analisis alignment pasca operasi TKA: MDFA, MPTA, dan PCO ratio.", key: "tkaAssessment", action: "tkaAssessment", planningGroup: "knee" },
     { icon: "ruler", label: "Normmed Size", desc: "Cek size femoral Normmed TKR PS/CR dari Width, Length, atau Height.", key: "normmedFemoralSizer", action: "normmedFemoralSizer", planningGroup: "knee" },
     { icon: "preTka", label: "Pre-TKA", desc: "Perencanaan pre-operasi TKA: deformitas HKA, rencana potongan femoral dan tibial.", key: "preTka", action: "preTka", planningGroup: "knee" },
@@ -20805,10 +21257,19 @@ export default function XrayCalibrationWorkspace({
     const definition = getHkaModeDefinition(mode);
     const isActive = tool === "hkaAuto" && hkaInputMode === mode;
     const nextPoint = isActive ? definition.points[draftHkaPoints.length] : null;
-    return isActive ? {
-      activePoint: nextPoint ? `Titik berikutnya: ${nextPoint.shortLabel} · ${nextPoint.promptLabel}` : "Landmark selesai",
-      liveProgress: planningGuideProgress(draftHkaPoints.length, definition.points.length),
-    } : {};
+    return {
+      active: isActive,
+      guideSteps: definition.points.map((point) => ({
+        id: point.key,
+        label: point.promptLabel,
+        shortLabel: point.shortLabel,
+        side: planningSession.side,
+      })),
+      ...(isActive ? {
+        activePoint: nextPoint ? `Titik berikutnya: ${nextPoint.shortLabel} · ${nextPoint.promptLabel}` : "Landmark selesai",
+        liveProgress: planningGuideProgress(draftHkaPoints.length, definition.points.length),
+      } : {}),
+    };
   };
   const planningLineGuideState = (type) => {
     const isActive = tool === "draw" && linePreset === type;
@@ -20839,7 +21300,7 @@ export default function XrayCalibrationWorkspace({
       complete: sideHkaSets.some((item) => (item.mode || "full") === "full"), instruction: "Pilih Femoral Head Center, Knee Center, lalu Ankle Center.",
       guideImage: planningTkaGuideImage,
       points: ["Pusat kepala femur", "Pusat lutut / intercondylar notch", "Pusat ankle / talar dome"] },
-    { id: "jla", label: "Joint Angles", icon: DraftingCompass, action: () => startPlanningHka("jla"),
+    { id: "jla", label: "Kine Line", icon: DraftingCompass, action: () => startPlanningHka("jla"),
       ...planningHkaGuideState("jla"),
       complete: sideHkaSets.some((item) => item.mode === "jla"), instruction: "Tentukan landmark LDFA, MPTA, dan joint line.",
       guideView: "ap_knee", highlightId: `kondilus_medial_femur_${planningSideKey}`,
@@ -20851,12 +21312,19 @@ export default function XrayCalibrationWorkspace({
       points: ["Dua titik pada sumbu anatomi femur", "Pusat sendi lutut", "Dua titik pada sumbu anatomi tibia"] },
     { id: "axis", label: "Anatomical Axis", icon: Target, action: () => handleToolChange("axisBuilder"),
       ...(tool === "axisBuilder" ? {
+        active: true,
         activePoint: draftAxisBuilderPoints.length < 2
           ? `Segmen proksimal: titik ${draftAxisBuilderPoints.length + 1} dari 2`
           : `Segmen distal: titik ${Math.min(2, draftAxisBuilderPoints.length - 1)} dari 2`,
         liveProgress: planningGuideProgress(draftAxisBuilderPoints.length, 4),
       } : {}),
       complete: sideLines.some((item) => item.type === "axis"), instruction: "Tap dua titik proximal dan dua titik distal pada shaft.",
+      guideSteps: [
+        { id: "axis-proximal-1", shortLabel: "P1", label: "Titik kanal proksimal pertama" },
+        { id: "axis-proximal-2", shortLabel: "P2", label: "Titik kanal proksimal kedua" },
+        { id: "axis-distal-1", shortLabel: "D1", label: "Titik kanal distal pertama" },
+        { id: "axis-distal-2", shortLabel: "D2", label: "Titik kanal distal kedua" },
+      ],
       guideView: "ap_femur", highlightId: "femoral_neck_center",
       points: ["Titik tengah kanal pada bagian proksimal", "Titik tengah kanal pada bagian distal", "Garis harus mengikuti pusat shaft femur"] },
   ] : [
@@ -21492,7 +21960,7 @@ export default function XrayCalibrationWorkspace({
                     className="w-full rounded-[14px] py-2 text-[10px] font-black text-white"
                     style={{ background: info.color }}
                   >
-                    Panduan Lengkap JLA →
+                    Panduan Kine Line →
                   </button>
                 )}
 
@@ -21534,9 +22002,9 @@ export default function XrayCalibrationWorkspace({
               {/* Header */}
               <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-black tracking-widest text-indigo-600 uppercase">Joint Line Analysis</div>
+                  <div className="text-[10px] font-black tracking-widest text-indigo-600 uppercase">Knee alignment lines</div>
                   <h2 id="jla-guide-modal-title" className="mt-0.5 text-xl font-extrabold text-slate-800">
-                    Panduan Penggunaan JLA
+                    Panduan Kine Line
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
                     7 landmark · LDFA · MPTA · JLCA · JLO · CPAK · Micicoi · DLO
@@ -21546,7 +22014,7 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setJlaGuideModalOpen(false)}
                   className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-6px_-6px_14px_rgba(255,255,255,0.76)]"
-                  aria-label="Tutup panduan JLA"
+                  aria-label="Tutup panduan Kine Line"
                 >
                   <X className="h-4 w-4" strokeWidth={2.1} />
                 </button>
@@ -21557,9 +22025,9 @@ export default function XrayCalibrationWorkspace({
 
                 {/* Step 1 — Mode & Landmark */}
                 <div className="rounded-[22px] border border-white/78 bg-[#e9eef5] px-4 py-3 shadow-[inset_5px_5px_12px_rgba(100,116,139,0.13),inset_-5px_-5px_12px_rgba(255,255,255,0.75)]">
-                  <div className="text-sm font-extrabold text-slate-800">1. Pilih Mode JLA &amp; Pasang 7 Landmark</div>
+                  <div className="text-sm font-extrabold text-slate-800">1. Aktifkan Kine Line &amp; Pasang 7 Landmark</div>
                   <p className="mt-1 text-xs text-slate-600 leading-5">
-                    Pilih mode <span className="font-bold text-indigo-700">JLA</span> lalu klik di canvas sesuai urutan berikut. Zoom dulu pada area sendi untuk presisi lebih tinggi.
+                    Pilih <span className="font-bold text-indigo-700">Kine Line</span> lalu klik tujuh landmark secara berurutan. Sistem menghitung mLDFA, mMPTA, dan JLCA serta menyiapkan cutting guide.
                   </p>
                   <div className="mt-2 space-y-1">
                     {[
@@ -21787,7 +22255,8 @@ export default function XrayCalibrationWorkspace({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12 }}
                 transition={PANEL_SPRING}
-                className="pointer-events-auto w-full max-w-[min(100%,520px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
+                className="hka-result-modal pointer-events-auto w-full max-w-[min(100%,480px)] overflow-hidden rounded-t-[18px] rounded-b-[18px] border sm:rounded-[18px]"
+                data-dark={isDark}
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Header */}
@@ -21795,7 +22264,7 @@ export default function XrayCalibrationWorkspace({
                   <div className="min-w-0">
                     <p className="text-[9px] font-black tracking-widest text-white/70 uppercase">Hasil Pengukuran</p>
                     <h2 className="text-lg font-black text-white leading-tight">
-                      {modeKey === "full" ? "HKA — Hip-Knee-Ankle" : modeKey === "fta" ? "FTA — Femorotibial Angle" : "JLA — Joint Line Analysis"}
+                      {modeKey === "full" ? "HKA — Hip-Knee-Ankle" : modeKey === "fta" ? "FTA — Femorotibial Angle" : "Kine Line — Knee Alignment"}
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
@@ -21819,10 +22288,10 @@ export default function XrayCalibrationWorkspace({
                         { label: "Side", value: (selectedHka.side || "right").charAt(0).toUpperCase() + (selectedHka.side || "right").slice(1), sub: "Kaki", color: "#64748b" },
                         { label: "Target", value: "+2° s.d. +3°", sub: "HTO/DFO koreksi", color: "#7c3aed" },
                       ].map((item) => (
-                        <div key={item.label} className="rounded-[16px] border border-white/70 bg-white/50 p-2.5 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                        <div key={item.label} className="hka-result-card rounded-lg border p-2.5">
                           <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: item.color }}>{item.label}</p>
                           <p className="mt-0.5 text-base font-black leading-none" style={{ color: item.color }}>{item.value}</p>
-                          <p className="mt-0.5 text-[8px] text-slate-400">{item.sub}</p>
+                          <p className="hka-result-sub mt-0.5 text-[9px]">{item.sub}</p>
                         </div>
                       ))}
                     </div>
@@ -21835,10 +22304,10 @@ export default function XrayCalibrationWorkspace({
                         { label: "Normal FTA", value: "174°–176°", sub: "Valgus fisiologis 5°–6°", color: "#16a34a" },
                         { label: "Akurasi", value: "±2°", sub: "Estimasi individual", color: "#f59e0b" },
                       ].map((item) => (
-                        <div key={item.label} className="rounded-[16px] border border-white/70 bg-white/50 p-2.5 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                        <div key={item.label} className="hka-result-card rounded-lg border p-2.5">
                           <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: item.color }}>{item.label}</p>
                           <p className="mt-0.5 text-base font-black leading-none" style={{ color: item.color }}>{item.value}</p>
-                          <p className="mt-0.5 text-[8px] text-slate-400">{item.sub}</p>
+                          <p className="hka-result-sub mt-0.5 text-[9px]">{item.sub}</p>
                         </div>
                       ))}
                     </div>
@@ -21853,10 +22322,10 @@ export default function XrayCalibrationWorkspace({
                         { label: "HKA", value: result.jla.cpakHKA !== undefined ? `${result.jla.cpakHKA}°` : "—", sub: "Alignment mekanis", color: "#0891b2" },
                         { label: "CPAK", value: result.jla.cpakType || "—", sub: "Fenotipe biomekanik", color: "#4338ca" },
                       ].map((item) => (
-                        <div key={item.label} className="rounded-[16px] border border-white/70 bg-white/50 p-2.5 shadow-[3px_3px_7px_rgba(100,116,139,0.14),-3px_-3px_7px_rgba(255,255,255,0.72)]">
+                        <div key={item.label} className="hka-result-card rounded-lg border p-2.5">
                           <p className="text-[8px] font-black uppercase tracking-wide" style={{ color: item.color }}>{item.label}</p>
                           <p className="mt-0.5 text-base font-black leading-none" style={{ color: item.color }}>{item.value}</p>
-                          <p className="mt-0.5 text-[8px] text-slate-400">{item.sub}</p>
+                          <p className="hka-result-sub mt-0.5 text-[9px]">{item.sub}</p>
                         </div>
                       ))}
                     </div>
@@ -21870,17 +22339,17 @@ export default function XrayCalibrationWorkspace({
                     const info = HKA_INFO_BUBBLES[modeKey];
                     if (!info) return null;
                     return (
-                      <div className="rounded-[18px] border border-white/70 bg-white/40 px-3 py-2.5 shadow-[inset_3px_3px_7px_rgba(100,116,139,0.12)]">
+                      <div className="hka-result-note rounded-lg border px-3 py-2.5">
                         <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest" style={{ color: accentColor }}>Kegunaan Klinis</p>
                         <ul className="space-y-1">
                           {info.clinical.map((line, i) => (
-                            <li key={i} className="flex items-start gap-1.5 text-[10px] leading-snug text-slate-600">
+                            <li key={i} className="hka-result-copy flex items-start gap-1.5 text-[10px] leading-snug">
                               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accentColor }} />
                               {line}
                             </li>
                           ))}
                         </ul>
-                        <p className="mt-2 text-[8px] text-slate-400 border-t border-slate-200/60 pt-1.5">Ref: {info.ref}</p>
+                        <p className="hka-result-ref mt-2 border-t pt-1.5 text-[8px]">Ref: {info.ref}</p>
                       </div>
                     );
                   })()}
@@ -21888,11 +22357,11 @@ export default function XrayCalibrationWorkspace({
                   {/* Actions */}
                   <div className="grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => { setHkaResultPanelOpen(false); setHkaInfoBubble(modeKey); }}
-                      className="min-h-10 rounded-[16px] border border-white/80 bg-[#e9eef5] px-3 py-2 text-[10px] font-extrabold text-slate-600 shadow-[4px_4px_10px_rgba(100,116,139,0.18),-4px_-4px_10px_rgba(255,255,255,0.72)]">
+                      className="hka-result-secondary min-h-10 rounded-lg border px-3 py-2 text-[10px] font-extrabold">
                       Detail Info ⓘ
                     </button>
                     <button type="button" onClick={() => { setHkaResultPanelOpen(false); handleToolChange("hkaAuto", { skipHkaSidePrompt: true }); }}
-                      className="min-h-10 rounded-[16px] border border-white/80 px-3 py-2 text-[10px] font-extrabold text-white shadow-[4px_4px_10px_rgba(8,145,178,0.22)]"
+                      className="min-h-10 rounded-lg border border-white/30 px-3 py-2 text-[10px] font-extrabold text-white"
                       style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}bb)` }}>
                       Ukur Ulang
                     </button>
@@ -22872,8 +23341,8 @@ export default function XrayCalibrationWorkspace({
               className={
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
-                    ? "simple-layer-settings-modal pointer-events-auto max-h-[calc(100dvh-96px)] w-[min(92vw,390px)] overflow-y-auto rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-3 [color:var(--soft-text)] backdrop-blur-lg"
-                    : "max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[30px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-5 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
+                    ? "simple-layer-settings-modal pointer-events-auto max-h-[min(72dvh,620px)] w-[min(86vw,340px)] overflow-y-auto rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-2.5 [color:var(--soft-text)] backdrop-blur-lg"
+                    : "max-h-[84vh] w-full max-w-[660px] overflow-y-auto rounded-[22px] border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-4 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
                       toolConfigModal === "layerLayout"
@@ -23047,24 +23516,24 @@ export default function XrayCalibrationWorkspace({
 
               {toolConfigModal === "layerSettings" ? (
                 isSimpleUiMode ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                   {!selectedCutLayer || !selectedLayerMetrics ? (
                     <div className="rounded-2xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-3 text-xs text-[var(--soft-text)]">
                       Pilih satu layer dulu dari daftar layer.
                     </div>
                   ) : (
                     <>
-                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-3 shadow-sm">
+                      <div className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-3 py-2 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-[9px] font-black tracking-widest text-cyan-500 uppercase">
                               Layer Aktif
                             </div>
-                            <div className="mt-1 truncate text-sm font-black text-[var(--soft-text-hi)]">
+                            <div className="truncate text-xs font-black text-[var(--soft-text-hi)]">
                               {selectedCutLayer.name ||
                                 getLayerDefaultName(selectedCutLayer)}
                             </div>
-                            <div className="mt-1 text-[11px] font-semibold text-[var(--soft-text)] opacity-70">
+                            <div className="mt-0.5 text-[10px] font-semibold text-[var(--soft-text)] opacity-70">
                               W {formatTemplateLayerRealSize(selectedLayerMetrics.widthMm)} · H {formatTemplateLayerRealSize(selectedLayerMetrics.heightMm)}
                             </div>
                           </div>
@@ -23186,11 +23655,11 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
 
-                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                      <div className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-2.5 shadow-sm">
                         <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                           Aksi Cepat
                         </div>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-5 gap-1.5">
                           {[
                             {
                               key: "move",
@@ -23203,18 +23672,6 @@ export default function XrayCalibrationWorkspace({
                                   openPanel: false,
                                 });
                               },
-                            },
-                            {
-                              key: "center",
-                              icon: "fit",
-                              label: "Center",
-                              tone: "text-blue-500",
-                              disabled: !modelWidth || !modelHeight,
-                              onClick: () =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  centerX: modelWidth / 2,
-                                  centerY: modelHeight / 2,
-                                }),
                             },
                             {
                               key: "duplicate",
@@ -23243,32 +23700,6 @@ export default function XrayCalibrationWorkspace({
                                 })),
                             },
                             {
-                              key: "default",
-                              icon: "reset",
-                              label: "Default",
-                              tone: "text-emerald-500",
-                              onClick: () =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  contrast: 100,
-                                  level: 100,
-                                  rotation: 0,
-                                  opacity: 1,
-                                  flipX: false,
-                                  flipY: false,
-                                }),
-                            },
-                            {
-                              key: "flip-h",
-                              icon: "flipH",
-                              label: "Flip H",
-                              tone: "text-[var(--soft-text)]",
-                              onClick: () =>
-                                updateLayerById(selectedCutLayer.id, (item) => ({
-                                  ...item,
-                                  flipX: !item.flipX,
-                                })),
-                            },
-                            {
                               key: "delete",
                               icon: "trash",
                               label: "Delete",
@@ -23281,20 +23712,64 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={action.onClick}
                               disabled={action.disabled}
-                              className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-1.5 py-2 text-[9px] font-black shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.tone}`}
+                              className={`flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-1 py-1.5 text-[8px] font-black shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.tone}`}
                             >
-                              <Icon name={action.icon} className="h-4 w-4" />
+                              <Icon name={action.icon} className="h-3.5 w-3.5" />
                               <span>{action.label}</span>
                             </button>
                           ))}
                         </div>
                       </div>
 
-                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
-                        <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
-                          Susunan
-                        </div>
-                        <div className="grid grid-cols-4 gap-2">
+                      <details className="group rounded-xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] shadow-sm">
+                        <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-black text-[var(--soft-text)]">
+                          <span>Lanjutan</span>
+                          <span className="text-cyan-500 group-open:rotate-180">⌄</span>
+                        </summary>
+                        <div className="space-y-2 border-t border-[var(--soft-border)] p-2.5">
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => updateLayerById(selectedCutLayer.id, {
+                                centerX: modelWidth / 2,
+                                centerY: modelHeight / 2,
+                              })}
+                              disabled={!modelWidth || !modelHeight}
+                              className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[9px] font-bold text-blue-500 disabled:opacity-40"
+                            >
+                              Center
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateLayerById(selectedCutLayer.id, (item) => ({
+                                ...item,
+                                flipX: !item.flipX,
+                              }))}
+                              className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[9px] font-bold text-[var(--soft-text)]"
+                            >
+                              Flip H
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateLayerById(selectedCutLayer.id, {
+                                contrast: 100,
+                                level: 100,
+                                rotation: 0,
+                                opacity: 1,
+                                flipX: false,
+                                flipY: false,
+                              })}
+                              className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[9px] font-bold text-emerald-500"
+                            >
+                              Reset
+                            </button>
+                          </div>
+
+                          <div>
+                            <div className="mb-1.5 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
+                              Susunan
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
                           {[
                             ["back", "moveDown", "Bawah"],
                             ["down", "moveDown", "Turun"],
@@ -23306,26 +23781,26 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={() => moveSelectedCutLayersInStack(direction)}
                               disabled={!selectedCutLayerIds.length}
-                              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-1.5 py-2 text-[9px] font-black text-[var(--soft-text)] shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="flex min-h-9 flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-1 py-1.5 text-[8px] font-black text-[var(--soft-text)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Icon name={icon} className="h-4 w-4" />
                               <span>{label}</span>
                             </button>
                           ))}
-                        </div>
-                      </div>
+                            </div>
+                          </div>
 
                       {isImageBackedLayerKind(selectedCutLayer.kind) ? (
-                        <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
-                          <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
+                        <div>
+                          <div className="mb-1.5 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                             Ruler & Scale
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-3 gap-1.5">
                             <button
                               type="button"
                               onClick={trimSelectedTemplateLayer}
                               disabled={!selectedLayerCanTrim}
-                              className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
+                              className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[9px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Trim
                             </button>
@@ -23333,7 +23808,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={applyTemplateRulerScale}
                               disabled={!selectedLayerCanApplyRulerScale}
-                              className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
+                              className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[9px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Ruler
                             </button>
@@ -23341,7 +23816,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={applyTemplateRealSize}
                               disabled={!selectedLayerCanApplyRealSize}
-                              className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[10px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
+                              className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-2 text-[9px] font-bold text-[var(--soft-text)] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               Scale
                             </button>
@@ -23349,7 +23824,35 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
 
-                      <div className="rounded-[20px] border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-3 shadow-sm">
+                          {isImageBackedLayerKind(selectedCutLayer.kind) ? (
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {[
+                                ["Contrast", selectedLayerMetrics.contrast, 10, 300, "contrast"],
+                                ["Level", selectedLayerMetrics.level, 10, 300, "level"],
+                              ].map(([label, value, min, max, key]) => (
+                                <label key={key} className="rounded-lg border border-[var(--soft-border)] [background:var(--soft-inset-bg)] px-2 py-1.5">
+                                  <span className="flex justify-between text-[8px] font-black text-[var(--soft-text)]">
+                                    <span>{label}</span><span>{value}%</span>
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min={min}
+                                    max={max}
+                                    step={1}
+                                    value={value}
+                                    onChange={(event) => updateLayerById(selectedCutLayer.id, {
+                                      [key]: clamp(Number(event.target.value), min, max),
+                                    })}
+                                    className="mt-1 h-1.5 w-full accent-cyan-500"
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </details>
+
+                      <div className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-surface-bg)] p-2.5 shadow-sm">
                         <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                           Transform & Tampilan
                         </div>
@@ -23409,38 +23912,10 @@ export default function XrayCalibrationWorkspace({
                                 opacity: clamp(nextValue / 100, 0.05, 1),
                               }),
                           },
-                          ...(isImageBackedLayerKind(selectedCutLayer.kind)
-                            ? [
-                                {
-                                  key: "contrast",
-                                  label: "Contrast",
-                                  value: selectedLayerMetrics.contrast,
-                                  valueText: `${selectedLayerMetrics.contrast}%`,
-                                  min: 10,
-                                  max: 300,
-                                  onChange: (nextValue) =>
-                                    updateLayerById(selectedCutLayer.id, {
-                                      contrast: clamp(nextValue, 10, 300),
-                                    }),
-                                },
-                                {
-                                  key: "level",
-                                  label: "Level",
-                                  value: selectedLayerMetrics.level,
-                                  valueText: `${selectedLayerMetrics.level}%`,
-                                  min: 10,
-                                  max: 300,
-                                  onChange: (nextValue) =>
-                                    updateLayerById(selectedCutLayer.id, {
-                                      level: clamp(nextValue, 10, 300),
-                                    }),
-                                },
-                              ]
-                            : []),
                         ].map((control) => (
                           <label
                             key={control.key}
-                            className="block rounded-2xl border border-[var(--soft-border)] [background:var(--soft-inset-bg)] px-3 py-2"
+                            className="block rounded-lg border border-[var(--soft-border)] [background:var(--soft-inset-bg)] px-2 py-1.5"
                           >
                             <span className="flex items-center justify-between gap-3 text-[10px] font-black text-[var(--soft-text)]">
                               <span>{control.label}</span>
@@ -23458,7 +23933,7 @@ export default function XrayCalibrationWorkspace({
                               onChange={(event) =>
                                 control.onChange(Number(event.target.value))
                               }
-                              className="mt-2 h-2 w-full cursor-pointer accent-cyan-500 disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-1.5 h-1.5 w-full cursor-pointer accent-cyan-500 disabled:cursor-not-allowed disabled:opacity-45"
                             />
                           </label>
                         ))}
@@ -27615,7 +28090,7 @@ export default function XrayCalibrationWorkspace({
                 type="button"
                 onClick={() => { setSimpleDesktopHkaOpen((p) => !p); setSimpleDesktopEditFotoOpen(false); setSimpleDesktopManagerOpen(false); }}
                 className={`${simpleDesktopHkaOpen ? SOFT_PRESSED_CLASS : SOFT_RAISED_CLASS} flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold transition hover:text-slate-950`}
-                title="HKA · FTA · JLA — Pengukuran Mekanis"
+                title="HKA · FTA · Kine Line — Pengukuran Mekanis"
               >
                 <svg className="h-3.5 w-3.5 text-cyan-600" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M8 2 L8 14 M3 6 L8 2 L13 6 M3 10 L8 14 L13 10"/>
@@ -27637,7 +28112,7 @@ export default function XrayCalibrationWorkspace({
                     className="absolute left-0 top-[calc(100%+8px)] z-[85] w-[min(92vw,300px)] rounded-[22px] border border-white/80 bg-[#eef2f7] p-3 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.14),-4px_-4px_12px_rgba(255,255,255,0.9)]"
                   >
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-xs font-extrabold text-slate-900">HKA · FTA · JLA</div>
+                      <div className="text-xs font-extrabold text-slate-900">HKA · FTA · Kine Line</div>
                       <button type="button" onClick={() => setSimpleDesktopHkaOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-500 shadow-[1px_1px_3px_rgba(148,163,184,0.22)]"><X className="h-3 w-3" /></button>
                     </div>
                     {/* Mode buttons */}
@@ -31488,12 +31963,12 @@ export default function XrayCalibrationWorkspace({
               {hkaSets.length > 0 && (
                 <div className="mx-1 mb-1 overflow-hidden rounded-[16px] border border-cyan-200/60 bg-cyan-50/40">
                   <div className="flex items-center justify-between px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-cyan-700">
-                    <span>HKA · FTA · JLA ({hkaSets.length})</span>
+                    <span>HKA · FTA · Kine Line ({hkaSets.length})</span>
                     <button
                       type="button"
                       onClick={() => { setHkaSets([]); setSelectedHkaId(null); }}
                       className="text-[9px] text-slate-400 hover:text-rose-500"
-                      title="Hapus semua HKA/FTA/JLA"
+                      title="Hapus semua HKA/FTA/Kine Line"
                     >
                       Hapus semua
                     </button>
@@ -32266,7 +32741,7 @@ export default function XrayCalibrationWorkspace({
                     {selectedHkaMetrics.mode === "fta"
                       ? "FTA jurnal memakai 4 landmark: Fem2, femoral notch, Tib1 4 cm, dan Tib1 10 cm. Hover atau klik line FTA di canvas untuk melihat nilai ringkas, lalu buka panel ini untuk panduan lengkapnya."
                       : selectedHkaMetrics.mode === "jla"
-                        ? "JLA memakai 7 landmark: CFH, CK, CA (axis mekanis) + MFC, LFC, MTP, LTP (titik joint line). Label di canvas menampilkan CPAK + LDFA dan saat di-hover menampilkan ringkasan lengkap."
+                        ? "Kine Line memakai 7 landmark: CFH, CK, CA (axis mekanis) + MFC, LFC, MTP, LTP (titik sendi). Hasil mLDFA, mMPTA, dan JLCA juga menjadi dasar preview reseksi."
                         : "Sign varus/valgus tetap bisa dipilih manual karena orientasi AP kanan/kiri dapat membingungkan. Label hasil HKA juga bisa di-drag langsung di canvas."}
                   </div>
                   {selectedHkaMetrics.mode === "jla" ? (
@@ -32349,7 +32824,7 @@ export default function XrayCalibrationWorkspace({
                         onClick={() => setJlaGuideModalOpen(true)}
                         className={`${SOFT_TEXT_BUTTON_CLASS} w-full px-3 py-2 text-[10px] text-indigo-700`}
                       >
-                        Panduan Lengkap JLA →
+                        Panduan Kine Line →
                       </button>
                     </div>
                   ) : selectedHkaMetrics.mode === "fta" ? (
@@ -33677,8 +34152,13 @@ export default function XrayCalibrationWorkspace({
             correctionControls={planningProcedure === "tka" ? <PlanningCorrectionControls
               modes={[{ key: "valgusCut", label: "Distal Femoral Cut" }, { key: "tibialCut", label: "Proximal Tibial Cut" }, { key: "tibialSlope", label: "Tibia Slope [LAT]" }]}
               mode={planningGuideMode} onMode={setPlanningGuideMode} fields={planningCorrectionFields}
-              canApply={Boolean(selectedPlanningGuide || selectedLine)} editing={Boolean(selectedPlanningGuide)}
-              onApply={selectedPlanningGuide ? () => updateSelectedPlanningGuide() : addPlanningGuideFromSelectedLine}
+              canApply={Boolean(selectedPlanningGuide || selectedLine || tkaResectionPlan)} editing={Boolean(selectedPlanningGuide)}
+              applyLabel={!selectedLine && tkaResectionPlan ? "Buat dari Kine Line" : undefined}
+              onApply={selectedPlanningGuide
+                ? () => updateSelectedPlanningGuide()
+                : selectedLine
+                  ? addPlanningGuideFromSelectedLine
+                  : addPlanningGuideFromJointAngles}
             /> : <button type="button" className="planning-inline-action" onClick={() => handleLinePresetChange("normal")}>Femoral neck osteotomy line</button>}
             catalog={LOCAL_IMPLANT_LIBRARY} selectedImplantId={selectedImplantLibraryId}
             onSelectImplant={setSelectedImplantLibraryId} onInsertImplant={useSelectedImplantLibraryAsLayer}
@@ -33687,6 +34167,23 @@ export default function XrayCalibrationWorkspace({
             onUpdateLayer={(id, patch) => updateLayerById(id, "locked" in patch ? { lockScale: patch.locked } : patch)}
             annotations={annotations} guides={planningGuideRows} note={planNote} onNote={setPlanNote}
             status={notice} zoom={Math.round(view.scale * 100)} toolLabel={activeToolLabel} isDark={isDark}
+            alignmentPlan={planningProcedure === "tka" ? tkaResectionPlan : null}
+            onCreateAlignmentPreview={createTkaNormalAlignmentPreview}
+            alignmentSettings={{
+              femoralResectionMm: tkaFemoralResectionMm,
+              tibialResectionMm: tkaTibialResectionMm,
+            }}
+            alignmentMode={tkaAlignmentMode}
+            onAlignmentMode={setTkaAlignmentMode}
+            customTargetHkaDeg={tkaCustomTargetHkaDeg}
+            onCustomTargetHkaDeg={(value) =>
+              setTkaCustomTargetHkaDeg(clamp(Number(value) || 0, -10, 10))
+            }
+            onAlignmentSetting={(key, value) => {
+              const safeValue = clamp(Number(value) || 0, 1, 20);
+              if (key === "femoralResectionMm") setTkaFemoralResectionMm(safeValue);
+              if (key === "tibialResectionMm") setTkaTibialResectionMm(safeValue);
+            }}
             onToggleMeasurementLabel={(lineIds, currentlyVisible) => {
               const idSet = new Set(lineIds);
               setLines((previous) => previous.map((line) => idSet.has(line.id)
@@ -35480,7 +35977,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                         {/* HKA mode buttons */}
                         <div className="mt-2 grid gap-1.5">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Knee Alignment · HKA · FTA · JLA</p>
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Knee Alignment · HKA · FTA · Kine Line</p>
                           {Object.values(HKA_MODE_DEFINITIONS).map((modeItem) => {
                             const isActive = tool === "hkaAuto" && hkaInputMode === modeItem.key;
                             const modeColors = { full: "#0891b2", fta: "#c2410c", jla: "#4338ca" };
@@ -38382,7 +38879,10 @@ export default function XrayCalibrationWorkspace({
                 />
               )}
 
-              {selectedCutLayer && isWarpableImageLayer(selectedCutLayer) && isImplantWarpEnabled(selectedCutLayer) && (
+              {selectedCutLayer &&
+                isWarpableImageLayer(selectedCutLayer) &&
+                !isEditableMaskLayer(selectedCutLayer) &&
+                isImplantWarpEnabled(selectedCutLayer) && (
                 <FreeWarpOverlay
                   vertexPoints={implantWarpVertexScreenPts}
                   curveHandles={[]}
@@ -38398,7 +38898,9 @@ export default function XrayCalibrationWorkspace({
                 />
               )}
 
-              {selectedCutLayer && isWarpableImageLayer(selectedCutLayer) && (
+              {selectedCutLayer &&
+                isWarpableImageLayer(selectedCutLayer) &&
+                !isEditableMaskLayer(selectedCutLayer) && (
                 <div
                   className="pointer-events-auto absolute bottom-4 left-1/2 z-30 -translate-x-1/2"
                   style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.18))" }}
@@ -38456,22 +38958,34 @@ export default function XrayCalibrationWorkspace({
               {/* ── Free Warp floating toolbar ──────────────────────────────────── */}
               {selectedCutLayer && isEditableMaskLayer(selectedCutLayer) && (
                 <div
-                  className="pointer-events-auto absolute bottom-4 left-1/2 z-30 -translate-x-1/2"
-                  style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.22))" }}
+                  className="pointer-events-auto absolute right-3 bottom-3 z-30 w-[min(220px,calc(100%_-_24px))]"
                 >
                   {/* ── Preset picker popup ─────────────────────────────────── */}
                   {showPresetPicker && (
                     <div
-                      className="mb-2 w-64 overflow-hidden rounded-[16px] border border-white/70 bg-[#eef2f7]/96 shadow-xl backdrop-blur-md"
-                      style={{ boxShadow: "4px 4px 18px rgba(100,120,160,0.22),-3px -3px 12px rgba(255,255,255,0.85)" }}
+                      className="mb-2 w-full overflow-hidden rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] shadow-lg"
                     >
-                      <div className="flex items-center justify-between border-b border-slate-200/70 px-3 py-2">
-                        <span className="text-[10px] font-black tracking-widest text-slate-500 uppercase">Template Bentuk</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowPresetPicker(false)}
-                          className="text-[11px] font-black text-slate-400 hover:text-slate-600"
-                        >✕</button>
+                      <div className="flex items-center justify-between border-b border-[var(--soft-border)] px-2.5 py-2">
+                        <span className="text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase">Template Bentuk</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={handleWarpExportJson}
+                            title="Export data bentuk sebagai JSON"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--soft-border)] text-emerald-600"
+                            aria-label="Export JSON"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowPresetPicker(false)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--soft-border)] text-[var(--soft-text)]"
+                            aria-label="Tutup template bentuk"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <div className="max-h-56 overflow-y-auto p-2 flex flex-col gap-1">
                         {SHAPE_PRESETS.map((preset) => (
@@ -38501,70 +39015,55 @@ export default function XrayCalibrationWorkspace({
                     </div>
                   )}
 
-                  <div className="flex items-center gap-1.5 rounded-[20px] border border-white/70 bg-[#eef2f7]/92 px-3 py-2 backdrop-blur-sm"
-                    style={{ boxShadow: "4px 4px 14px rgba(148,163,184,0.28),-3px -3px 10px rgba(255,255,255,0.82)" }}>
-
-                    {/* label layer */}
-                    <span className="mr-1 max-w-[90px] truncate text-[10px] font-black text-slate-600">
-                      ✦ {selectedCutLayer.name || "Warp"}
-                    </span>
-
-                    <div className="mx-1 h-5 w-px bg-slate-300" />
-
-                    {/* Template preset picker */}
+                  <div className="rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] p-2 shadow-lg">
+                    <div className="mb-1.5 flex items-center justify-between gap-2 border-b border-[var(--soft-border)] pb-1.5">
+                      <span className="min-w-0 truncate text-[10px] font-black text-[var(--soft-text-hi)]" title={selectedCutLayer.name || "Free Warp"}>
+                        {selectedCutLayer.name || "Free Warp"}
+                      </span>
+                      <span className="shrink-0 text-[8px] font-bold text-[var(--soft-text)] opacity-65">
+                        Edit bentuk
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
                     <button
                       type="button"
                       onClick={() => setShowPresetPicker((v) => !v)}
                       title="Pilih template bentuk anatomi"
-                      className={`flex items-center gap-1 rounded-[12px] border px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                      className={`flex min-h-9 items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[9px] font-black transition ${
                         showPresetPicker
                           ? "border-violet-400/70 bg-violet-500 text-white"
-                          : "border-white/70 bg-[#eef2f7] text-violet-700 hover:bg-violet-50"
+                          : "border-[var(--soft-border)] [background:var(--soft-surface-bg)] text-violet-500"
                       }`}
-                      style={{ boxShadow: showPresetPicker ? "inset 1px 1px 3px rgba(0,0,0,.2)" : "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
                     >
-                      📐 Template
+                      <Layers className="h-3.5 w-3.5" />
+                      <span>Template</span>
                     </button>
 
-                    {/* Tambah anchor */}
                     <button
                       type="button"
                       onClick={() => setAddAnchorPointMode((v) => !v)}
                       title="Tambah anchor point (klik di canvas)"
-                      className={`flex items-center gap-1 rounded-[12px] border px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                      className={`flex min-h-9 items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[9px] font-black transition ${
                         addAnchorPointMode
                           ? "border-blue-400/70 bg-blue-500 text-white"
-                          : "border-white/70 bg-[#eef2f7] text-blue-700 hover:bg-blue-50"
+                          : "border-[var(--soft-border)] [background:var(--soft-surface-bg)] text-blue-500"
                       }`}
-                      style={{ boxShadow: addAnchorPointMode ? "inset 1px 1px 3px rgba(0,0,0,.2)" : "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
                     >
-                      + Titik
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Titik</span>
                     </button>
 
-                    {/* Hapus anchor terpilih */}
                     <button
                       type="button"
                       onClick={handleWarpDeletePoint}
                       disabled={selectedFreeLinePointIndex === null}
                       title="Hapus anchor point terpilih"
-                      className="flex items-center gap-1 rounded-[12px] border border-white/70 bg-[#eef2f7] px-2.5 py-1.5 text-[10px] font-black text-rose-600 transition-all hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      style={{ boxShadow: "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
+                      className="flex min-h-9 items-center justify-center gap-1 rounded-lg border border-[var(--soft-border)] [background:var(--soft-surface-bg)] px-1.5 py-1.5 text-[9px] font-black text-rose-500 transition disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      ✕ Hapus
+                      <X className="h-3.5 w-3.5" />
+                      <span>Hapus</span>
                     </button>
-
-                    <div className="mx-1 h-5 w-px bg-slate-300" />
-
-                    {/* Export JSON */}
-                    <button
-                      type="button"
-                      onClick={handleWarpExportJson}
-                      title="Export warp data sebagai JSON"
-                      className="flex items-center gap-1 rounded-[12px] border border-white/70 bg-[#eef2f7] px-2.5 py-1.5 text-[10px] font-black text-emerald-700 transition-all hover:bg-emerald-50"
-                      style={{ boxShadow: "2px 2px 4px #cbd5e1,-2px -2px 4px #fff" }}
-                    >
-                      ↓ JSON
-                    </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -38587,7 +39086,7 @@ export default function XrayCalibrationWorkspace({
 
               {/* ── HKA Wizard ─────────────────────────────────────────────────── */}
               <AnimatePresence>
-                {tool === "hkaAuto" ? (() => {
+                {tool === "hkaAuto" && !isPlanningLayout ? (() => {
                   const def = getHkaModeDefinition(hkaInputMode);
                   const step = draftHkaPoints.length;
                   const total = def.points.length;

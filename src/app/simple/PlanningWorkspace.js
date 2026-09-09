@@ -21,7 +21,7 @@ function Action({ icon: Icon, children, active, className = "", ...props }) {
   </button>;
 }
 
-export function PlanningCorrectionControls({ modes, mode, onMode, fields, onApply, canApply, editing }) {
+export function PlanningCorrectionControls({ modes, mode, onMode, fields, onApply, canApply, editing, applyLabel }) {
   return <div className={styles.controls}>
     <label>Resection<select value={mode} onChange={(e) => onMode(e.target.value)}>
       {modes.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
@@ -34,7 +34,7 @@ export function PlanningCorrectionControls({ modes, mode, onMode, fields, onAppl
           onChange={(e) => { if (e.target.value !== "") field.onChange(Number(e.target.value)); }} />}
       </label>)}
     </div>
-    <Action icon={Plus} onClick={onApply} disabled={!canApply}>{editing ? "Update guide" : "Buat dari line terpilih"}</Action>
+    <Action icon={Plus} onClick={onApply} disabled={!canApply}>{editing ? "Update guide" : applyLabel || "Buat dari line terpilih"}</Action>
   </div>;
 }
 
@@ -44,6 +44,8 @@ export default function PlanningWorkspace({
   correctionControls, catalog, selectedImplantId, onSelectImplant, onInsertImplant,
   layers, onSelectLayer, onUpdateLayer, annotations, guides, note, onNote,
   status, zoom, toolLabel, isDark, onToggleMeasurementLabel, onRenameMeasurement,
+  alignmentPlan, alignmentSettings, onAlignmentSetting, onCreateAlignmentPreview,
+  alignmentMode, onAlignmentMode, customTargetHkaDeg, onCustomTargetHkaDeg,
 }) {
   const [workflowOpen, setWorkflowOpen] = useState(true);
   const [stepExpanded, setStepExpanded] = useState(true);
@@ -59,6 +61,7 @@ export default function PlanningWorkspace({
   const [guideItemId, setGuideItemId] = useState(null);
   const [guideMinimized, setGuideMinimized] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
+  const [resectionExpanded, setResectionExpanded] = useState(false);
   const drag = useRef(null);
   const sheetRef = useRef(null);
   const previousAnalysisRef = useRef({ procedure, signature: "" });
@@ -82,6 +85,20 @@ export default function PlanningWorkspace({
       }));
     return [...clinicalRows, ...supplementalRows];
   }, [measurements, rows]);
+  const getPlannedValue = (row) => {
+    const planned = alignmentPlan?.plannedMetrics?.[row.key];
+    if (procedure === "tka" && Number.isFinite(planned)) return planned;
+    return row.clinical && session.initial ? row.value : null;
+  };
+  const getPlanningStatus = (row) => {
+    const planned = getPlannedValue(row);
+    if (!Number.isFinite(planned)) return { label: "Measured", tone: "measured" };
+    const baseline = Number.isFinite(row.initial) ? row.initial : row.value;
+    const tolerance = row.unit === "deg" ? 0.5 : 1;
+    return Math.abs((baseline ?? planned) - planned) <= tolerance
+      ? { label: "On target", tone: "target" }
+      : { label: "Review", tone: "review" };
+  };
   const available = catalog.filter((item) => procedure === "tka" ? item.type === "knee" : item.type !== "knee");
   const brands = [...new Set(available.map((item) => item.brand))];
   const systems = [...new Set(available.filter((item) => !brand || item.brand === brand).map((item) => item.system))];
@@ -139,6 +156,22 @@ export default function PlanningWorkspace({
     setWorkflowOpen(true);
     if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
   }, [canProceed, enabled, onSession, session]);
+  useEffect(() => {
+    if (
+      !enabled ||
+      session.step !== 1 ||
+      analysisTools.length === 0 ||
+      analysisDoneCount !== analysisTools.length ||
+      session.completedSteps?.includes(1)
+    ) return;
+    const initial = capturePlanningInitial(rows);
+    if (!initial) return;
+    onSession(completePlanningStep({ ...session, initial }, 1, 2));
+    setStepExpanded(true);
+    setWorkflowOpen(true);
+    setGuideItemId(null);
+    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
+  }, [analysisDoneCount, analysisTools.length, enabled, onSession, rows, session]);
   useEffect(() => {
     if (!sheet) return;
     const handler = (event) => { if (event.key === "Escape") setSheet(null); };
@@ -237,8 +270,11 @@ export default function PlanningWorkspace({
         </div>
         <ol className={styles.analysisSteps}>
           {analysisTools.map((item, index) => {
-            const current = index === activeAnalysisIndex;
+            const current = Boolean(item.active) || guideItemId === item.id;
             const available = canProceed;
+            const itemGuideSteps = item.guideSteps || [];
+            const completedLandmarks = item.liveProgress?.current ?? (item.complete ? itemGuideSteps.length : 0);
+            const activeLandmark = itemGuideSteps[Math.min(completedLandmarks, Math.max(0, itemGuideSteps.length - 1))] || null;
             return <li key={item.id}>
               <button type="button" disabled={!available} aria-current={current ? "step" : undefined}
                 onClick={() => {
@@ -253,6 +289,28 @@ export default function PlanningWorkspace({
                 {!available && <Lock size={13} />}
                 {current && !item.complete && <ArrowRight size={14} />}
               </button>
+              {procedure === "tka" && current && itemGuideSteps.length > 0 && <div className={styles.inlineLandmarkWizard}>
+                <div className={styles.inlineWizardStatus}>
+                  <span>{item.complete ? "Selesai" : `Titik ${Math.min(completedLandmarks + 1, itemGuideSteps.length)} dari ${itemGuideSteps.length}`}</span>
+                  <strong>{item.complete ? "Semua landmark tersimpan" : `${activeLandmark?.shortLabel || ""} · ${activeLandmark?.label || "Pilih landmark"}`}</strong>
+                </div>
+                <div className={styles.inlineWizardProgress} aria-hidden="true">
+                  <span style={{ width: `${itemGuideSteps.length ? (completedLandmarks / itemGuideSteps.length) * 100 : 0}%` }} />
+                </div>
+                <ol className={styles.inlineLandmarkSteps} aria-label={`Urutan landmark ${item.label}`}>
+                  {itemGuideSteps.map((step, stepIndex) => {
+                    const state = stepIndex < completedLandmarks || item.complete
+                      ? "done"
+                      : stepIndex === completedLandmarks
+                        ? "active"
+                        : "pending";
+                    return <li key={step.id} data-state={state}>
+                      <span>{state === "done" ? <Check size={10} /> : stepIndex + 1}</span>
+                      <div><strong>{step.shortLabel}</strong><small>{step.label}</small></div>
+                    </li>;
+                  })}
+                </ol>
+              </div>}
             </li>;
           })}
         </ol>
@@ -325,8 +383,10 @@ export default function PlanningWorkspace({
       {logTab === "measurements" && <>
       <div className={styles.sectionHeading}><strong>Measurements</strong><span>{displayedMeasurementRows.length} terukur</span></div>
       <div className={styles.measurementScroll} role="region" aria-label="Measurement values" tabIndex={0}>
-      <table className={styles.measurements}><thead><tr><th>Parameter</th><th>Initial</th><th>Planned</th></tr></thead>
-        <tbody>{displayedMeasurementRows.length === 0 ? <tr><td colSpan={3} className={styles.emptyMeasurement}>Belum ada pengukuran.</td></tr> : displayedMeasurementRows.map((row) => <tr key={row.key}>
+      <table className={styles.measurements}><thead><tr><th>Parameter</th><th>Measured</th><th>Planned</th><th>Status</th></tr></thead>
+        <tbody>{displayedMeasurementRows.length === 0 ? <tr><td colSpan={4} className={styles.emptyMeasurement}>Belum ada pengukuran.</td></tr> : displayedMeasurementRows.map((row) => {
+          const planningStatus = getPlanningStatus(row);
+          return <tr key={row.key}>
           <th><span className={styles.metricNameCell}><button type="button" title={`${row.detail}. Klik untuk mengubah info.`}
             onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)} aria-expanded={metricEditor === row.key}>
             {row.clinical ? row.key : row.name}<ChevronDown size={12} />
@@ -338,8 +398,9 @@ export default function PlanningWorkspace({
               {row.sourceShowLabel ? <Eye size={13} /> : <EyeOff size={13} />}
             </button>}</span></th>
           <td>{formatPlanningValue(row.clinical && session.initial ? row.initial : row.value, row.unit)}</td>
-          <td className={row.clinical && row.value !== row.initial && session.initial ? styles.changed : ""}>{formatPlanningValue(row.clinical && session.initial ? row.value : null, row.unit)}</td>
-        </tr>)}</tbody>
+          <td className={Number.isFinite(getPlannedValue(row)) ? styles.changed : ""}>{formatPlanningValue(getPlannedValue(row), row.unit)}</td>
+          <td><span className={styles.metricStatus} data-tone={planningStatus.tone}>{planningStatus.label}</span></td>
+        </tr>})}</tbody>
       </table>
       </div>
       {metricEditor && (() => {
@@ -408,7 +469,47 @@ export default function PlanningWorkspace({
       <div className={styles.canvas}>
         {children}
         {session.side && <span className={styles.sideMarker}>{session.side === "left" ? "L" : "R"}</span>}
-        {session.step === 1 && guideItem && <aside className={styles.canvasGuide} data-minimized={guideMinimized} aria-label={`Petunjuk ${guideItem.label}`}>
+        {procedure === "tka" && alignmentPlan && <aside className={styles.resectionSummary} data-minimized={!resectionExpanded} aria-label="TKA resection preview">
+          <header>
+            <span>Kine Line</span>
+            <strong>{resectionExpanded ? "Alignment preview" : `Target ${alignmentPlan.targetHkaDeg.toFixed(1)}°`}</strong>
+            <button type="button" onClick={() => setResectionExpanded((value) => !value)}
+              aria-label={resectionExpanded ? "Minimalkan simulasi" : "Buka simulasi"} aria-expanded={resectionExpanded}>
+              <ChevronDown size={14} />
+            </button>
+          </header>
+          {resectionExpanded && <>
+          <label className={styles.alignmentMode}>Alignment goal
+            <select value={alignmentMode || "mechanical"} onChange={(event) => onAlignmentMode?.(event.target.value)}>
+              <option value="mechanical">Mechanical · neutral 0°</option>
+              <option value="preserve">Preserve measured anatomy</option>
+              <option value="custom">Custom target</option>
+            </select>
+          </label>
+          {alignmentMode === "custom" && <label className={styles.customTarget}>Target mFA-mTA
+            <span><input type="number" min="-10" max="10" step="0.5" value={customTargetHkaDeg ?? 0}
+              onChange={(event) => onCustomTargetHkaDeg?.(event.target.value)} />deg</span>
+          </label>}
+          <div className={styles.resectionGrid}>
+            <section><strong>Distal femur</strong><span>Medial {alignmentPlan.femoral.medialMm.toFixed(1)} mm</span><span>Lateral {alignmentPlan.femoral.lateralMm.toFixed(1)} mm</span></section>
+            <section><strong>Proximal tibia</strong><span>Medial {alignmentPlan.tibial.medialMm.toFixed(1)} mm</span><span>Lateral {alignmentPlan.tibial.lateralMm.toFixed(1)} mm</span></section>
+          </div>
+          <div className={styles.resectionSettings}>
+            <label>Distal femur
+              <span><input type="number" min="1" max="20" step="0.5" value={alignmentSettings?.femoralResectionMm ?? 9}
+                onChange={(event) => onAlignmentSetting?.("femoralResectionMm", event.target.value)} />mm</span>
+            </label>
+            <label>Proximal tibia
+              <span><input type="number" min="1" max="20" step="0.5" value={alignmentSettings?.tibialResectionMm ?? 8}
+                onChange={(event) => onAlignmentSetting?.("tibialResectionMm", event.target.value)} />mm</span>
+            </label>
+          </div>
+          <div className={styles.resectionTarget}><span>Target</span><strong>mFA-mTA {alignmentPlan.targetHkaDeg.toFixed(1)}°</strong><small>Preview rotasi {alignmentPlan.tibialPreviewRotationDeg.toFixed(1)}°</small></div>
+          <Action icon={Layers} onClick={() => { onCreateAlignmentPreview?.(); setResectionExpanded(false); }}>Terapkan cutting preview</Action>
+          <small>Simulasi planning. Verifikasi landmark dan hasil secara klinis.</small>
+          </>}
+        </aside>}
+        {procedure !== "tka" && session.step === 1 && guideItem && <aside className={styles.canvasGuide} data-minimized={guideMinimized} aria-label={`Petunjuk ${guideItem.label}`}>
           <div className={styles.canvasGuideHeader}>
             <span><Target size={15} /><span><strong>{guideItem.label}</strong>
               {guideItem.activePoint && <small>{guideItem.activePoint}</small>}
