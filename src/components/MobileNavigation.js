@@ -70,6 +70,8 @@ const NAV_STYLES = `
 `;
 
 const TAB_ICONS = {
+  tools:       SlidersHorizontal,
+  implant:     Layers,
   image:       CloudUpload,
   upload:      CloudUpload,
   calibration: Crosshair,
@@ -83,6 +85,8 @@ const TAB_ICONS = {
 };
 
 const TAB_ACTIVE_COLORS = {
+  tools:       "text-cyan-600",
+  implant:     "text-violet-600",
   image:       "text-cyan-600",
   upload:      "text-cyan-600",
   calibration: "text-amber-600",

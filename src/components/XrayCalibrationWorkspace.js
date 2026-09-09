@@ -27,7 +27,7 @@ import LogoutButton from "@/components/LogoutButton";
 import UserProfileBadge from "@/components/UserProfileBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { ID, Query } from "appwrite";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -593,6 +593,7 @@ export default function XrayCalibrationWorkspace({
   const isPlanningLayout = isSimpleUiMode && planningUi;
   const { isDark, toggle: toggleDarkMode } = useTheme();
   const containerRef = useRef(null);
+  const brushPanelDragControls = useDragControls();
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
@@ -887,7 +888,9 @@ export default function XrayCalibrationWorkspace({
   const [sizingLineHoverInfo, setSizingLineHoverInfo] = useState(null);
   const [showLayerToolbarName, setShowLayerToolbarName] = useState(true);
   const [activeRightPanel, setActiveRightPanel] = useState("measure");
-  const [showMoreDesktopTools, setShowMoreDesktopTools] = useState(false);
+  const [showMoreDesktopTools, setShowMoreDesktopTools] = useState(
+    !simpleUiMode,
+  );
   const [canvasToolbarOpen, setCanvasToolbarOpen] = useState(false);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(
     LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -895,8 +898,8 @@ export default function XrayCalibrationWorkspace({
   const [rightSidebarWidth, setRightSidebarWidth] = useState(
     RIGHT_SIDEBAR_DEFAULT_WIDTH,
   );
-  const [showLeftSidebar, setShowLeftSidebar] = useState(false);
-  const [showRightSidebar, setShowRightSidebar] = useState(false);
+  const [showLeftSidebar, setShowLeftSidebar] = useState(!simpleUiMode);
+  const [showRightSidebar, setShowRightSidebar] = useState(!simpleUiMode);
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 });
   const [historyPaused, setHistoryPaused] = useState(false);
   const [showStartupCalibrationAlert, setShowStartupCalibrationAlert] =
@@ -1459,6 +1462,13 @@ export default function XrayCalibrationWorkspace({
     setMobilePanelMode("workspace");
     setTool((prev) => (prev === "draw" ? MOBILE_IDLE_TOOL : prev));
   }, [isMobileViewport]);
+
+  useEffect(() => {
+    if (isSimpleUiMode || isMobileViewport) return;
+    setShowLeftSidebar(true);
+    setShowRightSidebar(true);
+    setShowMoreDesktopTools(true);
+  }, [isMobileViewport, isSimpleUiMode]);
 
   useEffect(() => {
     const matchingPreset = XRAY_VIEW_PRESETS.find(
@@ -10272,6 +10282,7 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.closePath();
       overlayCtx.stroke();
 
+      if (!isCoarsePointer) {
       overlayCtx.fillStyle = "#ffffff";
       overlayCtx.strokeStyle = "#a855f7";
       overlayCtx.lineWidth = 1.8;
@@ -10330,6 +10341,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.lineTo(7.6, -3.8);
         overlayCtx.stroke();
         overlayCtx.restore();
+      }
       }
       const maskScreenPoints = getLayerMaskScreenPoints(activeCutLayer);
       if (maskScreenPoints) {
@@ -18086,24 +18098,31 @@ export default function XrayCalibrationWorkspace({
     [addTemplateToCanvas],
   );
 
-  const useSelectedImplantLibraryAsLayer = useCallback(() => {
-    if (!selectedImplantLibraryItem) {
+  const useSelectedImplantLibraryAsLayer = useCallback((implantItemId = null) => {
+    const explicitItemId =
+      typeof implantItemId === "string" || typeof implantItemId === "number"
+        ? implantItemId
+        : null;
+    const implantItem = explicitItemId
+      ? getImplantLibraryItemById(explicitItemId, LOCAL_IMPLANT_LIBRARY)
+      : selectedImplantLibraryItem;
+    if (!implantItem) {
       setNotice("Pilih implant lokal terlebih dahulu.");
       return;
     }
-    const calibrationInstruction = `Implant "${selectedImplantLibraryItem.label}" ditambahkan. Klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi supaya implant mengikuti skala X-ray.`;
+    const calibrationInstruction = `Implant "${implantItem.label}" ditambahkan. Klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi supaya implant mengikuti skala X-ray.`;
     void addTemplateToCanvas({
-      id: selectedImplantLibraryItem.id,
-      name: selectedImplantLibraryItem.label,
-      imageSrc: selectedImplantLibraryItem.imageSrc,
+      id: implantItem.id,
+      name: implantItem.label,
+      imageSrc: implantItem.imageSrc,
       sourceWidth: 0,
       sourceHeight: 0,
       autoScaleFromCalibration: true,
-      physicalSize: selectedImplantLibraryItem.physicalSize || null,
-      physicalWidthMm: selectedImplantLibraryItem.physicalWidthMm ?? null,
-      physicalHeightMm: selectedImplantLibraryItem.physicalHeightMm ?? null,
+      physicalSize: implantItem.physicalSize || null,
+      physicalWidthMm: implantItem.physicalWidthMm ?? null,
+      physicalHeightMm: implantItem.physicalHeightMm ?? null,
       transparentWhiteBackground: Boolean(
-        selectedImplantLibraryItem.transparentWhiteBackground,
+        implantItem.transparentWhiteBackground,
       ),
     }).then((added) => {
       if (!added || mmPerPixel !== null) return;
@@ -18605,6 +18624,8 @@ export default function XrayCalibrationWorkspace({
         kind: getLayerDefaultName(layer),
         size: formatLayerSize(size.width, size.height),
         opacity: `${Math.round((layer.opacity ?? 1) * 100)}%`,
+        contrast: `${Math.round(clamp(Number(layer.contrast ?? 100), 10, 300))}%`,
+        level: `${Math.round(clamp(Number(layer.level ?? 100), 10, 300))}%`,
         rotation: `${Math.round(((layer.rotation || 0) + 360) % 360)}°`,
       };
     });
@@ -20137,17 +20158,15 @@ export default function XrayCalibrationWorkspace({
     };
   }, []);
 
-  const effectiveShowLeftSidebar =
-    showLeftSidebar && !isSimpleUiMode && !hasCalibration;
-  const effectiveShowRightSidebar =
-    showRightSidebar && !isSimpleUiMode && hasCalibration;
+  const effectiveShowLeftSidebar = showLeftSidebar && !isSimpleUiMode;
+  const effectiveShowRightSidebar = showRightSidebar && !isSimpleUiMode;
   const desktopSectionClass =
     effectiveShowLeftSidebar && effectiveShowRightSidebar
-      ? "lg:[grid-template-columns:var(--right-sidebar-width)_var(--left-sidebar-width)_minmax(0,1fr)]"
+      ? "advanced-workspace-grid lg:[grid-template-columns:var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
       : effectiveShowLeftSidebar
         ? "lg:[grid-template-columns:var(--left-sidebar-width)_minmax(0,1fr)]"
         : effectiveShowRightSidebar
-          ? "lg:[grid-template-columns:var(--right-sidebar-width)_minmax(0,1fr)]"
+          ? "lg:[grid-template-columns:minmax(0,1fr)_var(--right-sidebar-width)]"
           : "lg:grid-cols-1";
   const isLeftSidebarCompact = leftSidebarWidth <= 170;
   const isLeftSidebarNarrow = leftSidebarWidth <= 220;
@@ -21071,7 +21090,7 @@ export default function XrayCalibrationWorkspace({
     setGuideBuilderPreviewPoint(null);
     setNotice("Draft measurement dibersihkan.");
   };
-  const mobileNavigationTabs = [
+  const simpleMobileNavigationTabs = [
     {
       id: "image",
       label: "Image",
@@ -21137,6 +21156,76 @@ export default function XrayCalibrationWorkspace({
         : mobileWorkspacePanelVisible && activeRightPanel === "planning",
     },
   ];
+  const advancedMobileNavigationTabs = [
+    {
+      id: "tools",
+      label: "Tools",
+      onClick: () => {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("tool");
+        setShowMoreDesktopTools(true);
+        setMobileControlsOpen((open) =>
+          mobilePanelMode === "workspace" && activeRightPanel === "tool"
+            ? !open
+            : true,
+        );
+      },
+      active: mobileWorkspacePanelVisible && activeRightPanel === "tool",
+    },
+    {
+      id: "implant",
+      label: "Implant",
+      onClick: () => {
+        setMobileControlsOpen(false);
+        openSimpleImplantTemplateOverlay();
+      },
+      active:
+        planningImplantModalOpen ||
+        simpleMobilePanel === "implant" ||
+        (simpleDesktopManagerOpen && simpleManagerTab === "implant"),
+    },
+    {
+      id: "measure",
+      label: "Measure",
+      onClick: () => {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("measure");
+        setShowMoreDesktopTools(true);
+        setMobileControlsOpen((open) =>
+          mobilePanelMode === "workspace" && activeRightPanel === "measure"
+            ? !open
+            : true,
+        );
+      },
+      active: mobileWorkspacePanelVisible && activeRightPanel === "measure",
+    },
+    {
+      id: "manager",
+      label: "Layers",
+      onClick: () => {
+        setMobilePanelMode("workspace");
+        setActiveRightPanel("tool");
+        setShowMoreDesktopTools(true);
+        setMobileControlsOpen(true);
+        scrollToPanel(layerSettingsPanelRef);
+      },
+      active: mobileWorkspacePanelVisible && Boolean(selectedCutLayer),
+    },
+    {
+      id: "more",
+      label: "More",
+      onClick: () => {
+        setMobilePanelMode("setup");
+        setMobileControlsOpen((open) =>
+          mobilePanelMode === "setup" ? !open : true,
+        );
+      },
+      active: mobileSetupPanelVisible,
+    },
+  ];
+  const mobileNavigationTabs = isSimpleUiMode
+    ? simpleMobileNavigationTabs
+    : advancedMobileNavigationTabs;
   const planningSession = planningSessions[planningProcedure];
   const planningMeasurements = useMemo(() => {
     if (!isPlanningLayout) return [];
@@ -21250,6 +21339,7 @@ export default function XrayCalibrationWorkspace({
     fit: fitImageToViewport, zoomReset: resetZoomTo100,
     compare: toggleCompareModePreservingWorkspace,
     deleteLayer: removeSelectedCutLayer,
+    cases: () => setPatientCaseManagerOpen(true),
   };
   const planningTools = [
     { id: "upload", label: "Upload X-ray", icon: Upload, action: planningActions.upload },
@@ -21497,6 +21587,7 @@ export default function XrayCalibrationWorkspace({
   return (
     <div
       data-planning-layout={isPlanningLayout || undefined}
+      data-mobile-viewport={isMobileViewport ? "true" : "false"}
       className={`${isPlanningLayout ? planningStyles.host : ""} flex w-screen max-w-none flex-col gap-0 px-0 py-0 text-slate-700 ${
         isSimpleUiMode ? "simple-ui-shell" : "advanced-ui-shell"
       } ${
@@ -23696,7 +23787,7 @@ export default function XrayCalibrationWorkspace({
                         <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] opacity-70 uppercase">
                           Aksi Cepat
                         </div>
-                        <div className="grid grid-cols-5 gap-1.5">
+                        <div className="grid grid-cols-3 gap-1.5">
                           {[
                             {
                               key: "move",
@@ -23724,6 +23815,19 @@ export default function XrayCalibrationWorkspace({
                               tone: "text-[var(--soft-text)]",
                               onClick: () =>
                                 toggleCutLayerVisibility(selectedCutLayer.id),
+                            },
+                            {
+                              key: "flip-horizontal",
+                              icon: "flipH",
+                              label: "Flip H",
+                              tone: selectedCutLayer.flipX
+                                ? "border-cyan-400/70 bg-cyan-500/10 text-cyan-500"
+                                : "text-cyan-500",
+                              onClick: () =>
+                                updateLayerById(selectedCutLayer.id, (item) => ({
+                                  ...item,
+                                  flipX: !item.flipX,
+                                })),
                             },
                             {
                               key: "lock",
@@ -27324,7 +27428,7 @@ export default function XrayCalibrationWorkspace({
       </AnimatePresence>
       {isPlanningLayout ? null : !isNativeMobileSimpleUi ? (
       <header
-        className={`${SOFT_PANEL_CLASS} relative z-50 ${
+        className={`advanced-app-header ${SOFT_PANEL_CLASS} relative z-50 ${
           isSimpleUiMode
             ? isTabletViewport
               ? "hidden"
@@ -27334,10 +27438,10 @@ export default function XrayCalibrationWorkspace({
         style={{ height: 52, minHeight: 52 }}
       >
         {/* ── Centered clock ── */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="advanced-clock pointer-events-none absolute inset-0 flex items-center justify-center">
           <NavClock />
         </div>
-        <div className="flex min-w-0 shrink items-center gap-3 overflow-hidden">
+        <div className="advanced-header-primary flex min-w-0 shrink items-center gap-3 overflow-hidden">
           <div
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-[0_0_10px_rgba(14,165,233,0.35)]"
             style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)" }}
@@ -27349,6 +27453,40 @@ export default function XrayCalibrationWorkspace({
               <circle cx="30" cy="19" r="6" fill="white" opacity="0.9"/>
             </svg>
           </div>
+
+          {!isSimpleUiMode ? (
+            <div className="advanced-study-nav flex min-w-0 items-center gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-[11px] font-black text-slate-800">
+                  {imageName || "ZakZav Advanced Workspace"}
+                </div>
+                <div className="truncate text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                  {planningProcedure === "hip" ? "THA Planning" : "TKA Planning"}
+                </div>
+              </div>
+              <select
+                value={planningProcedure}
+                onChange={(event) => selectPlanningProcedure(event.target.value)}
+                className={`${SOFT_INPUT_CLASS} h-8 min-w-[116px] px-2 text-[10px] font-black`}
+                aria-label="Pilih prosedur Advanced"
+              >
+                <option value="tka">TKA / Knee</option>
+                <option value="hip">THA / Hip</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => focusCalibrationStep()}
+                className={`advanced-calibration-status inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[9px] font-black ${
+                  hasCalibration
+                    ? "border-emerald-400/35 bg-emerald-500/12 text-emerald-700"
+                    : "border-amber-400/45 bg-amber-400/14 text-amber-700"
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${hasCalibration ? "bg-emerald-500" : "bg-amber-500"}`} />
+                {hasCalibration ? "Calibrated" : "Uncalibrated"}
+              </button>
+            </div>
+          ) : null}
 
           {isSimpleUiMode ? (
             <div className="relative" ref={simpleStepPopoverRef}>
@@ -27474,7 +27612,7 @@ export default function XrayCalibrationWorkspace({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="advanced-header-actions flex shrink-0 items-center gap-1.5">
           {!isSimpleUiMode && (
             <details
               open={simpleLayerDropdownOpen}
@@ -28480,6 +28618,13 @@ export default function XrayCalibrationWorkspace({
               </button>
               <button
                 type="button"
+                onClick={() => setPatientCaseManagerOpen(true)}
+                className={`${SOFT_RAISED_CLASS} rounded-full px-3 py-1.5 text-[10px] font-semibold text-cyan-700 transition hover:text-cyan-500`}
+              >
+                Kasus Ku
+              </button>
+              <button
+                type="button"
                 onClick={onOpenSimpleUi}
                 className={`${SOFT_RAISED_CLASS} rounded-full px-3 py-1.5 text-[10px] font-semibold text-slate-700 transition hover:text-slate-950`}
               >
@@ -28564,14 +28709,13 @@ export default function XrayCalibrationWorkspace({
         <motion.button
           type="button"
           onClick={() => setShowRightSidebar((prev) => !prev)}
-          disabled={!hasCalibration}
           whileHover={BUTTON_HOVER}
           whileTap={BUTTON_TAP}
           transition={{ duration: 0.16, ease: "easeOut" }}
-          className={`advanced-sidebar-toggle absolute top-1/2 z-30 hidden h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1 rounded-full px-2 text-[9px] font-black transition disabled:cursor-not-allowed disabled:opacity-35 lg:flex ${SOFT_RAISED_CLASS} text-cyan-700`}
+          className={`advanced-sidebar-toggle absolute top-1/2 z-30 hidden h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1 rounded-full px-2 text-[9px] font-black transition lg:flex ${SOFT_RAISED_CLASS} text-cyan-700`}
           style={{ left: effectiveShowRightSidebar ? rightSidebarWidth : 12 }}
           aria-label={effectiveShowRightSidebar ? "Sembunyikan panel tools" : "Tampilkan panel tools"}
-          title={hasCalibration ? (effectiveShowRightSidebar ? "Sembunyikan panel tools kiri" : "Tampilkan panel tools kiri") : "Selesaikan kalibrasi untuk membuka tools"}
+          title={effectiveShowRightSidebar ? "Sembunyikan panel inspector kanan" : "Tampilkan panel inspector kanan"}
         >
           <Icon
             name={effectiveShowRightSidebar ? "moveLeft" : "moveRight"}
@@ -28594,7 +28738,7 @@ export default function XrayCalibrationWorkspace({
                 }
               : { y: 0, opacity: 1, scale: 1 }
           }
-          className={`fixed inset-x-0 bottom-0 z-40 order-2 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] ${SOFT_FLOAT_SURFACE_CLASS} ${
+          className={`advanced-setup-panel fixed inset-x-0 bottom-0 z-40 order-2 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] ${SOFT_FLOAT_SURFACE_CLASS} ${
             mobileSetupPanelVisible
               ? "pointer-events-auto"
               : "pointer-events-none"
@@ -28626,7 +28770,7 @@ export default function XrayCalibrationWorkspace({
             </button>
           </div>
           <div
-            className={`mb-1 grid grid-cols-2 gap-1 p-1 lg:hidden ${SOFT_INSET_CLASS}`}
+            className={`advanced-mobile-panel-switcher mb-1 grid grid-cols-2 gap-1 p-1 lg:hidden ${SOFT_INSET_CLASS}`}
           >
             <button
               type="button"
@@ -28751,7 +28895,7 @@ export default function XrayCalibrationWorkspace({
           </div>
 
           <div
-            className={`${hasCalibration ? "grid" : "hidden"} order-8 grid-cols-1 gap-2`}
+            className="order-8 grid grid-cols-1 gap-2"
             style={{ order: 8 }}
           >
             <motion.div
@@ -30931,7 +31075,7 @@ export default function XrayCalibrationWorkspace({
                 }
               : { y: 0, opacity: 1, scale: 1 }
           }
-          className={`fixed inset-x-0 bottom-0 z-40 order-3 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] [scrollbar-gutter:stable] ${SOFT_FLOAT_SURFACE_CLASS} ${
+          className={`advanced-inspector-panel fixed inset-x-0 bottom-0 z-40 order-3 flex max-h-[72vh] min-h-0 touch-pan-y flex-col gap-3 overflow-y-auto overscroll-contain rounded-t-[30px] border-b-0 pb-[calc(env(safe-area-inset-bottom)+12px)] [scrollbar-gutter:stable] ${SOFT_FLOAT_SURFACE_CLASS} ${
             mobileWorkspacePanelVisible
               ? "pointer-events-auto"
               : "pointer-events-none"
@@ -30963,7 +31107,7 @@ export default function XrayCalibrationWorkspace({
             </button>
           </div>
           <div
-            className={`mb-1 grid grid-cols-2 gap-1 p-1 lg:hidden ${SOFT_INSET_CLASS}`}
+            className={`advanced-mobile-panel-switcher mb-1 grid grid-cols-2 gap-1 p-1 lg:hidden ${SOFT_INSET_CLASS}`}
           >
             <button
               type="button"
@@ -34162,7 +34306,7 @@ export default function XrayCalibrationWorkspace({
           layout
           transition={PANEL_SPRING}
           data-planning-frame={isPlanningLayout || undefined}
-          className={`order-1 flex min-h-0 flex-col overflow-hidden p-0 lg:order-2 lg:p-1 ${SOFT_PANEL_CLASS}`}
+          className={`advanced-canvas-stage order-1 flex min-h-0 flex-col overflow-hidden p-0 lg:order-2 lg:p-1 ${SOFT_PANEL_CLASS}`}
         >
           <PlanningWorkspace enabled={isPlanningLayout} procedure={planningProcedure} onProcedure={selectPlanningProcedure}
             reference={planningProcedure === "tka" ? TKA_PLANNING_REFERENCE : THA_PLANNING_REFERENCE}
@@ -34181,14 +34325,22 @@ export default function XrayCalibrationWorkspace({
                   : addPlanningGuideFromJointAngles}
             /> : <button type="button" className="planning-inline-action" onClick={() => handleLinePresetChange("normal")}>Femoral neck osteotomy line</button>}
             catalog={LOCAL_IMPLANT_LIBRARY} selectedImplantId={selectedImplantLibraryId}
-            onSelectImplant={setSelectedImplantLibraryId} onInsertImplant={useSelectedImplantLibraryAsLayer}
+            onSelectImplant={(itemId) => {
+              const item = getImplantLibraryItemById(itemId, LOCAL_IMPLANT_LIBRARY);
+              if (item?.type) setSelectedImplantType(item.type);
+              setSelectedImplantLibraryId(itemId);
+            }}
+            onInsertImplant={useSelectedImplantLibraryAsLayer}
             layers={templateInventoryRows.map((row) => { const layer = cutLayers.find((item) => item.id === row.id); return {
               ...row,
               hidden: Boolean(layer?.hidden),
               locked: Boolean(layer?.lockScale),
               kind: layer?.kind === "free-cut" ? "crop" : "implant",
               opacityValue: Number(layer?.opacity ?? 1),
+              contrastValue: clamp(Number(layer?.contrast ?? 100), 10, 300),
+              levelValue: clamp(Number(layer?.level ?? 100), 10, 300),
               rotationValue: Number(layer?.rotation || 0),
+              imageBacked: Boolean(layer && isImageBackedLayerKind(layer.kind)),
             }; })}
             selectedLayerId={selectedCutLayerId}
             onSelectLayer={(id) => { setSelectedCutLayerId(id); openLayerSettingsModal(id); }}
@@ -38345,18 +38497,23 @@ export default function XrayCalibrationWorkspace({
                   ) : null}
                 </AnimatePresence>
 
-                {isSimpleUiMode &&
-                isMobileViewport &&
-                !simpleMobilePanel &&
-                !isTabletViewport ? (
+                {isMobileViewport &&
+                (isSimpleUiMode
+                  ? !simpleMobilePanel && !isTabletViewport
+                  : true) ? (
                   !isPlanningLayout && <MobileNavigation
-                    className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)] z-50 px-2"
+                    className={`fixed inset-x-0 z-50 px-2 ${
+                      isSimpleUiMode
+                        ? "bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+10px)]"
+                        : "bottom-[calc(env(safe-area-inset-bottom)+var(--mobile-keyboard-offset,0px)+6px)]"
+                    }`}
                     tabs={mobileNavigationTabs}
                     canvasMode={mobileCanvasMode}
                     toolMode={mobileToolMode}
                     canvasLocked={mobileCanvasLocked}
                     onPan={() => {
                       setSimpleMobilePanel(null);
+                      if (!isSimpleUiMode) setMobileControlsOpen(false);
                       setMobileCanvasLocked(false);
                       setMobileCanvasMode("pan");
                       setMobileToolMode("move");
@@ -38364,6 +38521,7 @@ export default function XrayCalibrationWorkspace({
                     }}
                     onEdit={() => {
                       setSimpleMobilePanel(null);
+                      if (!isSimpleUiMode) setMobileControlsOpen(false);
                       setMobileCanvasMode("edit");
                       setMobileToolMode("move");
                       handleToolChange("pan");
@@ -38371,6 +38529,7 @@ export default function XrayCalibrationWorkspace({
                     }}
                     onToolModeChange={(nextMode) => {
                       setSimpleMobilePanel(null);
+                      if (!isSimpleUiMode) setMobileControlsOpen(false);
                       setMobileCanvasMode("edit");
                       setMobileToolMode(nextMode);
                       handleToolChange("pan");
@@ -38405,16 +38564,25 @@ export default function XrayCalibrationWorkspace({
                       resetCanvasInteractionState();
                     }}
                     onMore={() => {
-                      setSimpleMobilePanel((prev) =>
-                        prev === "more" ? null : "more",
+                      if (isSimpleUiMode) {
+                        setSimpleMobilePanel((prev) =>
+                          prev === "more" ? null : "more",
+                        );
+                        return;
+                      }
+                      setMobilePanelMode("setup");
+                      setMobileControlsOpen((open) =>
+                        mobilePanelMode === "setup" ? !open : true,
                       );
                     }}
                     moreActive={
-                      simpleMobilePanel === "more" ||
-                      simpleMobilePanel === "manager" ||
-                      simpleMobilePanel === "layer" ||
-                      simpleMobilePanel === "implant" ||
-                      landmarkAnnotationOpen
+                      isSimpleUiMode
+                        ? simpleMobilePanel === "more" ||
+                          simpleMobilePanel === "manager" ||
+                          simpleMobilePanel === "layer" ||
+                          simpleMobilePanel === "implant" ||
+                          landmarkAnnotationOpen
+                        : mobileSetupPanelVisible
                     }
                     canUndo={historyState.undo > 0}
                     canRedo={historyState.redo > 0}
@@ -38425,6 +38593,7 @@ export default function XrayCalibrationWorkspace({
                       setMobileCanvasFocusMode(next);
                       if (next) {
                         setSimpleMobilePanel(null);
+                        setMobileControlsOpen(false);
                         setMobileObjectSettingsOpen(false);
                         setNotice("Focus Canvas aktif. Panel non-krusial disembunyikan.");
                       } else {
@@ -38500,6 +38669,56 @@ export default function XrayCalibrationWorkspace({
                     </div>
                   ) : null}
                 </div>
+                {!isSimpleUiMode ? (
+                  <nav
+                    className="advanced-workspace-dock pointer-events-auto absolute bottom-12 left-1/2 z-20 hidden -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-slate-950/78 p-1.5 text-slate-200 shadow-[0_14px_32px_rgba(2,6,23,0.34)] backdrop-blur-xl lg:flex"
+                    aria-label="Advanced workspace panels"
+                  >
+                    {[
+                      { id: "tool", label: "Tools", icon: "settings" },
+                      { id: "measure", label: "Measurements", icon: "draw" },
+                      { id: "planning", label: "Planning", icon: "hka" },
+                    ].map((item) => (
+                      <button
+                        key={`advanced-dock-${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          setShowRightSidebar(true);
+                          setShowMoreDesktopTools(true);
+                          setActiveRightPanel(item.id);
+                        }}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-[9px] font-black transition ${
+                          activeRightPanel === item.id && effectiveShowRightSidebar
+                            ? "bg-cyan-500 text-slate-950"
+                            : "text-slate-300 hover:bg-white/10 hover:text-white"
+                        }`}
+                      >
+                        <Icon name={item.icon} className="h-3.5 w-3.5" />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => openSimpleImplantTemplateOverlay()}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-[9px] font-black text-violet-300 transition hover:bg-violet-400/12 hover:text-violet-200"
+                    >
+                      <Bone className="h-3.5 w-3.5" />
+                      <span>Implants</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleCompareModePreservingWorkspace}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-[9px] font-black transition ${
+                        compareMode
+                          ? "bg-amber-400 text-slate-950"
+                          : "text-amber-200 hover:bg-amber-400/12"
+                      }`}
+                    >
+                      <Icon name="compare" className="h-3.5 w-3.5" />
+                      <span>Compare</span>
+                    </button>
+                  </nav>
+                ) : null}
                 {!canvasToolbarOpen && !isPlanningLayout ? (
                   <button
                     type="button"
@@ -38933,10 +39152,10 @@ export default function XrayCalibrationWorkspace({
                 isWarpableImageLayer(selectedCutLayer) &&
                 !isEditableMaskLayer(selectedCutLayer) && (
                 <div
-                  className="pointer-events-auto absolute bottom-4 left-1/2 z-30 -translate-x-1/2"
+                  className={`pointer-events-auto absolute z-30 ${isMobileViewport ? "top-16 right-3" : "bottom-4 left-1/2 -translate-x-1/2"}`}
                   style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.18))" }}
                 >
-                  <div className="flex items-center gap-2 rounded-[20px] border border-white/70 bg-[#eef2f7]/92 px-3 py-2 backdrop-blur-sm"
+                  <div className="flex max-w-[min(320px,calc(100vw-24px))] flex-wrap items-center gap-1.5 rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-1.5 text-[var(--soft-text)] backdrop-blur-sm"
                     style={{ boxShadow: "4px 4px 14px rgba(148,163,184,0.28),-3px -3px 10px rgba(255,255,255,0.82)" }}>
                     <span className="max-w-[92px] truncate text-[10px] font-black text-slate-600">
                       Bend Implant
@@ -38976,7 +39195,7 @@ export default function XrayCalibrationWorkspace({
                       disabled={!isImplantWarpEnabled(selectedCutLayer)}
                       value={Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}
                       onChange={(event) => updateImplantWarpStrength(Number(event.target.value) / 100)}
-                      className="h-2 w-24 accent-violet-600 disabled:opacity-40"
+                      className="h-2 w-20 accent-violet-600 disabled:opacity-40"
                       aria-label="Kekuatan bend implant"
                     />
                     <span className="w-8 text-right text-[10px] font-black text-slate-500">
@@ -39762,9 +39981,19 @@ export default function XrayCalibrationWorkspace({
 
       {/* ── Brush Tool Settings Panel ────────────────────────────────────────── */}
       {tool === "brush" && (
-        <div
-          className={`fixed bottom-36 left-1/2 z-[9999] -translate-x-1/2 flex max-w-[calc(100vw-16px)] flex-wrap items-center gap-3 rounded-[20px] px-3 py-2.5 backdrop-blur-xl ${SOFT_FLOAT_SURFACE_CLASS}`}
+        <motion.div
+          drag
+          dragControls={brushPanelDragControls}
+          dragListener={false}
+          dragMomentum={false}
+          dragElastic={0.04}
+          className={`fixed bottom-28 left-3 z-[9999] flex max-w-[calc(100vw-24px)] flex-wrap items-center gap-2 rounded-xl px-2.5 py-2 backdrop-blur-xl ${SOFT_FLOAT_SURFACE_CLASS}`}
         >
+          <button type="button" aria-label="Geser panel brush" title="Geser panel brush"
+            onPointerDown={(event) => brushPanelDragControls.start(event)}
+            className="flex h-10 w-7 touch-none cursor-move items-center justify-center rounded-md border border-[var(--soft-border)] text-[var(--color-text-muted)]">
+            <span className="grid gap-1"><i className="block h-0.5 w-3 rounded bg-current" /><i className="block h-0.5 w-3 rounded bg-current" /><i className="block h-0.5 w-3 rounded bg-current" /></span>
+          </button>
           {/* Mode buttons */}
           <div className="flex gap-1.5">
             {[
@@ -39877,7 +40106,7 @@ export default function XrayCalibrationWorkspace({
           >
             ✕
           </button>
-        </div>
+        </motion.div>
       )}
     </div>
   );

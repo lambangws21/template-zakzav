@@ -7,7 +7,7 @@ import {
   ImagePlus, Layers, ListOrdered, Lock, LockOpen, Maximize2, Menu,
   MoreHorizontal, MousePointer2, Move, PanelLeftClose, PanelRightClose,
   Play, Plus, RotateCw, Ruler, Save, Search, SlidersHorizontal, Sun,
-  Moon, Target, Trash2, X,
+  Moon, Redo2, Target, Trash2, Undo2, X,
 } from "lucide-react";
 import {
   capturePlanningInitial, completePlanningStep, formatPlanningValue,
@@ -63,6 +63,7 @@ export default function PlanningWorkspace({
   const [guideItemId, setGuideItemId] = useState(null);
   const [guideMinimized, setGuideMinimized] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
+  const [guideVisualOpen, setGuideVisualOpen] = useState(false);
   const [resectionExpanded, setResectionExpanded] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [implantBrowserOpen, setImplantBrowserOpen] = useState(false);
@@ -137,7 +138,7 @@ export default function PlanningWorkspace({
     ? "Pilih sisi tubuh dan selesaikan kalibrasi terlebih dahulu."
     : "Selesaikan kalibrasi marker terlebih dahulu.";
 
-  useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); setStepExpanded(true); setGuideItemId(null); }, [procedure]);
+  useEffect(() => { setBrand(""); setSystem(""); setComponent(""); setMetricEditor(null); setStepExpanded(true); setGuideItemId(null); setGuideVisualOpen(false); }, [procedure]);
   useEffect(() => {
     if (!enabled || session.step !== 1 || !activeAnalysisItem || activeAnalysisItem.complete) return;
     setGuideItemId(activeAnalysisItem.id);
@@ -249,7 +250,8 @@ export default function PlanningWorkspace({
     onSession({ ...session, step: index });
   };
   const insertSelectedImplant = () => {
-    onInsertImplant();
+    if (!selectedImplant) return;
+    onInsertImplant(selectedImplant.id);
     setImplantBrowserOpen(false);
     finishStep(3, {}, 4);
   };
@@ -472,7 +474,7 @@ export default function PlanningWorkspace({
       <section className={`${styles.logSection} ${styles.correctionSection}`}><h2>{procedure === "tka" ? "Correction Settings" : "Femoral Resection"}</h2>{correctionControls}</section>
       </>}
       {logTab === "implants" && <section className={styles.logSection}><h2>Selected Implants & Fragments</h2>{implantList}
-        <Action icon={Plus} disabled={!canProceed} onClick={() => { changeStep(3); if (sheet) setSheet("workflow"); else setWorkflowOpen(true); }}>Insert Implants</Action>
+        <Action icon={Plus} disabled={!hasImage} onClick={() => startImplantBrowser()}>Pilih Implant Template</Action>
       </section>}
       {logTab === "texts" && <section className={styles.logSection}><h2>Custom Texts</h2>
         {annotations.length ? annotations.map((item) => <p key={item.id} className={styles.logNote}>{item.text}</p>) : <p className={styles.empty}>Belum ada anotasi.</p>}
@@ -525,6 +527,10 @@ export default function PlanningWorkspace({
       runCalibrated();
       return;
     }
+    const initialImplant = selectedImplant || choices[0] || available[0] || null;
+    if (initialImplant && initialImplant.id !== selectedImplantId) {
+      onSelectImplant(initialImplant.id);
+    }
     setImplantBrowserOpen(true);
     setMoreOpen(false);
     setSheet(null);
@@ -566,6 +572,7 @@ export default function PlanningWorkspace({
       <button type="button" disabled={!hasImage} onClick={() => { setExportOpen(true); setMoreOpen(false); }}><Download size={16} />Export</button>
     </section>
     <section><strong>App</strong>
+      {actions.cases && <button type="button" onClick={() => activate(actions.cases)}><ListOrdered size={16} />Kasus Ku</button>}
       <button type="button" disabled={!hasImage} onClick={() => activate(actions.properties)}><SlidersHorizontal size={16} />Object properties</button>
       <button type="button" disabled={!hasImage} onClick={openPlanningLog}><ClipboardList size={16} />Planning Log</button>
       {onOpenAdvancedUi && <button type="button" onClick={onOpenAdvancedUi}><Menu size={16} />Advanced UI</button>}
@@ -595,7 +602,10 @@ export default function PlanningWorkspace({
         <span className={styles.calibrationLabel}>{calibrated ? "Calibrated" : "Not calibrated"}</span>
       </button>
       <div className={styles.headerActions}>
-        <Action icon={Save} disabled={!hasImage} onClick={() => activate(actions.saveLocal)}>Save</Action>
+        <Action icon={Undo2} className={styles.historyAction} aria-label="Undo" title="Undo" disabled={toolById("undo")?.disabled} onClick={() => runTool("undo")} />
+        <Action icon={Redo2} className={styles.historyAction} aria-label="Redo" title="Redo" disabled={toolById("redo")?.disabled} onClick={() => runTool("redo")} />
+        {onOpenAdvancedUi && <Action icon={Menu} className={styles.advancedAction} onClick={onOpenAdvancedUi}>Advanced</Action>}
+        <Action icon={Save} className={styles.saveAction} disabled={!hasImage} onClick={() => activate(actions.saveLocal)}>Save</Action>
         <Action icon={Download} className={styles.primaryAction} disabled={!hasImage} onClick={() => setExportOpen(true)}>Export</Action>
         <div className={styles.moreAnchor}>
           <Action icon={MoreHorizontal} aria-label="More menu" active={moreOpen} onClick={() => setMoreOpen((value) => !value)} />
@@ -613,7 +623,7 @@ export default function PlanningWorkspace({
             onClick={() => runTool(id)} title={label}><Icon size={20} /><span>{label}</span></button>;
         })}
         <button type="button" data-active={sheet === "tools"} onClick={openTools}><Ruler size={20} /><span>Measure</span></button>
-        <button type="button" data-active={moreOpen} onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal size={20} /><span>More</span></button>
+        <button type="button" data-active={sheet === "more"} onClick={openMoreSheet}><MoreHorizontal size={20} /><span>More</span></button>
       </nav>
       <div className={styles.canvas}>
         {children}
@@ -674,11 +684,15 @@ export default function PlanningWorkspace({
             <small>{guideItem.liveProgress.label}</small>
           </div>}
           {!guideMinimized && <>
-            <div className={styles.guideVisual}>
+            <button type="button" className={styles.guideVisualToggle} onClick={() => setGuideVisualOpen((value) => !value)}>
+              {guideVisualOpen ? <EyeOff size={14} /> : <Eye size={14} />}
+              {guideVisualOpen ? "Sembunyikan gambar landmark" : "Lihat gambar landmark"}
+            </button>
+            {guideVisualOpen && <div className={styles.guideVisual}>
               {guideItem.guideView ? <GuideContent viewId={guideItem.guideView}
                 sideConditions={{ kanan: "native", kiri: "native" }} highlightId={guideStep?.id || guideItem.highlightId} />
                 : guideItem.guideImage ? <img src={guideItem.guideImage} alt={`Diagram titik ${guideItem.label}`} /> : null}
-            </div>
+            </div>}
             {guideStep && <div className={styles.guideStepNav}>
               <Action icon={ChevronLeft} aria-label="Landmark sebelumnya" disabled={guideStepIndex === 0}
                 onClick={() => setGuideStepIndex((index) => Math.max(0, index - 1))} />
@@ -735,6 +749,17 @@ export default function PlanningWorkspace({
           <label>Opacity <span>{selectedLayer.opacity}</span>
             <input type="range" min="10" max="100" step="1" value={Math.round((selectedLayer.opacityValue ?? 1) * 100)}
               onChange={(event) => onUpdateLayer(selectedLayer.id, { opacity: Number(event.target.value) / 100 })} /></label>
+          {selectedLayer.imageBacked && <div className={styles.imageAdjustments}>
+            <div className={styles.sectionHeading}><strong>Image adjustment</strong>
+              <button type="button" onClick={() => onUpdateLayer(selectedLayer.id, { contrast: 100, level: 100 })}>Reset</button>
+            </div>
+            <label>Contrast <span>{selectedLayer.contrast}</span>
+              <input type="range" min="10" max="300" step="1" value={selectedLayer.contrastValue ?? 100}
+                onChange={(event) => onUpdateLayer(selectedLayer.id, { contrast: Number(event.target.value) })} /></label>
+            <label>Level <span>{selectedLayer.level}</span>
+              <input type="range" min="10" max="300" step="1" value={selectedLayer.levelValue ?? 100}
+                onChange={(event) => onUpdateLayer(selectedLayer.id, { level: Number(event.target.value) })} /></label>
+          </div>}
           <div className={styles.inspectorActions}>
             <Action icon={selectedLayer.hidden ? EyeOff : Eye} onClick={() => onUpdateLayer(selectedLayer.id, { hidden: !selectedLayer.hidden })}>{selectedLayer.hidden ? "Show" : "Hide"}</Action>
             <Action icon={selectedLayer.locked ? Lock : LockOpen} onClick={() => onUpdateLayer(selectedLayer.id, { locked: !selectedLayer.locked })}>{selectedLayer.locked ? "Unlock" : "Lock"}</Action>
@@ -767,7 +792,8 @@ export default function PlanningWorkspace({
         <Action icon={X} aria-label="Tutup panel" onClick={() => setSheet(null)} />
       </div>
       <div className={styles.sheetContent} data-section={sheet}>{sheet === "workflow" ? workflow : sheet === "log" ? log : sheet === "more" ? moreMenu : <>
-        <h2>Measurement & Tools</h2><div className={styles.buttonGrid}>{toolButtons}</div>
+        <h2>Measurement</h2><div className={styles.buttonGrid}>{tools.filter((item) => ["ruler", "line", "angle", "interline", "circle"].includes(item.id)).map((item) => <Action key={item.id} icon={item.icon} active={item.active} disabled={item.disabled} onClick={() => runTool(item.id)}>{item.label}</Action>)}</div>
+        <h2>Object Tools</h2><div className={styles.buttonGrid}>{tools.filter((item) => ["move", "pan", "rotate", "size", "cut", "text", "flip", "delete"].includes(item.id)).map((item) => <Action key={item.id} icon={item.icon} active={item.active} disabled={item.disabled} onClick={() => runTool(item.id)}>{item.label}</Action>)}</div>
         <h2>{procedure === "tka" ? "Knee Axis Analysis" : "Pelvic Analysis"}</h2>
         <div className={styles.buttonGrid}>{analysisTools.map((item) => <Action key={item.id} icon={item.icon} onClick={() => startAnalysisTool(item)}>{item.label}</Action>)}</div>
       </>}</div>

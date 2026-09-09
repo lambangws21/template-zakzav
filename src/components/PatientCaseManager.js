@@ -10,11 +10,13 @@ import {
   Trash2,
   Calendar,
   Activity,
+  Home,
   Layers,
   Search,
   Download,
   Upload,
   Clock,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Minus,
@@ -34,6 +36,9 @@ import {
   Maximize2,
   RotateCcw,
   ImageIcon,
+  LayoutTemplate,
+  LogOut,
+  Settings,
   X as XIcon,
 } from "lucide-react";
 import PostOpDataModal from "./PostOpDataModal";
@@ -150,9 +155,20 @@ function saveCases(cases) {
       return c;
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+    return true;
   } catch {
-    // localStorage full — ignore
+    return false;
   }
+}
+
+function mergeCloudAndLocalCases(localCases, cloudCases) {
+  const remoteIds = new Set(cloudCases.map((item) => item.id));
+  const localOnly = localCases.filter(
+    (item) => item?.id && !remoteIds.has(item.id) && !item._cloud,
+  );
+  return [...cloudCases, ...localOnly]
+    .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
+    .slice(0, 200);
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -271,15 +287,13 @@ function buildStructuredLabel(procType, preOpSizes) {
 
 async function apiListCases() {
   if (!APPS_SCRIPT_URL) return null;
-  try {
-    const url = `/api/google-sheet-images?url=${encodeURIComponent(APPS_SCRIPT_URL)}&action=list_patient_cases`;
-    const res = await fetch(url, { cache: "no-store" });
-    const json = await res.json();
-    if (!json?.ok || !json?.remote?.ok) return null;
-    return Array.isArray(json.remote.items) ? json.remote.items : null;
-  } catch {
-    return null;
+  const url = `/api/google-sheet-images?url=${encodeURIComponent(APPS_SCRIPT_URL)}&action=list_patient_cases`;
+  const res = await fetch(url, { cache: "no-store" });
+  const json = await res.json();
+  if (!res.ok || !json?.ok || !json?.remote?.ok) {
+    throw new Error(json?.remote?.error || json?.error || "Gagal memuat kasus dari cloud.");
   }
+  return Array.isArray(json.remote.items) ? json.remote.items : [];
 }
 
 async function apiCreateCase(data) {
@@ -656,19 +670,43 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
     <>
       <motion.div
         layout
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`hidden min-h-[70px] grid-cols-[34px_62px_minmax(150px,1.25fr)_minmax(120px,.9fr)_minmax(140px,1fr)_92px_96px_98px] items-center gap-2 rounded-lg border px-2 transition sm:grid ${
+          selected
+            ? "border-violet-500 bg-violet-500/10"
+            : "border-slate-700/80 bg-[#111d2d] hover:border-slate-600 hover:bg-[#142236]"
+        }`}
+      >
+        <button type="button" onClick={() => onSelect(c)} aria-label={`Pilih kasus ${c.patientName || "pasien"}`} className={`grid h-5 w-5 place-items-center rounded border text-[10px] ${selected ? "border-violet-400 bg-violet-600 text-white" : "border-slate-600 text-transparent"}`}>✓</button>
+        <button type="button" onClick={() => thumbnail ? setShowPreview(true) : onSelect(c)} className="h-14 overflow-hidden rounded bg-slate-950" aria-label="Preview X-ray">
+          {thumbnail ? <img src={thumbnail} alt="X-ray" className="h-full w-full object-cover" /> : <Activity className="mx-auto h-full w-5 text-slate-600" />}
+        </button>
+        <button type="button" onClick={() => onSelect(c)} className="min-w-0 text-left">
+          <strong className="block truncate text-[11px] text-slate-100">{c.patientName || "Pasien Tanpa Nama"}</strong>
+          <small className="mt-1 block truncate text-[9px] text-slate-500">{c.imageName || `${c.measurementCount || 0} pengukuran`}</small>
+        </button>
+        <div className="min-w-0"><span className="inline-flex rounded bg-slate-700 px-2 py-1 text-[9px] font-black text-slate-200">{getProcType(c.procedure)?.toUpperCase() || "OTHER"}</span><small className="mt-1 block truncate text-[8px] text-slate-500">{c.procedure || "Belum ada prosedur"}</small></div>
+        <div className="min-w-0"><span className="block truncate text-[9px] text-slate-300">{c.implantLabel || "Belum ada implant"}</span><small className="mt-1 block text-[8px] text-slate-500">{c.templateCount || 0} template</small></div>
+        <span className={`inline-flex min-h-8 items-center justify-center rounded-md px-2 text-[9px] font-black ${c.actualImplantLabel || c.actualSizeNum ? "bg-emerald-500/20 text-emerald-300" : "bg-blue-500/20 text-blue-300"}`}>{c.actualImplantLabel || c.actualSizeNum ? "Post-Op ✓" : "Planning"}</span>
+        <div><span className="block text-[9px] text-slate-300">{timeAgo(c.savedAt)}</span><small className="mt-1 block text-[8px] text-slate-500">{formatDate(c.savedAt).split(",")[0]}</small></div>
+        <div className="flex items-center gap-1"><button type="button" onClick={() => onSelect(c)} className="flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2 text-[9px] font-black text-slate-200 hover:border-violet-500 hover:text-white"><FolderOpen size={13} />Buka</button><button type="button" onClick={() => onDelete(c.id)} className="grid h-9 w-9 place-items-center rounded-md bg-slate-800 text-slate-500 hover:bg-red-500/15 hover:text-red-400" aria-label="Hapus kasus"><Trash2 size={13} /></button></div>
+      </motion.div>
+      <motion.div
+        layout
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, x: -20 }}
-        className={`group relative overflow-hidden rounded-2xl border transition-all ${
+        className={`group relative overflow-hidden rounded-lg border transition-all sm:hidden ${
           selected
-            ? "border-blue-300 bg-blue-50 shadow-md"
-            : "border-slate-200 bg-white/70 hover:border-slate-300 hover:bg-white"
+            ? "border-violet-500 bg-violet-500/10 shadow-[0_0_0_1px_rgba(139,92,246,0.2)]"
+            : "border-slate-700/80 bg-[#111d2d] hover:border-slate-600 hover:bg-[#142236]"
         }`}
       >
         <div className="flex items-stretch gap-0">
 
           {/* thumbnail */}
-          <div className="relative flex h-full w-24 shrink-0 flex-col overflow-hidden rounded-l-2xl bg-slate-900">
+          <div className="relative flex h-full w-20 shrink-0 flex-col overflow-hidden bg-slate-950 sm:w-24">
             {thumbnail ? (
               <>
                 <img
@@ -681,7 +719,7 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
-                  className={`absolute left-0 right-0 top-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${c.postOpPhotos?.length > 0 ? "bottom-[28px]" : "bottom-0"}`}
+                  className={`absolute left-0 right-0 top-0 flex flex-col items-center justify-center gap-1 bg-slate-950/20 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${c.postOpPhotos?.length > 0 ? "bottom-[28px]" : "bottom-0"}`}
                   title="Preview gambar"
                 >
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-500/90 shadow-lg">
@@ -722,11 +760,11 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
           <button
             type="button"
             onClick={() => onSelect(c)}
-            className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
+              className="flex min-h-20 min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
           >
             {/* Row 1: name + badges */}
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-black text-slate-800">
+              <span className="truncate text-xs font-black text-slate-100">
                 {c.patientName || "Pasien Tanpa Nama"}
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -743,17 +781,17 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
               </div>
             </div>
             {/* Row 2: procedure */}
-            <p className="truncate text-[9px] text-slate-500">{c.procedure || "Belum ada prosedur"}</p>
+            <p className="truncate text-[9px] text-slate-400">{c.procedure || "Belum ada prosedur"}</p>
             {/* Row 3: pre-op component chips (max 2) */}
             {c.implantLabel && (
               <div className="mt-0.5 flex flex-wrap gap-0.5">
                 {c.implantLabel.split(" · ").slice(0, 2).map((part, i) => (
-                  <span key={i} className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[8px] text-blue-700 border border-blue-100">
+                  <span key={i} className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[8px] text-slate-300">
                     {part.trim()}
                   </span>
                 ))}
                 {c.implantLabel.split(" · ").length > 2 && (
-                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] text-slate-400">
+                  <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[8px] text-slate-400">
                     +{c.implantLabel.split(" · ").length - 2}
                   </span>
                 )}
@@ -788,7 +826,7 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+              className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-800 text-slate-400 opacity-100 transition hover:bg-red-500/15 hover:text-red-400 sm:h-7 sm:w-7 sm:opacity-0 sm:group-hover:opacity-100"
               title="Hapus kasus"
             >
               <Trash2 className="h-3 w-3" />
@@ -887,7 +925,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
           {/* Body */}
           <div className="space-y-3 px-5 py-4">
             {/* Nama + Prosedur */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="flex flex-col gap-1">
                 <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "var(--soft-text)" }}>Nama Pasien</span>
                 <input
@@ -896,7 +934,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
                   onChange={(e) => setPatientName(e.target.value)}
                   placeholder="Nama pasien"
                   autoFocus
-                  className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none transition focus:ring-2"
+                  className="w-full rounded-xl border px-2.5 py-2 text-base outline-none transition focus:ring-2 sm:text-xs"
                   style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
                 />
               </label>
@@ -905,7 +943,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
                 <select
                   value={procedure}
                   onChange={(e) => setProcedure(e.target.value)}
-                  className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none transition focus:ring-2"
+                  className="w-full rounded-xl border px-2.5 py-2 text-base outline-none transition focus:ring-2 sm:text-xs"
                   style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
                 >
                   <option>Total Knee Arthroplasty (TKA)</option>
@@ -957,7 +995,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
                         value={preOpSizes[comp.key] ?? ""}
                         onChange={(e) => setSize(comp.key, e.target.value)}
                         placeholder={comp.hint}
-                        className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none transition"
+                        className="w-full rounded-lg border px-2 py-1.5 text-base outline-none transition sm:text-xs"
                         style={{ borderColor: "var(--soft-border)", background: "var(--soft-raised-bg)", color: "var(--soft-text-hi)" }}
                       />
                     </label>
@@ -1015,7 +1053,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Catatan singkat (opsional)"
-                className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none transition"
+                className="w-full rounded-xl border px-2.5 py-2 text-base outline-none transition sm:text-xs"
                 style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
               />
             </label>
@@ -1173,7 +1211,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                     onChange={(e) => setPatientName(e.target.value)}
                     placeholder="Nama pasien"
                     autoFocus
-                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-base text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 sm:text-xs"
                   />
                 </label>
                 <label className="flex flex-col gap-1">
@@ -1181,7 +1219,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                   <select
                     value={procedure}
                     onChange={(e) => { setProcedure(e.target.value); setPreOpSizes({}); }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-base text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 sm:text-xs"
                   >
                     <option>Total Knee Arthroplasty (TKA)</option>
                     <option>Total Hip Arthroplasty (THA)</option>
@@ -1215,7 +1253,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                           value={preOpSizes[comp.key] ?? ""}
                           onChange={(e) => setSize(comp.key, e.target.value)}
                           placeholder={comp.hint}
-                          className="w-full rounded-lg border border-amber-100 bg-white px-2 py-1 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-1 focus:ring-amber-100"
+                          className="w-full rounded-lg border border-amber-100 bg-white px-2 py-2 text-base text-slate-800 outline-none transition focus:border-amber-400 focus:ring-1 focus:ring-amber-100 sm:text-xs"
                         />
                       </label>
                     ))}
@@ -1229,7 +1267,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                     value={preOpSizes.__free__ ?? caseData?.implantLabel ?? ""}
                     onChange={(e) => setSize("__free__", e.target.value)}
                     placeholder='mis. "Komponen A · Komponen B"'
-                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-base text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 sm:text-xs"
                   />
                 </label>
               )}
@@ -1242,7 +1280,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Catatan singkat (opsional)"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-base text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 sm:text-xs"
                 />
               </label>
 
@@ -1275,7 +1313,7 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
 
 // ─── Case Detail Modal ─────────────────────────────────────────────────────────
 
-function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox }) {
+function LegacyCaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox }) {
   const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
   const [exportingXray, setExportingXray] = useState(false);
   useEffect(() => { setPostOpPhotoIdx(0); }, [caseData?.id]);
@@ -1674,6 +1712,174 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
   );
 }
 
+function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox, onDelete }) {
+  const [activeTab, setActiveTab] = useState("preop");
+  const [activeImage, setActiveImage] = useState(0);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    setActiveTab("preop");
+    setActiveImage(0);
+  }, [caseData?.id]);
+
+  if (!caseData) return null;
+
+  const preOpSrc = snapshotSrc(caseData.snapshot || caseData.snapshotUrl || null);
+  const postOpSources = (caseData.postOpPhotos || []).map(snapshotSrc).filter(Boolean);
+  const hasPostOp = Boolean(caseData.actualImplantLabel || caseData.actualSizeNum != null || postOpSources.length);
+  const components = (caseData.implantLabel || "")
+    .split(" · ")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const anatomySide = caseData.cupAssessment?.side || caseData.hkaSummary?.[0]?.side || "-";
+  const patientId = String(caseData.id || "-").replace(/^case-/, "").slice(0, 18);
+  const availableImages = [preOpSrc, ...postOpSources].filter(Boolean);
+  const shownImage = availableImages[Math.min(activeImage, Math.max(availableImages.length - 1, 0))] || null;
+  const selectedPostIndex = Math.max(0, Math.min(activeImage - 1, Math.max(postOpSources.length - 1, 0)));
+  const displayImage = activeTab === "postop" ? postOpSources[selectedPostIndex] || null : shownImage;
+
+  async function exportXray() {
+    const source = displayImage || preOpSrc;
+    if (!source) return;
+    setExporting(true);
+    try {
+      let href = source;
+      let extension = source.startsWith("data:image/png") ? "png" : "jpg";
+      if (!source.startsWith("data:")) {
+        const proxyUrl = source.startsWith("http")
+          ? `/api/google-drive-image?src=${encodeURIComponent(source)}`
+          : source;
+        const response = await fetch(proxyUrl);
+        const blob = await response.blob();
+        href = URL.createObjectURL(blob);
+        extension = blob.type.includes("png") ? "png" : "jpg";
+      }
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = `${(caseData.patientName || "xray").replace(/[^a-zA-Z0-9]/g, "-")}-xray.${extension}`;
+      anchor.click();
+      if (!source.startsWith("data:")) setTimeout(() => URL.revokeObjectURL(href), 1500);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const tabItems = [
+    { id: "preop", label: "Pre-Op" },
+    { id: "postop", label: "Post-Op" },
+    { id: "compare", label: "Perbandingan" },
+    { id: "report", label: "Laporan" },
+    { id: "history", label: "Riwayat" },
+  ];
+
+  const InfoRow = ({ label, value }) => (
+    <div className="grid grid-cols-[92px_1fr] gap-3 py-1.5 text-[11px]">
+      <span className="text-slate-400">{label}</span>
+      <strong className="break-words font-semibold text-slate-100">{value || "-"}</strong>
+    </div>
+  );
+
+  const ActionButton = ({ icon: Icon, title, subtitle, accent = "default", onClick, disabled }) => {
+    const accents = {
+      primary: "border-violet-500 bg-violet-600 text-white hover:bg-violet-500",
+      success: "border-emerald-500/70 bg-emerald-600/80 text-white hover:bg-emerald-500",
+      danger: "border-red-500/50 bg-red-500/5 text-red-300 hover:bg-red-500/15",
+      default: "border-slate-700 bg-[#101c2d] text-slate-200 hover:border-slate-500",
+    };
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-3 text-left transition disabled:opacity-40 ${accents[accent]}`}>
+        <Icon size={17} className="shrink-0" />
+        <span className="min-w-0 flex-1"><strong className="block truncate text-[11px]">{title}</strong>{subtitle && <small className="block truncate text-[9px] opacity-65">{subtitle}</small>}</span>
+        <ChevronRight size={14} className="shrink-0 opacity-70" />
+      </button>
+    );
+  };
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div key="case-preview-v2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-[9990] flex items-end justify-center bg-[#020611]/85 backdrop-blur-md sm:items-center sm:p-4">
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Detail kasus ${caseData.patientName || "pasien"}`}
+          initial={{ y: 40, scale: 0.98, opacity: 0 }}
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          exit={{ y: 30, scale: 0.98, opacity: 0 }}
+          onClick={(event) => event.stopPropagation()}
+          className="flex h-[96dvh] w-full max-w-[1180px] flex-col overflow-hidden rounded-t-2xl border border-violet-500/40 bg-[#07111e] text-slate-100 shadow-[0_24px_90px_rgba(0,0,0,.65)] sm:h-[92dvh] sm:rounded-xl"
+        >
+          <header className="flex shrink-0 items-center gap-3 border-b border-slate-700/80 px-3 py-3 sm:px-5">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-violet-600/25 text-violet-300"><Activity size={20} /></div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-base font-black sm:text-xl">{caseData.patientName || "Pasien Tanpa Nama"}</h2><span className="rounded-full border border-slate-600 px-2 py-0.5 text-[8px] text-slate-400">ID: {patientId}</span></div>
+              <p className="truncate text-[10px] text-slate-400 sm:text-xs">{caseData.procedure || "Prosedur belum dipilih"}</p>
+            </div>
+            <span className={`hidden min-h-9 items-center rounded-lg px-3 text-[10px] font-black sm:flex ${hasPostOp ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-600/25 text-emerald-300"}`}>{hasPostOp ? "Post-Op" : "Planning"}</span>
+            <div className="hidden border-l border-slate-700 pl-3 text-[9px] text-slate-400 md:block"><span className="block">Terakhir diubah</span><strong className="text-slate-200">{formatDate(caseData.savedAt)}</strong></div>
+            <button type="button" onClick={onMinimize} className="grid h-9 w-9 place-items-center rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700" aria-label="Minimalkan"><Minus size={15} /></button>
+            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg bg-slate-800 text-slate-300 hover:bg-red-500/20 hover:text-red-300" aria-label="Tutup"><X size={16} /></button>
+          </header>
+
+          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-800 px-3 py-2 sm:px-5" aria-label="Bagian detail kasus">
+            {tabItems.map((item) => <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`min-h-10 shrink-0 rounded-md border px-4 text-[10px] font-black transition ${activeTab === item.id ? "border-violet-400 bg-violet-600 text-white" : "border-slate-700 bg-[#0c1727] text-slate-400 hover:text-white"}`}>{item.label}</button>)}
+          </nav>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grid min-h-full gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-4">
+              <main className="min-w-0 space-y-3">
+                <section className="overflow-hidden rounded-lg border border-slate-700 bg-black">
+                  {activeTab === "compare" && preOpSrc && postOpSources.length ? (
+                    <div className="grid min-h-[320px] grid-cols-2 divide-x divide-slate-700 sm:min-h-[440px]">
+                      <button type="button" onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)} className="relative overflow-hidden"><img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-contain" /><span className="absolute left-3 top-3 rounded-full bg-slate-950/80 px-3 py-1 text-[9px] font-black">Pre-Op</span></button>
+                      <button type="button" onClick={() => onLightbox(postOpSources[0], caseData.patientName, null)} className="relative overflow-hidden"><img src={postOpSources[0]} alt="Post-Op" className="h-full w-full object-contain" /><span className="absolute left-3 top-3 rounded-full bg-emerald-600/90 px-3 py-1 text-[9px] font-black">Post-Op</span></button>
+                    </div>
+                  ) : activeTab === "history" ? (
+                    <div className="grid min-h-[320px] place-items-center p-8 text-center"><div><Clock className="mx-auto mb-3 text-violet-400" /><strong className="block text-sm">Riwayat Kasus</strong><p className="mt-2 text-[11px] text-slate-400">Kasus dibuat atau terakhir diperbarui pada {formatDate(caseData.savedAt)}.</p></div></div>
+                  ) : activeTab === "report" ? (
+                    <div className="grid min-h-[320px] place-items-center p-8 text-center"><div><FileText className="mx-auto mb-3 text-violet-400" /><strong className="block text-sm">Laporan Templating</strong><p className="mt-2 text-[11px] text-slate-400">Gunakan Quick Actions untuk membuat laporan Pre-Op atau laporan lengkap.</p></div></div>
+                  ) : (
+                    <div className="relative grid min-h-[320px] place-items-center sm:min-h-[440px]">
+                      {displayImage ? <button type="button" onClick={() => onLightbox(displayImage, caseData.patientName, activeTab === "preop" ? caseData.id : null)} className="absolute inset-0"><img src={displayImage} alt="Preview X-ray" className="h-full w-full object-contain" /></button> : <div className="text-center text-slate-600"><ImageIcon className="mx-auto mb-2" /><p className="text-xs">Belum ada gambar {activeTab === "postop" ? "Post-Op" : ""}</p></div>}
+                      <span className="absolute left-3 top-3 rounded-full border border-slate-600 bg-slate-950/80 px-3 py-1 text-[9px] font-black">{activeTab === "postop" ? "Post-Op" : "Pre-Op"}</span>
+                      {displayImage && <button type="button" onClick={() => onLightbox(displayImage, caseData.patientName, activeTab === "preop" ? caseData.id : null)} className="absolute bottom-3 right-3 grid h-10 w-10 place-items-center rounded-lg bg-slate-950/80 text-white" aria-label="Perbesar gambar"><Maximize2 size={16} /></button>}
+                    </div>
+                  )}
+                  {availableImages.length > 0 && activeTab !== "history" && activeTab !== "report" && <div className="flex gap-2 overflow-x-auto border-t border-slate-800 bg-[#08111f] p-2">{availableImages.map((source, index) => <button key={`${source.slice(0, 24)}-${index}`} type="button" onClick={() => { setActiveImage(index); setActiveTab(index === 0 ? "preop" : "postop"); }} className={`relative h-14 w-16 shrink-0 overflow-hidden rounded border-2 ${activeImage === index ? "border-violet-500" : "border-slate-700"}`}><img src={source} alt={index === 0 ? "Pre-Op" : `Post-Op ${index}`} className="h-full w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-[7px] font-black">{index === 0 ? "PRE" : `POST ${index}`}</span></button>)}</div>}
+                </section>
+
+                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-3">
+                  <div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-black">Hasil Templating (Pre-Op)</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-9 items-center gap-1 rounded-md border border-slate-600 px-3 text-[9px] font-black text-slate-300"><Pencil size={12} /> Edit</button></div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{(components.length ? components : ["Belum ada implant"]).slice(0, 4).map((component, index) => <div key={`${component}-${index}`} className="rounded-md border border-slate-700 bg-[#101c2d] p-3"><small className="text-[8px] uppercase text-slate-500">Komponen {index + 1}</small><strong className="mt-1 block text-xs text-slate-100">{component}</strong></div>)}{caseData.preOpSizeNum != null && <div className="rounded-md border border-violet-500/30 bg-violet-500/10 p-3"><small className="text-[8px] uppercase text-violet-300">Ukuran Primer</small><strong className="mt-1 block text-lg text-violet-300">{caseData.preOpSizeNum}</strong></div>}</div>
+                </section>
+
+                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-3"><h3 className="mb-2 text-xs font-black">Catatan</h3><p className="min-h-14 rounded-md border border-slate-700 bg-[#101c2d] p-3 text-[10px] leading-relaxed text-slate-400">{caseData.notes || "Belum ada catatan untuk kasus ini."}</p></section>
+              </main>
+
+              <aside className="space-y-3">
+                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-black">Informasi Pasien</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-9 items-center gap-1 rounded-md border border-slate-600 px-3 text-[9px]"><Pencil size={12} /> Edit</button></div><InfoRow label="Nama" value={caseData.patientName} /><InfoRow label="Umur" value={caseData.patientAge} /><InfoRow label="Jenis Kelamin" value={caseData.gender} /><InfoRow label="ID Pasien" value={patientId} /></section>
+                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-black">Detail Prosedur</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-9 items-center gap-1 rounded-md border border-slate-600 px-3 text-[9px]"><Pencil size={12} /> Edit</button></div><InfoRow label="Prosedur" value={caseData.procedure} /><InfoRow label="Templating" value={formatDate(caseData.savedAt)} /><InfoRow label="Sisi" value={anatomySide === "left" ? "Left (L)" : anatomySide === "right" ? "Right (R)" : anatomySide} /><InfoRow label="Status" value={hasPostOp ? "Post-Op" : "Planning"} /></section>
+                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-3"><h3 className="mb-3 text-sm font-black">Quick Actions</h3><div className="space-y-2">
+                  {onLoadAsLayer && preOpSrc && <ActionButton icon={ImageIcon} title="Buka di Templating" subtitle="Lanjutkan perencanaan kasus ini" accent="primary" onClick={() => { onLoadAsLayer(preOpSrc, `${caseData.patientName || "Kasus"} - ${caseData.procedure || ""}`); onClose(); }} />}
+                  <ActionButton icon={ClipboardCheck} title={hasPostOp ? "Edit Data Post-Op" : "Input Data Post-Op"} subtitle="Tambahkan hasil post-operative" accent="success" onClick={() => onPostOp(caseData)} />
+                  {onLoadAsLayer && preOpSrc && <ActionButton icon={Layers} title="Buka sebagai Layer Perbandingan" subtitle="Bandingkan dengan kasus lain" onClick={() => { onLoadAsLayer(preOpSrc, `${caseData.patientName || "Kasus"} - Perbandingan`); onClose(); }} />}
+                  <ActionButton icon={ImageIcon} title="Ekspor X-Ray (Gambar)" subtitle="Simpan sebagai PNG/JPG" onClick={exportXray} disabled={!shownImage || exporting} />
+                  <ActionButton icon={FileText} title="Laporan Pre-Op (PDF)" subtitle="Generate laporan templating" onClick={() => { onPreOpReport(caseData); onClose(); }} />
+                  <ActionButton icon={Download} title="Laporan Lengkap PDF" subtitle="Pre-Op, Post-Op, dan perbandingan" onClick={() => { onFullReport(caseData); onClose(); }} />
+                  {onCompare && <ActionButton icon={BarChart2} title="Bandingkan Kasus" subtitle="Buka mode perbandingan" onClick={() => { onCompare(caseData); onClose(); }} />}
+                  {onDelete && <ActionButton icon={Trash2} title="Hapus Kasus" subtitle="Kasus akan dipindahkan ke trash" accent="danger" onClick={() => { onDelete(caseData); onClose(); }} />}
+                </div></section>
+              </aside>
+            </div>
+          </div>
+
+          <footer className="flex shrink-0 items-center justify-between border-t border-slate-800 bg-[#0a1422] px-4 py-2"><strong className="text-xs">ZakZav</strong><span className="hidden text-[9px] text-slate-500 sm:block">Plan Better. Treat Better.</span><button type="button" onClick={onClose} className="min-h-9 rounded-md border border-slate-700 bg-slate-800 px-5 text-[10px] font-black">Tutup</button></footer>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body,
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PatientCaseManager({ isOpen, onClose, currentSession, onLoadAsLayer }) {
@@ -1686,6 +1892,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // "all" | "pending" | "done"
   const [filterProc, setFilterProc] = useState("all");
+  const [sortOrder, setSortOrder] = useState("newest");
+  const [page, setPage] = useState(1);
   const [showIncompleteAlert, setShowIncompleteAlert] = useState(true);
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [selectedCaseId, setSelectedCaseId] = useState(null);
@@ -1707,6 +1915,20 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
   const hasCloud = Boolean(APPS_SCRIPT_URL);
 
   useEffect(() => {
+    if (!isOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose?.();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
     if (!isOpen) { setCloudError(""); setSyncOk(false); return; }
     const cached = loadCases();
     if (cached.length > 0) setCases(cached);
@@ -1719,11 +1941,14 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
       .then((items) => {
         if (items) {
           const mapped = items.map(mapCloudCase);
-          setCases(mapped);
-          saveCases(mapped);
+          setCases((current) => {
+            const merged = mergeCloudAndLocalCases(current, mapped);
+            saveCases(merged);
+            return merged;
+          });
         }
       })
-      .catch(() => {})
+      .catch((error) => setCloudError(error.message || "Gagal memuat kasus dari cloud."))
       .finally(() => setLoading(false));
   }, [isOpen, hasCloud]);
 
@@ -1753,7 +1978,20 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
         (c.procedure || "").toLowerCase().includes(filterProc.toLowerCase());
       return matchSearch && matchStatus && matchProc;
     })
-    .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+    .sort((a, b) => {
+      if (sortOrder === "oldest") return new Date(a.savedAt) - new Date(b.savedAt);
+      if (sortOrder === "name") return (a.patientName || "").localeCompare(b.patientName || "", "id");
+      return new Date(b.savedAt) - new Date(a.savedAt);
+    });
+
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedCases = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterStatus, filterProc, sortOrder]);
 
   const handleSave = useCallback(
     async (formData) => {
@@ -1829,7 +2067,9 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
 
       const updated = [caseData, ...cases].slice(0, 200);
       setCases(updated);
-      saveCases(updated);
+      if (!saveCases(updated) && !caseData._cloud) {
+        setCloudError("Penyimpanan browser penuh. Kasus masih aktif di memori, tetapi belum tersimpan permanen.");
+      }
       setSelectedCaseId(caseData.id);
       setSyncing(false);
     },
@@ -1934,13 +2174,16 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
       .then((items) => {
         if (items) {
           const mapped = items.map(mapCloudCase);
-          setCases(mapped);
-          saveCases(mapped);
+          setCases((current) => {
+            const merged = mergeCloudAndLocalCases(current, mapped);
+            saveCases(merged);
+            return merged;
+          });
           setSyncOk(true);
           setTimeout(() => setSyncOk(false), 2500);
         }
       })
-      .catch(() => setCloudError("Gagal memuat data dari cloud."))
+      .catch((error) => setCloudError(error.message || "Gagal memuat data dari cloud."))
       .finally(() => setLoading(false));
   }, [hasCloud, loading]);
 
@@ -1950,23 +2193,47 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/40 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="max-h-[94dvh] w-full max-w-[min(100%,780px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f1f5f9] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Kasus Pasien"
+            className="flex h-[100dvh] w-full overflow-hidden border border-slate-700 bg-[#08111f] text-slate-100 shadow-[0_30px_80px_rgba(0,0,0,0.55)] sm:h-auto sm:max-h-[94dvh] sm:max-w-[1440px] sm:rounded-xl"
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.96, opacity: 0 }}
             transition={{ type: "spring", damping: 26, stiffness: 300 }}
           >
+            <aside className="hidden w-[220px] shrink-0 flex-col border-r border-slate-800 bg-[#07111e] lg:flex">
+              <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-5">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-600 text-lg font-black">Z</span>
+                <div><strong className="block text-base text-white">ZakZav</strong><small className="text-[9px] text-slate-500">Plan. Measure. Compare.</small></div>
+              </div>
+              <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Navigasi kasus">
+                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><Home size={17} />Dashboard</button>
+                <button type="button" className="flex min-h-11 items-center gap-3 rounded-lg bg-violet-600/25 px-3 text-left text-xs font-black text-violet-200 ring-1 ring-violet-500/30"><FolderOpen size={17} />Kasus Pasien<span className="ml-auto rounded-full border border-violet-400/50 px-2 py-0.5 text-[9px]">{cases.length}</span></button>
+                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><LayoutTemplate size={17} />Template</button>
+                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><Activity size={17} />Pengukuran</button>
+                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><Layers size={17} />Implant Library</button>
+                <button type="button" disabled={cases.length < 2} onClick={() => setCompareCases(cases.slice(0, 2))} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-35"><ClipboardCheck size={17} />Compare</button>
+                <button type="button" disabled={!selectedCase && !cases[0]} onClick={() => setFullReportCase(selectedCase || cases[0])} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-35"><FileText size={17} />Laporan</button>
+                <button type="button" onClick={handleExportBackup} disabled={!cases.length} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-35"><Settings size={17} />Backup Data</button>
+              </nav>
+              <div className="border-t border-slate-800 p-4">
+                <div className="flex items-center gap-2"><UserProfileBadge /><div className="min-w-0"><strong className="block truncate text-[11px] text-slate-200">zakzav</strong><small className="text-[9px] text-slate-500">Clinical workspace</small></div></div>
+                <button type="button" onClick={onClose} className="mt-3 flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-[10px] font-semibold text-slate-500 hover:bg-slate-800 hover:text-slate-200"><LogOut size={15} />Kembali ke workspace</button>
+              </div>
+            </aside>
+            <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
             {/* header */}
-            <div className="flex items-center gap-2.5 border-b border-white/[0.06] bg-[#1a0d2e] px-4 py-3 shrink-0">
+            <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-700/80 bg-[#0b1627] px-3 py-3 sm:px-5">
               {/* Icon */}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-purple-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600">
                 <FolderOpen className="h-4 w-4 text-white" />
               </div>
 
@@ -1980,7 +2247,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1 text-[9px] text-purple-300/70 leading-tight">
+                <div className="mt-0.5 flex items-center gap-1 text-[9px] leading-tight text-slate-400">
                   <span>{cases.length} kasus</span>
                   <span>·</span>
                   <span>{hasCloud ? "Google Sheets" : "Lokal"}</span>
@@ -1993,6 +2260,12 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                   )}
                   {!hasCloud && <CloudOff className="h-2.5 w-2.5 text-purple-500/60" />}
                 </div>
+              </div>
+
+              <div className="relative hidden w-[min(36vw,440px)] xl:block">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari pasien, prosedur, atau tanggal..." className="h-11 w-full rounded-lg border border-slate-700 bg-[#07111e] pl-10 pr-12 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-violet-500" />
+                <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-slate-800 px-2 py-1 text-[9px] text-slate-400">⌘ K</kbd>
               </div>
 
               {/* Action group */}
@@ -2068,11 +2341,11 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                   type="button"
                   onClick={() => { setShowSaveForm(true); setCloudError(""); }}
                   disabled={syncing}
-                  className="flex items-center gap-1 rounded-full bg-purple-600 px-2.5 py-1.5 text-white hover:bg-purple-500 disabled:opacity-50 transition"
+                  className="flex min-h-10 items-center gap-1 rounded-md bg-violet-600 px-3 py-2 text-white transition hover:bg-violet-500 disabled:opacity-50 sm:px-5"
                   title="Simpan kasus"
                 >
                   <Plus className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline text-[10px] font-black">Simpan</span>
+                  <span className="hidden sm:inline text-[10px] font-black">Kasus Baru</span>
                 </button>
 
                 {/* Profile */}
@@ -2089,8 +2362,8 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
               </div>
             </div>
 
-            <div className="max-h-[calc(94dvh-80px)] overflow-y-auto">
-              <div className="space-y-4 px-5 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="space-y-4 px-3 py-4 sm:px-5 sm:py-5 xl:pr-[270px]">
 
                 {/* Cloud error */}
                 <AnimatePresence>
@@ -2099,10 +2372,12 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5"
+                      className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
                     >
                       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-                      <p className="text-[10px] text-amber-700">{cloudError}</p>
+                      <div className="min-w-0 flex-1"><p className="text-[10px] text-amber-200">{cloudError}</p>
+                        {hasCloud && <button type="button" onClick={handleRefresh} disabled={loading} className="mt-1 text-[9px] font-black text-amber-300 underline disabled:opacity-40">Coba lagi</button>}
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -2170,14 +2445,14 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                 </AnimatePresence>
 
                 {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <div className="relative xl:hidden">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                   <input
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Cari pasien, prosedur..."
-                    className="w-full rounded-2xl border border-slate-200 bg-white/70 py-2 pl-9 pr-3 text-xs text-slate-800 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                    placeholder="Cari pasien, prosedur, atau gambar..."
+                    className="min-h-11 w-full rounded-lg border border-slate-700 bg-[#0d192a] py-2 pl-10 pr-9 text-base text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-violet-500 sm:text-xs"
                   />
                 </div>
 
@@ -2192,10 +2467,10 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       key={chip.id}
                       type="button"
                       onClick={() => setFilterStatus(chip.id)}
-                      className={`rounded-full px-2.5 py-1 text-[9px] font-black transition ${
+                      className={`min-h-9 rounded-md px-3 py-1.5 text-[9px] font-black transition ${
                         filterStatus === chip.id
-                          ? "bg-purple-600 text-white"
-                          : "border border-slate-200 bg-white/70 text-slate-500 hover:border-purple-300 hover:text-purple-600"
+                          ? "bg-violet-600 text-white"
+                          : "border border-slate-700 bg-[#101c2d] text-slate-400 hover:border-violet-500 hover:text-slate-100"
                       }`}
                     >
                       {chip.label}
@@ -2205,7 +2480,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                     <select
                       value={filterProc}
                       onChange={(e) => setFilterProc(e.target.value)}
-                      className="ml-auto rounded-full border border-slate-200 bg-white/70 py-1 pl-2.5 pr-6 text-[9px] text-slate-500 outline-none focus:border-purple-400"
+                      className="ml-auto min-h-9 rounded-md border border-slate-700 bg-[#101c2d] py-1 pl-2.5 pr-6 text-base text-slate-300 outline-none focus:border-violet-500 sm:text-[9px]"
                     >
                       <option value="all">Semua Prosedur</option>
                       {procOptions.map((p) => (
@@ -2213,6 +2488,16 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       ))}
                     </select>
                   )}
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value)}
+                    aria-label="Urutkan kasus"
+                    className={`${procOptions.length <= 1 ? "ml-auto" : ""} min-h-9 rounded-md border border-slate-700 bg-[#101c2d] py-1 pl-2.5 pr-6 text-base text-slate-300 outline-none focus:border-violet-500 sm:text-[9px]`}
+                  >
+                    <option value="newest">Terbaru</option>
+                    <option value="oldest">Terlama</option>
+                    <option value="name">Nama A-Z</option>
+                  </select>
                 </div>
 
                 {/* Edit Case — handled as modal, rendered via portal below */}
@@ -2312,11 +2597,11 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       </>
                     ) : (
                       <>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          {filtered.length} kasus
-                        </p>
+                        <div className="hidden grid-cols-[34px_62px_minmax(150px,1.25fr)_minmax(120px,.9fr)_minmax(140px,1fr)_92px_96px_98px] gap-2 px-2 text-[8px] font-black uppercase tracking-wider text-slate-500 sm:grid">
+                          <span aria-hidden="true" /><span>Foto</span><span>Pasien</span><span>Prosedur</span><span>Implant / Ukuran</span><span>Status</span><span>Tanggal</span><span>Aksi</span>
+                        </div>
                         <AnimatePresence>
-                          {filtered.map((c) => (
+                          {pagedCases.map((c) => (
                             <CaseCard
                               key={c.id}
                               c={c}
@@ -2333,6 +2618,20 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                             />
                           ))}
                         </AnimatePresence>
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+                          <p className="text-[9px] text-slate-500">
+                            Menampilkan {filtered.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, filtered.length)} dari {filtered.length} kasus
+                          </p>
+                          <div className="flex items-center gap-1" aria-label="Navigasi halaman">
+                            <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1} className="grid h-9 w-9 place-items-center rounded-md border border-slate-700 bg-slate-800 text-slate-300 disabled:opacity-30" aria-label="Halaman sebelumnya"><ChevronLeft size={14} /></button>
+                            {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
+                              const start = Math.min(Math.max(1, currentPage - 2), Math.max(1, totalPages - 4));
+                              const pageNumber = start + index;
+                              return <button key={pageNumber} type="button" onClick={() => setPage(pageNumber)} className={`h-9 min-w-9 rounded-md border px-2 text-[10px] font-black ${currentPage === pageNumber ? "border-violet-500 bg-violet-600/20 text-violet-200" : "border-slate-700 bg-slate-800 text-slate-400"}`}>{pageNumber}</button>;
+                            })}
+                            <button type="button" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage === totalPages} className="grid h-9 w-9 place-items-center rounded-md border border-slate-700 bg-slate-800 text-slate-300 disabled:opacity-30" aria-label="Halaman berikutnya"><ChevronRight size={14} /></button>
+                          </div>
+                        </div>
                       </>
                     )}
                   </div>
@@ -2341,16 +2640,30 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
               </div>
             </div>
 
+            <aside className="absolute right-4 top-[112px] bottom-[58px] hidden w-[238px] overflow-y-auto rounded-lg border border-slate-700 bg-[#0b1727] p-4 shadow-xl xl:block">
+              <div className="mb-5 flex items-center justify-between"><strong className="text-sm text-slate-100">Filter Kasus</strong><button type="button" onClick={() => { setFilterStatus("all"); setFilterProc("all"); }} className="text-[9px] text-slate-400 hover:text-white">Reset</button></div>
+              <div className="space-y-2"><strong className="text-[11px] text-slate-300">Prosedur</strong>
+                <button type="button" onClick={() => setFilterProc("all")} className={`flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-[10px] ${filterProc === "all" ? "bg-violet-600/20 text-violet-200" : "text-slate-400"}`}><span className={`grid h-4 w-4 place-items-center rounded border ${filterProc === "all" ? "border-violet-500 bg-violet-600" : "border-slate-600"}`}>{filterProc === "all" ? "✓" : ""}</span>Semua Prosedur</button>
+                {procOptions.map((procedureName) => <button key={`side-${procedureName}`} type="button" onClick={() => setFilterProc(procedureName)} className={`flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-[10px] ${filterProc === procedureName ? "bg-violet-600/20 text-violet-200" : "text-slate-400"}`}><span className={`grid h-4 w-4 place-items-center rounded border ${filterProc === procedureName ? "border-violet-500 bg-violet-600" : "border-slate-600"}`}>{filterProc === procedureName ? "✓" : ""}</span>{procedureName}</button>)}
+              </div>
+              <div className="my-4 h-px bg-slate-800" />
+              <div className="space-y-2"><strong className="text-[11px] text-slate-300">Status</strong>
+                {[{ id: "all", label: "Semua Status" }, { id: "pending", label: "Planning / Belum Post-Op" }, { id: "done", label: "Post-Op Selesai" }].map((item) => <button key={`status-${item.id}`} type="button" onClick={() => setFilterStatus(item.id)} className={`flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-[10px] ${filterStatus === item.id ? "bg-violet-600/20 text-violet-200" : "text-slate-400"}`}><span className={`grid h-4 w-4 place-items-center rounded border ${filterStatus === item.id ? "border-violet-500 bg-violet-600" : "border-slate-600"}`}>{filterStatus === item.id ? "✓" : ""}</span>{item.label}</button>)}
+              </div>
+              <button type="button" className="mt-6 min-h-11 w-full rounded-md bg-violet-600 text-[10px] font-black text-white hover:bg-violet-500">Terapkan Filter</button>
+            </aside>
+
             {/* footer */}
-            <div className="border-t border-slate-200/60 bg-[#f1f5f9] px-5 py-4">
+            <div className="shrink-0 border-t border-slate-700/80 bg-[#0b1627] px-3 py-2 sm:px-5">
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3 text-xs font-black text-slate-600"
+                className="w-full rounded-md border border-slate-700 bg-slate-800 py-2.5 text-xs font-black text-slate-300 transition hover:bg-slate-700"
               >
                 Tutup
               </button>
             </div>
+            </section>
           </motion.div>
         </motion.div>
       )}
@@ -2389,6 +2702,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           onPreOpReport={(c) => setPreOpReportCase(c)}
           onFullReport={(c) => setFullReportCase(c)}
           onCompare={(c) => setCompareCases([c])}
+          onDelete={(c) => setDeleteTarget(c)}
           onLightbox={(src, name, caseId) => { setLightboxSrc(src); setLightboxName(name); setLightboxCaseId(caseId ?? null); }}
         />,
         document.body
@@ -2419,8 +2733,11 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
             apiListCases().then((items) => {
               if (items) {
                 const mapped = items.map(mapCloudCase);
-                setCases(mapped);
-                saveCases(mapped);
+                setCases((current) => {
+                  const merged = mergeCloudAndLocalCases(current, mapped);
+                  saveCases(merged);
+                  return merged;
+                });
               }
             }).catch(() => {});
           }

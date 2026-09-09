@@ -824,6 +824,134 @@ summary::-webkit-details-marker { display: none }
     inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
+/* Advanced workspace: setup | canvas | contextual inspector. */
+@media (min-width: 1024px) and (pointer: fine) {
+  .advanced-ui-shell .advanced-app-header {
+    margin-inline: 8px;
+    border-radius: 12px;
+  }
+
+  .advanced-ui-shell .advanced-workspace-grid {
+    grid-template-areas: "setup canvas inspector";
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .advanced-ui-shell .advanced-workspace-grid > .advanced-setup-panel {
+    grid-area: setup;
+    height: calc(100dvh - 84px) !important;
+    max-height: calc(100dvh - 84px) !important;
+    border-radius: 12px !important;
+    padding: 10px !important;
+    scrollbar-width: thin;
+  }
+
+  .advanced-ui-shell .advanced-workspace-grid > .advanced-inspector-panel {
+    grid-area: inspector;
+    height: calc(100dvh - 84px) !important;
+    max-height: calc(100dvh - 84px) !important;
+    border-radius: 12px !important;
+    padding: 10px !important;
+    scrollbar-width: thin;
+  }
+
+  .advanced-ui-shell .advanced-workspace-grid > .advanced-canvas-stage {
+    grid-area: canvas;
+    min-width: 0;
+    border-radius: 12px !important;
+  }
+
+  .advanced-ui-shell .advanced-sidebar-toggle {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1180px) and (pointer: coarse) {
+  .advanced-ui-shell[data-mobile-viewport="true"] {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-app-header {
+    height: 48px !important;
+    min-height: 48px !important;
+    gap: 6px;
+    padding-inline: 8px;
+    border-radius: 0;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-clock,
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-study-nav > div {
+    display: none;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-header-primary {
+    gap: 6px;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-header-actions > * {
+    display: none !important;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-header-actions > :last-child {
+    display: inline-flex !important;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-study-nav {
+    gap: 5px;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-study-nav select {
+    min-width: 104px;
+    max-width: 132px;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-calibration-status {
+    max-width: 92px;
+    padding-inline: 7px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-setup-panel,
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-inspector-panel {
+    position: fixed !important;
+    inset-inline: 6px !important;
+    top: auto !important;
+    bottom: calc(env(safe-area-inset-bottom) + 72px) !important;
+    z-index: 48 !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: min(66dvh, 620px) !important;
+    border-radius: 20px !important;
+    padding: 10px 10px 14px !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    box-shadow: 0 -10px 34px rgba(2, 6, 23, 0.32) !important;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-mobile-panel-switcher {
+    display: none !important;
+  }
+
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-canvas-stage {
+    height: calc(100dvh - 48px);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 66px) !important;
+    border-radius: 0 !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1180px) and (pointer: coarse) {
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-setup-panel,
+  .advanced-ui-shell[data-mobile-viewport="true"] .advanced-inspector-panel {
+    inset-inline: auto 12px !important;
+    bottom: calc(env(safe-area-inset-bottom) + 76px) !important;
+    width: min(380px, 40vw) !important;
+    max-height: calc(100dvh - 142px) !important;
+  }
+}
+
 .checker-background::before {
   content: "";
   position: absolute;
