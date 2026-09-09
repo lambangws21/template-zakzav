@@ -1,18 +1,29 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db, logOut } from "@/lib/authServices";
 import { firebaseClientError } from "@/lib/firebaseClient";
 
 const AuthContext = createContext({ user: null, loading: true, userStatus: null, authError: null });
+const AUTH_STARTUP_TIMEOUT_MS = 12000;
+const AUTH_STARTUP_TIMEOUT_MESSAGE =
+  "Pemeriksaan sesi terlalu lama. Periksa koneksi lalu coba lagi.";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userStatus, setUserStatus] = useState(null);
   const [authError, setAuthError] = useState(null);
+  const [authAttempt, setAuthAttempt] = useState(0);
   const inactivityTimer = useRef(null);
   const unsubDoc = useRef(null);
 
@@ -23,12 +34,20 @@ export function AuthProvider({ children }) {
     }, 3600000); // 1 jam
   };
 
+  const retryAuth = useCallback(() => {
+    setAuthError(null);
+    setLoading(true);
+    setAuthAttempt((attempt) => attempt + 1);
+  }, []);
+
   useEffect(() => {
     if (!auth || !db) {
       setAuthError(firebaseClientError || "Firebase Auth tidak tersedia.");
       setLoading(false);
       return;
     }
+    setAuthError(null);
+    setLoading(true);
     const nativeFetch = window.fetch.bind(window);
     window.fetch = async (input, init = {}) => {
       const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -44,41 +63,53 @@ export function AuthProvider({ children }) {
     };
 
     const authStartupTimer = window.setTimeout(() => {
+      setAuthError(AUTH_STARTUP_TIMEOUT_MESSAGE);
       setLoading(false);
-    }, 8000);
+    }, AUTH_STARTUP_TIMEOUT_MS);
 
-    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
-      window.clearTimeout(authStartupTimer);
-      // Bersihkan listener Firestore sebelumnya
-      if (unsubDoc.current) {
-        unsubDoc.current();
-        unsubDoc.current = null;
-      }
+    const unsubAuth = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        window.clearTimeout(authStartupTimer);
+        setAuthError(null);
+        // Bersihkan listener Firestore sebelumnya
+        if (unsubDoc.current) {
+          unsubDoc.current();
+          unsubDoc.current = null;
+        }
 
-      setUser(currentUser);
+        setUser(currentUser);
 
-      if (currentUser) {
-        resetInactivityTimer();
-        // Jangan menahan seluruh UI sambil menunggu Firestore. Default tetap
-        // fail-closed sampai dokumen status pengguna berhasil dibaca.
-        setUserStatus("pending");
-        setLoading(false);
-        // Listen status user dari Firestore secara real-time
-        unsubDoc.current = onSnapshot(
-          doc(db, "users", currentUser.uid),
-          (snap) => {
-            setUserStatus(snap.exists() ? snap.data().status : "pending");
-          },
-          () => {
-            setUserStatus("pending");
-          },
+        if (currentUser) {
+          resetInactivityTimer();
+          // Jangan menahan seluruh UI sambil menunggu Firestore. Default tetap
+          // fail-closed sampai dokumen status pengguna berhasil dibaca.
+          setUserStatus("pending");
+          setLoading(false);
+          // Listen status user dari Firestore secara real-time
+          unsubDoc.current = onSnapshot(
+            doc(db, "users", currentUser.uid),
+            (snap) => {
+              setUserStatus(snap.exists() ? snap.data().status : "pending");
+            },
+            () => {
+              setUserStatus("pending");
+            },
+          );
+        } else {
+          if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+          setUserStatus(null);
+          setLoading(false);
+        }
+      },
+      (error) => {
+        window.clearTimeout(authStartupTimer);
+        setAuthError(
+          error?.message || "Sesi login gagal diperiksa. Silakan coba lagi.",
         );
-      } else {
-        if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-        setUserStatus(null);
         setLoading(false);
-      }
-    });
+      },
+    );
 
     const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
     const handleActivity = () => {
@@ -94,10 +125,12 @@ export function AuthProvider({ children }) {
       events.forEach((e) => window.removeEventListener(e, handleActivity));
       window.fetch = nativeFetch;
     };
-  }, []);
+  }, [authAttempt]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, userStatus, authError }}>
+    <AuthContext.Provider
+      value={{ user, loading, userStatus, authError, retryAuth }}
+    >
       {children}
     </AuthContext.Provider>
   );

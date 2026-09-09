@@ -4,15 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight,
   ClipboardList, CloudUpload, Download, Eye, EyeOff, FileText, Focus,
-  ImagePlus, Layers, ListOrdered, Lock, LockOpen, PanelLeftClose,
-  PanelRightClose, Play, Plus, Ruler, SlidersHorizontal, Target, X,
+  ImagePlus, Layers, ListOrdered, Lock, LockOpen, Maximize2, Menu,
+  MoreHorizontal, MousePointer2, Move, PanelLeftClose, PanelRightClose,
+  Play, Plus, RotateCw, Ruler, Save, Search, SlidersHorizontal, Sun,
+  Moon, Target, Trash2, X,
 } from "lucide-react";
 import {
   capturePlanningInitial, completePlanningStep, formatPlanningValue,
   getCompletedPlanningSteps, resolvePlanningRows,
 } from "@/lib/planningWorkspace";
 import styles from "./PlanningWorkspace.module.css";
-import PlanningToolGroups from "./PlanningToolGroups";
 import { GuideContent } from "@/components/LandmarkGuide";
 
 function Action({ icon: Icon, children, active, className = "", ...props }) {
@@ -46,6 +47,7 @@ export default function PlanningWorkspace({
   status, zoom, toolLabel, isDark, onToggleMeasurementLabel, onRenameMeasurement,
   alignmentPlan, alignmentSettings, onAlignmentSetting, onCreateAlignmentPreview,
   alignmentMode, onAlignmentMode, customTargetHkaDeg, onCustomTargetHkaDeg,
+  selectedLayerId, onOpenAdvancedUi, onToggleDarkMode, accountControl,
 }) {
   const [workflowOpen, setWorkflowOpen] = useState(true);
   const [stepExpanded, setStepExpanded] = useState(true);
@@ -62,6 +64,10 @@ export default function PlanningWorkspace({
   const [guideMinimized, setGuideMinimized] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
   const [resectionExpanded, setResectionExpanded] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [implantBrowserOpen, setImplantBrowserOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [implantSearch, setImplantSearch] = useState("");
   const drag = useRef(null);
   const sheetRef = useRef(null);
   const previousAnalysisRef = useRef({ procedure, signature: "" });
@@ -103,7 +109,15 @@ export default function PlanningWorkspace({
   const brands = [...new Set(available.map((item) => item.brand))];
   const systems = [...new Set(available.filter((item) => !brand || item.brand === brand).map((item) => item.system))];
   const choices = available.filter((item) => (!brand || item.brand === brand) && (!system || item.system === system) && (!component || item.type === component));
+  const visibleChoices = choices.filter((item) => {
+    const query = implantSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [item.label, item.brand, item.system, item.size, item.type]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
   const selectedImplant = choices.find((item) => item.id === selectedImplantId);
+  const selectedLayer = layers.find((item) => item.id === selectedLayerId) || null;
   const canProceed = hasImage && calibrated && Boolean(session.side);
   const completedSteps = getCompletedPlanningSteps(session, canProceed);
   const firstIncompleteStep = reference.workflow.findIndex((_, index) => !completedSteps.has(index));
@@ -182,7 +196,35 @@ export default function PlanningWorkspace({
 
   if (!enabled) return children;
 
-  const activate = (action) => { setSheet(null); action(); };
+  const activate = (action) => {
+    setSheet(null);
+    setMoreOpen(false);
+    action?.();
+  };
+  const runCalibrated = (action) => {
+    setSheet(null);
+    setMoreOpen(false);
+    if (!hasImage) {
+      actions.upload?.();
+      return false;
+    }
+    if (!calibrated) {
+      actions.calibrate?.();
+      return false;
+    }
+    action?.();
+    return true;
+  };
+  const startAnalysisTool = (item) => {
+    if (!item) return false;
+    return runCalibrated(() => {
+    if (session.step !== 1) onSession({ ...session, step: 1 });
+    setGuideItemId(item.id);
+    setGuideMinimized(false);
+    setGuideStepIndex(0);
+    item.action?.();
+    });
+  };
   const revealWorkflow = () => {
     setWorkflowOpen(true);
     if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
@@ -197,6 +239,10 @@ export default function PlanningWorkspace({
     if (initial) finishStep(1, { initial }, 2);
   };
   const changeStep = (index, toggle = false) => {
+    if (index > 0 && hasImage && !calibrated) {
+      runCalibrated();
+      return;
+    }
     const available = index === 0 || completedSteps.has(index) || (canProceed && index <= nextRequiredStep);
     if (!available) return;
     setStepExpanded((current) => toggle && index === session.step ? !current : true);
@@ -204,6 +250,7 @@ export default function PlanningWorkspace({
   };
   const insertSelectedImplant = () => {
     onInsertImplant();
+    setImplantBrowserOpen(false);
     finishStep(3, {}, 4);
   };
 
@@ -258,8 +305,8 @@ export default function PlanningWorkspace({
         </div>
         <Action icon={Ruler} className={calibrated ? styles.success : styles.warning} disabled={!hasImage}
           onClick={() => activate(actions.calibrate)}>{calibrated ? "Skala terkalibrasi" : "Kalibrasi marker"}</Action>
-        <Action icon={Layers} disabled={!hasImage || !calibrated}
-          onClick={() => activate(actions.implantLibrary)}>Langsung ke Implant Template</Action>
+        <Action icon={Layers} disabled={!hasImage}
+          onClick={() => runCalibrated(actions.implantLibrary)}>Langsung ke Implant Template</Action>
         </fieldset>
         {!canProceed && <p className={styles.prerequisite} role="status">{prerequisites}</p>}
       </>}
@@ -271,18 +318,13 @@ export default function PlanningWorkspace({
         <ol className={styles.analysisSteps}>
           {analysisTools.map((item, index) => {
             const current = Boolean(item.active) || guideItemId === item.id;
-            const available = canProceed;
+            const available = hasImage && Boolean(session.side);
             const itemGuideSteps = item.guideSteps || [];
             const completedLandmarks = item.liveProgress?.current ?? (item.complete ? itemGuideSteps.length : 0);
             const activeLandmark = itemGuideSteps[Math.min(completedLandmarks, Math.max(0, itemGuideSteps.length - 1))] || null;
             return <li key={item.id}>
               <button type="button" disabled={!available} aria-current={current ? "step" : undefined}
-                onClick={() => {
-                  setGuideItemId(item.id);
-                  setGuideMinimized(true);
-                  setGuideStepIndex(0);
-                  activate(item.action);
-                }}>
+                onClick={() => startAnalysisTool(item)}>
                 <span className={styles.analysisNumber}>{item.complete ? <Check size={14} /> : index + 1}</span>
                 <span><strong>{item.label}</strong><small>{item.instruction}</small></span>
                 {item.progress && <em>{item.progress}</em>}
@@ -316,7 +358,7 @@ export default function PlanningWorkspace({
         </ol>
         <div className={styles.analysisBypass}>
           <span>Analysis bersifat opsional untuk templating cepat.</span>
-          <Action icon={Layers} disabled={!calibrated} onClick={() => activate(actions.implantLibrary)}>Buka Implant Template</Action>
+          <Action icon={Layers} disabled={!hasImage} onClick={() => runCalibrated(actions.implantLibrary)}>Buka Implant Template</Action>
         </div>
         <Action icon={Target} disabled={!rows.some((row) => row.value !== null)} onClick={saveInitial}>
           {session.initial ? "Rekam ulang Initial" : "Rekam Initial"}
@@ -326,7 +368,7 @@ export default function PlanningWorkspace({
       {session.step === 2 && <>
         <Action icon={SlidersHorizontal} onClick={() => { setLogTab("measurements"); if (sheet) setSheet("log"); else setLogOpen(true); }}>Correction Settings</Action>
         <div className={styles.buttonGrid}><Action icon={SlidersHorizontal} onClick={() => activate(actions.properties)}>Properties</Action>
-          <Action icon={Layers} onClick={() => activate(actions.freeCut)}>Free Cut</Action></div>
+          <Action icon={Layers} onClick={() => runCalibrated(actions.freeCut)}>Free Cut</Action></div>
         {guides.map((guide) => <div className={styles.logNote} key={guide.id}>{guide.label}<strong>{guide.angle}</strong></div>)}
       </>}
       {session.step === 3 && <div className={styles.controls}>
@@ -445,11 +487,94 @@ export default function PlanningWorkspace({
   </>;
 
   const fileTools = tools.filter((item) => ["cloud", "local", "snapshot", "report"].includes(item.id));
+  const toolById = (id) => tools.find((item) => item.id === id);
+  const calibrationRequiredToolIds = new Set(["ruler", "line", "angle", "interline", "circle", "cut"]);
+  const runTool = (id) => {
+    const item = toolById(id);
+    if (!item || item.disabled) return;
+    if (calibrationRequiredToolIds.has(id)) runCalibrated(item.action);
+    else activate(item.action);
+  };
   const toolButtons = tools.filter((item) => !fileTools.includes(item)).map((item) => <Action key={item.id} icon={item.icon} title={item.label} aria-label={item.label}
-    active={item.active} disabled={item.disabled} onClick={() => activate(item.action)}><span>{item.label}</span></Action>);
+    active={item.active} disabled={item.disabled} onClick={() => runTool(item.id)}><span>{item.label}</span></Action>);
+  const openWorkflow = (step = session.step) => {
+    changeStep(step);
+    setSheet("workflow");
+    setMoreOpen(false);
+  };
+  const openTools = () => {
+    setFocus(false);
+    setExpanded(false);
+    setSheet("tools");
+    setMoreOpen(false);
+  };
+  const openPlanningLog = () => {
+    setFocus(false);
+    setExpanded(false);
+    setSheet("log");
+    setMoreOpen(false);
+  };
+  const openMoreSheet = () => {
+    setFocus(false);
+    setExpanded(false);
+    setMoreOpen(false);
+    setSheet("more");
+  };
+  const startImplantBrowser = () => {
+    if (!hasImage || !calibrated) {
+      runCalibrated();
+      return;
+    }
+    setImplantBrowserOpen(true);
+    setMoreOpen(false);
+    setSheet(null);
+  };
+  const selectBodySide = (side) => {
+    onSession(session.side === side ? session : {
+      ...session,
+      side,
+      step: 0,
+      bindings: {},
+      initial: null,
+      completedSteps: [],
+    });
+  };
+
+  const quickTools = [
+    { id: "move", label: "Select", icon: MousePointer2 },
+    { id: "pan", label: "Move", icon: Move },
+    { id: "rotate", label: "Rotate", icon: RotateCw },
+    { id: "size", label: "Size", icon: Maximize2 },
+  ];
+
+  const moreMenu = <div className={styles.moreMenu}>
+    <section><strong>View</strong>
+      <button type="button" onClick={() => activate(actions.compare)}><Layers size={16} />Compare</button>
+      <button type="button" onClick={() => activate(actions.fit)}><Focus size={16} />Fit to screen</button>
+      <button type="button" onClick={() => activate(actions.zoomReset)}><RotateCw size={16} />Reset view</button>
+      <button type="button" onClick={() => runTool("flip")}><ArrowLeft size={16} />Flip X-ray</button>
+    </section>
+    <section><strong>Tools</strong>
+      <button type="button" onClick={() => activate(actions.calibrate)}><Ruler size={16} />Calibration</button>
+      <button type="button" onClick={() => runCalibrated(() => openWorkflow(1))}><Target size={16} />Landmark workflow</button>
+      <button type="button" disabled={!analysisTools.some((item) => item.id === "hka")} onClick={() => startAnalysisTool(analysisTools.find((item) => item.id === "hka"))}><Target size={16} />HKA</button>
+      <button type="button" onClick={() => runCalibrated(actions.freeCut)}><SlidersHorizontal size={16} />Free Cut / Warp</button>
+    </section>
+    <section><strong>File</strong>
+      <button type="button" onClick={() => activate(actions.upload)}><ImagePlus size={16} />Open X-ray</button>
+      <button type="button" disabled={!hasImage} onClick={() => activate(actions.saveLocal)}><Save size={16} />Save project</button>
+      <button type="button" disabled={!hasImage} onClick={() => { setExportOpen(true); setMoreOpen(false); }}><Download size={16} />Export</button>
+    </section>
+    <section><strong>App</strong>
+      <button type="button" disabled={!hasImage} onClick={() => activate(actions.properties)}><SlidersHorizontal size={16} />Object properties</button>
+      <button type="button" disabled={!hasImage} onClick={openPlanningLog}><ClipboardList size={16} />Planning Log</button>
+      {onOpenAdvancedUi && <button type="button" onClick={onOpenAdvancedUi}><Menu size={16} />Advanced UI</button>}
+    </section>
+  </div>;
 
   return <div className={`${styles.workspace} ${focus ? styles.focus : ""}`} data-dark={isDark} data-procedure={procedure}>
     <div className={styles.commandBar}>
+      <div className={styles.brandMark}><span>Z</span><strong>ZakZav</strong><em>Simple</em></div>
       <label className={styles.procedure}>
         <img src={`/images/quick-panel/${procedure === "tka" ? "tka" : "hip"}-icon.png`} alt="" />
         <select aria-label="Planning procedure" value={procedure} onChange={(e) => onProcedure(e.target.value)}>
@@ -457,15 +582,39 @@ export default function PlanningWorkspace({
         </select>
         <ChevronDown size={18} className={styles.selectChevron} aria-hidden="true" />
       </label>
-      <div className={styles.fileTools}>{fileTools.map((item) => <Action key={item.id} icon={item.icon} title={item.label} aria-label={item.label}
-        disabled={item.disabled} onClick={() => activate(item.action)}><span>{item.label}</span></Action>)}</div>
-      <Action icon={Focus} onClick={() => { setFocus(!focus); setSheet(null); }} aria-pressed={focus} aria-label="Focus canvas" />
+      <label className={styles.sideSelect}>Side
+        <select aria-label="Body side" value={session.side || ""} onChange={(event) => event.target.value && selectBodySide(event.target.value)}>
+          <option value="">L / R</option><option value="left">Left</option><option value="right">Right</option>
+        </select>
+      </label>
+      <button type="button" className={`${styles.calibrationBadge} ${calibrated ? styles.calibrated : styles.uncalibrated}`}
+        aria-label={calibrated ? "Calibration active" : "Calibration required"}
+        title={calibrated ? "Calibration active" : "Calibration required"}
+        onClick={() => hasImage ? activate(actions.calibrate) : activate(actions.upload)}>
+        <span className={styles.calibrationDot} aria-hidden="true" />
+        <span className={styles.calibrationLabel}>{calibrated ? "Calibrated" : "Not calibrated"}</span>
+      </button>
+      <div className={styles.headerActions}>
+        <Action icon={Save} disabled={!hasImage} onClick={() => activate(actions.saveLocal)}>Save</Action>
+        <Action icon={Download} className={styles.primaryAction} disabled={!hasImage} onClick={() => setExportOpen(true)}>Export</Action>
+        <div className={styles.moreAnchor}>
+          <Action icon={MoreHorizontal} aria-label="More menu" active={moreOpen} onClick={() => setMoreOpen((value) => !value)} />
+          {moreOpen && moreMenu}
+        </div>
+        <Action icon={isDark ? Sun : Moon} aria-label={isDark ? "Light mode" : "Dark mode"} onClick={onToggleDarkMode} />
+        {accountControl}
+      </div>
     </div>
-    <div className={styles.toolbar}>
-      <PlanningToolGroups key={procedure} tools={tools} onAction={activate} />
-    </div>
-    <div className={styles.body} data-left={workflowOpen && !focus} data-right={logOpen && !focus}>
-      <aside className={`${styles.workflow} ${styles.desktopPanel}`} hidden={!workflowOpen || focus}>{sheet !== "workflow" && workflow}</aside>
+    <div className={styles.body}>
+      <nav className={styles.toolRail} aria-label="Canvas tools">
+        {quickTools.map(({ id, label, icon: Icon }) => {
+          const item = toolById(id);
+          return <button type="button" key={id} disabled={!item || item.disabled} data-active={Boolean(item?.active)}
+            onClick={() => runTool(id)} title={label}><Icon size={20} /><span>{label}</span></button>;
+        })}
+        <button type="button" data-active={sheet === "tools"} onClick={openTools}><Ruler size={20} /><span>Measure</span></button>
+        <button type="button" data-active={moreOpen} onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal size={20} /><span>More</span></button>
+      </nav>
       <div className={styles.canvas}>
         {children}
         {session.side && <span className={styles.sideMarker}>{session.side === "left" ? "L" : "R"}</span>}
@@ -509,7 +658,7 @@ export default function PlanningWorkspace({
           <small>Simulasi planning. Verifikasi landmark dan hasil secara klinis.</small>
           </>}
         </aside>}
-        {procedure !== "tka" && session.step === 1 && guideItem && <aside className={styles.canvasGuide} data-minimized={guideMinimized} aria-label={`Petunjuk ${guideItem.label}`}>
+        {guideItem && <aside className={styles.canvasGuide} data-minimized={guideMinimized} aria-label={`Petunjuk ${guideItem.label}`}>
           <div className={styles.canvasGuideHeader}>
             <span><Target size={15} /><span><strong>{guideItem.label}</strong>
               {guideItem.activePoint && <small>{guideItem.activePoint}</small>}
@@ -566,10 +715,6 @@ export default function PlanningWorkspace({
           <p>Upload X-ray untuk membuka kalibrasi dan alat planning.</p>
           <Action icon={ImagePlus} onClick={actions.upload}>Upload X-ray</Action>
         </div>}
-        <div className={styles.canvasToggles}>
-          {!workflowOpen && <Action icon={ListOrdered} className={styles.desktopOnly} onClick={() => setWorkflowOpen(true)}>Workflow</Action>}
-          {!logOpen && <Action icon={ClipboardList} className={styles.desktopOnly} onClick={() => setLogOpen(true)}>Planning Log</Action>}
-        </div>
         <div className={styles.viewTools}>
           <span>{toolLabel}</span>
           <Action icon={SlidersHorizontal} aria-label="Object settings" onClick={actions.properties} disabled={!hasImage} />
@@ -577,15 +722,39 @@ export default function PlanningWorkspace({
           <button type="button" onClick={actions.zoomReset} title="Reset zoom 100%">{zoom}%</button>
         </div>
       </div>
-      <aside className={`${styles.log} ${styles.desktopPanel}`} hidden={!logOpen || focus}>{sheet !== "log" && log}</aside>
+      <aside className={styles.inspector} aria-label="Object properties and layers">
+        <div className={styles.inspectorHeading}><div><small>{selectedLayer ? "Selected object" : "Workspace"}</small><h2>{selectedLayer?.name || "Properties"}</h2></div>
+          <Action icon={SlidersHorizontal} aria-label="Open detailed properties" disabled={!hasImage} onClick={() => activate(actions.properties)} />
+        </div>
+        {selectedLayer ? <div className={styles.inspectorBody}>
+          <div className={styles.propertySummary}><span>{selectedLayer.kind}</span><strong>{selectedLayer.size}</strong></div>
+          <label>Rotation <span>{selectedLayer.rotation}</span>
+            <div className={styles.stepper}><button type="button" onClick={() => onUpdateLayer(selectedLayer.id, { rotation: (selectedLayer.rotationValue || 0) - 1 })}>−</button>
+              <strong>{selectedLayer.rotation}</strong><button type="button" onClick={() => onUpdateLayer(selectedLayer.id, { rotation: (selectedLayer.rotationValue || 0) + 1 })}>+</button></div>
+          </label>
+          <label>Opacity <span>{selectedLayer.opacity}</span>
+            <input type="range" min="10" max="100" step="1" value={Math.round((selectedLayer.opacityValue ?? 1) * 100)}
+              onChange={(event) => onUpdateLayer(selectedLayer.id, { opacity: Number(event.target.value) / 100 })} /></label>
+          <div className={styles.inspectorActions}>
+            <Action icon={selectedLayer.hidden ? EyeOff : Eye} onClick={() => onUpdateLayer(selectedLayer.id, { hidden: !selectedLayer.hidden })}>{selectedLayer.hidden ? "Show" : "Hide"}</Action>
+            <Action icon={selectedLayer.locked ? Lock : LockOpen} onClick={() => onUpdateLayer(selectedLayer.id, { locked: !selectedLayer.locked })}>{selectedLayer.locked ? "Unlock" : "Lock"}</Action>
+            <Action icon={Trash2} onClick={actions.deleteLayer}>Delete</Action>
+          </div>
+          <Action icon={Maximize2} onClick={() => runTool("size")}>Scale on canvas</Action>
+        </div> : <div className={styles.inspectorEmpty}><MousePointer2 size={20} /><p>Select an implant or layer to edit its properties.</p></div>}
+        <div className={styles.layerSection}><div className={styles.sectionHeading}><strong>Layers</strong><span>{layers.length}</span></div>{implantList}</div>
+        <div className={styles.inspectorFooter}>
+          <Action icon={Plus} disabled={!hasImage} onClick={startImplantBrowser}>Select Implant</Action>
+          <Action icon={ClipboardList} disabled={!hasImage} onClick={() => setSheet("log")}>Planning Log</Action>
+        </div>
+      </aside>
     </div>
-    <div className={styles.mobileNav}>
-      <Action icon={ListOrdered} onClick={() => setSheet(sheet === "workflow" ? null : "workflow")} active={sheet === "workflow"}>Workflow</Action>
-      <Action icon={Ruler} disabled={!hasImage} title={!hasImage ? "Upload X-ray terlebih dulu" : "Measurement tools"}
-        onClick={() => setSheet(sheet === "tools" ? null : "tools")} active={sheet === "tools"}>Tools</Action>
-      <Action icon={ClipboardList} disabled={!hasImage} title={!hasImage ? "Belum ada hasil planning" : "Planning log"}
-        onClick={() => setSheet(sheet === "log" ? null : "log")} active={sheet === "log"}>Log</Action>
-      <Action icon={Download} onClick={() => { changeStep(5); setSheet("workflow"); }} disabled={!canProceed}>Export</Action>
+    <div className={styles.mobileNav} hidden={Boolean(sheet || implantBrowserOpen || exportOpen)}>
+      {quickTools.slice(0, 2).map(({ id, label, icon: Icon }) => { const item = toolById(id); return <Action key={id} icon={Icon} disabled={!item || item.disabled}
+        active={Boolean(item?.active)} onClick={() => runTool(id)}>{label}</Action>; })}
+      <Action icon={Ruler} disabled={!hasImage} active={sheet === "tools"} onClick={openTools}>Measure</Action>
+      <Action icon={ClipboardList} disabled={!hasImage} active={sheet === "log"} onClick={openPlanningLog}>Log</Action>
+      <Action icon={MoreHorizontal} active={sheet === "more"} onClick={openMoreSheet}>More</Action>
     </div>
     <div className={styles.status}><span>{status}</span><span>{layers.length} layer / {measurements.length} ukur</span></div>
     {sheet && !focus && <div className={styles.sheet} ref={sheetRef} tabIndex={-1} role="dialog" aria-label={`Planning ${sheet}`} data-expanded={expanded}>
@@ -597,11 +766,35 @@ export default function PlanningWorkspace({
           onPointerCancel={() => { drag.current = null; }}><span /></button>
         <Action icon={X} aria-label="Tutup panel" onClick={() => setSheet(null)} />
       </div>
-      <div className={styles.sheetContent} data-section={sheet}>{sheet === "workflow" ? workflow : sheet === "log" ? log : <>
+      <div className={styles.sheetContent} data-section={sheet}>{sheet === "workflow" ? workflow : sheet === "log" ? log : sheet === "more" ? moreMenu : <>
         <h2>Measurement & Tools</h2><div className={styles.buttonGrid}>{toolButtons}</div>
         <h2>{procedure === "tka" ? "Knee Axis Analysis" : "Pelvic Analysis"}</h2>
-        <div className={styles.buttonGrid}>{analysisTools.map((item) => <Action key={item.id} icon={item.icon} onClick={() => activate(item.action)}>{item.label}</Action>)}</div>
+        <div className={styles.buttonGrid}>{analysisTools.map((item) => <Action key={item.id} icon={item.icon} onClick={() => startAnalysisTool(item)}>{item.label}</Action>)}</div>
       </>}</div>
+    </div>}
+    {implantBrowserOpen && <div className={styles.modalBackdrop} role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setImplantBrowserOpen(false); }}>
+      <section className={`${styles.modalPanel} ${styles.implantBrowser}`} role="dialog" aria-modal="true" aria-label="Select implant">
+        <header><div><small>Template library</small><h2>Select Implant</h2></div><Action icon={X} aria-label="Close implant browser" onClick={() => setImplantBrowserOpen(false)} /></header>
+        <label className={styles.searchField}><Search size={16} /><input value={implantSearch} onChange={(event) => setImplantSearch(event.target.value)} placeholder="Search implant..." /></label>
+        <div className={styles.implantTabs}>{procedure === "hip" ? ["stem", "cup", "liner", "head"].map((type) => <button type="button" key={type} data-active={component === type}
+          onClick={() => setComponent(component === type ? "" : type)}>{type}</button>) : <button type="button" data-active>Knee</button>}</div>
+        <label>Brand<select value={brand} onChange={(event) => { setBrand(event.target.value); setSystem(""); }}><option value="">All brands</option>{brands.map((value) => <option key={value}>{value}</option>)}</select></label>
+        <div className={styles.implantGrid}>{visibleChoices.length ? visibleChoices.map((item) => <button type="button" key={item.id} data-selected={item.id === selectedImplantId} onClick={() => onSelectImplant(item.id)}>
+          <img src={item.imageSrc} alt="" /><span><strong>{item.label}</strong><small>{item.brand} · {item.system}</small><em>Size {item.size}</em></span></button>) : <p className={styles.empty}>Implant tidak ditemukan.</p>}</div>
+        <footer><Action onClick={() => setImplantBrowserOpen(false)}>Cancel</Action><Action icon={Plus} className={styles.primaryAction} disabled={!calibrated || !selectedImplant} onClick={insertSelectedImplant}>Insert Implant</Action></footer>
+      </section>
+    </div>}
+    {exportOpen && <div className={styles.modalBackdrop} role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setExportOpen(false); }}>
+      <section className={`${styles.modalPanel} ${styles.exportPanel}`} role="dialog" aria-modal="true" aria-label="Export planning">
+        <header><div><small>Output</small><h2>Export Planning</h2></div><Action icon={X} aria-label="Close export" onClick={() => setExportOpen(false)} /></header>
+        <p>Choose the output required for this case.</p>
+        <div className={styles.exportOptions}>
+          <Action icon={ImagePlus} onClick={() => { actions.snapshot(); setExportOpen(false); }}>PNG snapshot</Action>
+          <Action icon={FileText} onClick={() => { actions.report(); setExportOpen(false); }}>PDF report</Action>
+          <Action icon={Save} onClick={() => { actions.saveLocal(); setExportOpen(false); }}>Project JSON</Action>
+          <Action icon={CloudUpload} onClick={() => { actions.saveCloud(); setExportOpen(false); }}>Google Drive</Action>
+        </div>
+      </section>
     </div>}
   </div>;
 }

@@ -16378,18 +16378,24 @@ export default function XrayCalibrationWorkspace({
     };
     const finishPointerCancel = (event) => {
       if (
-        isSimpleUiMode &&
-        isMobileViewport &&
         activePointerIdRef.current !== null &&
         Number.isFinite(event?.pointerId) &&
-        event.pointerId === activePointerIdRef.current &&
-        mobileGesturePointersRef.current.has(event.pointerId)
+        event.pointerId !== activePointerIdRef.current
       ) {
         return;
       }
-      finishPointerInteraction(event);
+      if (interactionRef.current.mode) {
+        resetCanvasInteractionState(
+          "Interaksi dibatalkan oleh perangkat. Canvas sudah siap digunakan lagi.",
+        );
+      }
     };
-    const finishAnyInteraction = () => {
+    const finishAnyInteraction = (event) => {
+      if (event?.type === "touchend") {
+        if (event.touches?.length > 0) return;
+        if (interactionRef.current.mode) handlePointerUp();
+        return;
+      }
       const activePointerId = activePointerIdRef.current;
       const canvas = overlayCanvasRef.current;
       if (
@@ -16405,17 +16411,38 @@ export default function XrayCalibrationWorkspace({
         handlePointerUp();
       }
     };
+    const finishTouchCancel = () => {
+      if (interactionRef.current.mode) {
+        resetCanvasInteractionState(
+          "Gesture dibatalkan oleh perangkat. Canvas sudah di-unlock.",
+        );
+      }
+    };
+    const finishLostPointerCapture = (event) => {
+      if (
+        activePointerIdRef.current !== null &&
+        Number.isFinite(event?.pointerId) &&
+        event.pointerId === activePointerIdRef.current &&
+        interactionRef.current.mode
+      ) {
+        resetCanvasInteractionState(
+          "Pointer capture terlepas. Canvas sudah di-unlock otomatis.",
+        );
+      }
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         finishAnyInteraction();
       }
     };
+    const canvas = overlayCanvasRef.current;
 
     window.addEventListener("pointerup", finishPointerInteraction, true);
     window.addEventListener("pointercancel", finishPointerCancel, true);
     window.addEventListener("touchend", finishAnyInteraction, true);
-    window.addEventListener("touchcancel", finishAnyInteraction, true);
+    window.addEventListener("touchcancel", finishTouchCancel, true);
     window.addEventListener("blur", finishAnyInteraction);
+    canvas?.addEventListener("lostpointercapture", finishLostPointerCapture);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("pointerup", finishPointerInteraction, true);
@@ -16425,11 +16452,17 @@ export default function XrayCalibrationWorkspace({
         true,
       );
       window.removeEventListener("touchend", finishAnyInteraction, true);
-      window.removeEventListener("touchcancel", finishAnyInteraction, true);
+      window.removeEventListener("touchcancel", finishTouchCancel, true);
       window.removeEventListener("blur", finishAnyInteraction);
+      canvas?.removeEventListener("lostpointercapture", finishLostPointerCapture);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [handlePointerUp, isMobileViewport, isSimpleUiMode]);
+  }, [
+    handlePointerUp,
+    isMobileViewport,
+    isSimpleUiMode,
+    resetCanvasInteractionState,
+  ]);
 
   useEffect(() => {
     if (!isSimpleUiMode || !isMobileViewport) return undefined;
@@ -21215,12 +21248,16 @@ export default function XrayCalibrationWorkspace({
     report: () => setPreOpReportModalOpen(true), saveLocal: savePlanningLocally,
     saveCloud: () => setGoogleDriveUploadModalOpen(true), snapshot: exportReportPng,
     fit: fitImageToViewport, zoomReset: resetZoomTo100,
+    compare: toggleCompareModePreservingWorkspace,
+    deleteLayer: removeSelectedCutLayer,
   };
   const planningTools = [
     { id: "upload", label: "Upload X-ray", icon: Upload, action: planningActions.upload },
     { id: "calibration", label: "Kalibrasi", icon: RulerDimensionLine, action: planningActions.calibrate },
     { id: "move", label: "Move / Edit", icon: SplinePointer, action: () => { setMobileCanvasMode("edit"); setMobileToolMode("move"); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "edit" },
     { id: "pan", label: "Pan Canvas", icon: HandGrab, action: () => { setMobileCanvasMode("pan"); setMobileCanvasLocked(false); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "pan" },
+    { id: "rotate", label: "Rotate", icon: RotateCcw, action: () => { setMobileCanvasMode("edit"); setMobileToolMode("rotate"); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "edit" && mobileToolMode === "rotate" },
+    { id: "size", label: "Size", icon: Maximize2, action: () => { setMobileCanvasMode("edit"); setMobileToolMode("scale"); handleToolChange("pan"); }, active: tool === "pan" && mobileCanvasMode === "edit" && mobileToolMode === "scale" },
     { id: "ruler", label: "Ruler", icon: RulerDimensionLine, action: () => { setLinePreset("ruler"); handleToolChange("draw"); }, active: tool === "draw" && linePreset === "ruler" },
     { id: "line", label: "Lines", icon: PencilLine, action: () => handleLinePresetChange("normal"), active: tool === "draw" && linePreset === "normal" },
     { id: "angle", label: "Angle", icon: DraftingCompass, action: () => { planningAngleMetricRef.current = null; handleToolChange("angle"); }, active: tool === "angle" },
@@ -27285,28 +27322,7 @@ export default function XrayCalibrationWorkspace({
           </motion.div>
         ) : null}
       </AnimatePresence>
-      {isPlanningLayout ? (
-        <header className="planning-app-header">
-          <strong>ZakZav <span>Templating</span></strong>
-          <span className="planning-case-name">{imageName || "Kasus baru"}</span>
-          <button type="button" className={hasCalibration ? "planning-calibrated" : "planning-pending"}
-            title={image ? "Buka pengaturan kalibrasi marker" : "Upload X-ray untuk mulai kalibrasi"}
-            onClick={() => image ? openSimpleCalibrationModal() : mainUploadInputRef.current?.click()}>
-            {hasCalibration
-              ? `Calibrated / ${measurementUnit}`
-              : image
-                ? "Uncalibrated · Calibrate"
-                : "Upload to calibrate"}
-          </button>
-          <div className="planning-account">
-            {onOpenAdvancedUi && <button type="button" className="planning-advanced" onClick={onOpenAdvancedUi}>Advanced UI</button>}
-            <button type="button" onClick={toggleDarkMode} aria-label={isDark ? "Light mode" : "Dark mode"}>
-              {isDark ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
-            <LogoutButton variant="header" />
-          </div>
-        </header>
-      ) : !isNativeMobileSimpleUi ? (
+      {isPlanningLayout ? null : !isNativeMobileSimpleUi ? (
       <header
         className={`${SOFT_PANEL_CLASS} relative z-50 ${
           isSimpleUiMode
@@ -34166,11 +34182,22 @@ export default function XrayCalibrationWorkspace({
             /> : <button type="button" className="planning-inline-action" onClick={() => handleLinePresetChange("normal")}>Femoral neck osteotomy line</button>}
             catalog={LOCAL_IMPLANT_LIBRARY} selectedImplantId={selectedImplantLibraryId}
             onSelectImplant={setSelectedImplantLibraryId} onInsertImplant={useSelectedImplantLibraryAsLayer}
-            layers={templateInventoryRows.map((row) => { const layer = cutLayers.find((item) => item.id === row.id); return { ...row, hidden: Boolean(layer?.hidden), locked: Boolean(layer?.lockScale), kind: layer?.kind === "free-cut" ? "crop" : "implant" }; })}
+            layers={templateInventoryRows.map((row) => { const layer = cutLayers.find((item) => item.id === row.id); return {
+              ...row,
+              hidden: Boolean(layer?.hidden),
+              locked: Boolean(layer?.lockScale),
+              kind: layer?.kind === "free-cut" ? "crop" : "implant",
+              opacityValue: Number(layer?.opacity ?? 1),
+              rotationValue: Number(layer?.rotation || 0),
+            }; })}
+            selectedLayerId={selectedCutLayerId}
             onSelectLayer={(id) => { setSelectedCutLayerId(id); openLayerSettingsModal(id); }}
             onUpdateLayer={(id, patch) => updateLayerById(id, "locked" in patch ? { lockScale: patch.locked } : patch)}
             annotations={annotations} guides={planningGuideRows} note={planNote} onNote={setPlanNote}
             status={notice} zoom={Math.round(view.scale * 100)} toolLabel={activeToolLabel} isDark={isDark}
+            onOpenAdvancedUi={onOpenAdvancedUi}
+            onToggleDarkMode={toggleDarkMode}
+            accountControl={<LogoutButton variant="header" />}
             alignmentPlan={planningProcedure === "tka" ? tkaResectionPlan : null}
             onCreateAlignmentPreview={createTkaNormalAlignmentPreview}
             alignmentSettings={{

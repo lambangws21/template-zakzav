@@ -298,9 +298,9 @@ export default function CalibrationWizard({
         transition={isMobile ? { ...SPRING, damping: 32, stiffness: 340 } : SPRING}
         className={
           isCompactCanvasEdit
-            ? "fixed bottom-[calc(env(safe-area-inset-bottom)+76px)] left-3 right-3 z-[95] rounded-[22px] p-3 text-slate-800 cw-card font-sans"
+            ? "fixed bottom-[calc(env(safe-area-inset-bottom)+102px)] left-3 right-3 z-[95] rounded-[22px] p-3 text-slate-800 cw-card font-sans"
           : isMobile
-            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+70px)] left-2 z-[95] max-h-[52dvh] overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
+            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+96px)] left-2 z-[95] max-h-[52dvh] overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
             : "fixed bottom-4 left-1/2 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] -translate-x-1/2 overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}

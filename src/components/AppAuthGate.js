@@ -2,14 +2,14 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Clock, LogOut } from "lucide-react";
+import { Clock, LogOut, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { logOut } from "@/lib/authServices";
 
 const PUBLIC_PATHS = ["/login"];
 
 export default function AppAuthGate({ children }) {
-  const { user, loading, userStatus, authError } = useAuth();
+  const { user, loading, userStatus, authError, retryAuth } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -38,15 +38,33 @@ export default function AppAuthGate({ children }) {
   }
 
   if (authError) {
+    const isConfigurationError = authError.startsWith(
+      "Konfigurasi Firebase client belum lengkap",
+    );
     return (
       <main className="flex min-h-dvh items-center justify-center p-6">
         <div role="alert" className="w-full max-w-md space-y-3">
-          <h1 className="text-lg font-semibold">Konfigurasi login belum siap</h1>
+          <h1 className="text-lg font-semibold">
+            {isConfigurationError
+              ? "Konfigurasi login belum siap"
+              : "Sesi login belum tersedia"}
+          </h1>
           <p className="break-words text-sm">{authError}</p>
           <p className="text-sm">
-            Lengkapi NEXT_PUBLIC_FIREBASE_* pada environment deployment, lalu build
-            dan deploy ulang. Workspace tetap terkunci sampai autentikasi tersedia.
+            {isConfigurationError
+              ? "Lengkapi NEXT_PUBLIC_FIREBASE_* pada environment deployment, lalu build dan deploy ulang. Workspace tetap terkunci sampai autentikasi tersedia."
+              : "Workspace tidak direset. Coba periksa sesi kembali setelah koneksi stabil."}
           </p>
+          {!isConfigurationError ? (
+            <button
+              type="button"
+              onClick={retryAuth}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-500 px-4 py-2 text-sm font-semibold"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Coba lagi
+            </button>
+          ) : null}
         </div>
       </main>
     );

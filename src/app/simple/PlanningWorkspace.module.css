@@ -344,3 +344,194 @@
   .guidePoints { gap: 4px; }
   .canvasGuide > .button { min-height: 44px; }
 }
+
+/* Modern Simple Mode shell */
+.workspace {
+  --pw-bg: #eef2f5;
+  --pw-panel: #ffffff;
+  --pw-raised: #f3f6f8;
+  --pw-line: #d6dee5;
+  --pw-text: #17212b;
+  --pw-muted: #637383;
+  --pw-accent: #087f94;
+  --pw-tint: #e0f4f7;
+}
+.workspace[data-dark="true"] {
+  --pw-bg: #0c1116;
+  --pw-panel: #161d24;
+  --pw-raised: #202a33;
+  --pw-line: #34414d;
+  --pw-text: #f0f5f8;
+  --pw-muted: #a5b4c0;
+  --pw-accent: #46c7db;
+  --pw-tint: #12343d;
+}
+.commandBar {
+  order: -2;
+  z-index: 70;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 6px 10px;
+  gap: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--pw-panel) 97%, transparent);
+}
+.brandMark { display: flex; align-items: center; gap: 7px; min-width: max-content; }
+.brandMark > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; color: #fff; background: #087f94; font-size: 14px; font-weight: 800; }
+.brandMark strong { font-size: 14px; letter-spacing: 0; }
+.brandMark em { padding: 3px 6px; color: var(--pw-accent); background: var(--pw-tint); border: 1px solid var(--pw-line); border-radius: 4px; font-size: 9px; font-style: normal; font-weight: 750; text-transform: uppercase; }
+.sideSelect { display: flex; align-items: center; gap: 6px; color: var(--pw-muted); font-size: 10px; font-weight: 650; }
+.sideSelect select { width: 86px; min-height: 36px; margin: 0; }
+.calibrationBadge { display: inline-flex; min-width: 0; min-height: 34px; flex: 0 0 auto; align-items: center; gap: 7px; padding: 6px 10px; overflow: hidden; border-radius: 6px; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.calibrationDot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; }
+.calibrationLabel { overflow: hidden; text-overflow: ellipsis; }
+.calibrated { color: #0b6b42; background: #daf4e7; border: 1px solid #6bc49a; }
+.calibrated .calibrationDot { background: #15a263; }
+.uncalibrated { color: #684300; background: #fff0bd; border: 1px solid #d0a126; }
+.uncalibrated .calibrationDot { background: #e6a700; }
+.workspace[data-dark="true"] .calibrated { color: #a7f3d0; background: #073d2e; border-color: #16825d; }
+.workspace[data-dark="true"] .uncalibrated { color: #fde68a; background: #422c06; border-color: #a66c08; }
+.headerActions { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+.headerActions > .button { min-height: 36px; }
+.primaryAction { color: #fff !important; background: #087fdd !important; border-color: #168ff0 !important; font-weight: 700; }
+.moreAnchor { position: relative; }
+.moreAnchor > .moreMenu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 85; width: 224px; max-height: min(640px, calc(100dvh - 72px)); overflow-y: auto; }
+.moreMenu { padding: 7px; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 10px 28px #0005; }
+.moreMenu section { display: grid; gap: 2px; padding: 7px 0; border-bottom: 1px solid var(--pw-line); }
+.moreMenu section:last-child { border-bottom: 0; }
+.moreMenu section > strong { padding: 2px 8px 5px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
+.moreMenu button { display: flex; width: 100%; min-height: 36px; align-items: center; gap: 9px; padding: 7px 8px; color: var(--pw-text); background: transparent; border: 0; border-radius: 5px; text-align: left; }
+.moreMenu button:hover:not(:disabled) { color: var(--pw-accent); background: var(--pw-tint); }
+.body, .body[data-left="false"], .body[data-right="false"], .body[data-left="false"][data-right="false"] {
+  grid-template-columns: 72px minmax(0, 1fr) 286px;
+  background: var(--pw-bg);
+}
+.toolRail { z-index: 35; display: flex; min-height: 0; flex-direction: column; gap: 5px; padding: 8px 7px; overflow-y: auto; background: var(--pw-panel); border-right: 1px solid var(--pw-line); }
+.toolRail button { display: flex; min-height: 56px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 5px 3px; color: var(--pw-muted); background: transparent; border: 1px solid transparent; border-radius: 7px; font-size: 9px; }
+.toolRail button:hover:not(:disabled), .toolRail button[data-active="true"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-accent); }
+.toolRail button:disabled { opacity: .35; }
+.canvas { background: #05080c; }
+.inspector { display: flex; min-height: 0; flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border-left: 1px solid var(--pw-line); }
+.inspectorHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 58px; padding: 10px 12px; border-bottom: 1px solid var(--pw-line); }
+.inspectorHeading small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
+.inspectorHeading .button { border: 0; background: transparent; }
+.inspectorBody { display: grid; gap: 12px; padding: 12px; border-bottom: 1px solid var(--pw-line); }
+.inspectorBody > label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; color: var(--pw-muted); font-size: 10px; }
+.inspectorBody > label > span { color: var(--pw-text); font-variant-numeric: tabular-nums; }
+.inspectorBody input[type="range"] { grid-column: 1 / -1; min-height: 24px; margin: 0; padding: 0; accent-color: var(--pw-accent); }
+.propertySummary { display: flex; justify-content: space-between; gap: 8px; padding: 8px; background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; }
+.propertySummary span { color: var(--pw-muted); text-transform: capitalize; }
+.stepper { grid-column: 1 / -1; display: grid; grid-template-columns: 40px 1fr 40px; min-height: 38px; overflow: hidden; border: 1px solid var(--pw-line); border-radius: 6px; }
+.stepper button { color: var(--pw-text); background: var(--pw-raised); border: 0; font-size: 18px; }
+.stepper strong { display: grid; place-items: center; border-inline: 1px solid var(--pw-line); font-variant-numeric: tabular-nums; }
+.inspectorActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.inspectorActions .button { padding-inline: 5px; font-size: 9px; }
+.inspectorEmpty { display: grid; justify-items: center; gap: 6px; padding: 22px 18px; color: var(--pw-muted); text-align: center; border-bottom: 1px solid var(--pw-line); }
+.inspectorEmpty p { max-width: 190px; line-height: 1.45; }
+.layerSection { min-height: 0; flex: 1; overflow-y: auto; padding: 12px; }
+.inspectorFooter { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; border-top: 1px solid var(--pw-line); }
+.inspectorFooter .button { min-width: 0; padding-inline: 5px; }
+.viewTools { bottom: 10px; padding: 3px 5px; border-radius: 7px; box-shadow: 0 5px 14px #0005; }
+.status { min-height: 24px; padding-block: 4px; }
+
+.modalBackdrop { position: absolute; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #02060999; backdrop-filter: blur(3px); }
+.modalPanel { display: flex; width: min(680px, calc(100% - 24px)); max-height: min(760px, calc(100dvh - 40px)); flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 18px 50px #0009; }
+.modalPanel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--pw-line); }
+.modalPanel > header small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
+.modalPanel > header .button { border: 0; background: transparent; }
+.modalPanel > footer { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--pw-line); }
+.implantBrowser { width: min(720px, calc(100% - 24px)); }
+.implantBrowser > label:not(.searchField) { display: block; padding: 0 14px 10px; color: var(--pw-muted); }
+.searchField { display: flex; align-items: center; gap: 7px; margin: 12px 14px 8px; padding: 0 9px; color: var(--pw-muted); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; }
+.searchField input { min-height: 38px; margin: 0; padding-inline: 0; background: transparent; border: 0; }
+.implantTabs { display: flex; gap: 4px; padding: 0 14px 10px; }
+.implantTabs button { min-height: 34px; flex: 1; color: var(--pw-muted); background: transparent; border: 0; border-bottom: 2px solid transparent; text-transform: capitalize; }
+.implantTabs button[data-active="true"] { color: var(--pw-accent); border-bottom-color: var(--pw-accent); }
+.implantGrid { display: grid; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; padding: 4px 14px 14px; }
+.implantGrid > button { display: grid; min-height: 112px; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; text-align: left; }
+.implantGrid > button[data-selected="true"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-accent); }
+.implantGrid img { width: 64px; height: 90px; object-fit: contain; background: #fff; border-radius: 4px; }
+.implantGrid strong, .implantGrid small, .implantGrid em { display: block; overflow-wrap: anywhere; }
+.implantGrid small { margin-top: 5px; color: var(--pw-muted); font-size: 9px; }
+.implantGrid em { margin-top: 8px; font-size: 10px; font-style: normal; font-weight: 700; }
+.exportPanel { width: min(420px, calc(100% - 24px)); }
+.exportPanel > p { padding: 4px 14px 0; color: var(--pw-muted); }
+.exportOptions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px 16px; }
+.exportOptions .button { min-height: 54px; justify-content: flex-start; }
+.sheet { display: flex; position: absolute; z-index: 90; top: 62px; bottom: 32px; left: 82px; width: min(350px, calc(100% - 390px)); min-width: 300px; flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 12px 32px #0007; }
+.sheetHeader { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid var(--pw-line); }
+.sheetHeader .handle { display: flex; min-height: 34px; flex: 1; align-items: center; justify-content: center; background: transparent; border: 0; }
+.sheetHeader .handle span { width: 38px; height: 3px; background: var(--pw-muted); border-radius: 3px; }
+.sheetContent { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
+.sheetContent[data-section="workflow"], .sheetContent[data-section="log"] { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.sheetContent[data-section="workflow"] .workflowBody, .sheetContent[data-section="log"] .logBody { flex: 1; }
+
+@media (max-width: 1199px) {
+  .body, .body[data-left="false"], .body[data-right="false"], .body[data-left="false"][data-right="false"] { grid-template-columns: minmax(0, 1fr); }
+  .toolRail, .inspector { display: none; }
+  .commandBar { min-height: 48px; padding-inline: 8px; }
+  .brandMark strong, .brandMark em { display: none; }
+  .commandBar .procedure select { width: min(250px, 32vw); }
+  .headerActions .button > span { display: none; }
+  .headerActions .button { min-width: 40px; padding-inline: 7px; }
+  .mobileNav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; z-index: 55; padding: 4px 6px max(4px, env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--pw-panel) 96%, transparent); backdrop-filter: blur(12px); }
+  .mobileNav[hidden] { display: none !important; }
+  .mobileNav .button { min-width: 0; min-height: 48px; flex-direction: column; gap: 2px; padding: 4px 2px; font-size: 9px; }
+  .sheet { z-index: 90; }
+  .sheet .moreMenu { position: static; width: auto; max-height: none; overflow: visible; padding: 0; border: 0; box-shadow: none; }
+  .viewTools {
+    top: 8px;
+    right: 8px;
+    bottom: auto;
+    left: auto;
+    width: auto;
+    max-width: none;
+    min-height: 42px;
+    flex-direction: row;
+    gap: 3px;
+    padding: 3px;
+    transform: none;
+  }
+  .viewTools > span { display: none; }
+  .viewTools .button, .viewTools > button:last-child {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 5px;
+  }
+  .viewTools > button:last-child { width: auto; min-width: 44px; padding-inline: 7px; font-size: 10px; font-variant-numeric: tabular-nums; }
+}
+
+@media (min-width: 700px) and (max-width: 899px) {
+  .commandBar { gap: 6px; }
+  .sideSelect { display: none; }
+  .commandBar .procedure { flex: 1 1 auto; overflow: hidden; }
+  .commandBar .procedure select { width: 100%; max-width: 250px; }
+  .calibrationBadge { width: 36px; min-width: 36px; justify-content: center; padding-inline: 6px; }
+  .calibrationLabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .headerActions { flex: 0 0 auto; margin-left: 0; }
+}
+
+@media (max-width: 699px) {
+  .commandBar { min-height: 44px; gap: 5px; padding: 4px 6px; }
+  .brandMark > span { width: 30px; height: 30px; }
+  .commandBar .procedure { flex: 1; }
+  .commandBar .procedure select { width: 100%; min-height: 36px; font-size: 12px; }
+  .sideSelect { display: none; }
+  .calibrationBadge { min-width: 34px; width: 34px; justify-content: center; padding: 5px; }
+  .calibrationDot { width: 9px; height: 9px; flex-basis: 9px; }
+  .calibrationLabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .headerActions > .button:first-child, .headerActions > .primaryAction, .headerActions > .moreAnchor, .headerActions > .button:nth-last-child(2) { display: none; }
+  .headerActions { margin-left: 0; }
+  .viewTools { top: 6px; right: max(6px, env(safe-area-inset-right)); }
+  .modalBackdrop { align-items: end; padding: 0; }
+  .modalPanel, .implantBrowser, .exportPanel { width: 100%; max-width: none; max-height: min(78dvh, 720px); border-radius: 16px 16px 0 0; border-bottom: 0; }
+  .implantGrid { grid-template-columns: 1fr; }
+  .implantGrid > button { min-height: 96px; }
+  .exportOptions { grid-template-columns: 1fr; }
+  .exportOptions .button { min-height: 48px; }
+  .sheet { bottom: max(4px, env(safe-area-inset-bottom)); max-height: 68%; }
+  .canvasGuide { max-height: 46%; }
+}
