@@ -27292,7 +27292,11 @@ export default function XrayCalibrationWorkspace({
           <button type="button" className={hasCalibration ? "planning-calibrated" : "planning-pending"}
             title={image ? "Buka pengaturan kalibrasi marker" : "Upload X-ray untuk mulai kalibrasi"}
             onClick={() => image ? openSimpleCalibrationModal() : mainUploadInputRef.current?.click()}>
-            {hasCalibration ? `Calibrated / ${measurementUnit}` : "Uncalibrated"}
+            {hasCalibration
+              ? `Calibrated / ${measurementUnit}`
+              : image
+                ? "Uncalibrated · Calibrate"
+                : "Upload to calibrate"}
           </button>
           <div className="planning-account">
             {onOpenAdvancedUi && <button type="button" className="planning-advanced" onClick={onOpenAdvancedUi}>Advanced UI</button>}

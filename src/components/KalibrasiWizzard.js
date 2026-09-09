@@ -173,9 +173,10 @@ export default function CalibrationWizard({
     if (open) {
       setShowQCDetail(false);
       setDrawExpanded(false);
+      if (calibrationMode === "zoom") onCalibrationModeChange?.("line");
     }
     if (!open) setCanvasEditCompact(false);
-  }, [open]);
+  }, [calibrationMode, onCalibrationModeChange, open]);
 
   useEffect(() => {
     if (calibrationMode !== "magnification") setCanvasEditCompact(false);
@@ -210,7 +211,29 @@ export default function CalibrationWizard({
     if (isMobile) setCanvasEditCompact(true);
   };
 
-  const handleSave = () => onSave?.();
+  const selectRulerPreset = (mm) => {
+    onCalibrationModeChange?.("line");
+    onActualValueChange?.(String(mm / 10));
+    onActualUnitChange?.("cm");
+    onSourceZoomPercentChange?.("100");
+    onCreatePresetLine?.(mm);
+  };
+  const selectBallPreset = () => {
+    onCalibrationModeChange?.("magnification");
+    onAnatomicalRefSizeMmChange?.("25");
+    onAutoHeadLine?.(25);
+    if (isMobile) setCanvasEditCompact(true);
+  };
+  const applyAndContinue = () => {
+    const ok = onSave?.();
+    if (ok) onStartTemplating?.();
+  };
+  const handleReferenceKeyDown = (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (hasLine && canSave) applyAndContinue();
+    else onCreatePresetFromInput?.();
+  };
 
   return (
     <AnimatePresence>
@@ -277,8 +300,8 @@ export default function CalibrationWizard({
           isCompactCanvasEdit
             ? "fixed bottom-[calc(env(safe-area-inset-bottom)+76px)] left-3 right-3 z-[95] rounded-[22px] p-3 text-slate-800 cw-card font-sans"
           : isMobile
-            ? "fixed bottom-0 left-0 right-0 z-[95] max-h-[88dvh] overflow-y-auto rounded-t-[28px] p-4 pb-[calc(env(safe-area-inset-bottom)+20px)] text-slate-800 cw-card font-sans"
-            : "fixed left-3 top-1/2 z-[95] w-[min(308px,calc(100vw-24px))] max-h-[min(92vh,640px)] -translate-y-1/2 overflow-y-auto rounded-[28px] p-4 text-slate-800 cw-card font-sans"
+            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+70px)] left-2 z-[95] max-h-[52dvh] overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
+            : "fixed bottom-4 left-1/2 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] -translate-x-1/2 overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}
         style={{ scrollbarWidth: "none" }}
@@ -335,11 +358,11 @@ export default function CalibrationWizard({
               </button>
               <button
                 type="button"
-                onClick={handleSave}
+                onClick={applyAndContinue}
                 disabled={!hasHeadCircle || !canSave}
                 className="rounded-[14px] bg-emerald-600 px-2 py-2 text-[9px] font-black uppercase tracking-wide text-white disabled:opacity-45"
               >
-                Terapkan
+                Lanjut
               </button>
             </div>
           </div>
@@ -367,7 +390,7 @@ export default function CalibrationWizard({
         </div>
 
         {/* Method tabs */}
-        <div className="mb-3 grid grid-cols-3 gap-1 rounded-[16px] p-1 cw-pressed">
+        <div className="mb-2 grid grid-cols-2 gap-1 rounded-[12px] p-1 cw-pressed">
           <button type="button" onClick={() => onCalibrationModeChange?.("line")}
             className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isLineMode ? "cw-active" : "text-slate-500"}`}>
             Garis Ruler
@@ -376,9 +399,20 @@ export default function CalibrationWizard({
             className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isMagMode ? "cw-active" : "text-slate-500"}`}>
             Head Ref
           </button>
-          <button type="button" onClick={() => onCalibrationModeChange?.("zoom")}
-            className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${calibrationMode === "zoom" ? "cw-active" : "text-slate-500"}`}>
-            Zoom %
+        </div>
+
+        <div className="mb-2 grid grid-cols-3 gap-1.5" aria-label="Preset kalibrasi">
+          <button type="button" onClick={selectBallPreset}
+            className="min-h-9 rounded-[10px] px-1.5 text-[9px] font-black text-blue-600 cw-btn">
+            Ball 25 mm
+          </button>
+          <button type="button" onClick={() => selectRulerPreset(100)}
+            className="min-h-9 rounded-[10px] px-1.5 text-[9px] font-black text-slate-600 cw-btn">
+            Ruler 10 cm
+          </button>
+          <button type="button" onClick={() => selectRulerPreset(130)}
+            className="min-h-9 rounded-[10px] px-1.5 text-[9px] font-black text-slate-600 cw-btn">
+            Ruler 13 cm
           </button>
         </div>
 
@@ -397,16 +431,14 @@ export default function CalibrationWizard({
                     1 · Nilai referensi ruler
                   </p>
                   <p className={`cw-line-subtitle mt-0.5 truncate text-[10px] font-bold ${hasLine ? "text-emerald-700/80" : "text-blue-700/80"}`}>
-                    Isi panjang real, lalu buat line dari nilai itu.
+                    Isi nilai real dan tekan Enter.
                   </p>
                 </div>
-                <span className={`cw-line-pill shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${hasLine ? "bg-emerald-200 text-emerald-800" : "bg-blue-200 text-blue-800"}`}>
-                  Zoom {sourceZoomPercent || "-"}%
-                </span>
               </div>
-              <div className="grid grid-cols-[1fr_58px_70px] gap-1.5">
+              <div className="grid grid-cols-[1fr_64px] gap-1.5">
                 <input type="number" min="0" step="0.01" value={actualValue}
                   onChange={(e) => onActualValueChange?.(e.target.value)}
+                  onKeyDown={handleReferenceKeyDown}
                   placeholder="10"
                   className="min-h-10 min-w-0 rounded-[12px] px-3 text-[15px] font-black text-slate-800 outline-none cw-input" />
                 <select value={actualUnit} onChange={(e) => onActualUnitChange?.(e.target.value)}
@@ -414,10 +446,6 @@ export default function CalibrationWizard({
                   <option value="cm">cm</option>
                   <option value="mm">mm</option>
                 </select>
-                <input type="number" min="1" step="0.1" value={sourceZoomPercent}
-                  onChange={(e) => onSourceZoomPercentChange?.(e.target.value)}
-                  placeholder="100"
-                  className="min-h-10 min-w-0 rounded-[12px] px-2 text-center text-[14px] font-black text-slate-800 outline-none cw-input" />
               </div>
               <motion.button type="button" onClick={onCreatePresetFromInput}
                 whileTap={{ scale: 0.985 }}
@@ -429,17 +457,6 @@ export default function CalibrationWizard({
                 <Ruler className="h-3.5 w-3.5" />
                 {lineActionLabel}
               </motion.button>
-              <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                {["100", "90"].map((v) => (
-                  <button key={v} type="button" onClick={() => onSourceZoomPercentChange?.(v)}
-                    className={`min-h-8 rounded-[11px] text-[11px] font-black transition-transform active:scale-[0.98] ${
-                      String(sourceZoomPercent) === v ? "cw-active" : "text-slate-600 cw-btn"
-                    }`}>
-                    {v}%
-                  </button>
-                ))}
-              </div>
-
               <AnimatePresence mode="wait" initial={false}>
               {hasLine ? (
                 <motion.div key="line-ready" {...REVEAL} className="cw-line-status mt-2 rounded-[12px] border px-2.5 py-2">
@@ -461,8 +478,8 @@ export default function CalibrationWizard({
                   </div>
                 </motion.div>
               ) : (
-                <motion.div key="line-help" {...REVEAL} className="cw-line-help mt-2 rounded-[12px] border px-2.5 py-2 text-[11px] font-black leading-snug">
-                  Contoh: ruler 12.7 cm, isi 12.7 cm lalu tekan tombol biru.
+                <motion.div key="line-help" {...REVEAL} className="cw-line-help mt-2 rounded-[12px] border px-2.5 py-2 text-[10px] font-black leading-snug">
+                  Tarik line pada ruler, isi panjang real, lalu tekan Enter.
                 </motion.div>
               )}
               </AnimatePresence>
@@ -808,13 +825,6 @@ export default function CalibrationWizard({
                 )}
               </div>
 
-              {hasHeadCircle && apparentSizeMm && (
-                <button type="button" onClick={handleSave}
-                  className="flex w-full items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3.5 text-[11px] font-black tracking-widest text-white uppercase transition-all active:brightness-90">
-                  <Save className="h-4 w-4" />
-                  Terapkan Kalibrasi
-                </button>
-              )}
               {hasCalibration && hasHeadCircle && (
                 <div className="flex items-center gap-1.5 px-1 pt-0.5">
                   <Info className="h-3 w-3 shrink-0 text-amber-400" />
@@ -886,35 +896,7 @@ export default function CalibrationWizard({
               </div>
             )}
           </div>
-        ) : (
-          /* Zoom mode */
-          <div className="space-y-2.5">
-            <div className="rounded-[18px] border border-white/60 p-3 text-center cw-pressed">
-              <Ruler className="mx-auto mb-2 h-7 w-7 text-blue-400" />
-              <p className="text-[10px] leading-relaxed font-medium text-slate-500">
-                Mode Zoom % — isi nilai mm/px @100% di bawah.
-              </p>
-            </div>
-            <div className="rounded-[18px] border border-white/60 p-3 cw-flat">
-              <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-slate-400">mm/px @100%</p>
-              <input type="number" min="0" step="0.000001" value={mmPerPixelAt100Value}
-                onChange={(e) => onMmPerPixelAt100Change?.(e.target.value)}
-                className="w-full rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
-              <p className="mt-2 mb-1.5 text-[8px] font-black uppercase tracking-widest text-slate-400">Zoom source (%)</p>
-              <div className="flex gap-2">
-                <input type="number" min="1" step="0.1" value={sourceZoomPercent}
-                  onChange={(e) => onSourceZoomPercentChange?.(e.target.value)}
-                  className="min-w-0 flex-1 rounded-[12px] px-3 py-2 text-sm font-bold text-slate-800 outline-none cw-input" />
-                {["100", "90"].map((v) => (
-                  <button key={v} type="button" onClick={() => onSourceZoomPercentChange?.(v)}
-                    className="min-h-10 rounded-[12px] px-2.5 text-[10px] font-black text-slate-600 cw-btn">
-                    {v}%
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+        ) : null}
 
         {/* QC row — hidden in magnification mode */}
         <div className={`mt-2.5${isMagMode ? " hidden" : ""}`}>
@@ -940,36 +922,10 @@ export default function CalibrationWizard({
           )}
         </div>
 
-        {/* Save button — hidden in magnification mode (has inline apply button) */}
-        {!isMagMode && (
-          <div className="mt-3 flex flex-col gap-2">
-            <button type="button" onClick={handleSave} disabled={!canSave}
-              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[18px] bg-gradient-to-r from-emerald-500 to-teal-600 py-3 text-[11px] font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45">
-              <Save className="h-4 w-4" /> Simpan Kalibrasi
-            </button>
-            {onStartTemplating && (
-              <button type="button" onClick={() => { const ok = onSave?.(); if (ok) onStartTemplating?.(); }} disabled={!canSave}
-                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-cyan-600 to-cyan-700 py-2.5 text-[10px] font-black tracking-widest text-white uppercase shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-45">
-                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <path d="M5 2h6l.8 2.5H4.2L5 2z"/>
-                  <rect x="3.5" y="4.5" width="9" height="1.5" rx="0.6"/>
-                  <path d="M5 6 L4.5 14 M11 6 L11.5 14"/>
-                  <path d="M5 9.5 Q8 8.5 11 9.5"/>
-                </svg>
-                Simpan &amp; Templating
-              </button>
-            )}
-          </div>
-        )}
-
-        {!isMagMode && (
-          <div className="mt-2 flex items-start gap-1.5 px-1">
-            <Info className="mt-0.5 h-3 w-3 shrink-0 text-blue-500" />
-            <span className="text-[9px] font-medium text-slate-400 leading-snug">
-              Isi nilai real marker/ruler X-ray. Contoh: 10 cm, 13 cm.
-            </span>
-          </div>
-        )}
+        <button type="button" onClick={applyAndContinue} disabled={!canSave}
+          className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-r from-emerald-500 to-teal-600 py-2.5 text-[10px] font-black tracking-widest text-white uppercase shadow-md transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45">
+          <Save className="h-4 w-4" /> Terapkan &amp; Lanjut
+        </button>
           </>
         )}
       </motion.div>

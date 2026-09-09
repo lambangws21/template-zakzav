@@ -563,6 +563,7 @@ export default function PlanningWorkspace({
         </aside>}
         {!hasImage && <div className={styles.emptyCanvas}>
           <ImagePlus size={32} /><h2>{reference.fullLabel}</h2>
+          <p>Upload X-ray untuk membuka kalibrasi dan alat planning.</p>
           <Action icon={ImagePlus} onClick={actions.upload}>Upload X-ray</Action>
         </div>}
         <div className={styles.canvasToggles}>
@@ -580,8 +581,10 @@ export default function PlanningWorkspace({
     </div>
     <div className={styles.mobileNav}>
       <Action icon={ListOrdered} onClick={() => setSheet(sheet === "workflow" ? null : "workflow")} active={sheet === "workflow"}>Workflow</Action>
-      <Action icon={Ruler} onClick={() => setSheet(sheet === "tools" ? null : "tools")} active={sheet === "tools"}>Tools</Action>
-      <Action icon={ClipboardList} onClick={() => setSheet(sheet === "log" ? null : "log")} active={sheet === "log"}>Log</Action>
+      <Action icon={Ruler} disabled={!hasImage} title={!hasImage ? "Upload X-ray terlebih dulu" : "Measurement tools"}
+        onClick={() => setSheet(sheet === "tools" ? null : "tools")} active={sheet === "tools"}>Tools</Action>
+      <Action icon={ClipboardList} disabled={!hasImage} title={!hasImage ? "Belum ada hasil planning" : "Planning log"}
+        onClick={() => setSheet(sheet === "log" ? null : "log")} active={sheet === "log"}>Log</Action>
       <Action icon={Download} onClick={() => { changeStep(5); setSheet("workflow"); }} disabled={!canProceed}>Export</Action>
     </div>
     <div className={styles.status}><span>{status}</span><span>{layers.length} layer / {measurements.length} ukur</span></div>

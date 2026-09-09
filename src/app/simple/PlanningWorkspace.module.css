@@ -285,7 +285,9 @@
 .canvasGuide > .button { width: 100%; margin-top: 2px; color: #fff; background: #007f91; border-color: #0095a8; font-weight: 650; }
 .canvasGuide > small { display: block; margin-top: 7px; color: var(--pw-muted); font-size: 9px; line-height: 1.4; }
 .emptyCanvas { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; color: #afc4ce; pointer-events: none; padding: 16px; text-align: center; }
-.emptyCanvas h2 { color: #e0e8ed; font-size: 18px; }.emptyCanvas .button { pointer-events: auto; }
+.emptyCanvas h2 { color: #e0e8ed; font-size: 18px; }
+.emptyCanvas p { max-width: 280px; margin: -7px 0 1px; color: #94a3b8; font-size: 11px; line-height: 1.45; }
+.emptyCanvas .button { pointer-events: auto; }
 .viewTools { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--pw-panel); color: var(--pw-text); border: 1px solid var(--pw-line); border-radius: 8px; z-index: 25; white-space: nowrap; }
 .viewTools > span { padding: 0 4px; font-size: 11px; }.viewTools > button:last-child { background: transparent; color: var(--pw-text); border: 0; min-height: 34px; }
 .canvasToggles { position: absolute; inset: 8px 8px auto; display: flex; justify-content: space-between; pointer-events: none; z-index: 25; }.canvasToggles button { pointer-events: auto; }
@@ -313,7 +315,13 @@
   .button { min-height: 44px; min-width: 44px; }.toolStrip .button { min-width: 40px; min-height: 40px; }
   .workspace select, .workspace input, .workspace textarea { font-size: 16px; min-height: 44px; }
   .steps > li > button { min-height: 44px; }.measurements th button { min-height: 44px; }.layerRow .button { min-width: 44px; min-height: 44px; }
-  .status { display: none; }.viewTools { bottom: 8px; }
+  .status { display: none; }
+  .viewTools {
+    top: 50%; right: 8px; bottom: auto; left: auto; transform: translateY(-50%);
+    flex-direction: column; gap: 3px; padding: 4px;
+  }
+  .viewTools > span { max-width: 68px; padding: 3px 2px; overflow: hidden; font-size: 9px; text-overflow: ellipsis; }
+  .viewTools .button, .viewTools > button:last-child { min-width: 40px; min-height: 40px; padding: 5px; }
   .canvasGuide { top: 8px; right: 8px; width: min(280px, calc(100% - 16px)); max-height: min(520px, calc(100% - 76px)); }
 }
 @media (max-width: 599px) {
@@ -327,7 +335,8 @@
   .mobileNav .button { flex-direction: column; gap: 3px; font-size: 11px; }
   .sheet { top: auto; left: 4px; right: 4px; bottom: max(4px, env(safe-area-inset-bottom)); width: auto; max-height: 58%; border-radius: 18px 18px 8px 8px; }
   .sheet[data-expanded="true"] { max-height: 85%; }.sheetContent { padding-bottom: 14px; }
-  .viewTools { max-width: calc(100% - 16px); }.viewTools > span { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+  .viewTools { right: max(6px, env(safe-area-inset-right)); max-width: 52px; }
+  .viewTools > span { max-width: 44px; }
   .canvasGuide { left: 8px; right: auto; width: min(258px, calc(100% - 16px)); max-height: min(52%, 420px); padding: 8px; }
   .canvasGuide[data-minimized="true"] { width: min(210px, calc(100% - 16px)); }
   .resectionSummary { top: 8px; right: 8px; bottom: auto; left: auto; width: min(280px, calc(100% - 16px)); }
