@@ -36987,6 +36987,7 @@ export default function XrayCalibrationWorkspace({
               isMobileViewport &&
               selectedCutLayer &&
               selectedLayerMetrics &&
+              tool === "pan" &&
               !mobileObjectSettingsOpen &&
               !mobileCanvasFocusMode &&
               !simpleMobilePanel ? (
@@ -36995,14 +36996,12 @@ export default function XrayCalibrationWorkspace({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 12, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
-                  className="pointer-events-auto absolute right-3 left-3 z-[34] rounded-[14px] border border-white/70 bg-[#eef2f7]/96 p-1.5 text-slate-800 shadow-[3px_3px_10px_rgba(15,23,42,0.16),-3px_-3px_10px_rgba(255,255,255,0.72)] backdrop-blur-xl"
+                  className="pointer-events-auto absolute right-2 z-[34] w-[min(190px,calc(100%_-_16px))] rounded-[10px] border border-white/70 bg-[#eef2f7]/94 p-1 text-slate-800 shadow-[2px_2px_8px_rgba(15,23,42,0.15),-2px_-2px_8px_rgba(255,255,255,0.68)] backdrop-blur-lg"
                   style={{
-                    bottom: mobileObjectSettingsOpen
-                      ? "calc(env(safe-area-inset-bottom) + 52px)"
-                      : "calc(env(safe-area-inset-bottom) + 84px)",
+                    bottom: "calc(env(safe-area-inset-bottom) + 76px)",
                   }}
                 >
-                  <div className="flex h-10 items-center justify-between gap-1.5">
+                  <div className="flex h-8 items-center justify-between gap-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -37010,23 +37009,23 @@ export default function XrayCalibrationWorkspace({
                         handleToolChange("pan");
                         setNotice("Edit layer aktif. Drag layer di canvas atau pakai tombol nudge.");
                       }}
-                      className="min-w-0 flex-1 rounded-[10px] border border-cyan-200 bg-cyan-50 px-2 py-1 text-left shadow-sm"
+                      className="min-w-0 flex-1 rounded-[7px] border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-left shadow-sm"
                     >
-                      <div className="truncate text-[9px] font-black text-cyan-900">
+                      <div className="truncate text-[8px] font-black text-cyan-900">
                         {selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)}
                       </div>
-                      <div className="text-[7px] font-bold text-cyan-700">
+                      <div className="truncate text-[6px] font-bold text-cyan-700">
                         Scale {selectedLayerScalePercent}% · Rotate {selectedLayerRotationValue}°
                       </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setMobileObjectSettingsOpen((prev) => !prev)}
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-white/70 bg-white/65 text-slate-700 shadow-sm"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] border border-white/70 bg-white/65 text-slate-700 shadow-sm"
                       aria-label="Buka detail layer"
                       title="Detail layer"
                     >
-                      <SlidersHorizontal className="h-4 w-4" />
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
                     </button>
                   </div>
 
@@ -37189,7 +37188,7 @@ export default function XrayCalibrationWorkspace({
                   className={`pointer-events-auto absolute z-40 overflow-y-auto backdrop-blur-md ${
                     isNativeMobileSimpleUi && !selectedCutLayer && selectedLine
                       ? "max-h-[min(30vh,220px)] w-[min(72vw,286px)] rounded-[18px] p-1.5"
-                      : "max-h-[min(34vh,286px)] w-[min(82vw,340px)] rounded-[16px] p-1.5"
+                      : "max-h-[min(28vh,220px)] w-[min(74vw,286px)] rounded-[14px] p-1.5"
                   }`}
                   style={{
                     background: isDark ? "rgba(15,23,42,0.92)" : "rgba(235,240,247,0.94)",
