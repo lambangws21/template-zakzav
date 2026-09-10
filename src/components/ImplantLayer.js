@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -8,6 +8,7 @@ import {
   Eye,
   FolderOpen,
   Info,
+  Search,
   X,
 } from "lucide-react";
 import {
@@ -152,6 +153,7 @@ export default function ImplantLayer({
   title = "Implant Layer",
   subtitle = "Template overlay",
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
   const normalizedType = TYPE_KEYS.includes(selectedType)
     ? selectedType
     : TYPE_KEYS[0] || "cup";
@@ -168,8 +170,25 @@ export default function ImplantLayer({
     filteredItems.find((item) => String(item.id) === String(selectedItemId)) ||
     filteredItems[0] ||
     null;
+  const systems = Object.keys(groupedItems);
+  const selectedSystem = selectedItem?.system || systems[0] || "";
+  const selectedSystemItems = groupedItems[selectedSystem] || [];
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const searchResults = useMemo(
+    () => normalizedSearch
+      ? items
+          .filter((item) =>
+            [item.label, item.brand, item.system, item.size, item.type]
+              .filter(Boolean)
+              .some((value) => String(value).toLowerCase().includes(normalizedSearch)),
+          )
+          .slice(0, 30)
+      : [],
+    [items, normalizedSearch],
+  );
 
   const handleTypeChange = (type) => {
+    setSearchQuery("");
     onSelectType?.(type);
     const firstItem = getImplantLibraryItemsByType(type, items)[0];
     if (firstItem) onSelectItemId?.(firstItem.id);
@@ -177,16 +196,16 @@ export default function ImplantLayer({
 
   return (
     <section
-      className={`implant-layer-card w-full rounded-xl p-4 ${
-        compact ? "space-y-3" : "space-y-4"
+      className={`implant-layer-card w-full rounded-xl ${
+        compact ? "space-y-2 p-2.5" : "space-y-4 p-4"
       } ${className}`}
     >
       <style>{IMPLANT_LAYER_STYLES}</style>
 
       {/* Header */}
-      <div className={`implant-layer-divider flex items-start justify-between gap-3 border-b pb-3`}>
+      <div className={`implant-layer-divider flex items-start justify-between border-b ${compact ? "gap-2 pb-2" : "gap-3 pb-3"}`}>
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="implant-layer-soft flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-cyan-600">
+          <div className={`implant-layer-soft flex shrink-0 items-center justify-center rounded-lg text-cyan-600 ${compact ? "h-8 w-8" : "h-9 w-9"}`}>
             <FolderOpen className="h-4 w-4" />
           </div>
           <div className="min-w-0">
@@ -234,7 +253,7 @@ export default function ImplantLayer({
       ) : null}
 
       {/* Type tabs */}
-      <div className="implant-layer-inset flex gap-1.5 overflow-x-auto rounded-lg p-1.5" role="tablist" aria-label="Kategori implant">
+      <div className={`implant-layer-inset flex overflow-x-auto rounded-lg ${compact ? "gap-1 p-1" : "gap-1.5 p-1.5"}`} role="tablist" aria-label="Kategori implant">
         {TYPE_KEYS.map((type) => {
           const label = IMPLANT_LIBRARY_TYPE_LABELS[type];
           const isActive = normalizedType === type;
@@ -243,7 +262,7 @@ export default function ImplantLayer({
               key={`implant-layer-type-${type}`}
               type="button"
               onClick={() => handleTypeChange(type)}
-              className={`min-h-10 min-w-[76px] flex-1 rounded-md px-2 text-[10px] font-black uppercase transition-colors ${
+              className={`${compact ? "min-h-8 min-w-[62px] text-[8px]" : "min-h-10 min-w-[76px] text-[10px]"} flex-1 rounded-md px-2 font-black uppercase transition-colors ${
                 isActive ? "implant-layer-active" : "implant-layer-soft implant-layer-label-md"
               }`}
               title={label}
@@ -254,36 +273,93 @@ export default function ImplantLayer({
         })}
       </div>
 
-      {/* Select dropdown */}
-      <label className="block space-y-1.5">
-        <span className="implant-layer-label-lo px-1 text-[10px] font-black tracking-widest uppercase">
-          Model template
-        </span>
-        <div className="relative">
-          <select
-            value={selectedItem?.id || ""}
-            onChange={(event) => onSelectItemId?.(event.target.value)}
-            className="implant-layer-inset implant-layer-select w-full cursor-pointer appearance-none rounded-lg px-3 py-3 pr-9 text-xs font-bold outline-none focus:border-cyan-500"
-            style={{ colorScheme: "dark" }}
-            title="Pilih implant lokal"
-          >
-            {Object.keys(groupedItems).length === 0 ? (
-              <option value="">Belum ada item</option>
-            ) : (
-              Object.entries(groupedItems).map(([system, systemItems]) => (
-                <optgroup key={system} label={system}>
-                  {systemItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))
+      {/* Searchable two-step selector: category -> model -> size. */}
+      <div className={compact ? "space-y-1.5" : "space-y-2"}>
+        <label className="block space-y-1.5">
+          <span className="implant-layer-label-lo px-1 text-[9px] font-black tracking-widest uppercase">
+            Cari template
+          </span>
+          <div className="implant-layer-inset relative rounded-lg">
+            <Search className="implant-layer-label-lo pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Wagner, Tibial, LCP..."
+              className={`implant-layer-select w-full bg-transparent pl-9 pr-3 font-bold outline-none ${compact ? "min-h-9 text-[9px]" : "min-h-10 text-[10px]"}`}
+            />
+          </div>
+        </label>
+
+        {normalizedSearch ? (
+          <div className="implant-layer-inset max-h-48 space-y-1 overflow-y-auto rounded-lg p-1.5">
+            {searchResults.length ? searchResults.map((item) => (
+              <button
+                key={`implant-search-${item.id}`}
+                type="button"
+                onClick={() => {
+                  onSelectType?.(item.type);
+                  onSelectItemId?.(item.id);
+                  setSearchQuery("");
+                }}
+                className={`flex min-h-10 w-full items-center gap-2 rounded-md border px-2 text-left transition ${
+                  String(item.id) === String(selectedItem?.id)
+                    ? "border-cyan-400 bg-cyan-50/80 text-cyan-900"
+                    : "border-transparent hover:border-slate-300 hover:bg-white/55"
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <strong className="implant-layer-label-hi block truncate text-[9px]">{item.label}</strong>
+                  <small className="implant-layer-label-md block truncate text-[8px] font-semibold">{item.brand} | {item.system}</small>
+                </span>
+                <span className="implant-layer-soft shrink-0 rounded-full px-2 py-1 text-[7px] font-black uppercase">{item.type}</span>
+              </button>
+            )) : (
+              <div className="implant-layer-label-md px-3 py-5 text-center text-[9px] font-semibold">
+                Template tidak ditemukan.
+              </div>
             )}
-          </select>
-          <ChevronDown className="implant-layer-label-md pointer-events-none absolute top-3.5 right-3.5 h-4 w-4" />
-        </div>
-      </label>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="min-w-0 space-y-1">
+              <span className="implant-layer-label-lo px-1 text-[8px] font-black tracking-wider uppercase">1. Model</span>
+              <div className="implant-layer-inset relative rounded-lg">
+                <select
+                  value={selectedSystem}
+                  onChange={(event) => {
+                    const firstItem = groupedItems[event.target.value]?.[0];
+                    if (firstItem) onSelectItemId?.(firstItem.id);
+                  }}
+                  className={`implant-layer-select w-full cursor-pointer appearance-none bg-transparent px-2 pr-7 font-bold outline-none ${compact ? "min-h-9 text-[8px]" : "min-h-10 text-[9px]"}`}
+                  title="Pilih model implant"
+                >
+                  {systems.length ? systems.map((system) => (
+                    <option key={`implant-system-${system}`} value={system}>{system}</option>
+                  )) : <option value="">Belum ada model</option>}
+                </select>
+                <ChevronDown className="implant-layer-label-md pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+              </div>
+            </label>
+            <label className="min-w-0 space-y-1">
+              <span className="implant-layer-label-lo px-1 text-[8px] font-black tracking-wider uppercase">2. Ukuran</span>
+              <div className="implant-layer-inset relative rounded-lg">
+                <select
+                  value={selectedItem?.id || ""}
+                  onChange={(event) => onSelectItemId?.(event.target.value)}
+                  className={`implant-layer-select w-full cursor-pointer appearance-none bg-transparent px-2 pr-7 font-bold outline-none ${compact ? "min-h-9 text-[8px]" : "min-h-10 text-[9px]"}`}
+                  title="Pilih ukuran implant"
+                >
+                  {selectedSystemItems.length ? selectedSystemItems.map((item) => (
+                    <option key={item.id} value={item.id}>{item.size || item.label}</option>
+                  )) : <option value="">Belum ada ukuran</option>}
+                </select>
+                <ChevronDown className="implant-layer-label-md pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+              </div>
+            </label>
+          </div>
+        )}
+      </div>
 
       {/* Preview */}
       {selectedItem ? (
@@ -349,7 +425,7 @@ export default function ImplantLayer({
           type="button"
           onClick={onUseSelected}
           disabled={disabled || !selectedItem}
-          className="implant-layer-btn-use flex min-h-12 w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          className={`implant-layer-btn-use flex w-full items-center justify-center rounded-lg font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${compact ? "min-h-10 gap-1.5 px-2 py-2 text-[10px]" : "min-h-12 gap-2 px-3 py-3 text-xs"}`}
           title={calibrated ? "Tambahkan implant sebagai layer template baru" : "Kalibrasi belum aktif — ukuran implant mungkin tidak akurat"}
         >
           {calibrated ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
@@ -359,7 +435,7 @@ export default function ImplantLayer({
           type="button"
           onClick={onReplaceSelected}
           disabled={disabled || !selectedItem || !canReplaceSelected}
-          className="implant-layer-btn-replace flex min-h-12 w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-xs font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          className={`implant-layer-btn-replace flex w-full items-center justify-center rounded-lg font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${compact ? "min-h-10 gap-1.5 px-2 py-2 text-[10px]" : "min-h-12 gap-2 px-3 py-3 text-xs"}`}
           title="Ganti layer/template aktif tanpa mengubah posisi dan ukuran tampilan"
         >
           <FolderOpen className="h-4 w-4" />

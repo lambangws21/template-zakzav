@@ -1773,7 +1773,7 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
   ];
 
   const InfoRow = ({ label, value }) => (
-    <div className="grid grid-cols-[92px_1fr] gap-3 py-1.5 text-[11px]">
+    <div className="grid grid-cols-[76px_1fr] gap-2 py-1 text-[9px] sm:grid-cols-[92px_1fr] sm:gap-3 sm:py-1.5 sm:text-[11px]">
       <span className="text-slate-400">{label}</span>
       <strong className="break-words font-semibold text-slate-100">{value || "-"}</strong>
     </div>
@@ -1787,10 +1787,10 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
       default: "border-slate-700 bg-[#101c2d] text-slate-200 hover:border-slate-500",
     };
     return (
-      <button type="button" onClick={onClick} disabled={disabled} className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-3 text-left transition disabled:opacity-40 ${accents[accent]}`}>
-        <Icon size={17} className="shrink-0" />
-        <span className="min-w-0 flex-1"><strong className="block truncate text-[11px]">{title}</strong>{subtitle && <small className="block truncate text-[9px] opacity-65">{subtitle}</small>}</span>
-        <ChevronRight size={14} className="shrink-0 opacity-70" />
+      <button type="button" onClick={onClick} disabled={disabled} className={`flex min-h-10 w-full items-center gap-2 rounded-md border px-2.5 text-left transition disabled:opacity-40 sm:min-h-12 sm:gap-3 sm:rounded-lg sm:px-3 ${accents[accent]}`}>
+        <Icon size={17} className="h-3.5 w-3.5 shrink-0 sm:h-[17px] sm:w-[17px]" />
+        <span className="min-w-0 flex-1"><strong className="block truncate text-[10px] sm:text-[11px]">{title}</strong>{subtitle && <small className="block truncate text-[8px] opacity-65 sm:text-[9px]">{subtitle}</small>}</span>
+        <ChevronRight size={14} className="h-3 w-3 shrink-0 opacity-70 sm:h-3.5 sm:w-3.5" />
       </button>
     );
   };
@@ -1806,59 +1806,59 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
           animate={{ y: 0, scale: 1, opacity: 1 }}
           exit={{ y: 30, scale: 0.98, opacity: 0 }}
           onClick={(event) => event.stopPropagation()}
-          className="flex h-[96dvh] w-full max-w-[1180px] flex-col overflow-hidden rounded-t-2xl border border-violet-500/40 bg-[#07111e] text-slate-100 shadow-[0_24px_90px_rgba(0,0,0,.65)] sm:h-[92dvh] sm:rounded-xl"
+          className="mb-1 flex h-[94dvh] w-[calc(100%-8px)] max-w-[1180px] flex-col overflow-hidden rounded-xl border border-violet-500/40 bg-[#07111e] text-slate-100 shadow-[0_24px_90px_rgba(0,0,0,.65)] sm:mb-0 sm:h-[92dvh] sm:w-full"
         >
-          <header className="flex shrink-0 items-center gap-3 border-b border-slate-700/80 px-3 py-3 sm:px-5">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-violet-600/25 text-violet-300"><Activity size={20} /></div>
+          <header className="flex shrink-0 items-center gap-2 border-b border-slate-700/80 px-2.5 py-2 sm:gap-3 sm:px-5 sm:py-3">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-violet-600/25 text-violet-300 sm:h-10 sm:w-10 sm:rounded-lg"><Activity className="h-4 w-4 sm:h-5 sm:w-5" /></div>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-base font-black sm:text-xl">{caseData.patientName || "Pasien Tanpa Nama"}</h2><span className="rounded-full border border-slate-600 px-2 py-0.5 text-[8px] text-slate-400">ID: {patientId}</span></div>
-              <p className="truncate text-[10px] text-slate-400 sm:text-xs">{caseData.procedure || "Prosedur belum dipilih"}</p>
+              <div className="flex min-w-0 items-center gap-1.5 sm:flex-wrap sm:gap-2"><h2 className="min-w-0 truncate text-[13px] font-black sm:text-xl">{caseData.patientName || "Pasien Tanpa Nama"}</h2><span className="hidden shrink-0 rounded-full border border-slate-600 px-2 py-0.5 text-[8px] text-slate-400 min-[390px]:inline">ID: {patientId}</span></div>
+              <p className="truncate text-[9px] text-slate-400 sm:text-xs">{caseData.procedure || "Prosedur belum dipilih"}</p>
             </div>
             <span className={`hidden min-h-9 items-center rounded-lg px-3 text-[10px] font-black sm:flex ${hasPostOp ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-600/25 text-emerald-300"}`}>{hasPostOp ? "Post-Op" : "Planning"}</span>
             <div className="hidden border-l border-slate-700 pl-3 text-[9px] text-slate-400 md:block"><span className="block">Terakhir diubah</span><strong className="text-slate-200">{formatDate(caseData.savedAt)}</strong></div>
-            <button type="button" onClick={onMinimize} className="grid h-9 w-9 place-items-center rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700" aria-label="Minimalkan"><Minus size={15} /></button>
-            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg bg-slate-800 text-slate-300 hover:bg-red-500/20 hover:text-red-300" aria-label="Tutup"><X size={16} /></button>
+            <button type="button" onClick={onMinimize} className="grid h-8 w-8 place-items-center rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700 sm:h-9 sm:w-9 sm:rounded-lg" aria-label="Minimalkan"><Minus className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md bg-slate-800 text-slate-300 hover:bg-red-500/20 hover:text-red-300 sm:h-9 sm:w-9 sm:rounded-lg" aria-label="Tutup"><X className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></button>
           </header>
 
-          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-800 px-3 py-2 sm:px-5" aria-label="Bagian detail kasus">
-            {tabItems.map((item) => <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`min-h-10 shrink-0 rounded-md border px-4 text-[10px] font-black transition ${activeTab === item.id ? "border-violet-400 bg-violet-600 text-white" : "border-slate-700 bg-[#0c1727] text-slate-400 hover:text-white"}`}>{item.label}</button>)}
+          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-800 px-2 py-1.5 sm:px-5 sm:py-2" aria-label="Bagian detail kasus">
+            {tabItems.map((item) => <button key={item.id} type="button" onClick={() => setActiveTab(item.id)} className={`min-h-8 shrink-0 rounded-md border px-3 text-[9px] font-black transition sm:min-h-10 sm:px-4 sm:text-[10px] ${activeTab === item.id ? "border-violet-400 bg-violet-600 text-white" : "border-slate-700 bg-[#0c1727] text-slate-400 hover:text-white"}`}>{item.label}</button>)}
           </nav>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid min-h-full gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-4">
-              <main className="min-w-0 space-y-3">
+            <div className="grid min-h-full gap-2 p-2 sm:gap-3 sm:p-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-4">
+              <main className="min-w-0 space-y-2 sm:space-y-3">
                 <section className="overflow-hidden rounded-lg border border-slate-700 bg-black">
                   {activeTab === "compare" && preOpSrc && postOpSources.length ? (
-                    <div className="grid min-h-[320px] grid-cols-2 divide-x divide-slate-700 sm:min-h-[440px]">
+                    <div className="grid min-h-[240px] grid-cols-2 divide-x divide-slate-700 sm:min-h-[440px]">
                       <button type="button" onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)} className="relative overflow-hidden"><img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-contain" /><span className="absolute left-3 top-3 rounded-full bg-slate-950/80 px-3 py-1 text-[9px] font-black">Pre-Op</span></button>
                       <button type="button" onClick={() => onLightbox(postOpSources[0], caseData.patientName, null)} className="relative overflow-hidden"><img src={postOpSources[0]} alt="Post-Op" className="h-full w-full object-contain" /><span className="absolute left-3 top-3 rounded-full bg-emerald-600/90 px-3 py-1 text-[9px] font-black">Post-Op</span></button>
                     </div>
                   ) : activeTab === "history" ? (
-                    <div className="grid min-h-[320px] place-items-center p-8 text-center"><div><Clock className="mx-auto mb-3 text-violet-400" /><strong className="block text-sm">Riwayat Kasus</strong><p className="mt-2 text-[11px] text-slate-400">Kasus dibuat atau terakhir diperbarui pada {formatDate(caseData.savedAt)}.</p></div></div>
+                    <div className="grid min-h-[240px] place-items-center p-5 text-center sm:min-h-[320px] sm:p-8"><div><Clock className="mx-auto mb-2 h-5 w-5 text-violet-400 sm:mb-3 sm:h-6 sm:w-6" /><strong className="block text-xs sm:text-sm">Riwayat Kasus</strong><p className="mt-1.5 text-[9px] text-slate-400 sm:mt-2 sm:text-[11px]">Kasus dibuat atau terakhir diperbarui pada {formatDate(caseData.savedAt)}.</p></div></div>
                   ) : activeTab === "report" ? (
-                    <div className="grid min-h-[320px] place-items-center p-8 text-center"><div><FileText className="mx-auto mb-3 text-violet-400" /><strong className="block text-sm">Laporan Templating</strong><p className="mt-2 text-[11px] text-slate-400">Gunakan Quick Actions untuk membuat laporan Pre-Op atau laporan lengkap.</p></div></div>
+                    <div className="grid min-h-[240px] place-items-center p-5 text-center sm:min-h-[320px] sm:p-8"><div><FileText className="mx-auto mb-2 h-5 w-5 text-violet-400 sm:mb-3 sm:h-6 sm:w-6" /><strong className="block text-xs sm:text-sm">Laporan Templating</strong><p className="mt-1.5 text-[9px] text-slate-400 sm:mt-2 sm:text-[11px]">Gunakan Quick Actions untuk membuat laporan Pre-Op atau laporan lengkap.</p></div></div>
                   ) : (
-                    <div className="relative grid min-h-[320px] place-items-center sm:min-h-[440px]">
+                    <div className="relative grid min-h-[240px] place-items-center sm:min-h-[440px]">
                       {displayImage ? <button type="button" onClick={() => onLightbox(displayImage, caseData.patientName, activeTab === "preop" ? caseData.id : null)} className="absolute inset-0"><img src={displayImage} alt="Preview X-ray" className="h-full w-full object-contain" /></button> : <div className="text-center text-slate-600"><ImageIcon className="mx-auto mb-2" /><p className="text-xs">Belum ada gambar {activeTab === "postop" ? "Post-Op" : ""}</p></div>}
-                      <span className="absolute left-3 top-3 rounded-full border border-slate-600 bg-slate-950/80 px-3 py-1 text-[9px] font-black">{activeTab === "postop" ? "Post-Op" : "Pre-Op"}</span>
-                      {displayImage && <button type="button" onClick={() => onLightbox(displayImage, caseData.patientName, activeTab === "preop" ? caseData.id : null)} className="absolute bottom-3 right-3 grid h-10 w-10 place-items-center rounded-lg bg-slate-950/80 text-white" aria-label="Perbesar gambar"><Maximize2 size={16} /></button>}
+                      <span className="absolute left-2 top-2 rounded-full border border-slate-600 bg-slate-950/80 px-2 py-0.5 text-[8px] font-black sm:left-3 sm:top-3 sm:px-3 sm:py-1 sm:text-[9px]">{activeTab === "postop" ? "Post-Op" : "Pre-Op"}</span>
+                      {displayImage && <button type="button" onClick={() => onLightbox(displayImage, caseData.patientName, activeTab === "preop" ? caseData.id : null)} className="absolute bottom-2 right-2 grid h-8 w-8 place-items-center rounded-md bg-slate-950/80 text-white sm:bottom-3 sm:right-3 sm:h-10 sm:w-10 sm:rounded-lg" aria-label="Perbesar gambar"><Maximize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></button>}
                     </div>
                   )}
-                  {availableImages.length > 0 && activeTab !== "history" && activeTab !== "report" && <div className="flex gap-2 overflow-x-auto border-t border-slate-800 bg-[#08111f] p-2">{availableImages.map((source, index) => <button key={`${source.slice(0, 24)}-${index}`} type="button" onClick={() => { setActiveImage(index); setActiveTab(index === 0 ? "preop" : "postop"); }} className={`relative h-14 w-16 shrink-0 overflow-hidden rounded border-2 ${activeImage === index ? "border-violet-500" : "border-slate-700"}`}><img src={source} alt={index === 0 ? "Pre-Op" : `Post-Op ${index}`} className="h-full w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-[7px] font-black">{index === 0 ? "PRE" : `POST ${index}`}</span></button>)}</div>}
+                  {availableImages.length > 0 && activeTab !== "history" && activeTab !== "report" && <div className="flex gap-1.5 overflow-x-auto border-t border-slate-800 bg-[#08111f] p-1.5 sm:gap-2 sm:p-2">{availableImages.map((source, index) => <button key={`${source.slice(0, 24)}-${index}`} type="button" onClick={() => { setActiveImage(index); setActiveTab(index === 0 ? "preop" : "postop"); }} className={`relative h-11 w-12 shrink-0 overflow-hidden rounded border-2 sm:h-14 sm:w-16 ${activeImage === index ? "border-violet-500" : "border-slate-700"}`}><img src={source} alt={index === 0 ? "Pre-Op" : `Post-Op ${index}`} className="h-full w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-[6px] font-black sm:text-[7px]">{index === 0 ? "PRE" : `POST ${index}`}</span></button>)}</div>}
                 </section>
 
-                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-3">
-                  <div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-black">Hasil Templating (Pre-Op)</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-9 items-center gap-1 rounded-md border border-slate-600 px-3 text-[9px] font-black text-slate-300"><Pencil size={12} /> Edit</button></div>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{(components.length ? components : ["Belum ada implant"]).slice(0, 4).map((component, index) => <div key={`${component}-${index}`} className="rounded-md border border-slate-700 bg-[#101c2d] p-3"><small className="text-[8px] uppercase text-slate-500">Komponen {index + 1}</small><strong className="mt-1 block text-xs text-slate-100">{component}</strong></div>)}{caseData.preOpSizeNum != null && <div className="rounded-md border border-violet-500/30 bg-violet-500/10 p-3"><small className="text-[8px] uppercase text-violet-300">Ukuran Primer</small><strong className="mt-1 block text-lg text-violet-300">{caseData.preOpSizeNum}</strong></div>}</div>
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2 sm:rounded-lg sm:p-3">
+                  <div className="mb-2 flex items-center justify-between sm:mb-3"><h3 className="text-[10px] font-black sm:text-xs">Hasil Templating (Pre-Op)</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-8 items-center gap-1 rounded-md border border-slate-600 px-2.5 text-[8px] font-black text-slate-300 sm:min-h-9 sm:px-3 sm:text-[9px]"><Pencil className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> Edit</button></div>
+                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2 xl:grid-cols-4">{(components.length ? components : ["Belum ada implant"]).slice(0, 4).map((component, index) => <div key={`${component}-${index}`} className="min-w-0 rounded-md border border-slate-700 bg-[#101c2d] p-2 sm:p-3"><small className="text-[7px] uppercase text-slate-500 sm:text-[8px]">Komponen {index + 1}</small><strong className="mt-0.5 block break-words text-[10px] text-slate-100 sm:mt-1 sm:text-xs">{component}</strong></div>)}{caseData.preOpSizeNum != null && <div className="rounded-md border border-violet-500/30 bg-violet-500/10 p-2 sm:p-3"><small className="text-[7px] uppercase text-violet-300 sm:text-[8px]">Ukuran Primer</small><strong className="mt-0.5 block text-sm text-violet-300 sm:mt-1 sm:text-lg">{caseData.preOpSizeNum}</strong></div>}</div>
                 </section>
 
-                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-3"><h3 className="mb-2 text-xs font-black">Catatan</h3><p className="min-h-14 rounded-md border border-slate-700 bg-[#101c2d] p-3 text-[10px] leading-relaxed text-slate-400">{caseData.notes || "Belum ada catatan untuk kasus ini."}</p></section>
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2 sm:rounded-lg sm:p-3"><h3 className="mb-1.5 text-[10px] font-black sm:mb-2 sm:text-xs">Catatan</h3><p className="min-h-10 rounded-md border border-slate-700 bg-[#101c2d] p-2 text-[9px] leading-relaxed text-slate-400 sm:min-h-14 sm:p-3 sm:text-[10px]">{caseData.notes || "Belum ada catatan untuk kasus ini."}</p></section>
               </main>
 
-              <aside className="space-y-3">
-                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-black">Informasi Pasien</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-9 items-center gap-1 rounded-md border border-slate-600 px-3 text-[9px]"><Pencil size={12} /> Edit</button></div><InfoRow label="Nama" value={caseData.patientName} /><InfoRow label="Umur" value={caseData.patientAge} /><InfoRow label="Jenis Kelamin" value={caseData.gender} /><InfoRow label="ID Pasien" value={patientId} /></section>
-                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-black">Detail Prosedur</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-9 items-center gap-1 rounded-md border border-slate-600 px-3 text-[9px]"><Pencil size={12} /> Edit</button></div><InfoRow label="Prosedur" value={caseData.procedure} /><InfoRow label="Templating" value={formatDate(caseData.savedAt)} /><InfoRow label="Sisi" value={anatomySide === "left" ? "Left (L)" : anatomySide === "right" ? "Right (R)" : anatomySide} /><InfoRow label="Status" value={hasPostOp ? "Post-Op" : "Planning"} /></section>
-                <section className="rounded-lg border border-slate-700 bg-[#0b1727] p-3"><h3 className="mb-3 text-sm font-black">Quick Actions</h3><div className="space-y-2">
+              <aside className="space-y-2 sm:space-y-3">
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2.5 sm:rounded-lg sm:p-4"><div className="mb-1.5 flex items-center justify-between sm:mb-2"><h3 className="text-xs font-black sm:text-sm">Informasi Pasien</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-8 items-center gap-1 rounded-md border border-slate-600 px-2.5 text-[8px] sm:min-h-9 sm:px-3 sm:text-[9px]"><Pencil className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> Edit</button></div><InfoRow label="Nama" value={caseData.patientName} /><InfoRow label="Umur" value={caseData.patientAge} /><InfoRow label="Jenis Kelamin" value={caseData.gender} /><InfoRow label="ID Pasien" value={patientId} /></section>
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2.5 sm:rounded-lg sm:p-4"><div className="mb-1.5 flex items-center justify-between sm:mb-2"><h3 className="text-xs font-black sm:text-sm">Detail Prosedur</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-8 items-center gap-1 rounded-md border border-slate-600 px-2.5 text-[8px] sm:min-h-9 sm:px-3 sm:text-[9px]"><Pencil className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> Edit</button></div><InfoRow label="Prosedur" value={caseData.procedure} /><InfoRow label="Templating" value={formatDate(caseData.savedAt)} /><InfoRow label="Sisi" value={anatomySide === "left" ? "Left (L)" : anatomySide === "right" ? "Right (R)" : anatomySide} /><InfoRow label="Status" value={hasPostOp ? "Post-Op" : "Planning"} /></section>
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2.5 sm:rounded-lg sm:p-3"><h3 className="mb-2 text-xs font-black sm:mb-3 sm:text-sm">Quick Actions</h3><div className="space-y-1.5 sm:space-y-2">
                   {onLoadAsLayer && preOpSrc && <ActionButton icon={ImageIcon} title="Buka di Templating" subtitle="Lanjutkan perencanaan kasus ini" accent="primary" onClick={() => { onLoadAsLayer(preOpSrc, `${caseData.patientName || "Kasus"} - ${caseData.procedure || ""}`); onClose(); }} />}
                   <ActionButton icon={ClipboardCheck} title={hasPostOp ? "Edit Data Post-Op" : "Input Data Post-Op"} subtitle="Tambahkan hasil post-operative" accent="success" onClick={() => onPostOp(caseData)} />
                   {onLoadAsLayer && preOpSrc && <ActionButton icon={Layers} title="Buka sebagai Layer Perbandingan" subtitle="Bandingkan dengan kasus lain" onClick={() => { onLoadAsLayer(preOpSrc, `${caseData.patientName || "Kasus"} - Perbandingan`); onClose(); }} />}
@@ -1872,7 +1872,7 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
             </div>
           </div>
 
-          <footer className="flex shrink-0 items-center justify-between border-t border-slate-800 bg-[#0a1422] px-4 py-2"><strong className="text-xs">ZakZav</strong><span className="hidden text-[9px] text-slate-500 sm:block">Plan Better. Treat Better.</span><button type="button" onClick={onClose} className="min-h-9 rounded-md border border-slate-700 bg-slate-800 px-5 text-[10px] font-black">Tutup</button></footer>
+          <footer className="flex shrink-0 items-center justify-between border-t border-slate-800 bg-[#0a1422] px-3 py-1.5 sm:px-4 sm:py-2"><strong className="text-[10px] sm:text-xs">ZakZav</strong><span className="hidden text-[9px] text-slate-500 sm:block">Plan Better. Treat Better.</span><button type="button" onClick={onClose} className="min-h-8 rounded-md border border-slate-700 bg-slate-800 px-4 text-[9px] font-black sm:min-h-9 sm:px-5 sm:text-[10px]">Tutup</button></footer>
         </motion.div>
       </motion.div>
     </AnimatePresence>,

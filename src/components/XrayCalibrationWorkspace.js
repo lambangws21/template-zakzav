@@ -49,6 +49,7 @@ import {
   GitCompare,
   HandGrab,
   History,
+  Replace,
   Info,
   Layers,
   Moon,
@@ -520,7 +521,7 @@ const HKA_INFO_BUBBLES = {
   },
   jla: {
     key: "jla",
-    title: "Kine Line",
+    title: "Joint Line",
     subtitle: "Knee alignment lines",
     tagline: "LDFA · MPTA · JLCA · CPAK",
     color: "#4338ca",
@@ -996,7 +997,8 @@ export default function XrayCalibrationWorkspace({
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
   const [mobileMeasureSheetExpanded, setMobileMeasureSheetExpanded] =
     useState(false);
-  const [mobileSheetCollapsed, setMobileSheetCollapsed] = useState(false);
+  const [mobileSheetSnap, setMobileSheetSnap] = useState("half");
+  const [implantReplaceSearch, setImplantReplaceSearch] = useState("");
   const [simpleManagerTab, setSimpleManagerTab] = useState("layer");
   const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
   const [simpleDesktopHkaOpen, setSimpleDesktopHkaOpen] = useState(false);
@@ -20328,7 +20330,7 @@ export default function XrayCalibrationWorkspace({
     if (simpleMobilePanel) {
       setMobileObjectSettingsOpen(false);
       setMobileCanvasFocusMode(false);
-      setMobileSheetCollapsed(false);
+      setMobileSheetSnap("half");
     }
   }, [simpleMobilePanel]);
   useEffect(() => {
@@ -20493,6 +20495,33 @@ export default function XrayCalibrationWorkspace({
   const canReplaceSelectedTemplateLayer = Boolean(
     selectedCutLayer && isImageBackedLayerKind(selectedCutLayer.kind),
   );
+  const selectedReplacementImplant = getImplantLibraryItemById(
+    selectedImplantLibraryId,
+    LOCAL_IMPLANT_LIBRARY,
+  );
+  const replacementTypeItems = LOCAL_IMPLANT_LIBRARY.filter(
+    (item) => item.type === selectedImplantType,
+  );
+  const replacementSystems = Array.from(
+    new Set(replacementTypeItems.map((item) => item.system || "Lainnya")),
+  );
+  const selectedReplacementSystem =
+    selectedReplacementImplant?.type === selectedImplantType
+      ? selectedReplacementImplant.system || "Lainnya"
+      : replacementSystems[0] || "";
+  const replacementSystemItems = replacementTypeItems.filter(
+    (item) => (item.system || "Lainnya") === selectedReplacementSystem,
+  );
+  const normalizedImplantReplaceSearch = implantReplaceSearch.trim().toLowerCase();
+  const replacementSearchResults = normalizedImplantReplaceSearch
+    ? LOCAL_IMPLANT_LIBRARY.filter((item) =>
+        [item.label, item.brand, item.system, item.size, item.type]
+          .filter(Boolean)
+          .some((value) =>
+            String(value).toLowerCase().includes(normalizedImplantReplaceSearch),
+          ),
+      ).slice(0, 24)
+    : [];
   const applySelectedLayerScalePercent = (nextPercent) => {
     if (!selectedCutLayer || !selectedLayerMetrics) return;
     if (selectedCutLayer.lockScale) {
@@ -34451,28 +34480,28 @@ export default function XrayCalibrationWorkspace({
                   onPointerCancel={() => { layerBarDragRef.current = null; }}
                 >
                   {isMobileViewport ? (
-                    <div className="max-w-[calc(100vw-20px)]">
+                    <div className="max-w-[calc(100vw-12px)]">
                       <div
-                        className="layer-floating-toolbar flex items-center gap-1 rounded-xl px-1.5 py-1 text-slate-700"
+                        className="layer-floating-toolbar flex items-center gap-0.5 rounded-lg px-1 py-0.5 text-slate-700"
                       >
                         <button
                           type="button"
                           onClick={() =>
                             openLayerSettingsModal(selectedCutLayer.id)
                           }
-                          className={`flex min-w-0 items-center py-1 pl-1.5 text-left transition ${SOFT_INSET_CLASS} ${
-                            showLayerToolbarName ? "gap-1.5 pr-2" : "pr-1.5"
+                          className={`flex min-w-0 items-center py-0.5 pl-1 text-left transition ${SOFT_INSET_CLASS} ${
+                            showLayerToolbarName ? "gap-1 pr-1.5" : "pr-1"
                           }`}
                           aria-label="Buka pengaturan layer"
                           title="Buka pengaturan layer"
                         >
                           <span
-                            className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 ${SOFT_RAISED_CLASS}`}
+                            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 ${SOFT_RAISED_CLASS}`}
                           >
-                            <Bone className="h-4 w-4" strokeWidth={2.1} />
+                            <Bone className="h-3.5 w-3.5" strokeWidth={2.1} />
                           </span>
                           {showLayerToolbarName ? (
-                            <span className="max-w-[84px] truncate text-[9px] leading-none font-semibold text-slate-700">
+                            <span className="max-w-[64px] truncate text-[8px] leading-none font-semibold text-slate-700">
                               {selectedCutLayerIds.length > 1
                                 ? `${selectedCutLayerIds.length} Layers`
                                 : selectedCutLayer.name ||
@@ -34487,6 +34516,8 @@ export default function XrayCalibrationWorkspace({
                               label="Brush Tool"
                               active={tool === "brush"}
                               onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                              className="h-7 w-7"
+                              iconClassName="h-3 w-3"
                             />
                             <LayerToolbarActionButton
                               icon="package"
@@ -34497,6 +34528,8 @@ export default function XrayCalibrationWorkspace({
                                   prev === "template" ? null : "template",
                                 )
                               }
+                              className="h-7 w-7"
+                              iconClassName="h-3 w-3"
                             />
                             <LayerToolbarActionButton
                               icon="settings"
@@ -34504,6 +34537,8 @@ export default function XrayCalibrationWorkspace({
                               onClick={() =>
                                 openLayerSettingsModal(selectedCutLayer.id)
                               }
+                              className="h-7 w-7"
+                              iconClassName="h-3 w-3"
                             />
                           </>
                         ) : (
@@ -34513,6 +34548,8 @@ export default function XrayCalibrationWorkspace({
                               label="Brush Tool"
                               active={tool === "brush"}
                               onClick={() => setTool((prev) => prev === "brush" ? getIdleTool() : "brush")}
+                              className="h-7 w-7"
+                              iconClassName="h-3 w-3"
                             />
                             <LayerToolbarActionButton
                               icon={showLayerToolbarName ? "eyeOff" : "eye"}
@@ -34525,6 +34562,8 @@ export default function XrayCalibrationWorkspace({
                                 setShowLayerToolbarName((prev) => !prev)
                               }
                               active={!showLayerToolbarName}
+                              className="h-7 w-7"
+                              iconClassName="h-3 w-3"
                             />
                             <LayerToolbarActionButton
                               icon="settings"
@@ -34532,6 +34571,8 @@ export default function XrayCalibrationWorkspace({
                               onClick={() =>
                                 openLayerSettingsModal(selectedCutLayer.id)
                               }
+                              className="h-7 w-7"
+                              iconClassName="h-3 w-3"
                             />
                           </>
                         )}
@@ -34658,64 +34699,132 @@ export default function XrayCalibrationWorkspace({
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -6, scale: 0.98 }}
                         transition={MOBILE_PANEL_TRANSITION}
-                        className="layer-template-popover pointer-events-auto mt-1.5 w-[min(86vw,340px)] rounded-xl border p-3 text-slate-700 backdrop-blur-md"
+                        className="layer-template-popover pointer-events-auto mt-1 w-[min(80vw,310px)] rounded-lg border p-2 text-slate-700 backdrop-blur-md sm:mt-1.5 sm:w-[min(86vw,340px)] sm:rounded-xl sm:p-3"
                       >
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                        <div className="mb-1 flex items-center justify-between gap-2 sm:mb-1.5">
+                          <span className="text-[8px] font-black tracking-widest text-slate-400 uppercase sm:text-[9px]">
                             Ganti Template Layer
                           </span>
                           <button
                             type="button"
                             onClick={() => setSimpleLayerFloatingPopup(null)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-slate-500 shadow-[1px_1px_4px_rgba(148,163,184,0.18)]"
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-slate-500 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] sm:h-7 sm:w-7"
                             aria-label="Tutup popup layer"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                           </button>
                         </div>
-                        <div className="mb-2 rounded-lg border border-slate-300/70 bg-white/55 px-2.5 py-2 dark:border-slate-600 dark:bg-slate-900/40">
-                          <div className="text-[8px] font-bold tracking-wider text-slate-500 uppercase">Layer saat ini</div>
-                          <div className="mt-0.5 truncate text-[10px] font-black text-slate-800">
+                        <div className="mb-1.5 rounded-md border border-slate-300/70 bg-white/55 px-2 py-1.5 dark:border-slate-600 dark:bg-slate-900/40 sm:mb-2 sm:rounded-lg sm:px-2.5 sm:py-2">
+                          <div className="text-[7px] font-bold tracking-wider text-slate-500 uppercase sm:text-[8px]">Layer saat ini</div>
+                          <div className="mt-0.5 truncate text-[9px] font-black text-slate-800 sm:text-[10px]">
                             {selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)}
                           </div>
                         </div>
-                        <div className="space-y-2">
-                          <label className="block text-[9px] font-bold text-slate-500">
-                            Template pengganti
-                          <div className="grid grid-cols-[1fr_auto] gap-1.5">
-                            <select
-                              value={selectedImplantLibraryId}
-                              onChange={(event) =>
-                                setSelectedImplantLibraryId(event.target.value)
-                              }
-                              disabled={!canReplaceSelectedTemplateLayer}
-                              className="mt-1 min-h-10 min-w-0 rounded-lg border border-slate-300 bg-white/75 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-cyan-500 disabled:opacity-45"
-                              title="Pilih template pengganti"
-                            >
-                              {LOCAL_IMPLANT_LIBRARY.map((item) => (
-                                <option
-                                  key={`floating-replace-${item.id}`}
-                                  value={item.id}
+                        <div className="space-y-1.5 sm:space-y-2">
+                          <div className="text-[8px] font-bold text-slate-500 sm:text-[9px]">
+                            <label htmlFor="implant-replace-search">Template pengganti</label>
+                          <input
+                            id="implant-replace-search"
+                            type="search"
+                            value={implantReplaceSearch}
+                            onChange={(event) => setImplantReplaceSearch(event.target.value)}
+                            placeholder="Cari Wagner, Tibial, LCP..."
+                            className="mt-1 min-h-8 w-full rounded-md border border-slate-300 bg-white/75 px-2 text-[9px] font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-cyan-500 sm:min-h-10 sm:rounded-lg sm:text-[10px]"
+                          />
+                          <div className="mt-1.5 grid grid-cols-4 gap-1">
+                            {LOCAL_IMPLANT_LIBRARY_TYPES.map((type) => {
+                              const typeLabels = { stem: "Stem", cup: "Cup", knee: "Knee", trauma: "Trauma" };
+                              const active = selectedImplantType === type;
+                              return (
+                                <button
+                                  key={`replace-group-${type}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setImplantReplaceSearch("");
+                                    setSelectedImplantType(type);
+                                    const firstItem = LOCAL_IMPLANT_LIBRARY.find((item) => item.type === type);
+                                    if (firstItem) setSelectedImplantLibraryId(firstItem.id);
+                                  }}
+                                  className={`min-h-7 rounded-md border px-1 text-[7px] font-black transition sm:min-h-8 sm:text-[8px] ${
+                                    active
+                                      ? "border-cyan-600 bg-cyan-600 text-white"
+                                      : "border-slate-300 bg-white/60 text-slate-500"
+                                  }`}
                                 >
-                                  {item.label}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void replaceSelectedLayerWithSelectedImplant();
-                                setSimpleLayerFloatingPopup(null);
+                                  {typeLabels[type] || type}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {normalizedImplantReplaceSearch ? (
+                            <div className="mt-1.5 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-300/80 bg-white/45 p-1">
+                              {replacementSearchResults.length ? replacementSearchResults.map((item) => (
+                                <button
+                                  key={`replace-search-${item.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedImplantType(item.type);
+                                    setSelectedImplantLibraryId(item.id);
+                                    setImplantReplaceSearch("");
+                                  }}
+                                  className="flex min-h-9 w-full items-center gap-2 rounded-md border border-transparent px-2 text-left hover:border-cyan-300 hover:bg-cyan-50/80"
+                                >
+                                  <span className="min-w-0 flex-1">
+                                    <strong className="block truncate text-[8px] text-slate-700 sm:text-[9px]">{item.label}</strong>
+                                    <small className="block truncate text-[7px] font-semibold text-slate-400">{item.brand} · {item.system}</small>
+                                  </span>
+                                  <span className="shrink-0 rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[6px] font-black uppercase text-slate-500">{item.type}</span>
+                                </button>
+                              )) : <p className="px-2 py-4 text-center text-[8px] text-slate-400">Template tidak ditemukan.</p>}
+                            </div>
+                          ) : (
+                          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                            <label className="min-w-0 text-[7px] font-black uppercase tracking-wider text-slate-400">
+                              1. Model
+                            <select
+                              value={selectedReplacementSystem}
+                              onChange={(event) => {
+                                const firstItem = replacementTypeItems.find(
+                                  (item) => (item.system || "Lainnya") === event.target.value,
+                                );
+                                if (firstItem) setSelectedImplantLibraryId(firstItem.id);
                               }}
                               disabled={!canReplaceSelectedTemplateLayer}
-                              className="mt-1 min-h-10 rounded-lg border border-slate-900 bg-slate-900 px-3 text-[9px] font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
+                              className="mt-1 min-h-8 w-full min-w-0 rounded-md border border-slate-300 bg-white/75 px-1.5 text-[8px] font-bold normal-case text-slate-700 outline-none focus:border-cyan-500 disabled:opacity-45 sm:min-h-10 sm:rounded-lg sm:text-[9px]"
+                              title="Pilih model implant"
                             >
-                              Ganti
-                            </button>
+                              {replacementSystems.map((system) => <option key={`replace-model-${system}`} value={system}>{system}</option>)}
+                            </select>
+                            </label>
+                            <label className="min-w-0 text-[7px] font-black uppercase tracking-wider text-slate-400">
+                              2. Ukuran
+                              <select
+                                value={selectedImplantLibraryId}
+                                onChange={(event) => setSelectedImplantLibraryId(event.target.value)}
+                                disabled={!canReplaceSelectedTemplateLayer}
+                                className="mt-1 min-h-8 w-full min-w-0 rounded-md border border-slate-300 bg-white/75 px-1.5 text-[8px] font-bold normal-case text-slate-700 outline-none focus:border-cyan-500 disabled:opacity-45 sm:min-h-10 sm:rounded-lg sm:text-[9px]"
+                                title="Pilih ukuran implant"
+                              >
+                                {replacementSystemItems.map((item) => <option key={`replace-size-${item.id}`} value={item.id}>{item.size || item.label}</option>)}
+                              </select>
+                            </label>
                           </div>
-                          </label>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void replaceSelectedLayerWithSelectedImplant();
+                              setSimpleLayerFloatingPopup(null);
+                              setImplantReplaceSearch("");
+                            }}
+                            disabled={!canReplaceSelectedTemplateLayer || !selectedImplantLibraryId}
+                            className="mt-1.5 min-h-8 w-full rounded-md border border-slate-900 bg-slate-900 px-2.5 text-[8px] font-black text-white disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-10 sm:rounded-lg sm:text-[9px]"
+                          >
+                            Ganti dengan {selectedReplacementImplant?.system || "Template Terpilih"}
+                          </button>
+                          </div>
                           <div>
-                            <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black text-slate-500">
+                            <div className="mb-1 flex items-center justify-between gap-2 text-[8px] font-black text-slate-500 sm:text-[9px]">
                               <span>
                                 {selectedCutLayer.lockScale
                                   ? "Lock Scale aktif"
@@ -34723,12 +34832,12 @@ export default function XrayCalibrationWorkspace({
                               </span>
                               <span>{selectedLayerScalePercent}%</span>
                             </div>
-                            <div className="grid grid-cols-[30px_1fr_30px] items-center gap-1.5">
+                            <div className="grid grid-cols-[28px_1fr_28px] items-center gap-1 sm:grid-cols-[30px_1fr_30px] sm:gap-1.5">
                               <button
                                 type="button"
                                 onClick={() => scaleSelectedLayerBy(0.97)}
                                 disabled={selectedCutLayer.lockScale}
-                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-xs font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40 sm:h-8 sm:w-8 sm:text-sm"
                                 aria-label="Scale kurang"
                               >
                                 -
@@ -34745,24 +34854,24 @@ export default function XrayCalibrationWorkspace({
                                     Number(event.target.value),
                                   )
                                 }
-                                className="h-2 w-full accent-cyan-700 disabled:opacity-40"
+                                className="h-1.5 w-full accent-cyan-700 disabled:opacity-40 sm:h-2"
                                 aria-label="Scale template"
                               />
                               <button
                                 type="button"
                                 onClick={() => scaleSelectedLayerBy(1.03)}
                                 disabled={selectedCutLayer.lockScale}
-                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-xs font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40 sm:h-8 sm:w-8 sm:text-sm"
                                 aria-label="Scale tambah"
                               >
                                 +
                               </button>
                             </div>
-                            <div className="mt-1 text-[8px] font-semibold text-slate-500">
+                            <div className="mt-1 text-[7px] font-semibold text-slate-500 sm:text-[8px]">
                               Rotate tetap aktif. Lock hanya menonaktifkan re-scale.
                             </div>
                           </div>
-                          <div className="grid grid-cols-6 gap-1">
+                          <div className="grid grid-cols-6 gap-0.5 sm:gap-1">
                             <LayerToolbarActionButton
                               icon={showLayerToolbarName ? "eyeOff" : "eye"}
                               label={
@@ -35470,7 +35579,9 @@ export default function XrayCalibrationWorkspace({
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     className={`fixed inset-0 z-[38] ${
-                      isTabletViewport ? "bg-transparent" : "bg-black/20"
+                      isTabletViewport || simpleMobilePanel === "implant" || simpleMobilePanel === "layer"
+                        ? "pointer-events-none bg-transparent"
+                        : "bg-black/20"
                     }`}
                     onClick={() => setSimpleMobilePanel(null)}
                   />
@@ -35487,29 +35598,35 @@ export default function XrayCalibrationWorkspace({
                     }
                     transition={{ type: "spring", damping: 32, stiffness: 380 }}
                     drag={isTabletViewport ? false : "y"}
-                    dragConstraints={{ top: 0, bottom: 180 }}
+                    dragConstraints={{ top: -180, bottom: 180 }}
                     dragElastic={0.08}
                     onDragEnd={(_, info) => {
                       if (isTabletViewport) return;
-                      if (info.offset.y > 112 || info.velocity.y > 850) {
+                      if (info.offset.y > 140 || info.velocity.y > 950) {
                         setSimpleMobilePanel(null);
                         return;
                       }
-                      if (info.offset.y > 44) {
-                        setMobileSheetCollapsed(true);
-                      } else {
-                        setMobileSheetCollapsed(false);
+                      if (info.offset.y < -44 || info.velocity.y < -650) {
+                        setMobileSheetSnap((current) =>
+                          current === "collapsed" ? "half" : "full",
+                        );
+                        return;
+                      }
+                      if (info.offset.y > 44 || info.velocity.y > 650) {
+                        setMobileSheetSnap((current) =>
+                          current === "full" ? "half" : "collapsed",
+                        );
                       }
                     }}
                     className={`fixed z-40 flex flex-col overflow-hidden ${
                       isTabletViewport
                         ? "right-3 top-[calc(env(safe-area-inset-top)+76px)] min-w-0 w-[min(340px,34vw)] max-h-[calc(100dvh-92px)] bg-transparent shadow-none"
                         : `inset-x-0 bottom-0 rounded-t-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl ${
-                            mobileSheetCollapsed
-                              ? "max-h-[86px]"
-                              : simpleMobilePanel === "tools" && !mobileMeasureSheetExpanded
-                                ? "max-h-[48vh]"
-                                : "max-h-[82vh]"
+                            mobileSheetSnap === "collapsed"
+                              ? "h-[82px]"
+                              : mobileSheetSnap === "half"
+                                ? "h-[42vh]"
+                                : "h-[82vh]"
                           }`
                     }`}
                   >
@@ -35517,21 +35634,50 @@ export default function XrayCalibrationWorkspace({
                       <div className="flex shrink-0 items-center justify-center px-4 pt-2.5 pb-1.5">
                         <button
                           type="button"
-                          onClick={() =>
-                            setMobileSheetCollapsed((prev) => !prev)
-                          }
+                          onClick={() => setMobileSheetSnap((current) =>
+                            current === "collapsed"
+                              ? "half"
+                              : current === "half"
+                                ? "full"
+                                : "collapsed"
+                          )}
                           className="flex min-h-7 min-w-[116px] items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
                           aria-label={
-                            mobileSheetCollapsed ? "Buka panel" : "Collapse panel"
+                            `Ubah panel ke state berikutnya dari ${mobileSheetSnap}`
                           }
                         >
                           <span className="h-1 w-10 rounded-full bg-slate-300/80" />
-                          {mobileSheetCollapsed ? "Buka" : "Geser"}
+                          {mobileSheetSnap === "collapsed"
+                            ? "Buka"
+                            : mobileSheetSnap === "half"
+                              ? "Perluas"
+                              : "Ciutkan"}
+                        </button>
+                      </div>
+                    ) : null}
+                    {!isTabletViewport && mobileSheetSnap === "collapsed" ? (
+                      <div className="flex min-h-0 flex-1 items-center gap-2 px-3 pb-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[9px] font-black text-[var(--soft-text-hi)]">
+                            {simpleMobilePanel === "implant"
+                              ? selectedCutLayer?.name || selectedImplantLibraryItem?.label || "Pilih template implant"
+                              : mobileObjectSheetTitle || "Panel aktif"}
+                          </div>
+                          <div className="truncate text-[7px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                            {simpleMobilePanel === "implant" ? "Template aktif" : simpleMobilePanel}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setMobileSheetSnap("full")}
+                          className="min-h-8 shrink-0 rounded-lg bg-cyan-600 px-3 text-[8px] font-black text-white"
+                        >
+                          {simpleMobilePanel === "implant" ? "Ubah Template" : "Buka Panel"}
                         </button>
                       </div>
                     ) : null}
                     <div
-                      className="min-h-0 overflow-y-auto"
+                      className={`min-h-0 overflow-y-auto ${mobileSheetSnap === "collapsed" && !isTabletViewport ? "hidden" : ""}`}
                       style={{
                         paddingBottom: `calc(env(safe-area-inset-bottom) + var(--mobile-keyboard-offset,0px) + ${
                           simpleMobilePanel === "tools" ? 20 : 24
@@ -37041,7 +37187,7 @@ export default function XrayCalibrationWorkspace({
                   className={`pointer-events-auto absolute z-40 overflow-y-auto backdrop-blur-md ${
                     isNativeMobileSimpleUi && !selectedCutLayer && selectedLine
                       ? "max-h-[min(30vh,220px)] w-[min(72vw,286px)] rounded-[18px] p-1.5"
-                      : "max-h-[min(40vh,340px)] w-[min(90vw,400px)] rounded-[22px] p-2"
+                      : "max-h-[min(34vh,286px)] w-[min(82vw,340px)] rounded-[16px] p-1.5"
                   }`}
                   style={{
                     background: isDark ? "rgba(15,23,42,0.92)" : "rgba(235,240,247,0.94)",
@@ -37055,10 +37201,10 @@ export default function XrayCalibrationWorkspace({
                         : { left: "50%", bottom: "calc(env(safe-area-inset-bottom) + 60px)", transform: "translateX(-50%)" }),
                   }}
                 >
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <div className="mb-1 flex items-center justify-between gap-1.5">
                     {/* Drag handle */}
                     <div
-                      className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+                      className="flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
                       style={{ background: isDark ? "rgba(255,255,255,0.07)" : "rgba(148,163,184,0.15)", touchAction: "none" }}
                       title="Seret untuk pindahkan"
                       onPointerDown={(e) => {
@@ -37090,26 +37236,26 @@ export default function XrayCalibrationWorkspace({
                       </svg>
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-[10px] font-black">
+                      <div className="truncate text-[9px] font-black">
                         {mobileObjectSheetTitle}
                       </div>
-                      <div className="text-[8px] font-black tracking-widest text-slate-400 uppercase">
+                      <div className="text-[7px] font-black tracking-widest text-slate-400 uppercase">
                         Object settings
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => setMobileObjectSettingsOpen(false)}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/50 bg-[#eef2f7]/62 text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/50 bg-[#eef2f7]/62 text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"
                       aria-label="Tutup setting object"
                       title="Tutup"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-3 w-3" />
                     </button>
                   </div>
 
                     {selectedCutLayer && selectedLayerMetrics ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1">
                         <div className="grid grid-cols-6 gap-1">
                           {[
                             {
@@ -37160,13 +37306,13 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={action.onClick}
                               disabled={action.disabled}
-                              className="min-h-8 rounded-xl border border-white/50 bg-[#eef2f7]/62 px-1 text-[8px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] disabled:opacity-40"
+                              className="min-h-7 rounded-lg border border-white/50 bg-[#eef2f7]/62 px-1 text-[7px] font-black text-slate-700 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] disabled:opacity-40"
                             >
                               {action.label}
                             </button>
                           ))}
                         </div>
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-2 gap-1">
                         {[
                           {
                             key: "width",
@@ -37265,9 +37411,9 @@ export default function XrayCalibrationWorkspace({
                         ].map((control) => (
                           <label
                             key={`mobile-layer-control-${control.key}`}
-                            className="rounded-2xl border border-white/60 bg-white/35 px-3 py-2"
+                            className="rounded-xl border border-white/60 bg-white/35 px-2 py-1.5"
                           >
-                            <span className="flex items-center justify-between gap-2 text-[10px] font-black text-slate-600">
+                            <span className="flex items-center justify-between gap-1 text-[8px] font-black text-slate-600">
                               <span>{control.label}</span>
                               <span className="flex items-center gap-1">
                                 <input
@@ -37280,14 +37426,14 @@ export default function XrayCalibrationWorkspace({
                                   onChange={(event) =>
                                     control.onChange(Number(event.target.value))
                                   }
-                                  className="h-8 w-16 rounded-xl border border-white/70 bg-[#edf1f6] px-2 text-right font-mono text-[10px] text-slate-900 outline-none shadow-[inset_1.5px_1.5px_3px_rgba(148,163,184,0.24),inset_-1.5px_-1.5px_3px_rgba(255,255,255,0.82)] disabled:opacity-40"
+                                  className="h-7 w-14 rounded-lg border border-white/70 bg-[#edf1f6] px-1.5 text-right font-mono text-[8px] text-slate-900 outline-none shadow-[inset_1.5px_1.5px_3px_rgba(148,163,184,0.24),inset_-1.5px_-1.5px_3px_rgba(255,255,255,0.82)] disabled:opacity-40"
                                 />
-                                <span className="text-[9px] text-slate-400">
+                                <span className="text-[8px] text-slate-400">
                                   {control.unit}
                                 </span>
                               </span>
                             </span>
-                            <div className="mt-2 grid grid-cols-[32px_1fr_32px] items-center gap-1.5">
+                            <div className="mt-1 grid grid-cols-[28px_1fr_28px] items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -37301,7 +37447,7 @@ export default function XrayCalibrationWorkspace({
                                   )
                                 }
                                 disabled={control.disabled}
-                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-xs font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
                                 aria-label={`${control.label} kurang`}
                               >
                                 -
@@ -37316,7 +37462,7 @@ export default function XrayCalibrationWorkspace({
                                 onChange={(event) =>
                                   control.onChange(Number(event.target.value))
                                 }
-                                className="h-2 w-full accent-cyan-700 disabled:opacity-40"
+                                className="h-1.5 w-full accent-cyan-700 disabled:opacity-40"
                               />
                               <button
                                 type="button"
@@ -37331,7 +37477,7 @@ export default function XrayCalibrationWorkspace({
                                   )
                                 }
                                 disabled={control.disabled}
-                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-sm font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-xs font-black text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)] disabled:opacity-40"
                                 aria-label={`${control.label} tambah`}
                               >
                                 +
@@ -37377,24 +37523,26 @@ export default function XrayCalibrationWorkspace({
                         />
                       ) : null}
                       {isWarpableImageLayer(selectedCutLayer) ? (
-                        <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-2">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                        <div className="rounded-xl border border-white/50 bg-white/24 px-2 py-1.5">
+                          <div className="mb-1 flex items-center justify-between gap-1.5">
+                            <span className="text-[7px] font-black tracking-widest text-slate-500 uppercase">
                               Implant Bend / Warp
                             </span>
                             <button
                               type="button"
                               onClick={isImplantWarpEnabled(selectedCutLayer) ? resetImplantWarpForSelectedLayer : enableImplantWarpForSelectedLayer}
-                              className={`rounded-full px-2 py-1 text-[9px] font-black ${
+                              aria-pressed={isImplantWarpEnabled(selectedCutLayer)}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[7px] font-black ${
                                 isImplantWarpEnabled(selectedCutLayer)
-                                  ? "bg-violet-600 text-white"
-                                  : "border border-white/70 bg-[#eef2f7] text-violet-700"
+                                  ? "bg-emerald-500 text-white"
+                                  : "border border-white/70 bg-[#eef2f7] text-slate-500"
                               }`}
                             >
-                              {isImplantWarpEnabled(selectedCutLayer) ? "Aktif" : "Aktifkan"}
+                              <span className={`h-1.5 w-1.5 rounded-full ${isImplantWarpEnabled(selectedCutLayer) ? "bg-white" : "bg-slate-400"}`} />
+                              {isImplantWarpEnabled(selectedCutLayer) ? "Aktif" : "Nonaktif"}
                             </button>
                           </div>
-                          <div className="grid grid-cols-[1fr_40px] items-center gap-2">
+                          <div className="grid grid-cols-[1fr_34px] items-center gap-1.5">
                             <input
                               type="range"
                               min={0}
@@ -37403,15 +37551,15 @@ export default function XrayCalibrationWorkspace({
                               disabled={!isImplantWarpEnabled(selectedCutLayer)}
                               value={Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}
                               onChange={(event) => updateImplantWarpStrength(Number(event.target.value) / 100)}
-                              className="h-2 w-full accent-violet-600 disabled:opacity-40"
+                              className="h-1.5 w-full accent-violet-600 disabled:opacity-40"
                             />
-                            <span className="text-right text-[10px] font-black text-slate-500">
+                            <span className="text-right text-[8px] font-black text-slate-500">
                               {Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}%
                             </span>
                           </div>
                         </div>
                       ) : null}
-                      <div className="grid grid-cols-5 gap-2">
+                      <div className="grid grid-cols-5 gap-1">
                         <button
                           type="button"
                           onClick={() =>
@@ -37420,7 +37568,7 @@ export default function XrayCalibrationWorkspace({
                               flipX: !item.flipX,
                             }))
                           }
-                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-7 rounded-lg border border-white/70 bg-[#eef2f7] text-[8px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Flip H
                         </button>
@@ -37432,7 +37580,7 @@ export default function XrayCalibrationWorkspace({
                               flipY: !item.flipY,
                             }))
                           }
-                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-7 rounded-lg border border-white/70 bg-[#eef2f7] text-[8px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Flip V
                         </button>
@@ -37444,21 +37592,21 @@ export default function XrayCalibrationWorkspace({
                               lockScale: !item.lockScale,
                             }))
                           }
-                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-7 rounded-lg border border-white/70 bg-[#eef2f7] text-[8px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           {selectedCutLayer.lockScale ? "Unlock S" : "Lock S"}
                         </button>
                         <button
                           type="button"
                           onClick={duplicateSelectedCutLayer}
-                          className="min-h-8 rounded-2xl border border-white/70 bg-[#eef2f7] text-[9px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-7 rounded-lg border border-white/70 bg-[#eef2f7] text-[8px] font-black shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Copy
                         </button>
                         <button
                           type="button"
                           onClick={removeSelectedCutLayer}
-                          className="min-h-8 rounded-2xl border border-rose-200 bg-rose-50 text-[9px] font-black text-rose-600 shadow-[2px_2px_6px_rgba(148,163,184,0.18),-2px_-2px_6px_rgba(255,255,255,0.8)]"
+                          className="min-h-7 rounded-lg border border-rose-200 bg-rose-50 text-[8px] font-black text-rose-600 shadow-[2px_2px_6px_rgba(148,163,184,0.18),-2px_-2px_6px_rgba(255,255,255,0.8)]"
                         >
                           Delete
                         </button>
@@ -39152,30 +39300,29 @@ export default function XrayCalibrationWorkspace({
                 isWarpableImageLayer(selectedCutLayer) &&
                 !isEditableMaskLayer(selectedCutLayer) && (
                 <div
-                  className={`pointer-events-auto absolute z-30 ${isMobileViewport ? "top-16 right-3" : "bottom-4 left-1/2 -translate-x-1/2"}`}
+                  className={`pointer-events-auto absolute z-30 ${isMobileViewport ? "top-14 right-2" : "bottom-4 left-1/2 -translate-x-1/2"}`}
                   style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.18))" }}
                 >
-                  <div className="flex max-w-[min(320px,calc(100vw-24px))] flex-wrap items-center gap-1.5 rounded-xl border border-[var(--soft-border)] [background:var(--soft-raised-bg)] px-2 py-1.5 text-[var(--soft-text)] backdrop-blur-sm"
+                  <div className={`flex flex-wrap items-center border border-[var(--soft-border)] [background:var(--soft-raised-bg)] text-[var(--soft-text)] backdrop-blur-sm ${isMobileViewport ? "max-w-[min(238px,calc(100vw-16px))] gap-1 rounded-lg px-1 py-1" : "max-w-[min(320px,calc(100vw-24px))] gap-1.5 rounded-xl px-2 py-1.5"}`}
                     style={{ boxShadow: "4px 4px 14px rgba(148,163,184,0.28),-3px -3px 10px rgba(255,255,255,0.82)" }}>
-                    <span className="max-w-[92px] truncate text-[10px] font-black text-slate-600">
-                      Bend Implant
-                    </span>
                     <button
                       type="button"
                       onClick={isImplantWarpEnabled(selectedCutLayer) ? resetImplantWarpForSelectedLayer : enableImplantWarpForSelectedLayer}
-                      className={`rounded-[12px] border px-2.5 py-1.5 text-[10px] font-black transition ${
+                      aria-pressed={isImplantWarpEnabled(selectedCutLayer)}
+                      className={`${isMobileViewport ? "rounded-full px-1.5 py-1 text-[7px]" : "rounded-full px-2.5 py-1.5 text-[9px]"} inline-flex items-center gap-1 border font-black transition ${
                         isImplantWarpEnabled(selectedCutLayer)
-                          ? "border-violet-400/70 bg-violet-500 text-white"
-                          : "border-white/70 bg-[#eef2f7] text-violet-700"
+                          ? "border-emerald-400/70 bg-emerald-500 text-white"
+                          : "border-white/70 bg-[#eef2f7] text-slate-500"
                       }`}
                     >
-                      {isImplantWarpEnabled(selectedCutLayer) ? "On" : "Aktifkan"}
+                      <span className={`h-1.5 w-1.5 rounded-full ${isImplantWarpEnabled(selectedCutLayer) ? "bg-white" : "bg-slate-400"}`} />
+                      Bend {isImplantWarpEnabled(selectedCutLayer) ? "Aktif" : "Nonaktif"}
                     </button>
                     <button
                       type="button"
                       onClick={addImplantWarpAnchor}
                       disabled={!isImplantWarpEnabled(selectedCutLayer)}
-                      className="rounded-[12px] border border-white/70 bg-[#eef2f7] px-2 py-1.5 text-[10px] font-black text-blue-700 disabled:opacity-40"
+                      className={`${isMobileViewport ? "rounded-lg px-1.5 py-1 text-[8px]" : "rounded-[12px] px-2 py-1.5 text-[10px]"} border border-white/70 bg-[#eef2f7] font-black text-blue-700 disabled:opacity-40`}
                     >
                       + Titik
                     </button>
@@ -39183,7 +39330,7 @@ export default function XrayCalibrationWorkspace({
                       type="button"
                       onClick={deleteImplantWarpAnchor}
                       disabled={!isImplantWarpEnabled(selectedCutLayer) || selectedFreeLinePointIndex === null || getImplantWarpAnchors(selectedCutLayer).length <= 2}
-                      className="rounded-[12px] border border-white/70 bg-[#eef2f7] px-2 py-1.5 text-[10px] font-black text-rose-600 disabled:opacity-40"
+                      className={`${isMobileViewport ? "rounded-lg px-1.5 py-1 text-[8px]" : "rounded-[12px] px-2 py-1.5 text-[10px]"} border border-white/70 bg-[#eef2f7] font-black text-rose-600 disabled:opacity-40`}
                     >
                       Hapus
                     </button>
@@ -39195,10 +39342,10 @@ export default function XrayCalibrationWorkspace({
                       disabled={!isImplantWarpEnabled(selectedCutLayer)}
                       value={Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}
                       onChange={(event) => updateImplantWarpStrength(Number(event.target.value) / 100)}
-                      className="h-2 w-20 accent-violet-600 disabled:opacity-40"
+                      className={`${isMobileViewport ? "h-1.5 w-14" : "h-2 w-20"} accent-violet-600 disabled:opacity-40`}
                       aria-label="Kekuatan bend implant"
                     />
-                    <span className="w-8 text-right text-[10px] font-black text-slate-500">
+                    <span className={`${isMobileViewport ? "w-7 text-[8px]" : "w-8 text-[10px]"} text-right font-black text-slate-500`}>
                       {Math.round(Number(selectedCutLayer.implantWarp?.strength ?? 0.9) * 100)}%
                     </span>
                   </div>
