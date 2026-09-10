@@ -997,7 +997,7 @@ export default function XrayCalibrationWorkspace({
   const [simpleMobilePanel, setSimpleMobilePanel] = useState(null);
   const [mobileMeasureSheetExpanded, setMobileMeasureSheetExpanded] =
     useState(false);
-  const [mobileSheetSnap, setMobileSheetSnap] = useState("half");
+  const [mobileSheetSnap, setMobileSheetSnap] = useState("collapsed");
   const [implantReplaceSearch, setImplantReplaceSearch] = useState("");
   const [simpleManagerTab, setSimpleManagerTab] = useState("layer");
   const [simpleDesktopManagerOpen, setSimpleDesktopManagerOpen] = useState(false);
@@ -20333,7 +20333,7 @@ export default function XrayCalibrationWorkspace({
     if (simpleMobilePanel) {
       setMobileObjectSettingsOpen(false);
       setMobileCanvasFocusMode(false);
-      setMobileSheetSnap("half");
+      setMobileSheetSnap("collapsed");
     }
   }, [simpleMobilePanel]);
   useEffect(() => {
@@ -35626,10 +35626,10 @@ export default function XrayCalibrationWorkspace({
                         ? "right-3 top-[calc(env(safe-area-inset-top)+76px)] min-w-0 w-[min(340px,34vw)] max-h-[calc(100dvh-92px)] bg-transparent shadow-none"
                         : `inset-x-0 bottom-0 rounded-t-[28px] border border-[var(--soft-border)] [background:var(--soft-float-bg)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl ${
                             mobileSheetSnap === "collapsed"
-                              ? "h-[82px]"
+                              ? "h-[70px]"
                               : mobileSheetSnap === "half"
-                                ? "h-[42vh]"
-                                : "h-[82vh]"
+                                ? "h-[30vh]"
+                                : "h-[72vh]"
                           }`
                     }`}
                   >
