@@ -1439,7 +1439,10 @@ export default function XrayCalibrationWorkspace({
       const hasTouchPointer =
         coarseQuery.matches || (navigator.maxTouchPoints || 0) > 0;
       const tabletViewport = hasTouchPointer && tabletQuery.matches;
-      const phoneViewport = hasTouchPointer && phoneQuery.matches;
+      // A narrow viewport is sufficient for the mobile layout. Requiring a
+      // coarse pointer leaves browser emulators and responsive previews on the
+      // oversized desktop controls seen at phone widths.
+      const phoneViewport = phoneQuery.matches;
       setIsMobileViewport(phoneViewport || tabletViewport);
       setIsTabletViewport(tabletViewport);
       setIsCoarsePointer(hasTouchPointer);
