@@ -36987,6 +36987,7 @@ export default function XrayCalibrationWorkspace({
               isMobileViewport &&
               selectedCutLayer &&
               selectedLayerMetrics &&
+              !mobileObjectSettingsOpen &&
               !mobileCanvasFocusMode &&
               !simpleMobilePanel ? (
                 <motion.div
@@ -36994,14 +36995,14 @@ export default function XrayCalibrationWorkspace({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 12, scale: 0.98 }}
                   transition={MOBILE_PANEL_TRANSITION}
-                  className="pointer-events-auto absolute right-2 left-2 z-[34] rounded-[22px] border border-white/70 bg-[#eef2f7]/96 p-2.5 text-slate-800 shadow-[4px_4px_14px_rgba(15,23,42,0.18),-4px_-4px_14px_rgba(255,255,255,0.75)] backdrop-blur-xl"
+                  className="pointer-events-auto absolute right-3 left-3 z-[34] rounded-[14px] border border-white/70 bg-[#eef2f7]/96 p-1.5 text-slate-800 shadow-[3px_3px_10px_rgba(15,23,42,0.16),-3px_-3px_10px_rgba(255,255,255,0.72)] backdrop-blur-xl"
                   style={{
                     bottom: mobileObjectSettingsOpen
                       ? "calc(env(safe-area-inset-bottom) + 52px)"
                       : "calc(env(safe-area-inset-bottom) + 84px)",
                   }}
                 >
-                  <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex h-10 items-center justify-between gap-1.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -37009,29 +37010,27 @@ export default function XrayCalibrationWorkspace({
                         handleToolChange("pan");
                         setNotice("Edit layer aktif. Drag layer di canvas atau pakai tombol nudge.");
                       }}
-                      className="min-w-0 flex-1 rounded-[16px] border border-cyan-200 bg-cyan-50 px-3 py-2 text-left shadow-sm"
+                      className="min-w-0 flex-1 rounded-[10px] border border-cyan-200 bg-cyan-50 px-2 py-1 text-left shadow-sm"
                     >
-                      <div className="truncate text-[11px] font-black text-cyan-900">
+                      <div className="truncate text-[9px] font-black text-cyan-900">
                         {selectedCutLayer.name || getLayerDefaultName(selectedCutLayer)}
                       </div>
-                      <div className="text-[9px] font-bold text-cyan-700">
+                      <div className="text-[7px] font-bold text-cyan-700">
                         Scale {selectedLayerScalePercent}% · Rotate {selectedLayerRotationValue}°
                       </div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setMobileObjectSettingsOpen((prev) => !prev)}
-                      className={`min-h-12 rounded-[16px] px-3 text-[10px] font-black shadow-sm ${
-                        mobileObjectSettingsOpen
-                          ? "bg-slate-900 text-white"
-                          : "border border-white/70 bg-white/65 text-slate-700"
-                      }`}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-white/70 bg-white/65 text-slate-700 shadow-sm"
+                      aria-label="Buka detail layer"
+                      title="Detail layer"
                     >
-                      Detail
+                      <SlidersHorizontal className="h-4 w-4" />
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-[84px_1fr] gap-2">
+                  <div className="hidden">
                     <div className="grid grid-cols-3 grid-rows-3 gap-1">
                       <span />
                       <button
