@@ -28,7 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import DriveImageWithFallback from "@/components/DriveImageWithFallback.jsx";
+import DriveImageWithFallback from "@/components/media/DriveImageWithFallback";
 import {
   FloatingInputField,
   FloatingSelectField,
@@ -71,58 +71,393 @@ const CHECKLISTS = [
     description:
       "Instrument utama untuk femoral preparation, tibial preparation, gap confirmation, trialing, dan PS box preparation.",
     items: [
-      { id: "tkr-001", catalogNo: "TKR100", name: "T-Handle", qty: 1, category: "Basic / Handle", imageUrl: "/images/tkr-normed/T-Handle.png" },
-      { id: "tkr-002", catalogNo: "TKR101", name: "Starter", qty: 1, category: "Femoral / Tibial Canal", imageUrl: "/images/tkr-normed/Starter.png" },
-      { id: "tkr-003", catalogNo: "TKR103", name: "Extramedullary Alignment Tower", qty: 1, category: "Alignment", imageUrl: "/images/tkr-normed/IM-ROD.png" },
-      { id: "tkr-004", catalogNo: "TKR104", name: "Femoral A/P Chamfer Guide Handle", qty: 2, category: "Femoral Preparation", imageUrl: "/images/tkr-normed/ap-chamfer-handle.png" },
-      { id: "tkr-005", catalogNo: "TKR105", name: "8 mm Twist Drill", qty: 1, category: "Drill", imageUrl: "/images/tkr-normed/TwistDrill.png" },
-      { id: "tkr-006", catalogNo: "TKR107", name: "Bone File", qty: 1, category: "Finishing", imageUrl: "/images/tkr-normed/bone-file.jpg" },
-      { id: "tkr-007", catalogNo: "TKR108", name: "Femoral IM Alignment Guide", qty: 1, category: "Femoral Alignment", imageUrl: "/images/tkr-normed/femoral-im-alignment-guide.png" },
-      { id: "tkr-008", catalogNo: "TKR109", name: "Distal Femoral Alignment Guide", qty: 1, category: "Femoral Alignment", imageUrl: "/images/tkr-normed/distal-femoral-alignment-guide.png" },
-      { id: "tkr-009", catalogNo: "TKR110", name: "Distal Femoral Cutting Guide", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/distal-femoral-cutting-guide.png" },
-      { id: "tkr-010", catalogNo: "TKR111", name: "PS Cutting Jig Drill Guide", qty: 1, category: "PS Preparation", imageUrl: "/images/tkr-normed/ps-cutting-jig-drill-guide1.png" },
-      { id: "tkr-011", catalogNo: "TKR112", name: "Femoral A/P Chamfer Cutting Guide Size 1", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png" },
-      { id: "tkr-012", catalogNo: "TKR113", name: "Femoral A/P Chamfer Cutting Guide Size 2", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png" },
-      { id: "tkr-013", catalogNo: "TKR114", name: "Femoral A/P Chamfer Cutting Guide Size 3", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png" },
-      { id: "tkr-014", catalogNo: "TKR115", name: "Femoral A/P Chamfer Cutting Guide Size 4", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png" },
-      { id: "tkr-015", catalogNo: "TKR116", name: "Femoral A/P Chamfer Cutting Guide Size 5", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png" },
-      { id: "tkr-0015", catalogNo: "TKR102", name: "Lower point gauge", qty: 1, category: "Femoral Cutting", imageUrl: "/images/tkr-normed/lower-point-gauge.png" },
-      { id: "tkr-016", catalogNo: "TKR124", name: "Femoral IM Rod 400 mm", qty: 1, category: "Femoral Alignment", imageUrl: "/images/tkr-normed/femoral-im-rod.png" },
-      { id: "tkr-017", catalogNo: "TKR130", name: "Femoral Condyle Drill", qty: 1, category: "Drill", imageUrl: "/images/tkr-normed/femoral-condyle-drill.png" },
-      { id: "tkr-018", catalogNo: "TKR131", name: "PS Reamer", qty: 1, category: "PS Preparation", imageUrl: "/images/tkr-normed/ps-reamer.png" },
-      { id: "tkr-019", catalogNo: "TKR133", name: "Pin Extractor", qty: 1, category: "Extractor", imageUrl: "/images/tkr-normed/pin-extractor.png" },
-      { id: "tkr-020", catalogNo: "TKR134", name: "Spike and Tibial EM Guide Extractor", qty: 1, category: "Extractor", imageUrl: "/images/tkr-normed/spike-em-guide-extractor.png" },
-      { id: "tkr-021", catalogNo: "TKR135", name: "Femoral Impactor", qty: 1, category: "Impactor", imageUrl: "/images/tkr-normed/femoral-impactor.png" },
-      { id: "tkr-022", catalogNo: "TKR136", name: "PS Housing Punch", qty: 1, category: "PS Preparation", imageUrl: "/images/tkr-normed/ps-housing-punch.png" },
-      { id: "tkr-023", catalogNo: "TKR137", name: "PS Housing Impactor", qty: 1, category: "PS Preparation", imageUrl: "/images/tkr-normed/ps-housing-impactor.png" },
-      { id: "tkr-024", catalogNo: "TKR140", name: "Femoral Sizer", qty: 1, category: "Femoral Sizing", imageUrl: "/images/tkr-normed/femoral-sizer.png" },
-      { id: "tkr-025", catalogNo: "TKR145", name: "Tibial IM Rod", qty: 1, category: "Tibial Alignment", imageUrl: "/images/tkr-normed/tibial-im-rod.png" },
-      { id: "tkr-026", catalogNo: "TKR169", name: "Cemented Tibial Punch Handle", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/tibial-punch-handle.png" },
-      { id: "tkr-027", catalogNo: "TKR170", name: "Tibial Baseplate Handle", qty: 1, category: "Tibial Trial", imageUrl: "/images/tkr-normed/tibial-baseplate-handle.png" },
-      { id: "tkr-0027", catalogNo: "TKR179", name: "Tibial Drill", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/tibial-drill.png" },
-      { id: "tkr-0028", catalogNo: "TKR177-174", name: "Tibial Cutting Jig 0", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/tibial-cutting-jig.png" },
-      { id: "tkr-0029", catalogNo: "TKR256-257", name: "Spikes", qty: 5, category: "Pin", imageUrl: "/images/tkr-normed/spikes.png" },
+      {
+        id: "tkr-001",
+        catalogNo: "TKR100",
+        name: "T-Handle",
+        qty: 1,
+        category: "Basic / Handle",
+        imageUrl: "/images/tkr-normed/T-Handle.png",
+      },
+      {
+        id: "tkr-002",
+        catalogNo: "TKR101",
+        name: "Starter",
+        qty: 1,
+        category: "Femoral / Tibial Canal",
+        imageUrl: "/images/tkr-normed/Starter.png",
+      },
+      {
+        id: "tkr-003",
+        catalogNo: "TKR103",
+        name: "Extramedullary Alignment Tower",
+        qty: 1,
+        category: "Alignment",
+        imageUrl: "/images/tkr-normed/IM-ROD.png",
+      },
+      {
+        id: "tkr-004",
+        catalogNo: "TKR104",
+        name: "Femoral A/P Chamfer Guide Handle",
+        qty: 2,
+        category: "Femoral Preparation",
+        imageUrl: "/images/tkr-normed/ap-chamfer-handle.png",
+      },
+      {
+        id: "tkr-005",
+        catalogNo: "TKR105",
+        name: "8 mm Twist Drill",
+        qty: 1,
+        category: "Drill",
+        imageUrl: "/images/tkr-normed/TwistDrill.png",
+      },
+      {
+        id: "tkr-006",
+        catalogNo: "TKR107",
+        name: "Bone File",
+        qty: 1,
+        category: "Finishing",
+        imageUrl: "/images/tkr-normed/bone-file.jpg",
+      },
+      {
+        id: "tkr-007",
+        catalogNo: "TKR108",
+        name: "Femoral IM Alignment Guide",
+        qty: 1,
+        category: "Femoral Alignment",
+        imageUrl: "/images/tkr-normed/femoral-im-alignment-guide.png",
+      },
+      {
+        id: "tkr-008",
+        catalogNo: "TKR109",
+        name: "Distal Femoral Alignment Guide",
+        qty: 1,
+        category: "Femoral Alignment",
+        imageUrl: "/images/tkr-normed/distal-femoral-alignment-guide.png",
+      },
+      {
+        id: "tkr-009",
+        catalogNo: "TKR110",
+        name: "Distal Femoral Cutting Guide",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/distal-femoral-cutting-guide.png",
+      },
+      {
+        id: "tkr-010",
+        catalogNo: "TKR111",
+        name: "PS Cutting Jig Drill Guide",
+        qty: 1,
+        category: "PS Preparation",
+        imageUrl: "/images/tkr-normed/ps-cutting-jig-drill-guide1.png",
+      },
+      {
+        id: "tkr-011",
+        catalogNo: "TKR112",
+        name: "Femoral A/P Chamfer Cutting Guide Size 1",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png",
+      },
+      {
+        id: "tkr-012",
+        catalogNo: "TKR113",
+        name: "Femoral A/P Chamfer Cutting Guide Size 2",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png",
+      },
+      {
+        id: "tkr-013",
+        catalogNo: "TKR114",
+        name: "Femoral A/P Chamfer Cutting Guide Size 3",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png",
+      },
+      {
+        id: "tkr-014",
+        catalogNo: "TKR115",
+        name: "Femoral A/P Chamfer Cutting Guide Size 4",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png",
+      },
+      {
+        id: "tkr-015",
+        catalogNo: "TKR116",
+        name: "Femoral A/P Chamfer Cutting Guide Size 5",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/ap-chamfer-cutting-guide.png",
+      },
+      {
+        id: "tkr-0015",
+        catalogNo: "TKR102",
+        name: "Lower point gauge",
+        qty: 1,
+        category: "Femoral Cutting",
+        imageUrl: "/images/tkr-normed/lower-point-gauge.png",
+      },
+      {
+        id: "tkr-016",
+        catalogNo: "TKR124",
+        name: "Femoral IM Rod 400 mm",
+        qty: 1,
+        category: "Femoral Alignment",
+        imageUrl: "/images/tkr-normed/femoral-im-rod.png",
+      },
+      {
+        id: "tkr-017",
+        catalogNo: "TKR130",
+        name: "Femoral Condyle Drill",
+        qty: 1,
+        category: "Drill",
+        imageUrl: "/images/tkr-normed/femoral-condyle-drill.png",
+      },
+      {
+        id: "tkr-018",
+        catalogNo: "TKR131",
+        name: "PS Reamer",
+        qty: 1,
+        category: "PS Preparation",
+        imageUrl: "/images/tkr-normed/ps-reamer.png",
+      },
+      {
+        id: "tkr-019",
+        catalogNo: "TKR133",
+        name: "Pin Extractor",
+        qty: 1,
+        category: "Extractor",
+        imageUrl: "/images/tkr-normed/pin-extractor.png",
+      },
+      {
+        id: "tkr-020",
+        catalogNo: "TKR134",
+        name: "Spike and Tibial EM Guide Extractor",
+        qty: 1,
+        category: "Extractor",
+        imageUrl: "/images/tkr-normed/spike-em-guide-extractor.png",
+      },
+      {
+        id: "tkr-021",
+        catalogNo: "TKR135",
+        name: "Femoral Impactor",
+        qty: 1,
+        category: "Impactor",
+        imageUrl: "/images/tkr-normed/femoral-impactor.png",
+      },
+      {
+        id: "tkr-022",
+        catalogNo: "TKR136",
+        name: "PS Housing Punch",
+        qty: 1,
+        category: "PS Preparation",
+        imageUrl: "/images/tkr-normed/ps-housing-punch.png",
+      },
+      {
+        id: "tkr-023",
+        catalogNo: "TKR137",
+        name: "PS Housing Impactor",
+        qty: 1,
+        category: "PS Preparation",
+        imageUrl: "/images/tkr-normed/ps-housing-impactor.png",
+      },
+      {
+        id: "tkr-024",
+        catalogNo: "TKR140",
+        name: "Femoral Sizer",
+        qty: 1,
+        category: "Femoral Sizing",
+        imageUrl: "/images/tkr-normed/femoral-sizer.png",
+      },
+      {
+        id: "tkr-025",
+        catalogNo: "TKR145",
+        name: "Tibial IM Rod",
+        qty: 1,
+        category: "Tibial Alignment",
+        imageUrl: "/images/tkr-normed/tibial-im-rod.png",
+      },
+      {
+        id: "tkr-026",
+        catalogNo: "TKR169",
+        name: "Cemented Tibial Punch Handle",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/tibial-punch-handle.png",
+      },
+      {
+        id: "tkr-027",
+        catalogNo: "TKR170",
+        name: "Tibial Baseplate Handle",
+        qty: 1,
+        category: "Tibial Trial",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-handle.png",
+      },
+      {
+        id: "tkr-0027",
+        catalogNo: "TKR179",
+        name: "Tibial Drill",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/tibial-drill.png",
+      },
+      {
+        id: "tkr-0028",
+        catalogNo: "TKR177-174",
+        name: "Tibial Cutting Jig 0",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/tibial-cutting-jig.png",
+      },
+      {
+        id: "tkr-0029",
+        catalogNo: "TKR256-257",
+        name: "Spikes",
+        qty: 5,
+        category: "Pin",
+        imageUrl: "/images/tkr-normed/spikes.png",
+      },
 
-
-      { id: "tkr-028", catalogNo: "TKR171", name: "Tibial IM Alignment Guide", qty: 1, category: "Tibial Alignment", imageUrl: "/images/tkr-normed/tibial-im-alignment-guide.png" },
-      { id: "tkr-029", catalogNo: "TKR172", name: "Tibial EM Alignment Guide", qty: 1, category: "Tibial Alignment", imageUrl: "/images/tkr-normed/tibial-em-alignment-guide.png" },
-      { id: "tkr-0037", catalogNo: "TKR173", name: "Tibia Drill Guuide", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/tibial-drill-guide.png" },
-      { id: "tkr-030", catalogNo: "TKR190", name: "Cemented Tibia Punch L", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/cemented-tibia-punch.png" },
-      { id: "tkr-031", catalogNo: "TKR191", name: "Cemented Tibia Punch M", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/cemented-tibia-punch.png" },
-      { id: "tkr-032", catalogNo: "TKR192", name: "Cemented Tibia Punch S", qty: 1, category: "Tibial Preparation", imageUrl: "/images/tkr-normed/cemented-tibia-punch.png" },
-      { id: "tkr-033", catalogNo: "TKR193", name: "Gap Gauge 9 mm", qty: 1, category: "Gap Balancing", imageUrl: "/images/tkr-normed/gap-gauge.png" },
-      { id: "tkr-034", catalogNo: "TKR194", name: "Gap Gauge 11 mm", qty: 1, category: "Gap Balancing", imageUrl: "/images/tkr-normed/gap-gauge-11.png" },
-      { id: "tkr-035", catalogNo: "TKR195", name: "Gap Gauge 13 mm", qty: 1, category: "Gap Balancing", imageUrl: "/images/tkr-normed/gap-gauge-13.png" },
+      {
+        id: "tkr-028",
+        catalogNo: "TKR171",
+        name: "Tibial IM Alignment Guide",
+        qty: 1,
+        category: "Tibial Alignment",
+        imageUrl: "/images/tkr-normed/tibial-im-alignment-guide.png",
+      },
+      {
+        id: "tkr-029",
+        catalogNo: "TKR172",
+        name: "Tibial EM Alignment Guide",
+        qty: 1,
+        category: "Tibial Alignment",
+        imageUrl: "/images/tkr-normed/tibial-em-alignment-guide.png",
+      },
+      {
+        id: "tkr-0037",
+        catalogNo: "TKR173",
+        name: "Tibia Drill Guuide",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/tibial-drill-guide.png",
+      },
+      {
+        id: "tkr-030",
+        catalogNo: "TKR190",
+        name: "Cemented Tibia Punch L",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/cemented-tibia-punch.png",
+      },
+      {
+        id: "tkr-031",
+        catalogNo: "TKR191",
+        name: "Cemented Tibia Punch M",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/cemented-tibia-punch.png",
+      },
+      {
+        id: "tkr-032",
+        catalogNo: "TKR192",
+        name: "Cemented Tibia Punch S",
+        qty: 1,
+        category: "Tibial Preparation",
+        imageUrl: "/images/tkr-normed/cemented-tibia-punch.png",
+      },
+      {
+        id: "tkr-033",
+        catalogNo: "TKR193",
+        name: "Gap Gauge 9 mm",
+        qty: 1,
+        category: "Gap Balancing",
+        imageUrl: "/images/tkr-normed/gap-gauge.png",
+      },
+      {
+        id: "tkr-034",
+        catalogNo: "TKR194",
+        name: "Gap Gauge 11 mm",
+        qty: 1,
+        category: "Gap Balancing",
+        imageUrl: "/images/tkr-normed/gap-gauge-11.png",
+      },
+      {
+        id: "tkr-035",
+        catalogNo: "TKR195",
+        name: "Gap Gauge 13 mm",
+        qty: 1,
+        category: "Gap Balancing",
+        imageUrl: "/images/tkr-normed/gap-gauge-13.png",
+      },
       // { id: "tkr-036", catalogNo: "TKR196", name: "Gap Gauge 15 mm", qty: 1, category: "Gap Balancing", imageUrl: "/images/tkr-normed/gap-gauge.jpg" },
-      { id: "tkr-037", catalogNo: "TKR198", name: "Tibial Stylus", qty: 1, category: "Tibial Resection", imageUrl: "/images/tkr-normed/tibial-stylus.png" },
-      
-      { id: "tkr-038", catalogNo: "TKR025", name: "Tibial Baseplate Trial Size 1", qty: 1, category: "Tibial Trial", imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png" },
-      { id: "tkr-039", catalogNo: "TKR026", name: "Tibial Baseplate Trial Size 2", qty: 1, category: "Tibial Trial", imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png" },
-      { id: "tkr-040", catalogNo: "TKR027", name: "Tibial Baseplate Trial Size 3", qty: 1, category: "Tibial Trial", imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png" },
-      { id: "tkr-041", catalogNo: "TKR028", name: "Tibial Baseplate Trial Size 4", qty: 1, category: "Tibial Trial", imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png" },
-      { id: "tkr-042", catalogNo: "TKR029", name: "Tibial Baseplate Trial Size 5", qty: 1, category: "Tibial Trial", imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png" },
-      { id: "tkr-043", catalogNo: "TKR138", name: "Femoral Driver ", qty: 1, category: "Femoral Trial", imageUrl: "/images/tkr-normed/femoral-driver-trial.png" },
-      { id: "tkr-044", catalogNo: "TKR182", name: "Tibial baseplate impactor ", qty: 1, category: "Impactor", imageUrl: "/images/tkr-normed/tibial-baseplate-impactor.png" },
+      {
+        id: "tkr-037",
+        catalogNo: "TKR198",
+        name: "Tibial Stylus",
+        qty: 1,
+        category: "Tibial Resection",
+        imageUrl: "/images/tkr-normed/tibial-stylus.png",
+      },
+
+      {
+        id: "tkr-038",
+        catalogNo: "TKR025",
+        name: "Tibial Baseplate Trial Size 1",
+        qty: 1,
+        category: "Tibial Trial",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png",
+      },
+      {
+        id: "tkr-039",
+        catalogNo: "TKR026",
+        name: "Tibial Baseplate Trial Size 2",
+        qty: 1,
+        category: "Tibial Trial",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png",
+      },
+      {
+        id: "tkr-040",
+        catalogNo: "TKR027",
+        name: "Tibial Baseplate Trial Size 3",
+        qty: 1,
+        category: "Tibial Trial",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png",
+      },
+      {
+        id: "tkr-041",
+        catalogNo: "TKR028",
+        name: "Tibial Baseplate Trial Size 4",
+        qty: 1,
+        category: "Tibial Trial",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png",
+      },
+      {
+        id: "tkr-042",
+        catalogNo: "TKR029",
+        name: "Tibial Baseplate Trial Size 5",
+        qty: 1,
+        category: "Tibial Trial",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-trial.png",
+      },
+      {
+        id: "tkr-043",
+        catalogNo: "TKR138",
+        name: "Femoral Driver ",
+        qty: 1,
+        category: "Femoral Trial",
+        imageUrl: "/images/tkr-normed/femoral-driver-trial.png",
+      },
+      {
+        id: "tkr-044",
+        catalogNo: "TKR182",
+        name: "Tibial baseplate impactor ",
+        qty: 1,
+        category: "Impactor",
+        imageUrl: "/images/tkr-normed/tibial-baseplate-impactor.png",
+      },
     ],
   },
   {
@@ -132,20 +467,118 @@ const CHECKLISTS = [
     description:
       "Instrument untuk sizing bipolar shell, trial reduction, perakitan bipolar head, locking ring, dan impaksi final head ke cone stem.",
     items: [
-      { id: "bip-001", catalogNo: "THR105", name: "Ø46 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-002", catalogNo: "THR106", name: "Ø48 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-003", catalogNo: "THR107", name: "Ø50 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-004", catalogNo: "THR108", name: "Ø52 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-005", catalogNo: "THR109", name: "Ø44 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-006", catalogNo: "THR110", name: "Ø60 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-007", catalogNo: "THR111", name: "Ø54 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-008", catalogNo: "THR112", name: "Extractor", qty: 1, category: "Extractor", imageUrl: "/images/instruments/bipolar/extractor.jpg" },
-      { id: "bip-009", catalogNo: "THR113", name: "Caliper", qty: 1, category: "Measurement", imageUrl: "/images/instruments/bipolar/caliper.jpg" },
-      { id: "bip-010", catalogNo: "THR114", name: "Femoral Head Impactor", qty: 1, category: "Impactor", imageUrl: "/images/instruments/bipolar/femoral-head-impactor.jpg" },
-      { id: "bip-011", catalogNo: "THR115", name: "Segment Forceps", qty: 1, category: "Bipolar Assembly", imageUrl: "/images/instruments/bipolar/segment-forceps.jpg" },
-      { id: "bip-012", catalogNo: "THR116", name: "Bipolar Trial Impactor", qty: 1, category: "Trial / Impactor", imageUrl: "/images/instruments/bipolar/bipolar-trial-impactor.jpg" },
-      { id: "bip-013", catalogNo: "THR117", name: "Ø56 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
-      { id: "bip-014", catalogNo: "THR012", name: "Ø58 Bipolar Trial Cup", qty: 1, category: "Bipolar Trial Cup", imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg" },
+      {
+        id: "bip-001",
+        catalogNo: "THR105",
+        name: "Ø46 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-002",
+        catalogNo: "THR106",
+        name: "Ø48 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-003",
+        catalogNo: "THR107",
+        name: "Ø50 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-004",
+        catalogNo: "THR108",
+        name: "Ø52 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-005",
+        catalogNo: "THR109",
+        name: "Ø44 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-006",
+        catalogNo: "THR110",
+        name: "Ø60 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-007",
+        catalogNo: "THR111",
+        name: "Ø54 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-008",
+        catalogNo: "THR112",
+        name: "Extractor",
+        qty: 1,
+        category: "Extractor",
+        imageUrl: "/images/instruments/bipolar/extractor.jpg",
+      },
+      {
+        id: "bip-009",
+        catalogNo: "THR113",
+        name: "Caliper",
+        qty: 1,
+        category: "Measurement",
+        imageUrl: "/images/instruments/bipolar/caliper.jpg",
+      },
+      {
+        id: "bip-010",
+        catalogNo: "THR114",
+        name: "Femoral Head Impactor",
+        qty: 1,
+        category: "Impactor",
+        imageUrl: "/images/instruments/bipolar/femoral-head-impactor.jpg",
+      },
+      {
+        id: "bip-011",
+        catalogNo: "THR115",
+        name: "Segment Forceps",
+        qty: 1,
+        category: "Bipolar Assembly",
+        imageUrl: "/images/instruments/bipolar/segment-forceps.jpg",
+      },
+      {
+        id: "bip-012",
+        catalogNo: "THR116",
+        name: "Bipolar Trial Impactor",
+        qty: 1,
+        category: "Trial / Impactor",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-impactor.jpg",
+      },
+      {
+        id: "bip-013",
+        catalogNo: "THR117",
+        name: "Ø56 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
+      {
+        id: "bip-014",
+        catalogNo: "THR012",
+        name: "Ø58 Bipolar Trial Cup",
+        qty: 1,
+        category: "Bipolar Trial Cup",
+        imageUrl: "/images/instruments/bipolar/bipolar-trial-cup.jpg",
+      },
     ],
   },
   {
@@ -155,27 +588,174 @@ const CHECKLISTS = [
     description:
       "Instrument acetabular untuk reaming, trial cup, liner impaction, trial liner, dan orientasi cup THR.",
     items: [
-      { id: "thr-001", catalogNo: "THR024", name: "Acetabular Reamer Handle", qty: 2, category: "Reamer Handle", imageUrl: "/images/instruments/thr/acetabular-reamer-handle.jpg" },
-      { id: "thr-002", catalogNo: "THR005", name: "Trial Cup Handle", qty: 1, category: "Trial Handle", imageUrl: "/images/instruments/thr/trial-cup-handle.jpg" },
-      { id: "thr-003", catalogNo: "THR002", name: "Liner Impactor Head Ø28", qty: 1, category: "Liner Impactor", imageUrl: "/images/instruments/thr/liner-impactor-head.jpg" },
-      { id: "thr-004", catalogNo: "THR003", name: "Liner Impactor Head Ø32", qty: 1, category: "Liner Impactor", imageUrl: "/images/instruments/thr/liner-impactor-head.jpg" },
-      { id: "thr-005", catalogNo: "THR004", name: "Liner Impactor Head Ø36", qty: 1, category: "Liner Impactor", imageUrl: "/images/instruments/thr/liner-impactor-head.jpg" },
-      { id: "thr-006", catalogNo: "THR037", name: "Cup Trial Ø46", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-007", catalogNo: "THR038", name: "Cup Trial Ø48", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-008", catalogNo: "THR039", name: "Cup Trial Ø54", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-009", catalogNo: "THR040", name: "Cup Trial Ø60", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-010", catalogNo: "THR041", name: "Cup Trial Ø56", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-011", catalogNo: "THR042", name: "Cup Trial Ø62", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-012", catalogNo: "THR043", name: "Cup Trial Ø58", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-013", catalogNo: "THR044", name: "Cup Trial Ø64", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-014", catalogNo: "THR045", name: "Cup Trial Ø50", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-015", catalogNo: "THR046", name: "Cup Trial Ø52", qty: 1, category: "Cup Trial", imageUrl: "/images/instruments/thr/cup-trial.jpg" },
-      { id: "thr-016", catalogNo: "THR061", name: "Trial Liner 36/54/20°", qty: 1, category: "Trial Liner 20°", imageUrl: "/images/instruments/thr/trial-liner.jpg" },
-      { id: "thr-017", catalogNo: "THR062", name: "Trial Liner 36/56/20°", qty: 1, category: "Trial Liner 20°", imageUrl: "/images/instruments/thr/trial-liner.jpg" },
-      { id: "thr-018", catalogNo: "THR063", name: "Trial Liner 36/60/20°", qty: 1, category: "Trial Liner 20°", imageUrl: "/images/instruments/thr/trial-liner.jpg" },
-      { id: "thr-019", catalogNo: "THR064", name: "Trial Liner 36/62/20°", qty: 1, category: "Trial Liner 20°", imageUrl: "/images/instruments/thr/trial-liner.jpg" },
-      { id: "thr-020", catalogNo: "THR065", name: "Trial Liner 36/64/20°", qty: 1, category: "Trial Liner 20°", imageUrl: "/images/instruments/thr/trial-liner.jpg" },
-      { id: "thr-021", catalogNo: "THR066", name: "Trial Liner 36/58/20°", qty: 1, category: "Trial Liner 20°", imageUrl: "/images/instruments/thr/trial-liner.jpg" },
+      {
+        id: "thr-001",
+        catalogNo: "THR024",
+        name: "Acetabular Reamer Handle",
+        qty: 2,
+        category: "Reamer Handle",
+        imageUrl: "/images/instruments/thr/acetabular-reamer-handle.jpg",
+      },
+      {
+        id: "thr-002",
+        catalogNo: "THR005",
+        name: "Trial Cup Handle",
+        qty: 1,
+        category: "Trial Handle",
+        imageUrl: "/images/instruments/thr/trial-cup-handle.jpg",
+      },
+      {
+        id: "thr-003",
+        catalogNo: "THR002",
+        name: "Liner Impactor Head Ø28",
+        qty: 1,
+        category: "Liner Impactor",
+        imageUrl: "/images/instruments/thr/liner-impactor-head.jpg",
+      },
+      {
+        id: "thr-004",
+        catalogNo: "THR003",
+        name: "Liner Impactor Head Ø32",
+        qty: 1,
+        category: "Liner Impactor",
+        imageUrl: "/images/instruments/thr/liner-impactor-head.jpg",
+      },
+      {
+        id: "thr-005",
+        catalogNo: "THR004",
+        name: "Liner Impactor Head Ø36",
+        qty: 1,
+        category: "Liner Impactor",
+        imageUrl: "/images/instruments/thr/liner-impactor-head.jpg",
+      },
+      {
+        id: "thr-006",
+        catalogNo: "THR037",
+        name: "Cup Trial Ø46",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-007",
+        catalogNo: "THR038",
+        name: "Cup Trial Ø48",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-008",
+        catalogNo: "THR039",
+        name: "Cup Trial Ø54",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-009",
+        catalogNo: "THR040",
+        name: "Cup Trial Ø60",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-010",
+        catalogNo: "THR041",
+        name: "Cup Trial Ø56",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-011",
+        catalogNo: "THR042",
+        name: "Cup Trial Ø62",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-012",
+        catalogNo: "THR043",
+        name: "Cup Trial Ø58",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-013",
+        catalogNo: "THR044",
+        name: "Cup Trial Ø64",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-014",
+        catalogNo: "THR045",
+        name: "Cup Trial Ø50",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-015",
+        catalogNo: "THR046",
+        name: "Cup Trial Ø52",
+        qty: 1,
+        category: "Cup Trial",
+        imageUrl: "/images/instruments/thr/cup-trial.jpg",
+      },
+      {
+        id: "thr-016",
+        catalogNo: "THR061",
+        name: "Trial Liner 36/54/20°",
+        qty: 1,
+        category: "Trial Liner 20°",
+        imageUrl: "/images/instruments/thr/trial-liner.jpg",
+      },
+      {
+        id: "thr-017",
+        catalogNo: "THR062",
+        name: "Trial Liner 36/56/20°",
+        qty: 1,
+        category: "Trial Liner 20°",
+        imageUrl: "/images/instruments/thr/trial-liner.jpg",
+      },
+      {
+        id: "thr-018",
+        catalogNo: "THR063",
+        name: "Trial Liner 36/60/20°",
+        qty: 1,
+        category: "Trial Liner 20°",
+        imageUrl: "/images/instruments/thr/trial-liner.jpg",
+      },
+      {
+        id: "thr-019",
+        catalogNo: "THR064",
+        name: "Trial Liner 36/62/20°",
+        qty: 1,
+        category: "Trial Liner 20°",
+        imageUrl: "/images/instruments/thr/trial-liner.jpg",
+      },
+      {
+        id: "thr-020",
+        catalogNo: "THR065",
+        name: "Trial Liner 36/64/20°",
+        qty: 1,
+        category: "Trial Liner 20°",
+        imageUrl: "/images/instruments/thr/trial-liner.jpg",
+      },
+      {
+        id: "thr-021",
+        catalogNo: "THR066",
+        name: "Trial Liner 36/58/20°",
+        qty: 1,
+        category: "Trial Liner 20°",
+        imageUrl: "/images/instruments/thr/trial-liner.jpg",
+      },
     ],
   },
   {
@@ -185,41 +765,251 @@ const CHECKLISTS = [
     description:
       "Daftar instrumen stem system (kode, deskripsi, piece) dari dokumen surgical technique.",
     items: [
-      { id: "stem-001", catalogNo: "THR019", name: "Box Osteotomy", qty: 1, category: "Stem Basic" },
-      { id: "stem-002", catalogNo: "THR021", name: "Trial Stem Standard Neck 0", qty: 1, category: "Trial Stem" },
-      { id: "stem-003", catalogNo: "THR022", name: "Trial Stem Standard Neck 1-10", qty: 1, category: "Trial Stem" },
-      { id: "stem-004", catalogNo: "THR023", name: "Trial Stem Lateral Neck 1-10", qty: 1, category: "Trial Stem" },
-      { id: "stem-005", catalogNo: "THR099", name: "Fixed Offset Adaptor", qty: 1, category: "Stem Basic" },
-      { id: "stem-006", catalogNo: "THR025", name: "Femoral Reamer", qty: 1, category: "Reamer" },
-      { id: "stem-007", catalogNo: "THR096", name: "Stem Impactor", qty: 1, category: "Impactor" },
-      { id: "stem-008", catalogNo: "THR007", name: "Stem Extraction", qty: 1, category: "Extractor" },
-      { id: "stem-009", catalogNo: "THR009", name: "Modular Knock Plate", qty: 1, category: "Stem Basic" },
-      { id: "stem-010", catalogNo: "THR097", name: "Bolt", qty: 1, category: "Stem Basic" },
-      { id: "stem-011", catalogNo: "THR082", name: "Trial Head Ø28 / +12", qty: 1, category: "Trial Head" },
-      { id: "stem-012", catalogNo: "THR081", name: "Trial Head Ø28 / +8", qty: 1, category: "Trial Head" },
-      { id: "stem-013", catalogNo: "THR080", name: "Trial Head Ø28 / +4", qty: 1, category: "Trial Head" },
-      { id: "stem-014", catalogNo: "THR079", name: "Trial Head Ø28 / +0", qty: 1, category: "Trial Head" },
-      { id: "stem-015", catalogNo: "THR078", name: "Trial Head Ø28 / -3", qty: 1, category: "Trial Head" },
-      { id: "stem-016", catalogNo: "THR087", name: "Trial Head Ø32 / +12", qty: 1, category: "Trial Head" },
-      { id: "stem-017", catalogNo: "THR086", name: "Trial Head Ø32 / +8", qty: 1, category: "Trial Head" },
-      { id: "stem-018", catalogNo: "THR085", name: "Trial Head Ø32 / +4", qty: 1, category: "Trial Head" },
-      { id: "stem-019", catalogNo: "THR084", name: "Trial Head Ø32 / +0", qty: 1, category: "Trial Head" },
-      { id: "stem-020", catalogNo: "THR072", name: "Trial Head Ø32 / -3", qty: 1, category: "Trial Head" },
-      { id: "stem-021", catalogNo: "THR089", name: "Trial Head Ø36 / +0", qty: 1, category: "Trial Head" },
-      { id: "stem-022", catalogNo: "THR074", name: "Trial Head Ø36 / +4", qty: 1, category: "Trial Head" },
-      { id: "stem-023", catalogNo: "THR075", name: "Trial Head Ø36 / +8", qty: 1, category: "Trial Head" },
-      { id: "stem-024", catalogNo: "THR073", name: "Trial Head Ø36 / -3", qty: 1, category: "Trial Head" },
-      { id: "stem-025", catalogNo: "THR076", name: "Femoral Trial Reamer 0", qty: 1, category: "Trial Reamer" },
-      { id: "stem-026", catalogNo: "THR077", name: "Femoral Trial Reamer 1", qty: 1, category: "Trial Reamer" },
-      { id: "stem-027", catalogNo: "THR083", name: "Femoral Trial Reamer 2", qty: 1, category: "Trial Reamer" },
-      { id: "stem-028", catalogNo: "THR090", name: "Femoral Trial Reamer 3", qty: 1, category: "Trial Reamer" },
-      { id: "stem-029", catalogNo: "THR088", name: "Femoral Trial Reamer 4", qty: 1, category: "Trial Reamer" },
-      { id: "stem-030", catalogNo: "THR091", name: "Femoral Trial Reamer 5", qty: 1, category: "Trial Reamer" },
-      { id: "stem-031", catalogNo: "THR067", name: "Femoral Trial Reamer 6", qty: 1, category: "Trial Reamer" },
-      { id: "stem-032", catalogNo: "THR068", name: "Femoral Trial Reamer 7", qty: 1, category: "Trial Reamer" },
-      { id: "stem-033", catalogNo: "THR069", name: "Femoral Trial Reamer 8", qty: 1, category: "Trial Reamer" },
-      { id: "stem-034", catalogNo: "THR070", name: "Femoral Trial Reamer 9", qty: 1, category: "Trial Reamer" },
-      { id: "stem-035", catalogNo: "THR071", name: "Femoral Trial Reamer 10", qty: 1, category: "Trial Reamer" },
+      {
+        id: "stem-001",
+        catalogNo: "THR019",
+        name: "Box Osteotomy",
+        qty: 1,
+        category: "Stem Basic",
+      },
+      {
+        id: "stem-002",
+        catalogNo: "THR021",
+        name: "Trial Stem Standard Neck 0",
+        qty: 1,
+        category: "Trial Stem",
+      },
+      {
+        id: "stem-003",
+        catalogNo: "THR022",
+        name: "Trial Stem Standard Neck 1-10",
+        qty: 1,
+        category: "Trial Stem",
+      },
+      {
+        id: "stem-004",
+        catalogNo: "THR023",
+        name: "Trial Stem Lateral Neck 1-10",
+        qty: 1,
+        category: "Trial Stem",
+      },
+      {
+        id: "stem-005",
+        catalogNo: "THR099",
+        name: "Fixed Offset Adaptor",
+        qty: 1,
+        category: "Stem Basic",
+      },
+      {
+        id: "stem-006",
+        catalogNo: "THR025",
+        name: "Femoral Reamer",
+        qty: 1,
+        category: "Reamer",
+      },
+      {
+        id: "stem-007",
+        catalogNo: "THR096",
+        name: "Stem Impactor",
+        qty: 1,
+        category: "Impactor",
+      },
+      {
+        id: "stem-008",
+        catalogNo: "THR007",
+        name: "Stem Extraction",
+        qty: 1,
+        category: "Extractor",
+      },
+      {
+        id: "stem-009",
+        catalogNo: "THR009",
+        name: "Modular Knock Plate",
+        qty: 1,
+        category: "Stem Basic",
+      },
+      {
+        id: "stem-010",
+        catalogNo: "THR097",
+        name: "Bolt",
+        qty: 1,
+        category: "Stem Basic",
+      },
+      {
+        id: "stem-011",
+        catalogNo: "THR082",
+        name: "Trial Head Ø28 / +12",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-012",
+        catalogNo: "THR081",
+        name: "Trial Head Ø28 / +8",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-013",
+        catalogNo: "THR080",
+        name: "Trial Head Ø28 / +4",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-014",
+        catalogNo: "THR079",
+        name: "Trial Head Ø28 / +0",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-015",
+        catalogNo: "THR078",
+        name: "Trial Head Ø28 / -3",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-016",
+        catalogNo: "THR087",
+        name: "Trial Head Ø32 / +12",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-017",
+        catalogNo: "THR086",
+        name: "Trial Head Ø32 / +8",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-018",
+        catalogNo: "THR085",
+        name: "Trial Head Ø32 / +4",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-019",
+        catalogNo: "THR084",
+        name: "Trial Head Ø32 / +0",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-020",
+        catalogNo: "THR072",
+        name: "Trial Head Ø32 / -3",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-021",
+        catalogNo: "THR089",
+        name: "Trial Head Ø36 / +0",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-022",
+        catalogNo: "THR074",
+        name: "Trial Head Ø36 / +4",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-023",
+        catalogNo: "THR075",
+        name: "Trial Head Ø36 / +8",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-024",
+        catalogNo: "THR073",
+        name: "Trial Head Ø36 / -3",
+        qty: 1,
+        category: "Trial Head",
+      },
+      {
+        id: "stem-025",
+        catalogNo: "THR076",
+        name: "Femoral Trial Reamer 0",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-026",
+        catalogNo: "THR077",
+        name: "Femoral Trial Reamer 1",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-027",
+        catalogNo: "THR083",
+        name: "Femoral Trial Reamer 2",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-028",
+        catalogNo: "THR090",
+        name: "Femoral Trial Reamer 3",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-029",
+        catalogNo: "THR088",
+        name: "Femoral Trial Reamer 4",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-030",
+        catalogNo: "THR091",
+        name: "Femoral Trial Reamer 5",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-031",
+        catalogNo: "THR067",
+        name: "Femoral Trial Reamer 6",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-032",
+        catalogNo: "THR068",
+        name: "Femoral Trial Reamer 7",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-033",
+        catalogNo: "THR069",
+        name: "Femoral Trial Reamer 8",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-034",
+        catalogNo: "THR070",
+        name: "Femoral Trial Reamer 9",
+        qty: 1,
+        category: "Trial Reamer",
+      },
+      {
+        id: "stem-035",
+        catalogNo: "THR071",
+        name: "Femoral Trial Reamer 10",
+        qty: 1,
+        category: "Trial Reamer",
+      },
     ],
   },
 ];
@@ -266,11 +1056,31 @@ function mergeByCatalogNo(key, firstRows, secondRows) {
 }
 
 const THR_TRAY_ROWS = [
-  { catalogNo: "THR024", name: "Acetabular Reamer Handle", qty: 2, category: "Tray" },
+  {
+    catalogNo: "THR024",
+    name: "Acetabular Reamer Handle",
+    qty: 2,
+    category: "Tray",
+  },
   { catalogNo: "THR005", name: "Trial Cup Handle", qty: 1, category: "Tray" },
-  { catalogNo: "THR002", name: "Liner Impactor Head Ø28", qty: 1, category: "Tray" },
-  { catalogNo: "THR003", name: "Liner Impactor Head Ø32", qty: 1, category: "Tray" },
-  { catalogNo: "THR004", name: "Liner Impactor Head Ø36", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR002",
+    name: "Liner Impactor Head Ø28",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR003",
+    name: "Liner Impactor Head Ø32",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR004",
+    name: "Liner Impactor Head Ø36",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR037", name: "Cup Trial Ø46", qty: 1, category: "Tray" },
   { catalogNo: "THR038", name: "Cup Trial Ø48", qty: 1, category: "Tray" },
   { catalogNo: "THR039", name: "Cup Trial Ø54", qty: 1, category: "Tray" },
@@ -281,218 +1091,1036 @@ const THR_TRAY_ROWS = [
   { catalogNo: "THR044", name: "Cup Trial Ø64", qty: 1, category: "Tray" },
   { catalogNo: "THR045", name: "Cup Trial Ø50", qty: 1, category: "Tray" },
   { catalogNo: "THR046", name: "Cup Trial Ø52", qty: 1, category: "Tray" },
-  { catalogNo: "THR012", name: "Femoral Head Impactor", qty: 1, category: "Tray" },
-  { catalogNo: "THR015", name: "Abduction Regulator", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR012",
+    name: "Femoral Head Impactor",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR015",
+    name: "Abduction Regulator",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR006", name: "Free Stem Impactor", qty: 1, category: "Tray" },
-  { catalogNo: "THR011", name: "Positioner Impactor", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR011",
+    name: "Positioner Impactor",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR001", name: "Drill Angle Guide", qty: 1, category: "Tray" },
   { catalogNo: "THR013", name: "Depth Gauge", qty: 1, category: "Tray" },
   { catalogNo: "THR014", name: "Impactor Bit", qty: 2, category: "Tray" },
   { catalogNo: "THR020", name: "T Handle Large", qty: 1, category: "Tray" },
   { catalogNo: "THR008", name: "Screw Forceps", qty: 1, category: "Tray" },
   { catalogNo: "THR016", name: "SW3.5 Screw Driver", qty: 1, category: "Tray" },
-  { catalogNo: "THR017", name: "SW3.5 Jointed Screw Driver", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR017",
+    name: "SW3.5 Jointed Screw Driver",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR010", name: "Flexible Reamer", qty: 1, category: "Tray" },
-  { catalogNo: "THR026", name: "Acetabular Reamer Ø42", qty: 1, category: "Tray" },
-  { catalogNo: "THR027", name: "Acetabular Reamer Ø44", qty: 1, category: "Tray" },
-  { catalogNo: "THR028", name: "Acetabular Reamer Ø46", qty: 1, category: "Tray" },
-  { catalogNo: "THR029", name: "Acetabular Reamer Ø48", qty: 1, category: "Tray" },
-  { catalogNo: "THR030", name: "Acetabular Reamer Ø50", qty: 1, category: "Tray" },
-  { catalogNo: "THR031", name: "Acetabular Reamer Ø52", qty: 1, category: "Tray" },
-  { catalogNo: "THR032", name: "Acetabular Reamer Ø54", qty: 1, category: "Tray" },
-  { catalogNo: "THR033", name: "Acetabular Reamer Ø56", qty: 1, category: "Tray" },
-  { catalogNo: "THR034", name: "Acetabular Reamer Ø58", qty: 1, category: "Tray" },
-  { catalogNo: "THR094", name: "Acetabular Reamer Ø60", qty: 1, category: "Tray" },
-  { catalogNo: "THR035", name: "Acetabular Reamer Ø62", qty: 1, category: "Tray" },
-  { catalogNo: "THR036", name: "Acetabular Reamer Ø64", qty: 1, category: "Tray" },
-  { catalogNo: "THR047", name: "Trial Liner 28/46/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR048", name: "Trial Liner 28/48/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR049", name: "Trial Liner 32/50/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR050", name: "Trial Liner 32/52/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR051", name: "Trial Liner 36/54/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR052", name: "Trial Liner 28/46/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR053", name: "Trial Liner 28/48/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR054", name: "Trial Liner 32/50/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR055", name: "Trial Liner 32/52/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR056", name: "Trial Liner 36/56/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR057", name: "Trial Liner 36/58/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR058", name: "Trial Liner 36/60/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR059", name: "Trial Liner 36/62/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR060", name: "Trial Liner 36/64/0°", qty: 1, category: "Tray" },
-  { catalogNo: "THR061", name: "Trial Liner 36/54/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR062", name: "Trial Liner 36/56/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR063", name: "Trial Liner 36/60/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR064", name: "Trial Liner 36/62/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR065", name: "Trial Liner 36/64/20°", qty: 1, category: "Tray" },
-  { catalogNo: "THR066", name: "Trial Liner 36/58/20°", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR026",
+    name: "Acetabular Reamer Ø42",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR027",
+    name: "Acetabular Reamer Ø44",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR028",
+    name: "Acetabular Reamer Ø46",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR029",
+    name: "Acetabular Reamer Ø48",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR030",
+    name: "Acetabular Reamer Ø50",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR031",
+    name: "Acetabular Reamer Ø52",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR032",
+    name: "Acetabular Reamer Ø54",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR033",
+    name: "Acetabular Reamer Ø56",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR034",
+    name: "Acetabular Reamer Ø58",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR094",
+    name: "Acetabular Reamer Ø60",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR035",
+    name: "Acetabular Reamer Ø62",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR036",
+    name: "Acetabular Reamer Ø64",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR047",
+    name: "Trial Liner 28/46/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR048",
+    name: "Trial Liner 28/48/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR049",
+    name: "Trial Liner 32/50/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR050",
+    name: "Trial Liner 32/52/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR051",
+    name: "Trial Liner 36/54/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR052",
+    name: "Trial Liner 28/46/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR053",
+    name: "Trial Liner 28/48/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR054",
+    name: "Trial Liner 32/50/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR055",
+    name: "Trial Liner 32/52/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR056",
+    name: "Trial Liner 36/56/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR057",
+    name: "Trial Liner 36/58/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR058",
+    name: "Trial Liner 36/60/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR059",
+    name: "Trial Liner 36/62/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR060",
+    name: "Trial Liner 36/64/0°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR061",
+    name: "Trial Liner 36/54/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR062",
+    name: "Trial Liner 36/56/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR063",
+    name: "Trial Liner 36/60/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR064",
+    name: "Trial Liner 36/62/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR065",
+    name: "Trial Liner 36/64/20°",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR066",
+    name: "Trial Liner 36/58/20°",
+    qty: 1,
+    category: "Tray",
+  },
 ];
 
 const BIPOLAR_TRAY_ROWS = [
-  { catalogNo: "THR105", name: "Ø46 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR106", name: "Ø48 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR107", name: "Ø50 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR108", name: "Ø52 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR109", name: "Ø44 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR110", name: "Ø60 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR111", name: "Ø54 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR117", name: "Ø56 Bipolar Trial Cup", qty: 1, category: "Tray" },
-  { catalogNo: "THR012", name: "Ø58 Bipolar Trial Cup", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR105",
+    name: "Ø46 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR106",
+    name: "Ø48 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR107",
+    name: "Ø50 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR108",
+    name: "Ø52 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR109",
+    name: "Ø44 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR110",
+    name: "Ø60 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR111",
+    name: "Ø54 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR117",
+    name: "Ø56 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR012",
+    name: "Ø58 Bipolar Trial Cup",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR112", name: "Extractor", qty: 1, category: "Tray" },
   { catalogNo: "THR113", name: "Caliper", qty: 1, category: "Tray" },
-  { catalogNo: "THR114", name: "Femoral Head Impactor", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR114",
+    name: "Femoral Head Impactor",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR115", name: "Segment Forceps", qty: 1, category: "Tray" },
-  { catalogNo: "THR116", name: "Bipolar Trial Impactor", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR116",
+    name: "Bipolar Trial Impactor",
+    qty: 1,
+    category: "Tray",
+  },
 ];
 
 const STEM_TRAY_ROWS = [
   { catalogNo: "THR019", name: "Box Osteotomy", qty: 1, category: "Tray" },
-  { catalogNo: "THR021", name: "Trial Stem Standard Neck 0", qty: 1, category: "Tray" },
-  { catalogNo: "THR022", name: "Trial Stem Standard Neck 1-10", qty: 1, category: "Tray" },
-  { catalogNo: "THR023", name: "Trial Stem Lateral Neck 1-10", qty: 1, category: "Tray" },
-  { catalogNo: "THR099", name: "Fixed Offset Adaptor", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR021",
+    name: "Trial Stem Standard Neck 0",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR022",
+    name: "Trial Stem Standard Neck 1-10",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR023",
+    name: "Trial Stem Lateral Neck 1-10",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR099",
+    name: "Fixed Offset Adaptor",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR025", name: "Femoral Reamer", qty: 1, category: "Tray" },
   { catalogNo: "THR096", name: "Stem Impactor", qty: 1, category: "Tray" },
   { catalogNo: "THR007", name: "Stem Extraction", qty: 1, category: "Tray" },
-  { catalogNo: "THR009", name: "Modular Knock Plate", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR009",
+    name: "Modular Knock Plate",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "THR097", name: "Bolt", qty: 1, category: "Tray" },
-  { catalogNo: "THR082", name: "Trial Head Ø28 / +12", qty: 1, category: "Tray" },
-  { catalogNo: "THR081", name: "Trial Head Ø28 / +8", qty: 1, category: "Tray" },
-  { catalogNo: "THR080", name: "Trial Head Ø28 / +4", qty: 1, category: "Tray" },
-  { catalogNo: "THR079", name: "Trial Head Ø28 / +0", qty: 1, category: "Tray" },
-  { catalogNo: "THR078", name: "Trial Head Ø28 / -3", qty: 1, category: "Tray" },
-  { catalogNo: "THR087", name: "Trial Head Ø32 / +12", qty: 1, category: "Tray" },
-  { catalogNo: "THR086", name: "Trial Head Ø32 / +8", qty: 1, category: "Tray" },
-  { catalogNo: "THR085", name: "Trial Head Ø32 / +4", qty: 1, category: "Tray" },
-  { catalogNo: "THR084", name: "Trial Head Ø32 / +0", qty: 1, category: "Tray" },
-  { catalogNo: "THR072", name: "Trial Head Ø32 / -3", qty: 1, category: "Tray" },
-  { catalogNo: "THR089", name: "Trial Head Ø36 / +0", qty: 1, category: "Tray" },
-  { catalogNo: "THR074", name: "Trial Head Ø36 / +4", qty: 1, category: "Tray" },
-  { catalogNo: "THR075", name: "Trial Head Ø36 / +8", qty: 1, category: "Tray" },
-  { catalogNo: "THR073", name: "Trial Head Ø36 / -3", qty: 1, category: "Tray" },
-  { catalogNo: "THR076", name: "Femoral Trial Reamer 0", qty: 1, category: "Tray" },
-  { catalogNo: "THR077", name: "Femoral Trial Reamer 1", qty: 1, category: "Tray" },
-  { catalogNo: "THR083", name: "Femoral Trial Reamer 2", qty: 1, category: "Tray" },
-  { catalogNo: "THR090", name: "Femoral Trial Reamer 3", qty: 1, category: "Tray" },
-  { catalogNo: "THR088", name: "Femoral Trial Reamer 4", qty: 1, category: "Tray" },
-  { catalogNo: "THR091", name: "Femoral Trial Reamer 5", qty: 1, category: "Tray" },
-  { catalogNo: "THR067", name: "Femoral Trial Reamer 6", qty: 1, category: "Tray" },
-  { catalogNo: "THR068", name: "Femoral Trial Reamer 7", qty: 1, category: "Tray" },
-  { catalogNo: "THR069", name: "Femoral Trial Reamer 8", qty: 1, category: "Tray" },
-  { catalogNo: "THR070", name: "Femoral Trial Reamer 9", qty: 1, category: "Tray" },
-  { catalogNo: "THR071", name: "Femoral Trial Reamer 10", qty: 1, category: "Tray" },
+  {
+    catalogNo: "THR082",
+    name: "Trial Head Ø28 / +12",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR081",
+    name: "Trial Head Ø28 / +8",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR080",
+    name: "Trial Head Ø28 / +4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR079",
+    name: "Trial Head Ø28 / +0",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR078",
+    name: "Trial Head Ø28 / -3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR087",
+    name: "Trial Head Ø32 / +12",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR086",
+    name: "Trial Head Ø32 / +8",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR085",
+    name: "Trial Head Ø32 / +4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR084",
+    name: "Trial Head Ø32 / +0",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR072",
+    name: "Trial Head Ø32 / -3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR089",
+    name: "Trial Head Ø36 / +0",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR074",
+    name: "Trial Head Ø36 / +4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR075",
+    name: "Trial Head Ø36 / +8",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR073",
+    name: "Trial Head Ø36 / -3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR076",
+    name: "Femoral Trial Reamer 0",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR077",
+    name: "Femoral Trial Reamer 1",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR083",
+    name: "Femoral Trial Reamer 2",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR090",
+    name: "Femoral Trial Reamer 3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR088",
+    name: "Femoral Trial Reamer 4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR091",
+    name: "Femoral Trial Reamer 5",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR067",
+    name: "Femoral Trial Reamer 6",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR068",
+    name: "Femoral Trial Reamer 7",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR069",
+    name: "Femoral Trial Reamer 8",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR070",
+    name: "Femoral Trial Reamer 9",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "THR071",
+    name: "Femoral Trial Reamer 10",
+    qty: 1,
+    category: "Tray",
+  },
 ];
 
 const TKR_TRAY_ROWS = [
   { catalogNo: "TKR100", name: "T-Handle", qty: 1, category: "Tray" },
   { catalogNo: "TKR101", name: "Starter", qty: 1, category: "Tray" },
-  { catalogNo: "TKR103", name: "Extramedullary Alignment Tower", qty: 1, category: "Tray" },
-  { catalogNo: "TKR104", name: "Femoral A/P Chamfer Guide Handle", qty: 2, category: "Tray" },
+  {
+    catalogNo: "TKR103",
+    name: "Extramedullary Alignment Tower",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR104",
+    name: "Femoral A/P Chamfer Guide Handle",
+    qty: 2,
+    category: "Tray",
+  },
   { catalogNo: "TKR105", name: "8 mm Twist Drill", qty: 1, category: "Tray" },
   { catalogNo: "TKR107", name: "Bone File", qty: 1, category: "Tray" },
-  { catalogNo: "TKR108", name: "Femoral IM Alignment Guide", qty: 1, category: "Tray" },
-  { catalogNo: "TKR109", name: "Distal Femoral Alignment Guide", qty: 1, category: "Tray" },
-  { catalogNo: "TKR110", name: "Distal Femoral Cutting Guide", qty: 1, category: "Tray" },
-  { catalogNo: "TKR111", name: "PS Cutting Jig Drill Guide", qty: 1, category: "Tray" },
-  { catalogNo: "TKR112", name: "Femoral A/P Chamfer Cutting Guide Size 1", qty: 1, category: "Tray" },
-  { catalogNo: "TKR113", name: "Femoral A/P Chamfer Cutting Guide Size 2", qty: 1, category: "Tray" },
-  { catalogNo: "TKR114", name: "Femoral A/P Chamfer Cutting Guide Size 3", qty: 1, category: "Tray" },
-  { catalogNo: "TKR115", name: "Femoral A/P Chamfer Cutting Guide Size 4", qty: 1, category: "Tray" },
-  { catalogNo: "TKR116", name: "Femoral A/P Chamfer Cutting Guide Size 5", qty: 1, category: "Tray" },
-  { catalogNo: "TKR118", name: "PS Notch Cutting Jig Size 3", qty: 1, category: "Tray" },
-  { catalogNo: "TKR119", name: "PS Notch Cutting Jig Size 1", qty: 1, category: "Tray" },
-  { catalogNo: "TKR120", name: "PS Notch Cutting Jig Size 2", qty: 1, category: "Tray" },
-  { catalogNo: "TKR121", name: "PS Notch Cutting Jig Size 4", qty: 1, category: "Tray" },
-  { catalogNo: "TKR122", name: "PS Notch Cutting Jig Size 5", qty: 1, category: "Tray" },
-  { catalogNo: "TKR124", name: "Femoral IM Rod 400 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR130", name: "Femoral Condyle Drill", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR108",
+    name: "Femoral IM Alignment Guide",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR109",
+    name: "Distal Femoral Alignment Guide",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR110",
+    name: "Distal Femoral Cutting Guide",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR111",
+    name: "PS Cutting Jig Drill Guide",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR112",
+    name: "Femoral A/P Chamfer Cutting Guide Size 1",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR113",
+    name: "Femoral A/P Chamfer Cutting Guide Size 2",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR114",
+    name: "Femoral A/P Chamfer Cutting Guide Size 3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR115",
+    name: "Femoral A/P Chamfer Cutting Guide Size 4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR116",
+    name: "Femoral A/P Chamfer Cutting Guide Size 5",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR118",
+    name: "PS Notch Cutting Jig Size 3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR119",
+    name: "PS Notch Cutting Jig Size 1",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR120",
+    name: "PS Notch Cutting Jig Size 2",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR121",
+    name: "PS Notch Cutting Jig Size 4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR122",
+    name: "PS Notch Cutting Jig Size 5",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR124",
+    name: "Femoral IM Rod 400 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR130",
+    name: "Femoral Condyle Drill",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR131", name: "PS Reamer", qty: 1, category: "Tray" },
   { catalogNo: "TKR133", name: "Pin Extractor", qty: 1, category: "Tray" },
-  { catalogNo: "TKR134", name: "Spike and Tibial EM Guide Extractor", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR134",
+    name: "Spike and Tibial EM Guide Extractor",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR135", name: "Femoral Impactor", qty: 1, category: "Tray" },
   { catalogNo: "TKR136", name: "PS Housing Punch", qty: 1, category: "Tray" },
-  { catalogNo: "TKR137", name: "PS Housing Impactor", qty: 1, category: "Tray" },
-  { catalogNo: "TKR138", name: "Tibial Insert Impactor", qty: 1, category: "Tray" },
-  { catalogNo: "TKR139", name: "Tibial Insert Extractor", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR137",
+    name: "PS Housing Impactor",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR138",
+    name: "Tibial Insert Impactor",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR139",
+    name: "Tibial Insert Extractor",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR140", name: "Femoral Sizer", qty: 1, category: "Tray" },
   { catalogNo: "TKR145", name: "Tibial IM Rod", qty: 1, category: "Tray" },
-  { catalogNo: "TKR169", name: "Cemented Tibial Punch Handle", qty: 1, category: "Tray" },
-  { catalogNo: "TKR170", name: "Tibial Baseplate Handle", qty: 1, category: "Tray" },
-  { catalogNo: "TKR171", name: "Tibial IM Alignment Guide", qty: 1, category: "Tray" },
-  { catalogNo: "TKR172", name: "Tibial EM Alignment Guide", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR169",
+    name: "Cemented Tibial Punch Handle",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR170",
+    name: "Tibial Baseplate Handle",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR171",
+    name: "Tibial IM Alignment Guide",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR172",
+    name: "Tibial EM Alignment Guide",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR173", name: "Tibial Drill Guide", qty: 1, category: "Tray" },
-  { catalogNo: "TKR174", name: "Tibial Cutting Jig 0° Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR175", name: "Tibial Cutting Jig 5° Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR176", name: "Tibial Cutting Jig 0° Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR177", name: "Tibial Cutting Jig 5° Right", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR174",
+    name: "Tibial Cutting Jig 0° Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR175",
+    name: "Tibial Cutting Jig 5° Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR176",
+    name: "Tibial Cutting Jig 0° Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR177",
+    name: "Tibial Cutting Jig 5° Right",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR178", name: "Alignment Rod", qty: 1, category: "Tray" },
-  { catalogNo: "TKR182", name: "Tibial Baseplate Impactor", qty: 1, category: "Tray" },
-  { catalogNo: "TKR183", name: "Posterior Stabilization Part", qty: 1, category: "Tray" },
-  { catalogNo: "TKR190", name: "Cemented Tibia Punch L", qty: 1, category: "Tray" },
-  { catalogNo: "TKR191", name: "Cemented Tibia Punch M", qty: 1, category: "Tray" },
-  { catalogNo: "TKR192", name: "Cemented Tibia Punch S", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR182",
+    name: "Tibial Baseplate Impactor",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR183",
+    name: "Posterior Stabilization Part",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR190",
+    name: "Cemented Tibia Punch L",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR191",
+    name: "Cemented Tibia Punch M",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR192",
+    name: "Cemented Tibia Punch S",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR193", name: "Gap Gauge 9 mm", qty: 1, category: "Tray" },
   { catalogNo: "TKR194", name: "Gap Gauge 11 mm", qty: 1, category: "Tray" },
   { catalogNo: "TKR195", name: "Gap Gauge 13 mm", qty: 1, category: "Tray" },
   { catalogNo: "TKR196", name: "Gap Gauge 15 mm", qty: 1, category: "Tray" },
   { catalogNo: "TKR198", name: "Tibial Stylus", qty: 1, category: "Tray" },
-  { catalogNo: "TKR205", name: "Tibial Baseplate Trial Size 6", qty: 1, category: "Tray" },
-  { catalogNo: "TKR254", name: "Femoral A/P Chamfer Cutting Guide Size 6", qty: 1, category: "Tray" },
-  { catalogNo: "TKR255", name: "PS Notch Cutting Jig Size 6", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR205",
+    name: "Tibial Baseplate Trial Size 6",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR254",
+    name: "Femoral A/P Chamfer Cutting Guide Size 6",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR255",
+    name: "PS Notch Cutting Jig Size 6",
+    qty: 1,
+    category: "Tray",
+  },
   { catalogNo: "TKR256-257", name: "Spikes", qty: 1, category: "Tray" },
   { catalogNo: "TKR300", name: "Femoral Driver", qty: 1, category: "Tray" },
-  { catalogNo: "TKR001", name: "Femoral Trial CR Size 1 Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR002", name: "Femoral Trial CR Size 2 Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR003", name: "Femoral Trial PS Size 3 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR004", name: "Femoral Trial PS Size 4 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR005", name: "Femoral Trial CR Size 5 Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR007", name: "Tibial Insert Trial 5-9 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR008", name: "Femoral Trial CR Size 2 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR009", name: "Femoral Trial CR Size 3 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR010", name: "Femoral Trial CR Size 1 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR011", name: "Tibial Insert Trial 5-15 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR019", name: "Femoral Trial PS Size 1 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR020", name: "Femoral Trial PS Size 2 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR021", name: "Femoral Trial CR Size 3 Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR022", name: "Femoral Trial PS Size 6 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR023", name: "Femoral Trial PS Size 5 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR025", name: "Tibial Baseplate Trial Size 1", qty: 1, category: "Tray" },
-  { catalogNo: "TKR026", name: "Tibial Baseplate Trial Size 2", qty: 1, category: "Tray" },
-  { catalogNo: "TKR027", name: "Tibial Baseplate Trial Size 3", qty: 1, category: "Tray" },
-  { catalogNo: "TKR028", name: "Tibial Baseplate Trial Size 4", qty: 1, category: "Tray" },
-  { catalogNo: "TKR029", name: "Tibial Baseplate Trial Size 5", qty: 1, category: "Tray" },
-  { catalogNo: "TKR201", name: "Femoral Trial CR Size 6 Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR202", name: "Femoral Trial CR Size 6 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR204", name: "Femoral Trial CR Size 4 Left", qty: 1, category: "Tray" },
-  { catalogNo: "TKR206", name: "Tibial Insert Trial 1-9 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR207", name: "Tibial Insert Trial 1-11 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR208", name: "Tibial Insert Trial 2-9 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR209", name: "Tibial Insert Trial 1-15 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR210", name: "Tibial Insert Trial 1-13 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR211", name: "Tibial Insert Trial 2-11 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR212", name: "Tibial Insert Trial 2-13 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR213", name: "Tibial Insert Trial 2-15 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR214", name: "Tibial Insert Trial 3-9 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR215", name: "Tibial Insert Trial 3-11 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR216", name: "Tibial Insert Trial 3-13 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR217", name: "Tibial Insert Trial 3-15 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR218", name: "Femoral Trial CR Size 5 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR219", name: "Tibial Insert Trial 4-9 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR220", name: "Tibial Insert Trial 4-13 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR221", name: "Tibial Insert Trial 4-15 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR222", name: "Femoral Trial CR Size 4 Right", qty: 1, category: "Tray" },
-  { catalogNo: "TKR223", name: "Tibial Insert Trial 4-11 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR224", name: "Tibial Insert Trial 5-13 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR225", name: "Tibial Insert Trial 5-11 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR226", name: "Tibial Insert Trial 6-9 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR227", name: "Tibial Insert Trial 6-11 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR228", name: "Tibial Insert Trial 6-13 mm", qty: 1, category: "Tray" },
-  { catalogNo: "TKR229", name: "Tibial Insert Trial 6-15 mm", qty: 1, category: "Tray" },
+  {
+    catalogNo: "TKR001",
+    name: "Femoral Trial CR Size 1 Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR002",
+    name: "Femoral Trial CR Size 2 Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR003",
+    name: "Femoral Trial PS Size 3 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR004",
+    name: "Femoral Trial PS Size 4 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR005",
+    name: "Femoral Trial CR Size 5 Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR007",
+    name: "Tibial Insert Trial 5-9 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR008",
+    name: "Femoral Trial CR Size 2 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR009",
+    name: "Femoral Trial CR Size 3 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR010",
+    name: "Femoral Trial CR Size 1 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR011",
+    name: "Tibial Insert Trial 5-15 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR019",
+    name: "Femoral Trial PS Size 1 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR020",
+    name: "Femoral Trial PS Size 2 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR021",
+    name: "Femoral Trial CR Size 3 Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR022",
+    name: "Femoral Trial PS Size 6 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR023",
+    name: "Femoral Trial PS Size 5 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR025",
+    name: "Tibial Baseplate Trial Size 1",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR026",
+    name: "Tibial Baseplate Trial Size 2",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR027",
+    name: "Tibial Baseplate Trial Size 3",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR028",
+    name: "Tibial Baseplate Trial Size 4",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR029",
+    name: "Tibial Baseplate Trial Size 5",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR201",
+    name: "Femoral Trial CR Size 6 Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR202",
+    name: "Femoral Trial CR Size 6 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR204",
+    name: "Femoral Trial CR Size 4 Left",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR206",
+    name: "Tibial Insert Trial 1-9 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR207",
+    name: "Tibial Insert Trial 1-11 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR208",
+    name: "Tibial Insert Trial 2-9 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR209",
+    name: "Tibial Insert Trial 1-15 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR210",
+    name: "Tibial Insert Trial 1-13 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR211",
+    name: "Tibial Insert Trial 2-11 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR212",
+    name: "Tibial Insert Trial 2-13 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR213",
+    name: "Tibial Insert Trial 2-15 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR214",
+    name: "Tibial Insert Trial 3-9 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR215",
+    name: "Tibial Insert Trial 3-11 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR216",
+    name: "Tibial Insert Trial 3-13 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR217",
+    name: "Tibial Insert Trial 3-15 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR218",
+    name: "Femoral Trial CR Size 5 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR219",
+    name: "Tibial Insert Trial 4-9 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR220",
+    name: "Tibial Insert Trial 4-13 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR221",
+    name: "Tibial Insert Trial 4-15 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR222",
+    name: "Femoral Trial CR Size 4 Right",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR223",
+    name: "Tibial Insert Trial 4-11 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR224",
+    name: "Tibial Insert Trial 5-13 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR225",
+    name: "Tibial Insert Trial 5-11 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR226",
+    name: "Tibial Insert Trial 6-9 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR227",
+    name: "Tibial Insert Trial 6-11 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR228",
+    name: "Tibial Insert Trial 6-13 mm",
+    qty: 1,
+    category: "Tray",
+  },
+  {
+    catalogNo: "TKR229",
+    name: "Tibial Insert Trial 6-15 mm",
+    qty: 1,
+    category: "Tray",
+  },
 ];
 
 const BIPOLAR_ONLY_ITEMS = buildChecklistItems("bipolar", BIPOLAR_TRAY_ROWS);
-const BIPOLAR_WITH_STEM_ITEMS = mergeByCatalogNo("bipolar", STEM_TRAY_ROWS, BIPOLAR_TRAY_ROWS);
+const BIPOLAR_WITH_STEM_ITEMS = mergeByCatalogNo(
+  "bipolar",
+  STEM_TRAY_ROWS,
+  BIPOLAR_TRAY_ROWS,
+);
 const THR_ONLY_ITEMS = buildChecklistItems("thr", THR_TRAY_ROWS);
-const THR_WITH_STEM_ITEMS = mergeByCatalogNo("thr", THR_TRAY_ROWS, STEM_TRAY_ROWS);
+const THR_WITH_STEM_ITEMS = mergeByCatalogNo(
+  "thr",
+  THR_TRAY_ROWS,
+  STEM_TRAY_ROWS,
+);
 
 const TRAY_ITEMS = {
   tkr: buildChecklistItems("tkr", TKR_TRAY_ROWS),
@@ -508,7 +2136,10 @@ function getProcedureItems(procedure, options = {}) {
   if (procedure.key === "thr" && options.thrIncludeStem) {
     return THR_WITH_STEM_ITEMS;
   }
-  return TRAY_ITEMS[procedure.key] || buildChecklistItems(procedure.key, procedure.items || []);
+  return (
+    TRAY_ITEMS[procedure.key] ||
+    buildChecklistItems(procedure.key, procedure.items || [])
+  );
 }
 
 const STORAGE_KEY = "normed-instrument-checklist-v3";
@@ -529,7 +2160,8 @@ const GROUP_COLOR_VARIANTS = [
     title: "text-emerald-900",
     meta: "text-emerald-700",
     badge: "bg-emerald-100 text-emerald-800",
-    quickCheck: "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    quickCheck:
+      "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
     quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
   },
   {
@@ -538,7 +2170,8 @@ const GROUP_COLOR_VARIANTS = [
     title: "text-violet-900",
     meta: "text-violet-700",
     badge: "bg-violet-100 text-violet-800",
-    quickCheck: "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100",
+    quickCheck:
+      "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100",
     quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
   },
   {
@@ -547,7 +2180,8 @@ const GROUP_COLOR_VARIANTS = [
     title: "text-amber-900",
     meta: "text-amber-700",
     badge: "bg-amber-100 text-amber-800",
-    quickCheck: "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100",
+    quickCheck:
+      "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100",
     quickUncheck: "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
   },
   {
@@ -640,7 +2274,11 @@ const PROCEDURE_STAGE_RULES = {
     { key: "impactor", label: "Impactor", keywords: ["impactor"] },
   ],
   bipolar: [
-    { key: "trial_cup", label: "Trial Cup", keywords: ["trial cup", "bipolar trial cup"] },
+    {
+      key: "trial_cup",
+      label: "Trial Cup",
+      keywords: ["trial cup", "bipolar trial cup"],
+    },
     { key: "assembly", label: "Assembly", keywords: ["assembly", "segment"] },
     { key: "impactor", label: "Impactor", keywords: ["impactor"] },
     { key: "stem", label: "Stem", keywords: ["stem", "femoral"] },
@@ -673,7 +2311,8 @@ const PROCEDURE_THEME_VARIANTS = {
     iconBg: "bg-blue-100 text-blue-700",
     bar: "from-blue-500 to-cyan-500",
     badge: "bg-blue-100 text-blue-700",
-    active: "border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 shadow-blue-100/70",
+    active:
+      "border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 shadow-blue-100/70",
     inactive: "border-slate-200 bg-white/90",
   },
   bipolar: {
@@ -696,7 +2335,8 @@ const PROCEDURE_THEME_VARIANTS = {
     iconBg: "bg-amber-100 text-amber-700",
     bar: "from-amber-500 to-orange-500",
     badge: "bg-amber-100 text-amber-700",
-    active: "border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 shadow-amber-100/70",
+    active:
+      "border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 shadow-amber-100/70",
     inactive: "border-slate-200 bg-white/90",
   },
 };
@@ -706,13 +2346,17 @@ function getProcedureTheme(key) {
 }
 
 function getGroupColorVariant(groupName) {
-  const raw = String(groupName || "").trim().toLowerCase();
+  const raw = String(groupName || "")
+    .trim()
+    .toLowerCase();
   const hash = raw.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return GROUP_COLOR_VARIANTS[hash % GROUP_COLOR_VARIANTS.length];
 }
 
 function getGroupPriority(groupName, procedureKey = "") {
-  const raw = String(groupName || "").trim().toLowerCase();
+  const raw = String(groupName || "")
+    .trim()
+    .toLowerCase();
   if (!raw) return 999;
   const normalizedProcedure = normalizeProcedureKey(procedureKey);
   const procedureRules =
@@ -732,15 +2376,20 @@ function getGroupPriority(groupName, procedureKey = "") {
 }
 
 function parseBooleanLike(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (!raw) return false;
-  return ["1", "true", "yes", "y", "ya", "ok", "critical", "kritikal"].includes(raw);
+  return ["1", "true", "yes", "y", "ya", "ok", "critical", "kritikal"].includes(
+    raw,
+  );
 }
 
 function isCriticalInstrument(item) {
   if (!item || typeof item !== "object") return false;
   if (Boolean(item.isCritical)) return true;
-  const source = `${item.catalogNo || ""} ${item.name || ""} ${item.category || ""}`.toLowerCase();
+  const source =
+    `${item.catalogNo || ""} ${item.name || ""} ${item.category || ""}`.toLowerCase();
   return CRITICAL_ITEM_KEYWORDS.some((keyword) => source.includes(keyword));
 }
 
@@ -753,14 +2402,19 @@ function resolveProcedureStages(procedureKey) {
 }
 
 function matchesGroupStage(groupName, stage) {
-  const raw = String(groupName || "").trim().toLowerCase();
+  const raw = String(groupName || "")
+    .trim()
+    .toLowerCase();
   const keywords = Array.isArray(stage?.keywords) ? stage.keywords : [];
   if (!keywords.length) return true;
-  return keywords.some((keyword) => raw.includes(String(keyword || "").toLowerCase()));
+  return keywords.some((keyword) =>
+    raw.includes(String(keyword || "").toLowerCase()),
+  );
 }
 
 function getTodayKey(dateInput = new Date()) {
-  const sourceDate = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const sourceDate =
+    dateInput instanceof Date ? dateInput : new Date(dateInput);
   if (Number.isNaN(sourceDate.getTime())) return "";
   return sourceDate.toLocaleDateString("en-CA", { timeZone: "Asia/Makassar" });
 }
@@ -768,10 +2422,12 @@ function getTodayKey(dateInput = new Date()) {
 function inferProcedureKeyFromText(value) {
   const raw = String(value || "").toLowerCase();
   if (!raw) return "";
-  if (raw.includes("tkr") || raw.includes("gordion") || raw.includes("knee")) return "tkr";
+  if (raw.includes("tkr") || raw.includes("gordion") || raw.includes("knee"))
+    return "tkr";
   if (raw.includes("bipolar")) return "bipolar";
   if (raw.includes("stem")) return "stem";
-  if (raw.includes("thr") || raw.includes("acetabular") || raw.includes("hip")) return "thr";
+  if (raw.includes("thr") || raw.includes("acetabular") || raw.includes("hip"))
+    return "thr";
   return "";
 }
 
@@ -803,7 +2459,11 @@ function parseTagMetadata(value) {
   if (!raw) return {};
 
   const parsedJson = parseJsonSafe(raw);
-  if (parsedJson && typeof parsedJson === "object" && !Array.isArray(parsedJson)) {
+  if (
+    parsedJson &&
+    typeof parsedJson === "object" &&
+    !Array.isArray(parsedJson)
+  ) {
     return parsedJson;
   }
 
@@ -833,7 +2493,7 @@ function normalizeInstrumentProfileRows(rows) {
   rows.forEach((rawRow) => {
     if (!rawRow || typeof rawRow !== "object") return;
     const meta = parseTagMetadata(
-      rawRow.tags || rawRow.tag || rawRow.metadata || rawRow.meta
+      rawRow.tags || rawRow.tag || rawRow.metadata || rawRow.meta,
     );
     const procedureKey = normalizeProcedureKey(
       rawRow.procedureKey ||
@@ -850,7 +2510,7 @@ function normalizeInstrumentProfileRows(rows) {
         meta.procedure ||
         meta.systemKey ||
         meta.system ||
-        meta.operation
+        meta.operation,
     );
     const catalogNo = normalizeCatalogNo(
       rawRow.catalogNo ||
@@ -863,7 +2523,7 @@ function normalizeInstrumentProfileRows(rows) {
         meta.catalogNo ||
         meta.code ||
         meta.kode ||
-        meta.itemCode
+        meta.itemCode,
     );
     if (!procedureKey || !catalogNo) return;
 
@@ -876,7 +2536,7 @@ function normalizeInstrumentProfileRows(rows) {
         meta.qty ||
         meta.piece ||
         meta.pieces ||
-        1
+        1,
     );
     const isCritical =
       parseBooleanLike(
@@ -886,9 +2546,12 @@ function normalizeInstrumentProfileRows(rows) {
           rawRow.is_critical ||
           meta.isCritical ||
           meta.critical ||
-          meta.kritikal
+          meta.kritikal,
       ) || false;
-    const driveId = extractDriveIdFromRecord({ ...(meta || {}), ...(rawRow || {}) });
+    const driveId = extractDriveIdFromRecord({
+      ...(meta || {}),
+      ...(rawRow || {}),
+    });
     const imageSource =
       driveIdToImageUrl(driveId) ||
       String(
@@ -902,7 +2565,7 @@ function normalizeInstrumentProfileRows(rows) {
           meta.imageSrc ||
           meta.imageUrl ||
           meta.photoUrl ||
-          ""
+          "",
       ).trim();
     const normalizedRow = {
       id:
@@ -918,7 +2581,7 @@ function normalizeInstrumentProfileRows(rows) {
           rawRow.title ||
           meta.name ||
           meta.description ||
-          ""
+          "",
       ).trim(),
       qty: Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1,
       category:
@@ -931,9 +2594,8 @@ function normalizeInstrumentProfileRows(rows) {
             meta.category ||
             meta.group ||
             meta.kategori ||
-            "Tray"
-        ).trim() ||
-        "Tray",
+            "Tray",
+        ).trim() || "Tray",
       imageUrl: toSafeImageSrc(imageSource, ""),
       driveId,
       isCritical,
@@ -968,9 +2630,11 @@ function parseCsvRows(text) {
   if (lines.length < 2) return [];
 
   const splitCsv = (line) =>
-    line
-      .split(",")
-      .map((item) => String(item || "").trim().replace(/^"|"$/g, ""));
+    line.split(",").map((item) =>
+      String(item || "")
+        .trim()
+        .replace(/^"|"$/g, ""),
+    );
 
   const headers = splitCsv(lines[0]).map((header) => header.toLowerCase());
   const rows = [];
@@ -993,7 +2657,8 @@ function extractProfileRowsFromRemote(remote) {
     (Array.isArray(remote.items) && remote.items) ||
     (Array.isArray(remote.rows) && remote.rows) ||
     (Array.isArray(remote.instrumentProfiles) && remote.instrumentProfiles) ||
-    (Array.isArray(remote?.data?.instrumentProfiles) && remote.data.instrumentProfiles) ||
+    (Array.isArray(remote?.data?.instrumentProfiles) &&
+      remote.data.instrumentProfiles) ||
     (Array.isArray(remote.data) && remote.data) ||
     [];
   if (direct.length) return direct;
@@ -1017,7 +2682,8 @@ function extractUsageSnapshotFromRemote(remote) {
     return { submissions: [], items: [] };
   }
 
-  const root = remote?.data && typeof remote.data === "object" ? remote.data : remote;
+  const root =
+    remote?.data && typeof remote.data === "object" ? remote.data : remote;
   const submissions =
     root?.submissions ||
     root?.implantUsageSubmissions ||
@@ -1038,7 +2704,11 @@ function extractUsageSnapshotFromRemote(remote) {
   };
 }
 
-function mergeProcedureItemsWithProfiles(baseItems, procedureKey, profilesByProcedure) {
+function mergeProcedureItemsWithProfiles(
+  baseItems,
+  procedureKey,
+  profilesByProcedure,
+) {
   const profileMap = profilesByProcedure?.[procedureKey] || {};
   const merged = [];
   const usedCodes = new Set();
@@ -1106,10 +2776,16 @@ function sanitizeCustomInstruments(value) {
         return {
           id:
             String(row.id || "").trim() ||
-            createCustomInstrumentId(procedureKey, `${catalogNo || "item"}-${index + 1}`),
+            createCustomInstrumentId(
+              procedureKey,
+              `${catalogNo || "item"}-${index + 1}`,
+            ),
           catalogNo,
           name,
-          qty: Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1,
+          qty:
+            Number.isFinite(qtyValue) && qtyValue > 0
+              ? Math.round(qtyValue)
+              : 1,
           category: String(row.category || "Tambahan").trim() || "Tambahan",
           imageUrl: String(row.imageUrl || "").trim(),
           isCustom: true,
@@ -1155,48 +2831,71 @@ function buildEmptySubmissionEditor() {
 function normalizeDashboardSubmissionRow(rawRow, index) {
   const source = rawRow && typeof rawRow === "object" ? rawRow : {};
   const submissionId = String(
-    source.submissionId || source.id || `submission-${index + 1}`
+    source.submissionId || source.id || `submission-${index + 1}`,
   ).trim();
-  const createdAt = String(source.createdAt || source.created_at || source.timestamp || "").trim();
+  const createdAt = String(
+    source.createdAt || source.created_at || source.timestamp || "",
+  ).trim();
   const operationDate = String(source.operationDate || "").trim();
   const procedureKey =
     normalizeProcedureKey(source.procedureKey) ||
-    inferProcedureKeyFromText(source.systemName || source.procedureTitle || source.title || "");
-  const procedureTitle = String(source.systemName || source.procedureTitle || source.title || "").trim();
-  const checklistJson = String(source.checklistJson || source.checklist_json || "[]");
+    inferProcedureKeyFromText(
+      source.systemName || source.procedureTitle || source.title || "",
+    );
+  const procedureTitle = String(
+    source.systemName || source.procedureTitle || source.title || "",
+  ).trim();
+  const checklistJson = String(
+    source.checklistJson || source.checklist_json || "[]",
+  );
   const checklistRows = parseJsonSafe(checklistJson);
   const resolvedTotal =
     Number(source.total || source.totalItems || source.total_items || 0) ||
     (Array.isArray(checklistRows) ? checklistRows.length : 0);
   const resolvedCompleted =
-    Number(source.completed || source.completedItems || source.completed_items || 0) ||
+    Number(
+      source.completed || source.completedItems || source.completed_items || 0,
+    ) ||
     (Array.isArray(checklistRows)
       ? checklistRows.reduce((acc, row) => acc + (row?.checked ? 1 : 0), 0)
       : 0);
   const normalizedTotal = Number.isFinite(resolvedTotal) ? resolvedTotal : 0;
-  const normalizedCompleted = Number.isFinite(resolvedCompleted) ? resolvedCompleted : 0;
+  const normalizedCompleted = Number.isFinite(resolvedCompleted)
+    ? resolvedCompleted
+    : 0;
   const progressRaw =
-    Number(source.progress || source.progressPercent || source.progress_percent || 0) ||
-    (normalizedTotal > 0 ? Math.round((normalizedCompleted / normalizedTotal) * 100) : 0);
-  const progress = Number.isFinite(progressRaw) ? Math.max(0, Math.min(100, Math.round(progressRaw))) : 0;
+    Number(
+      source.progress || source.progressPercent || source.progress_percent || 0,
+    ) ||
+    (normalizedTotal > 0
+      ? Math.round((normalizedCompleted / normalizedTotal) * 100)
+      : 0);
+  const progress = Number.isFinite(progressRaw)
+    ? Math.max(0, Math.min(100, Math.round(progressRaw)))
+    : 0;
   const status =
     String(source.status || "").trim() ||
     (progress >= 100 ? "Lengkap" : "Belum Lengkap");
 
   const patientStickerUrl = toSafeImageSrc(
-    String(source.patientStickerUrl || source.patientStickerImageUrl || "").trim() ||
-      driveIdToImageUrl(source.patientStickerDriveId),
-    ""
+    String(
+      source.patientStickerUrl || source.patientStickerImageUrl || "",
+    ).trim() || driveIdToImageUrl(source.patientStickerDriveId),
+    "",
   );
   const officeDocumentationUrl = toSafeImageSrc(
-    String(source.officeDocumentationUrl || source.officeDocumentationImageUrl || "").trim() ||
-      driveIdToImageUrl(source.officeDocumentationDriveId),
-    patientStickerUrl
+    String(
+      source.officeDocumentationUrl || source.officeDocumentationImageUrl || "",
+    ).trim() || driveIdToImageUrl(source.officeDocumentationDriveId),
+    patientStickerUrl,
   );
   const hospitalDocumentationUrl = toSafeImageSrc(
-    String(source.hospitalDocumentationUrl || source.hospitalDocumentationImageUrl || "").trim() ||
-      driveIdToImageUrl(source.hospitalDocumentationDriveId),
-    patientStickerUrl
+    String(
+      source.hospitalDocumentationUrl ||
+        source.hospitalDocumentationImageUrl ||
+        "",
+    ).trim() || driveIdToImageUrl(source.hospitalDocumentationDriveId),
+    patientStickerUrl,
   );
 
   return {
@@ -1227,7 +2926,8 @@ export default function NormedInstrumentChecklistApp() {
   const [procedureKey, setProcedureKey] = useState("tkr");
   const [bipolarIncludeStem, setBipolarIncludeStem] = useState(true);
   const [thrIncludeStem, setThrIncludeStem] = useState(true);
-  const [customInstrumentsByProcedure, setCustomInstrumentsByProcedure] = useState({});
+  const [customInstrumentsByProcedure, setCustomInstrumentsByProcedure] =
+    useState({});
   const [extraCatalogNo, setExtraCatalogNo] = useState("");
   const [extraDescription, setExtraDescription] = useState("");
   const [extraPiece, setExtraPiece] = useState("1");
@@ -1238,14 +2938,21 @@ export default function NormedInstrumentChecklistApp() {
   const [doctorName, setDoctorName] = useState("");
   const [patientCode, setPatientCode] = useState("");
   const [caseNote, setCaseNote] = useState("");
-  const [officeDocumentationPhoto, setOfficeDocumentationPhoto] = useState(null);
-  const [officeDocumentationPreview, setOfficeDocumentationPreview] = useState("");
+  const [officeDocumentationPhoto, setOfficeDocumentationPhoto] =
+    useState(null);
+  const [officeDocumentationPreview, setOfficeDocumentationPreview] =
+    useState("");
   const [officePhotoName, setOfficePhotoName] = useState("");
-  const [hospitalDocumentationPhoto, setHospitalDocumentationPhoto] = useState(null);
-  const [hospitalDocumentationPreview, setHospitalDocumentationPreview] = useState("");
+  const [hospitalDocumentationPhoto, setHospitalDocumentationPhoto] =
+    useState(null);
+  const [hospitalDocumentationPreview, setHospitalDocumentationPreview] =
+    useState("");
   const [hospitalPhotoName, setHospitalPhotoName] = useState("");
   const [documentationModalOpen, setDocumentationModalOpen] = useState(false);
-  const [documentationPromptedByProcedure, setDocumentationPromptedByProcedure] = useState({});
+  const [
+    documentationPromptedByProcedure,
+    setDocumentationPromptedByProcedure,
+  ] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [previewItem, setPreviewItem] = useState(null);
@@ -1255,10 +2962,13 @@ export default function NormedInstrumentChecklistApp() {
   const [quickToolsModalOpen, setQuickToolsModalOpen] = useState(false);
   const [dashboardCollapsed, setDashboardCollapsed] = useState(false);
   const [checklistMenuOpen, setChecklistMenuOpen] = useState(false);
-  const [operationControlModalOpen, setOperationControlModalOpen] = useState(false);
+  const [operationControlModalOpen, setOperationControlModalOpen] =
+    useState(false);
   const [checklistViewMode, setChecklistViewMode] = useState("group");
   const [activeGroupByProcedure, setActiveGroupByProcedure] = useState({});
-  const [collapsedGroupsByProcedure, setCollapsedGroupsByProcedure] = useState({});
+  const [collapsedGroupsByProcedure, setCollapsedGroupsByProcedure] = useState(
+    {},
+  );
   const [wizardStageByProcedure, setWizardStageByProcedure] = useState({});
   const [profilesByProcedure, setProfilesByProcedure] = useState({});
   const [syncingProfiles, setSyncingProfiles] = useState(false);
@@ -1278,39 +2988,45 @@ export default function NormedInstrumentChecklistApp() {
   });
   const [submissionEditorOpen, setSubmissionEditorOpen] = useState(false);
   const [submissionEditorSaving, setSubmissionEditorSaving] = useState(false);
-  const [submissionEditor, setSubmissionEditor] = useState(buildEmptySubmissionEditor());
+  const [submissionEditor, setSubmissionEditor] = useState(
+    buildEmptySubmissionEditor(),
+  );
   const [submissionOfficePhoto, setSubmissionOfficePhoto] = useState(null);
   const [submissionOfficePreview, setSubmissionOfficePreview] = useState("");
-  const [submissionOfficePhotoName, setSubmissionOfficePhotoName] = useState("");
+  const [submissionOfficePhotoName, setSubmissionOfficePhotoName] =
+    useState("");
   const [submissionHospitalPhoto, setSubmissionHospitalPhoto] = useState(null);
-  const [submissionHospitalPreview, setSubmissionHospitalPreview] = useState("");
-  const [submissionHospitalPhotoName, setSubmissionHospitalPhotoName] = useState("");
+  const [submissionHospitalPreview, setSubmissionHospitalPreview] =
+    useState("");
+  const [submissionHospitalPhotoName, setSubmissionHospitalPhotoName] =
+    useState("");
 
-  const selected = CHECKLISTS.find((item) => item.key === procedureKey) || CHECKLISTS[0];
+  const selected =
+    CHECKLISTS.find((item) => item.key === procedureKey) || CHECKLISTS[0];
   const baseSelectedItems = useMemo(
     () =>
       getProcedureItems(selected, {
         bipolarIncludeStem,
         thrIncludeStem,
       }),
-    [selected, bipolarIncludeStem, thrIncludeStem]
+    [selected, bipolarIncludeStem, thrIncludeStem],
   );
   const selectedCustomItems = useMemo(
     () => customInstrumentsByProcedure[selected.key] || [],
-    [customInstrumentsByProcedure, selected.key]
+    [customInstrumentsByProcedure, selected.key],
   );
   const selectedItems = useMemo(
     () =>
       mergeProcedureItemsWithProfiles(
         [...baseSelectedItems, ...selectedCustomItems],
         selected.key,
-        profilesByProcedure
+        profilesByProcedure,
       ),
-    [baseSelectedItems, selectedCustomItems, selected.key, profilesByProcedure]
+    [baseSelectedItems, selectedCustomItems, selected.key, profilesByProcedure],
   );
   const selectedProfileCount = useMemo(
     () => Object.keys(profilesByProcedure?.[selected.key] || {}).length,
-    [profilesByProcedure, selected.key]
+    [profilesByProcedure, selected.key],
   );
 
   useEffect(() => {
@@ -1341,19 +3057,33 @@ export default function NormedInstrumentChecklistApp() {
       if (typeof parsed.superCompactMobile === "boolean") {
         setSuperCompactMobile(parsed.superCompactMobile);
       }
-      if (parsed.checklistViewMode === "group" || parsed.checklistViewMode === "all") {
+      if (
+        parsed.checklistViewMode === "group" ||
+        parsed.checklistViewMode === "all"
+      ) {
         setChecklistViewMode(parsed.checklistViewMode);
       }
-      if (parsed.collapsedGroupsByProcedure && typeof parsed.collapsedGroupsByProcedure === "object") {
+      if (
+        parsed.collapsedGroupsByProcedure &&
+        typeof parsed.collapsedGroupsByProcedure === "object"
+      ) {
         setCollapsedGroupsByProcedure(parsed.collapsedGroupsByProcedure);
       }
-      if (parsed.activeGroupByProcedure && typeof parsed.activeGroupByProcedure === "object") {
+      if (
+        parsed.activeGroupByProcedure &&
+        typeof parsed.activeGroupByProcedure === "object"
+      ) {
         setActiveGroupByProcedure(parsed.activeGroupByProcedure);
       }
-      if (parsed.wizardStageByProcedure && typeof parsed.wizardStageByProcedure === "object") {
+      if (
+        parsed.wizardStageByProcedure &&
+        typeof parsed.wizardStageByProcedure === "object"
+      ) {
         setWizardStageByProcedure(parsed.wizardStageByProcedure);
       }
-      setCustomInstrumentsByProcedure(sanitizeCustomInstruments(parsed.customInstrumentsByProcedure));
+      setCustomInstrumentsByProcedure(
+        sanitizeCustomInstruments(parsed.customInstrumentsByProcedure),
+      );
     } catch (error) {
       console.error("Gagal membaca localStorage", error);
       window.localStorage.removeItem(STORAGE_KEY);
@@ -1385,7 +3115,7 @@ export default function NormedInstrumentChecklistApp() {
         wizardStageByProcedure,
         collapsedGroupsByProcedure,
         customInstrumentsByProcedure,
-      })
+      }),
     );
   }, [
     checked,
@@ -1411,7 +3141,12 @@ export default function NormedInstrumentChecklistApp() {
     const search = query.trim().toLowerCase();
     const bySearch = search
       ? selectedItems.filter((item) => {
-          return [item.catalogNo, item.name, item.category || "", item.note || ""]
+          return [
+            item.catalogNo,
+            item.name,
+            item.category || "",
+            item.note || "",
+          ]
             .join(" ")
             .toLowerCase()
             .includes(search);
@@ -1430,24 +3165,28 @@ export default function NormedInstrumentChecklistApp() {
       groupedMap.get(groupKey).push(item);
     });
 
-    const groupedRows = Array.from(groupedMap.entries()).map(([groupName, items]) => {
-      const completedInGroup = items.reduce(
-        (total, item) => total + (checked[item.id] ? 1 : 0),
-        0
-      );
-      return {
-        groupName,
-        items,
-        total: items.length,
-        completed: completedInGroup,
-      };
-    });
+    const groupedRows = Array.from(groupedMap.entries()).map(
+      ([groupName, items]) => {
+        const completedInGroup = items.reduce(
+          (total, item) => total + (checked[item.id] ? 1 : 0),
+          0,
+        );
+        return {
+          groupName,
+          items,
+          total: items.length,
+          completed: completedInGroup,
+        };
+      },
+    );
 
     groupedRows.sort((a, b) => {
       const priorityA = getGroupPriority(a.groupName, selected.key);
       const priorityB = getGroupPriority(b.groupName, selected.key);
       if (priorityA !== priorityB) return priorityA - priorityB;
-      return a.groupName.localeCompare(b.groupName, "id", { sensitivity: "base" });
+      return a.groupName.localeCompare(b.groupName, "id", {
+        sensitivity: "base",
+      });
     });
 
     return groupedRows;
@@ -1459,7 +3198,7 @@ export default function NormedInstrumentChecklistApp() {
 
   const procedureStages = useMemo(
     () => resolveProcedureStages(selected.key),
-    [selected.key]
+    [selected.key],
   );
   const activeWizardStageIndex = useMemo(() => {
     const raw = Number(wizardStageByProcedure[selected.key] ?? 0);
@@ -1469,14 +3208,14 @@ export default function NormedInstrumentChecklistApp() {
   }, [procedureStages, selected.key, wizardStageByProcedure]);
   const activeWizardStage = useMemo(
     () => procedureStages[activeWizardStageIndex] || null,
-    [activeWizardStageIndex, procedureStages]
+    [activeWizardStageIndex, procedureStages],
   );
 
   const stageScopedGroupedItems = useMemo(() => {
     if (checklistViewMode !== "group") return groupedFilteredItems;
     if (!activeWizardStage) return groupedFilteredItems;
     const matched = groupedFilteredItems.filter((group) =>
-      matchesGroupStage(group.groupName, activeWizardStage)
+      matchesGroupStage(group.groupName, activeWizardStage),
     );
     return matched.length ? matched : groupedFilteredItems;
   }, [activeWizardStage, checklistViewMode, groupedFilteredItems]);
@@ -1484,8 +3223,15 @@ export default function NormedInstrumentChecklistApp() {
   const displayedGroupedItems = useMemo(() => {
     if (checklistViewMode !== "group") return groupedFilteredItems;
     if (activeGroupName === "all") return stageScopedGroupedItems;
-    return stageScopedGroupedItems.filter((group) => group.groupName === activeGroupName);
-  }, [activeGroupName, checklistViewMode, groupedFilteredItems, stageScopedGroupedItems]);
+    return stageScopedGroupedItems.filter(
+      (group) => group.groupName === activeGroupName,
+    );
+  }, [
+    activeGroupName,
+    checklistViewMode,
+    groupedFilteredItems,
+    stageScopedGroupedItems,
+  ]);
 
   const visibleItems = useMemo(() => {
     if (checklistViewMode !== "group") return filteredItems;
@@ -1493,13 +3239,20 @@ export default function NormedInstrumentChecklistApp() {
       return stageScopedGroupedItems.flatMap((group) => group.items);
     }
     const selectedGroup = stageScopedGroupedItems.find(
-      (group) => group.groupName === activeGroupName
+      (group) => group.groupName === activeGroupName,
     );
     return selectedGroup ? selectedGroup.items : [];
-  }, [activeGroupName, checklistViewMode, filteredItems, stageScopedGroupedItems]);
+  }, [
+    activeGroupName,
+    checklistViewMode,
+    filteredItems,
+    stageScopedGroupedItems,
+  ]);
 
   const firstIncompleteGroupName = useMemo(() => {
-    const row = stageScopedGroupedItems.find((group) => group.completed < group.total);
+    const row = stageScopedGroupedItems.find(
+      (group) => group.completed < group.total,
+    );
     return row?.groupName || "";
   }, [stageScopedGroupedItems]);
 
@@ -1521,14 +3274,17 @@ export default function NormedInstrumentChecklistApp() {
         [selected.key]: nextValue,
       }));
     },
-    [selected.key]
+    [selected.key],
   );
 
   const setWizardStageIndex = useCallback(
     (nextIndex) => {
       const safeIndex = Math.max(
         0,
-        Math.min(procedureStages.length - 1, Math.floor(Number(nextIndex) || 0))
+        Math.min(
+          procedureStages.length - 1,
+          Math.floor(Number(nextIndex) || 0),
+        ),
       );
       setWizardStageByProcedure((prev) => ({
         ...prev,
@@ -1539,7 +3295,7 @@ export default function NormedInstrumentChecklistApp() {
         [selected.key]: "all",
       }));
     },
-    [procedureStages.length, selected.key]
+    [procedureStages.length, selected.key],
   );
 
   const goWizardPrev = useCallback(() => {
@@ -1574,8 +3330,12 @@ export default function NormedInstrumentChecklistApp() {
     previewIndex >= 0 && previewIndex < previewSourceItems.length - 1;
 
   const visibleCompletedCount = useMemo(
-    () => visibleItems.reduce((total, item) => total + (checked[item.id] ? 1 : 0), 0),
-    [checked, visibleItems]
+    () =>
+      visibleItems.reduce(
+        (total, item) => total + (checked[item.id] ? 1 : 0),
+        0,
+      ),
+    [checked, visibleItems],
   );
 
   const total = selectedItems.length;
@@ -1586,50 +3346,59 @@ export default function NormedInstrumentChecklistApp() {
     () => ({
       background: `conic-gradient(#2563eb ${progress}%, #e2e8f0 ${progress}% 100%)`,
     }),
-    [progress]
+    [progress],
   );
   const selectedProcedureTitle = useMemo(() => {
     if (selected.key === "bipolar") {
-      return bipolarIncludeStem ? `${selected.title} + Stem` : `${selected.title} (Bipolar Only)`;
+      return bipolarIncludeStem
+        ? `${selected.title} + Stem`
+        : `${selected.title} (Bipolar Only)`;
     }
     if (selected.key === "thr") {
-      return thrIncludeStem ? `${selected.title} + Stem` : `${selected.title} (Acetabular Only)`;
+      return thrIncludeStem
+        ? `${selected.title} + Stem`
+        : `${selected.title} (Acetabular Only)`;
     }
     return selected.title;
   }, [selected.key, selected.title, bipolarIncludeStem, thrIncludeStem]);
 
   const criticalItems = useMemo(
     () => selectedItems.filter((item) => isCriticalInstrument(item)),
-    [selectedItems]
+    [selectedItems],
   );
   const checkedCriticalItems = useMemo(
     () => criticalItems.filter((item) => Boolean(checked[item.id])),
-    [checked, criticalItems]
+    [checked, criticalItems],
   );
   const hasOfficeDocumentation = Boolean(officeDocumentationPreview);
   const hasHospitalDocumentation = Boolean(hospitalDocumentationPreview);
-  const hasBothDocumentationPhotos = hasOfficeDocumentation && hasHospitalDocumentation;
+  const hasBothDocumentationPhotos =
+    hasOfficeDocumentation && hasHospitalDocumentation;
   const allChecklistCompleted = total > 0 && completed === total;
   const mandatoryPhotoPending =
     checkedCriticalItems.length > 0 && !hasBothDocumentationPhotos;
   const checklistCompletedPhotoPending =
     allChecklistCompleted && !hasBothDocumentationPhotos;
   const documentationPromptedForSelectedProcedure = Boolean(
-    documentationPromptedByProcedure[selected.key]
+    documentationPromptedByProcedure[selected.key],
   );
   const isOperationInfoComplete =
     Boolean(operatorName.trim()) && Boolean(hospitalName.trim());
   const stageItems = useMemo(() => {
     if (!activeWizardStage) return selectedItems;
     const matched = selectedItems.filter((item) =>
-      matchesGroupStage(item.category || "Lainnya", activeWizardStage)
+      matchesGroupStage(item.category || "Lainnya", activeWizardStage),
     );
     return matched.length ? matched : selectedItems;
   }, [activeWizardStage, selectedItems]);
   const stageTotalItems = stageItems.length;
   const stageCompletedItems = useMemo(
-    () => stageItems.reduce((totalCount, item) => totalCount + (checked[item.id] ? 1 : 0), 0),
-    [checked, stageItems]
+    () =>
+      stageItems.reduce(
+        (totalCount, item) => totalCount + (checked[item.id] ? 1 : 0),
+        0,
+      ),
+    [checked, stageItems],
   );
   const stageProgressPercent = stageTotalItems
     ? Math.round((stageCompletedItems / stageTotalItems) * 100)
@@ -1664,12 +3433,17 @@ export default function NormedInstrumentChecklistApp() {
     if (checklistViewMode !== "group") return;
     if (activeGroupName === "all") return;
     const exists = stageScopedGroupedItems.some(
-      (group) => group.groupName === activeGroupName
+      (group) => group.groupName === activeGroupName,
     );
     if (!exists) {
       setActiveGroupFilter("all");
     }
-  }, [activeGroupName, checklistViewMode, setActiveGroupFilter, stageScopedGroupedItems]);
+  }, [
+    activeGroupName,
+    checklistViewMode,
+    setActiveGroupFilter,
+    stageScopedGroupedItems,
+  ]);
 
   useEffect(() => {
     if (!procedureStages.length) return;
@@ -1772,10 +3546,13 @@ export default function NormedInstrumentChecklistApp() {
           sheetName: INSTRUMENT_PROFILE_SHEET_NAME,
           table: INSTRUMENT_PROFILE_SHEET_NAME,
         });
-        const getResponse = await fetch(`/api/google-sheet-images?${query.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
+        const getResponse = await fetch(
+          `/api/google-sheet-images?${query.toString()}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
         const getResult = await getResponse.json();
         const remoteGet = getResult?.remote || getResult || {};
         const remoteGetStatus = String(remoteGet?.status || "").toLowerCase();
@@ -1798,17 +3575,19 @@ export default function NormedInstrumentChecklistApp() {
       const normalizedProfiles = normalizeInstrumentProfileRows(rows);
       const normalizedCount = Object.values(normalizedProfiles).reduce(
         (total, byCatalog) => total + Object.keys(byCatalog || {}).length,
-        0
+        0,
       );
       setProfilesByProcedure(normalizedProfiles);
       setProfilesLoadedAt(new Date().toISOString());
       if (!silent) {
         if (rows.length > 0 && normalizedCount === 0) {
           setMessage(
-            "Data dari endpoint ditemukan, tapi format belum cocok. Pastikan sheet InstrumentProfiles punya kolom: procedureKey, catalogNo, name, qty/piece, category, imageSrc/driveId."
+            "Data dari endpoint ditemukan, tapi format belum cocok. Pastikan sheet InstrumentProfiles punya kolom: procedureKey, catalogNo, name, qty/piece, category, imageSrc/driveId.",
           );
         } else {
-          setMessage(`Sinkron foto instrument selesai (${normalizedCount} data).`);
+          setMessage(
+            `Sinkron foto instrument selesai (${normalizedCount} data).`,
+          );
         }
       }
     } catch (error) {
@@ -1854,7 +3633,10 @@ export default function NormedInstrumentChecklistApp() {
 
         if (!response.ok || !result?.ok || !remoteOk) {
           lastError = String(
-            remote?.error || remote?.message || result?.error || `HTTP ${response.status}`
+            remote?.error ||
+              remote?.message ||
+              result?.error ||
+              `HTTP ${response.status}`,
           );
           continue;
         }
@@ -1868,12 +3650,16 @@ export default function NormedInstrumentChecklistApp() {
       }
 
       const normalizedSubmissions = (snapshot.submissions || [])
-        .map((submission, index) => normalizeDashboardSubmissionRow(submission, index))
+        .map((submission, index) =>
+          normalizeDashboardSubmissionRow(submission, index),
+        )
         .filter((submission) => submission.submissionId);
 
       normalizedSubmissions.sort((left, right) => {
-        const rightTime = new Date(right.createdAt || right.operationDate || 0).getTime() || 0;
-        const leftTime = new Date(left.createdAt || left.operationDate || 0).getTime() || 0;
+        const rightTime =
+          new Date(right.createdAt || right.operationDate || 0).getTime() || 0;
+        const leftTime =
+          new Date(left.createdAt || left.operationDate || 0).getTime() || 0;
         return rightTime - leftTime;
       });
 
@@ -1883,20 +3669,26 @@ export default function NormedInstrumentChecklistApp() {
       let totalToday = 0;
 
       normalizedSubmissions.forEach((submission) => {
-        const dateValue = submission.operationDate || submission.createdAt || "";
+        const dateValue =
+          submission.operationDate || submission.createdAt || "";
         if (getTodayKey(dateValue) !== todayKey) return;
         totalToday += 1;
 
         const procedureKey =
           normalizeProcedureKey(submission.procedureKey) ||
           inferProcedureKeyFromText(submission.procedureTitle || "");
-        if (procedureKey && Object.prototype.hasOwnProperty.call(byProcedure, procedureKey)) {
+        if (
+          procedureKey &&
+          Object.prototype.hasOwnProperty.call(byProcedure, procedureKey)
+        ) {
           byProcedure[procedureKey] += 1;
         }
 
         if (
           submission.progress >= 100 ||
-          String(submission.status || "").toLowerCase().includes("lengkap")
+          String(submission.status || "")
+            .toLowerCase()
+            .includes("lengkap")
         ) {
           completedToday += 1;
         }
@@ -2051,14 +3843,14 @@ export default function NormedInstrumentChecklistApp() {
       setHospitalPhotoName("");
       setOperationControlModalOpen(true);
     },
-    [procedureKey]
+    [procedureKey],
   );
 
   const ensureChecklistUnlocked = useCallback(() => {
     if (isOperationInfoComplete) return true;
     setOperationControlModalOpen(true);
     setMessage(
-      "Lengkapi Nama TS/operator dan rumah sakit di Operasi & Kontrol Tambahan sebelum mulai checklist."
+      "Lengkapi Nama TS/operator dan rumah sakit di Operasi & Kontrol Tambahan sebelum mulai checklist.",
     );
     return false;
   }, [isOperationInfoComplete]);
@@ -2138,7 +3930,9 @@ export default function NormedInstrumentChecklistApp() {
 
   function setAllGroupsCollapsed(shouldCollapse) {
     const targetGroups =
-      activeGroupName === "all" ? stageScopedGroupedItems : displayedGroupedItems;
+      activeGroupName === "all"
+        ? stageScopedGroupedItems
+        : displayedGroupedItems;
     setCollapsedGroupsByProcedure((prev) => {
       const byProcedure = { ...(prev[selected.key] || {}) };
       targetGroups.forEach((group) => {
@@ -2234,7 +4028,10 @@ export default function NormedInstrumentChecklistApp() {
     }
 
     const duplicated = selectedItems.some(
-      (item) => String(item.catalogNo || "").trim().toUpperCase() === catalogNo
+      (item) =>
+        String(item.catalogNo || "")
+          .trim()
+          .toUpperCase() === catalogNo,
     );
     if (duplicated) {
       setMessage(`Kode ${catalogNo} sudah ada di checklist ${selected.title}.`);
@@ -2320,7 +4117,10 @@ export default function NormedInstrumentChecklistApp() {
     setHospitalPhotoName("");
   }
 
-  function buildPayload({ officePhotoBase64 = "", hospitalPhotoBase64 = "" } = {}) {
+  function buildPayload({
+    officePhotoBase64 = "",
+    hospitalPhotoBase64 = "",
+  } = {}) {
     return {
       action: "saveChecklist",
       procedureKey: selected.key,
@@ -2336,7 +4136,9 @@ export default function NormedInstrumentChecklistApp() {
       total,
       status: progress === 100 ? "Lengkap" : "Belum Lengkap",
       missingCount: missingItems.length,
-      missingItems: missingItems.map((item) => `${item.catalogNo} - ${item.name}`).join("; "),
+      missingItems: missingItems
+        .map((item) => `${item.catalogNo} - ${item.name}`)
+        .join("; "),
       officePhotoName,
       officePhotoBase64,
       hospitalPhotoName,
@@ -2354,10 +4156,14 @@ export default function NormedInstrumentChecklistApp() {
     };
   }
 
-  function buildImplantUsageData(officePhotoBase64 = "", hospitalPhotoBase64 = "") {
+  function buildImplantUsageData(
+    officePhotoBase64 = "",
+    hospitalPhotoBase64 = "",
+  ) {
     const nowIso = new Date().toISOString();
     const officePhotoMime =
-      (officePhotoBase64 && String(officePhotoBase64).match(/^data:([^;]+);base64,/)?.[1]) ||
+      (officePhotoBase64 &&
+        String(officePhotoBase64).match(/^data:([^;]+);base64,/)?.[1]) ||
       "image/jpeg";
     const hospitalPhotoMime =
       (hospitalPhotoBase64 &&
@@ -2417,7 +4223,8 @@ export default function NormedInstrumentChecklistApp() {
       officeDocumentationUpload: officePhotoBase64
         ? {
             fileName:
-              officePhotoName || `normed-${selected.key}-office-${Date.now()}.jpg`,
+              officePhotoName ||
+              `normed-${selected.key}-office-${Date.now()}.jpg`,
             mimeType: officePhotoMime,
             dataUrl: officePhotoBase64,
           }
@@ -2425,7 +4232,8 @@ export default function NormedInstrumentChecklistApp() {
       hospitalDocumentationUpload: hospitalPhotoBase64
         ? {
             fileName:
-              hospitalPhotoName || `normed-${selected.key}-hospital-${Date.now()}.jpg`,
+              hospitalPhotoName ||
+              `normed-${selected.key}-hospital-${Date.now()}.jpg`,
             mimeType: hospitalPhotoMime,
             dataUrl: hospitalPhotoBase64,
           }
@@ -2461,7 +4269,9 @@ export default function NormedInstrumentChecklistApp() {
     setMessage("");
 
     if (!GOOGLE_SHEET_ENDPOINT) {
-      setMessage("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di file .env.local");
+      setMessage(
+        "NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di file .env.local",
+      );
       return;
     }
 
@@ -2475,7 +4285,7 @@ export default function NormedInstrumentChecklistApp() {
       setMessage(
         checkedCriticalItems.length > 0
           ? `Upload 2 foto dokumentasi (Office & Hospital) wajib karena ada ${checkedCriticalItems.length} item kritikal yang sudah dicentang.`
-          : "Checklist sudah selesai. Upload 2 foto dokumentasi (Office & Hospital) sebelum Simpan ke Sheet."
+          : "Checklist sudah selesai. Upload 2 foto dokumentasi (Office & Hospital) sebelum Simpan ke Sheet.",
       );
       return;
     }
@@ -2520,7 +4330,7 @@ export default function NormedInstrumentChecklistApp() {
           remote?.error ||
             remote?.message ||
             result?.error ||
-            `Gagal menyimpan data (HTTP ${response.status}).`
+            `Gagal menyimpan data (HTTP ${response.status}).`,
         );
       }
 
@@ -2546,7 +4356,9 @@ export default function NormedInstrumentChecklistApp() {
 
     const targetProcedureKey =
       normalizeProcedureKey(submissionRow.procedureKey) ||
-      inferProcedureKeyFromText(submissionRow.procedureTitle || submissionRow.systemName || "") ||
+      inferProcedureKeyFromText(
+        submissionRow.procedureTitle || submissionRow.systemName || "",
+      ) ||
       selected.key;
 
     if (targetProcedureKey && targetProcedureKey !== procedureKey) {
@@ -2578,14 +4390,22 @@ export default function NormedInstrumentChecklistApp() {
     setOfficeDocumentationPhoto(null);
     setHospitalDocumentationPhoto(null);
     setOfficeDocumentationPreview(submissionRow.officeDocumentationUrl || "");
-    setHospitalDocumentationPreview(submissionRow.hospitalDocumentationUrl || "");
-    setOfficePhotoName(submissionRow.officeDocumentationUrl ? "Office (tersimpan)" : "");
-    setHospitalPhotoName(submissionRow.hospitalDocumentationUrl ? "Hospital (tersimpan)" : "");
+    setHospitalDocumentationPreview(
+      submissionRow.hospitalDocumentationUrl || "",
+    );
+    setOfficePhotoName(
+      submissionRow.officeDocumentationUrl ? "Office (tersimpan)" : "",
+    );
+    setHospitalPhotoName(
+      submissionRow.hospitalDocumentationUrl ? "Hospital (tersimpan)" : "",
+    );
     setDocumentationPromptedByProcedure((prev) => ({
       ...prev,
       [targetProcedureKey]: true,
     }));
-    setMessage(`Data submission ${submissionRow.submissionId} berhasil dimuat ke form checklist.`);
+    setMessage(
+      `Data submission ${submissionRow.submissionId} berhasil dimuat ke form checklist.`,
+    );
   }
 
   function openSubmissionEditor(submissionRow) {
@@ -2609,11 +4429,13 @@ export default function NormedInstrumentChecklistApp() {
     });
     setSubmissionOfficePhoto(null);
     setSubmissionOfficePreview(submissionRow.officeDocumentationUrl || "");
-    setSubmissionOfficePhotoName(submissionRow.officeDocumentationUrl ? "Office (tersimpan)" : "");
+    setSubmissionOfficePhotoName(
+      submissionRow.officeDocumentationUrl ? "Office (tersimpan)" : "",
+    );
     setSubmissionHospitalPhoto(null);
     setSubmissionHospitalPreview(submissionRow.hospitalDocumentationUrl || "");
     setSubmissionHospitalPhotoName(
-      submissionRow.hospitalDocumentationUrl ? "Hospital (tersimpan)" : ""
+      submissionRow.hospitalDocumentationUrl ? "Hospital (tersimpan)" : "",
     );
     setSubmissionEditorOpen(true);
   }
@@ -2663,7 +4485,9 @@ export default function NormedInstrumentChecklistApp() {
 
   async function saveSubmissionEditor() {
     if (!GOOGLE_SHEET_ENDPOINT) {
-      setMessage("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di file .env.local");
+      setMessage(
+        "NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi di file .env.local",
+      );
       return;
     }
     if (!submissionEditor.submissionId) {
@@ -2694,7 +4518,8 @@ export default function NormedInstrumentChecklistApp() {
           hospitalName: submissionEditor.hospitalName,
           repAssist: submissionEditor.repAssist,
           systemName: submissionEditor.procedureTitle,
-          invoiceTo: submissionEditor.invoiceTo || submissionEditor.hospitalName,
+          invoiceTo:
+            submissionEditor.invoiceTo || submissionEditor.hospitalName,
           patientName: submissionEditor.patientName,
           medrec: submissionEditor.medrec,
           region: submissionEditor.region || submissionEditor.hospitalName,
@@ -2707,7 +4532,8 @@ export default function NormedInstrumentChecklistApp() {
                   submissionOfficePhotoName ||
                   `office-${submissionEditor.submissionId}-${Date.now()}.jpg`,
                 mimeType:
-                  String(officeDataUrl).match(/^data:([^;]+);base64,/)?.[1] || "image/jpeg",
+                  String(officeDataUrl).match(/^data:([^;]+);base64,/)?.[1] ||
+                  "image/jpeg",
                 dataUrl: officeDataUrl,
               }
             : null,
@@ -2729,8 +4555,9 @@ export default function NormedInstrumentChecklistApp() {
                   submissionOfficePhotoName ||
                   `patient-${submissionEditor.submissionId}-${Date.now()}.jpg`,
                 mimeType:
-                  String(patientStickerDataUrl).match(/^data:([^;]+);base64,/)?.[1] ||
-                  "image/jpeg",
+                  String(patientStickerDataUrl).match(
+                    /^data:([^;]+);base64,/,
+                  )?.[1] || "image/jpeg",
                 dataUrl: patientStickerDataUrl,
               }
             : null,
@@ -2759,7 +4586,7 @@ export default function NormedInstrumentChecklistApp() {
           remote?.error ||
             remote?.message ||
             result?.error ||
-            `Gagal update submission (HTTP ${response.status}).`
+            `Gagal update submission (HTTP ${response.status}).`,
         );
       }
 
@@ -2781,12 +4608,18 @@ export default function NormedInstrumentChecklistApp() {
   const extraInstrumentContent = (
     <>
       <div className="mb-3">
-        <p className="text-sm font-semibold text-slate-800">Instrument Tambahan</p>
+        <p className="text-sm font-semibold text-slate-800">
+          Instrument Tambahan
+        </p>
         <p className="text-xs text-slate-500">
-          Tambahkan instrument di luar tray untuk prosedur aktif ({selected.title}).
+          Tambahkan instrument di luar tray untuk prosedur aktif (
+          {selected.title}).
         </p>
       </div>
-      <form onSubmit={addExtraInstrument} className="grid gap-3 md:grid-cols-[160px_1fr_120px_130px]">
+      <form
+        onSubmit={addExtraInstrument}
+        className="grid gap-3 md:grid-cols-[160px_1fr_120px_130px]"
+      >
         <FloatingInputField
           value={extraCatalogNo}
           onChange={(event) => setExtraCatalogNo(event.target.value)}
@@ -2841,7 +4674,9 @@ export default function NormedInstrumentChecklistApp() {
           ))}
         </div>
       ) : (
-        <p className="mt-3 text-xs text-slate-500">Belum ada instrument tambahan.</p>
+        <p className="mt-3 text-xs text-slate-500">
+          Belum ada instrument tambahan.
+        </p>
       )}
     </>
   );
@@ -2854,7 +4689,7 @@ export default function NormedInstrumentChecklistApp() {
         layout
         className={`w-full px-4 py-3 text-left transition ${
           isChecked ? "bg-emerald-50/70" : "hover:bg-slate-50"
-        } ${superCompactMobile ? "md:px-4 px-3 py-2" : ""}`}
+        } ${superCompactMobile ? "px-3 py-2 md:px-4" : ""}`}
       >
         <div
           className={`flex items-start justify-between md:hidden ${
@@ -2897,14 +4732,18 @@ export default function NormedInstrumentChecklistApp() {
             <div className="min-w-0">
               <p
                 className={`inline-flex rounded-md bg-slate-100 font-semibold text-slate-700 ${
-                  superCompactMobile ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-[11px]"
+                  superCompactMobile
+                    ? "px-1.5 py-0.5 text-[10px]"
+                    : "px-2 py-1 text-[11px]"
                 }`}
               >
                 {item.catalogNo}
               </p>
               <p
-                className={`mt-1 font-medium leading-snug text-slate-900 ${
-                  superCompactMobile ? "line-clamp-1 text-[12px]" : "line-clamp-2 text-sm"
+                className={`mt-1 leading-snug font-medium text-slate-900 ${
+                  superCompactMobile
+                    ? "line-clamp-1 text-[12px]"
+                    : "line-clamp-2 text-sm"
                 }`}
               >
                 {item.name}
@@ -2919,7 +4758,9 @@ export default function NormedInstrumentChecklistApp() {
                   Kritikal · Wajib Foto
                 </p>
               ) : null}
-              <p className={`${superCompactMobile ? "mt-0.5 text-[11px]" : "mt-1 text-xs"} text-slate-500`}>
+              <p
+                className={`${superCompactMobile ? "mt-0.5 text-[11px]" : "mt-1 text-xs"} text-slate-500`}
+              >
                 Piece: {item.qty}
               </p>
             </div>
@@ -2967,9 +4808,13 @@ export default function NormedInstrumentChecklistApp() {
               </div>
             )}
           </button>
-          <p className="text-sm font-semibold text-slate-700">{item.catalogNo}</p>
+          <p className="text-sm font-semibold text-slate-700">
+            {item.catalogNo}
+          </p>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-slate-900">{item.name}</p>
+            <p className="truncate text-sm font-medium text-slate-900">
+              {item.name}
+            </p>
             {item.isCustom ? (
               <p className="mt-1 inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
                 Tambahan
@@ -3011,7 +4856,9 @@ export default function NormedInstrumentChecklistApp() {
     <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm md:p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Wizard</p>
+          <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+            Wizard
+          </p>
           <h3 className="truncate text-base font-bold text-slate-900">
             {selected.key.toUpperCase()} · {activeWizardStage?.label || "Tahap"}
           </h3>
@@ -3125,7 +4972,7 @@ export default function NormedInstrumentChecklistApp() {
             </FloatingSelectField>
             <ChevronDown
               size={18}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
+              className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-slate-500"
             />
           </div>
 
@@ -3141,7 +4988,9 @@ export default function NormedInstrumentChecklistApp() {
         </div>
       ) : null}
 
-      <div className={`mt-2 grid gap-2 ${checklistViewMode === "group" ? "md:grid-cols-2" : ""}`}>
+      <div
+        className={`mt-2 grid gap-2 ${checklistViewMode === "group" ? "md:grid-cols-2" : ""}`}
+      >
         <button
           type="button"
           onClick={checkAllVisibleItems}
@@ -3186,16 +5035,24 @@ export default function NormedInstrumentChecklistApp() {
       ) : null}
 
       <p className="mt-3 text-sm text-slate-600">
-        Tercentang <span className="font-semibold text-slate-900">{visibleCompletedCount}/{visibleItems.length}</span>{" "}
+        Tercentang{" "}
+        <span className="font-semibold text-slate-900">
+          {visibleCompletedCount}/{visibleItems.length}
+        </span>{" "}
         item terlihat
       </p>
       <p className="mt-1 text-xs text-slate-500">
         Item kritikal tercentang:{" "}
-        <span className="font-semibold text-rose-700">{checkedCriticalItems.length}</span>
+        <span className="font-semibold text-rose-700">
+          {checkedCriticalItems.length}
+        </span>
       </p>
       <div className="mt-3 h-px bg-slate-200" />
       <p className="mt-3 text-sm font-medium text-slate-700">
-        Total: <span className="font-bold text-slate-900">{visibleItems.length} Instrument</span>
+        Total:{" "}
+        <span className="font-bold text-slate-900">
+          {visibleItems.length} Instrument
+        </span>
       </p>
     </div>
   );
@@ -3213,21 +5070,29 @@ export default function NormedInstrumentChecklistApp() {
               <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 <ClipboardCheck size={14} /> Normed Instrument Checklist
               </div>
-              <h1 className="text-xl font-bold text-slate-900 md:text-5xl md:leading-tight">Checklist Elektronik Instrument Operasi</h1>
+              <h1 className="text-xl font-bold text-slate-900 md:text-5xl md:leading-tight">
+                Checklist Elektronik Instrument Operasi
+              </h1>
               <p className="mt-2 hidden max-w-3xl text-sm text-slate-600 md:block">
-                Checklist TKR, Bipolar, dan THR dengan dokumentasi foto serta integrasi Google Sheet.
+                Checklist TKR, Bipolar, dan THR dengan dokumentasi foto serta
+                integrasi Google Sheet.
               </p>
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="relative h-20 w-20 rounded-full p-2 md:h-24 md:w-24" style={progressRingStyle}>
+              <div
+                className="relative h-20 w-20 rounded-full p-2 md:h-24 md:w-24"
+                style={progressRingStyle}
+              >
                 <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-sm font-bold text-slate-700 md:text-base">
                   {progress}%
                 </div>
               </div>
               <div className="min-w-[135px] rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-center shadow-sm">
                 <p className="text-xs font-semibold text-slate-500">Progress</p>
-                <p className="text-3xl font-extrabold text-slate-900">{progress}%</p>
+                <p className="text-3xl font-extrabold text-slate-900">
+                  {progress}%
+                </p>
                 <p className="text-[11px] text-slate-500">
                   {completed} dari {total} item selesai
                 </p>
@@ -3237,7 +5102,9 @@ export default function NormedInstrumentChecklistApp() {
         </motion.div>
 
         <section className="md:hidden">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pilih Prosedur</div>
+          <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            Pilih Prosedur
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {CHECKLISTS.map((procedure) => {
               const active = procedure.key === procedureKey;
@@ -3246,9 +5113,15 @@ export default function NormedInstrumentChecklistApp() {
                 bipolarIncludeStem,
                 thrIncludeStem,
               });
-              const customProcedureItems = customInstrumentsByProcedure[procedure.key] || [];
-              const procedureItems = [...baseProcedureItems, ...customProcedureItems];
-              const done = procedureItems.filter((item) => checked[item.id]).length;
+              const customProcedureItems =
+                customInstrumentsByProcedure[procedure.key] || [];
+              const procedureItems = [
+                ...baseProcedureItems,
+                ...customProcedureItems,
+              ];
+              const done = procedureItems.filter(
+                (item) => checked[item.id],
+              ).length;
               return (
                 <button
                   key={procedure.key}
@@ -3259,7 +5132,9 @@ export default function NormedInstrumentChecklistApp() {
                       : `${theme.inactive} text-slate-700`
                   }`}
                 >
-                  <p className="text-xs font-semibold">{procedure.key.toUpperCase()}</p>
+                  <p className="text-xs font-semibold">
+                    {procedure.key.toUpperCase()}
+                  </p>
                   <p className="text-[11px] text-slate-500">
                     {done}/{procedureItems.length}
                   </p>
@@ -3277,10 +5152,18 @@ export default function NormedInstrumentChecklistApp() {
               bipolarIncludeStem,
               thrIncludeStem,
             });
-            const customProcedureItems = customInstrumentsByProcedure[procedure.key] || [];
-            const procedureItems = [...baseProcedureItems, ...customProcedureItems];
-            const done = procedureItems.filter((item) => checked[item.id]).length;
-            const pct = procedureItems.length ? Math.round((done / procedureItems.length) * 100) : 0;
+            const customProcedureItems =
+              customInstrumentsByProcedure[procedure.key] || [];
+            const procedureItems = [
+              ...baseProcedureItems,
+              ...customProcedureItems,
+            ];
+            const done = procedureItems.filter(
+              (item) => checked[item.id],
+            ).length;
+            const pct = procedureItems.length
+              ? Math.round((done / procedureItems.length) * 100)
+              : 0;
 
             return (
               <button
@@ -3291,19 +5174,32 @@ export default function NormedInstrumentChecklistApp() {
                 }`}
               >
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className={`inline-flex h-11 w-11 items-center justify-center rounded-full ${theme.iconBg}`}>
+                  <span
+                    className={`inline-flex h-11 w-11 items-center justify-center rounded-full ${theme.iconBg}`}
+                  >
                     <Stethoscope size={22} />
                   </span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
-                    <div className={`h-full rounded-full bg-gradient-to-r ${theme.bar}`} style={{ width: `${pct}%` }} />
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${theme.bar}`}
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${theme.badge}`}>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${theme.badge}`}
+                  >
                     {pct}%
                   </span>
                 </div>
-                <h2 className="line-clamp-1 text-2xl font-bold text-slate-900">{procedure.title}</h2>
-                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{procedure.subtitle}</p>
-                <p className="mt-2 text-xl font-semibold text-slate-800">{done}/{procedureItems.length} Item</p>
+                <h2 className="line-clamp-1 text-2xl font-bold text-slate-900">
+                  {procedure.title}
+                </h2>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-600">
+                  {procedure.subtitle}
+                </p>
+                <p className="mt-2 text-xl font-semibold text-slate-800">
+                  {done}/{procedureItems.length} Item
+                </p>
               </button>
             );
           })}
@@ -3312,7 +5208,7 @@ export default function NormedInstrumentChecklistApp() {
         <section className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm xl:hidden">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <p className="inline-flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                 <CalendarDays size={14} /> Dashboard Harian
               </p>
               <p className="text-sm font-semibold text-slate-900">
@@ -3335,53 +5231,86 @@ export default function NormedInstrumentChecklistApp() {
           <div className="mt-3 space-y-2 md:hidden">
             <div className="grid grid-cols-2 gap-2">
               <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[10px] font-semibold uppercase text-slate-500">Total</p>
-                <p className="text-base font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase">
+                  Total
+                </p>
+                <p className="text-base font-bold text-slate-900">
+                  {dailyDashboard.totalToday}
+                </p>
               </article>
               <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                <p className="text-[10px] font-semibold uppercase text-emerald-700">Lengkap</p>
-                <p className="text-base font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+                <p className="text-[10px] font-semibold text-emerald-700 uppercase">
+                  Lengkap
+                </p>
+                <p className="text-base font-bold text-emerald-900">
+                  {dailyDashboard.completedToday}
+                </p>
               </article>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-blue-700">TKR: {dailyDashboard.byProcedure.tkr}</span>
-                <span className="font-semibold text-violet-700">Bipolar: {dailyDashboard.byProcedure.bipolar}</span>
+                <span className="font-semibold text-blue-700">
+                  TKR: {dailyDashboard.byProcedure.tkr}
+                </span>
+                <span className="font-semibold text-violet-700">
+                  Bipolar: {dailyDashboard.byProcedure.bipolar}
+                </span>
                 <span className="font-semibold text-teal-700">
-                  THR/Stem: {dailyDashboard.byProcedure.thr + dailyDashboard.byProcedure.stem}
+                  THR/Stem:{" "}
+                  {dailyDashboard.byProcedure.thr +
+                    dailyDashboard.byProcedure.stem}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 hidden gap-2 sm:grid-cols-2 xl:grid-cols-5 md:grid">
+          <div className="mt-3 hidden gap-2 sm:grid-cols-2 md:grid xl:grid-cols-5">
             <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase text-slate-500">Total Hari Ini</p>
-              <p className="text-lg font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                Total Hari Ini
+              </p>
+              <p className="text-lg font-bold text-slate-900">
+                {dailyDashboard.totalToday}
+              </p>
             </article>
             <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase text-emerald-700">Lengkap</p>
-              <p className="text-lg font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+              <p className="text-[11px] font-semibold text-emerald-700 uppercase">
+                Lengkap
+              </p>
+              <p className="text-lg font-bold text-emerald-900">
+                {dailyDashboard.completedToday}
+              </p>
             </article>
             <article className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase text-blue-700">TKR</p>
-              <p className="text-lg font-bold text-blue-900">{dailyDashboard.byProcedure.tkr}</p>
+              <p className="text-[11px] font-semibold text-blue-700 uppercase">
+                TKR
+              </p>
+              <p className="text-lg font-bold text-blue-900">
+                {dailyDashboard.byProcedure.tkr}
+              </p>
             </article>
             <article className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase text-violet-700">Bipolar</p>
-              <p className="text-lg font-bold text-violet-900">{dailyDashboard.byProcedure.bipolar}</p>
+              <p className="text-[11px] font-semibold text-violet-700 uppercase">
+                Bipolar
+              </p>
+              <p className="text-lg font-bold text-violet-900">
+                {dailyDashboard.byProcedure.bipolar}
+              </p>
             </article>
             <article className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase text-teal-700">THR / Stem</p>
+              <p className="text-[11px] font-semibold text-teal-700 uppercase">
+                THR / Stem
+              </p>
               <p className="text-lg font-bold text-teal-900">
-                {dailyDashboard.byProcedure.thr + dailyDashboard.byProcedure.stem}
+                {dailyDashboard.byProcedure.thr +
+                  dailyDashboard.byProcedure.stem}
               </p>
             </article>
           </div>
 
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <p className="text-xs font-semibold tracking-wide text-slate-600 uppercase">
                 Submission Tersimpan
               </p>
               <p className="text-[11px] text-slate-500">
@@ -3390,45 +5319,50 @@ export default function NormedInstrumentChecklistApp() {
             </div>
             {dailyDashboard.submissions.length ? (
               <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
-                {dailyDashboard.submissions.map((submission, submissionIndex) => (
-                  <div
-                    key={`${submission.submissionId || "submission"}-${submission.createdAt || "no-date"}-${submissionIndex}`}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-700">
-                          {submission.submissionId}
-                        </p>
-                        <p className="truncate text-sm font-semibold text-slate-900">
-                          {submission.procedureTitle || submission.procedureKey?.toUpperCase() || "-"}
-                        </p>
-                        <p className="truncate text-xs text-slate-500">
-                          {submission.hospitalName || "-"} · {submission.repAssist || "-"}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
-                          {submission.progress}%
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => loadSavedSubmission(submission)}
-                          className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Muat
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openSubmissionEditor(submission)}
-                          className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
-                        >
-                          Edit
-                        </button>
+                {dailyDashboard.submissions.map(
+                  (submission, submissionIndex) => (
+                    <div
+                      key={`${submission.submissionId || "submission"}-${submission.createdAt || "no-date"}-${submissionIndex}`}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-700">
+                            {submission.submissionId}
+                          </p>
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {submission.procedureTitle ||
+                              submission.procedureKey?.toUpperCase() ||
+                              "-"}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {submission.hospitalName || "-"} ·{" "}
+                            {submission.repAssist || "-"}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                            {submission.progress}%
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => loadSavedSubmission(submission)}
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Muat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openSubmissionEditor(submission)}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                          >
+                            Edit
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             ) : (
               <p className="mt-2 text-xs text-slate-500">
@@ -3445,9 +5379,12 @@ export default function NormedInstrumentChecklistApp() {
                 <Stethoscope size={18} />
               </span>
               <div>
-                <h3 className="text-xl font-bold text-slate-900 md:text-2xl">Operasi &amp; Kontrol Tambahan</h3>
+                <h3 className="text-xl font-bold text-slate-900 md:text-2xl">
+                  Operasi &amp; Kontrol Tambahan
+                </h3>
                 <p className="mt-1 text-sm text-slate-600">
-                  Mode tray, instrumen tambahan, dan info operasi dikelola di modal agar area checklist tetap rapi.
+                  Mode tray, instrumen tambahan, dan info operasi dikelola di
+                  modal agar area checklist tetap rapi.
                 </p>
               </div>
             </div>
@@ -3459,7 +5396,9 @@ export default function NormedInstrumentChecklistApp() {
                     : "border-amber-200 bg-amber-100/80 text-amber-800"
                 }`}
               >
-                {isOperationInfoComplete ? "Data wajib lengkap" : "Lengkapi data wajib dulu"}
+                {isOperationInfoComplete
+                  ? "Data wajib lengkap"
+                  : "Lengkapi data wajib dulu"}
               </span>
               <button
                 type="button"
@@ -3472,11 +5411,17 @@ export default function NormedInstrumentChecklistApp() {
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase text-slate-500">Prosedur Aktif</p>
-              <p className="text-sm font-bold text-slate-900">{selected.key.toUpperCase()}</p>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                Prosedur Aktif
+              </p>
+              <p className="text-sm font-bold text-slate-900">
+                {selected.key.toUpperCase()}
+              </p>
             </article>
             <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase text-slate-500">Mode Tray</p>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                Mode Tray
+              </p>
               <p className="text-sm font-bold text-slate-900">
                 {selected.key === "bipolar"
                   ? bipolarIncludeStem
@@ -3490,12 +5435,20 @@ export default function NormedInstrumentChecklistApp() {
               </p>
             </article>
             <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase text-slate-500">Operator</p>
-              <p className="truncate text-sm font-bold text-slate-900">{operatorName || "-"}</p>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                Operator
+              </p>
+              <p className="truncate text-sm font-bold text-slate-900">
+                {operatorName || "-"}
+              </p>
             </article>
             <article className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase text-slate-500">Rumah Sakit</p>
-              <p className="truncate text-sm font-bold text-slate-900">{hospitalName || "-"}</p>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                Rumah Sakit
+              </p>
+              <p className="truncate text-sm font-bold text-slate-900">
+                {hospitalName || "-"}
+              </p>
             </article>
           </div>
         </section>
@@ -3504,7 +5457,8 @@ export default function NormedInstrumentChecklistApp() {
           <section className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold">
-                Lengkapi Nama TS/operator dan Rumah Sakit dulu sebelum checklist.
+                Lengkapi Nama TS/operator dan Rumah Sakit dulu sebelum
+                checklist.
               </p>
               <button
                 type="button"
@@ -3529,404 +5483,448 @@ export default function NormedInstrumentChecklistApp() {
               isOperationInfoComplete ? "" : "pointer-events-none opacity-60"
             }`}
           >
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h2 className="text-xl font-bold md:text-2xl">{selected.title}</h2>
-              <p className="mt-1 hidden max-w-3xl text-sm text-slate-500 md:block">{selected.description}</p>
-            </div>
-            <div className="hidden flex-wrap gap-2 md:flex">
-              <button
-                onClick={resetSelectedProcedure}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50"
-              >
-                <RotateCcw size={16} /> Reset
-              </button>
-              <button
-                onClick={exportJson}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50"
-              >
-                <Download size={16} /> Export JSON
-              </button>
-              <button
-                onClick={submitToGoogleSheet}
-                disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitting ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                Simpan ke Sheet
-              </button>
-              <a
-                href="/ceklist-instrument-normed/admin"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50"
-              >
-                <ImageIcon size={16} />
-                Manager Foto
-              </a>
-            </div>
-          </div>
-
-          <div className="mt-3 grid gap-2 md:hidden">
-            <button
-              onClick={submitToGoogleSheet}
-              disabled={submitting}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-              Simpan ke Sheet
-            </button>
-            <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Aksi Lainnya
-                <ChevronDown size={14} className="text-slate-500" />
-              </summary>
-              <div className="mt-2 grid gap-2">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-xl font-bold md:text-2xl">
+                  {selected.title}
+                </h2>
+                <p className="mt-1 hidden max-w-3xl text-sm text-slate-500 md:block">
+                  {selected.description}
+                </p>
+              </div>
+              <div className="hidden flex-wrap gap-2 md:flex">
                 <button
                   onClick={resetSelectedProcedure}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50"
                 >
-                  <RotateCcw size={14} /> Reset
+                  <RotateCcw size={16} /> Reset
                 </button>
                 <button
                   onClick={exportJson}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50"
                 >
-                  <Download size={14} /> Export JSON
+                  <Download size={16} /> Export JSON
+                </button>
+                <button
+                  onClick={submitToGoogleSheet}
+                  disabled={submitting}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  Simpan ke Sheet
                 </button>
                 <a
                   href="/ceklist-instrument-normed/admin"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50"
                 >
-                  <ImageIcon size={14} /> Manager Foto
+                  <ImageIcon size={16} />
+                  Manager Foto
                 </a>
               </div>
-            </details>
-          </div>
-
-          {message ? (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              {message}
             </div>
-          ) : null}
 
-          {checkedCriticalItems.length > 0 || checklistCompletedPhotoPending ? (
-            <div
-              className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
-                mandatoryPhotoPending || checklistCompletedPhotoPending
-                  ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : "border-emerald-300 bg-emerald-50 text-emerald-800"
-              }`}
-            >
-              <p className="inline-flex items-center gap-2 font-semibold">
-                <AlertTriangle size={15} />
-                Mandatory Foto Dokumentasi
-              </p>
-              <p className="mt-1 text-[9px]">
-                {checkedCriticalItems.length > 0
-                  ? `${checkedCriticalItems.length} item kritikal sudah dicentang.`
-                  : "Checklist sudah selesai."}
-                {mandatoryPhotoPending || checklistCompletedPhotoPending
-                  ? " Upload 2 foto dokumentasi (Office & Hospital) sebelum Simpan ke Sheet."
-                  : " Foto dokumentasi Office & Hospital sudah valid."}
-              </p>
-            </div>
-          ) : null}
-
-          <div className="mt-4">{wizardPanel}</div>
-
-          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-              <Search
-                size={16}
-                className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder=" "
-                className="peer h-11 w-full rounded-xl border border-indigo-200 bg-white pl-9 pr-3 pt-5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              />
-              <span className="pointer-events-none absolute left-12 top-1/2 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-[10px] peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-indigo-600 peer-[&:not(:placeholder-shown)]:top-[10px] peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-indigo-600">
-                Cari kode / deskripsi
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setQuickToolsModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100 md:min-w-[220px]"
-            >
-              <SlidersHorizontal size={16} />
-              Filter & Dokumentasi
-            </button>
-          </div>
-
-
-          <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowOnlyUnchecked((prev) => !prev)}
-                  className={`inline-flex min-w-[132px] items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                    showOnlyUnchecked
-                      ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  <Eye size={14} />
-                  Belum dicek
-                </button>
-                <button
-                  type="button"
-                  onClick={() => refreshInstrumentProfiles()}
-                  disabled={syncingProfiles}
-                  className="inline-flex min-w-[168px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {syncingProfiles ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <RefreshCcw size={14} />
-                  )}
-                  Sync Foto Instrument
-                </button>
-                <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
-                  {profilesLoadedAt ? (
-                    <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-500">
-                      Sync: {new Date(profilesLoadedAt).toLocaleTimeString("id-ID")}
-                    </span>
-                  ) : null}
-                  <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600">
-                    InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
-                  </span>
+            <div className="mt-3 grid gap-2 md:hidden">
+              <button
+                onClick={submitToGoogleSheet}
+                disabled={submitting}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : (
+                  <Save size={16} />
+                )}
+                Simpan ke Sheet
+              </button>
+              <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold tracking-wide text-slate-600 uppercase">
+                  Aksi Lainnya
+                  <ChevronDown size={14} className="text-slate-500" />
+                </summary>
+                <div className="mt-2 grid gap-2">
+                  <button
+                    onClick={resetSelectedProcedure}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50"
+                  >
+                    <RotateCcw size={14} /> Reset
+                  </button>
+                  <button
+                    onClick={exportJson}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50"
+                  >
+                    <Download size={14} /> Export JSON
+                  </button>
+                  <a
+                    href="/ceklist-instrument-normed/admin"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50"
+                  >
+                    <ImageIcon size={14} /> Manager Foto
+                  </a>
                 </div>
-              </div>
+              </details>
             </div>
-            <div className="grid gap-2">
-              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                <Camera size={18} /> Upload Foto Office
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(event) => handleDocumentationPhotoChange("office", event)}
-                  className="hidden"
-                />
-              </label>
-              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                <Camera size={18} /> Upload Foto Hospital
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(event) => handleDocumentationPhotoChange("hospital", event)}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
 
-          {hasOfficeDocumentation || hasHospitalDocumentation ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Dokumentasi Office
-                </p>
-                {hasOfficeDocumentation ? (
-                  <div className="mt-2 flex items-center gap-3">
-                    <Image
-                      src={officeDocumentationPreview}
-                      alt="Preview dokumentasi office"
-                      width={80}
-                      height={80}
-                      unoptimized
-                      className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-800">
-                        Foto Office siap disimpan
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {officePhotoName || "Foto Office"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeDocumentationPhoto("office")}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white"
-                    >
-                      <X size={14} /> Hapus
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-slate-500">Belum ada foto office.</p>
-                )}
+            {message ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                {message}
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Dokumentasi Hospital
-                </p>
-                {hasHospitalDocumentation ? (
-                  <div className="mt-2 flex items-center gap-3">
-                    <Image
-                      src={hospitalDocumentationPreview}
-                      alt="Preview dokumentasi hospital"
-                      width={80}
-                      height={80}
-                      unoptimized
-                      className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-800">
-                        Foto Hospital siap disimpan
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {hospitalPhotoName || "Foto Hospital"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeDocumentationPhoto("hospital")}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white"
-                    >
-                      <X size={14} /> Hapus
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-slate-500">Belum ada foto hospital.</p>
-                )}
-              </div>
-            </div>
-          ) : null}
+            ) : null}
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Menu Checklist
+            {checkedCriticalItems.length > 0 ||
+            checklistCompletedPhotoPending ? (
+              <div
+                className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
+                  mandatoryPhotoPending || checklistCompletedPhotoPending
+                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : "border-emerald-300 bg-emerald-50 text-emerald-800"
+                }`}
+              >
+                <p className="inline-flex items-center gap-2 font-semibold">
+                  <AlertTriangle size={15} />
+                  Mandatory Foto Dokumentasi
                 </p>
-                <p className="text-sm font-semibold text-slate-900">
-                  {checklistViewMode === "group" ? "Group Checklist" : "All Checklist"} ·{" "}
-                  {visibleCompletedCount}/{visibleItems.length} item tercentang
+                <p className="mt-1 text-[9px]">
+                  {checkedCriticalItems.length > 0
+                    ? `${checkedCriticalItems.length} item kritikal sudah dicentang.`
+                    : "Checklist sudah selesai."}
+                  {mandatoryPhotoPending || checklistCompletedPhotoPending
+                    ? " Upload 2 foto dokumentasi (Office & Hospital) sebelum Simpan ke Sheet."
+                    : " Foto dokumentasi Office & Hospital sudah valid."}
                 </p>
+              </div>
+            ) : null}
+
+            <div className="mt-4">{wizardPanel}</div>
+
+            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
+              <div className="relative flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute top-1/2 left-6 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder=" "
+                  className="peer h-11 w-full rounded-xl border border-indigo-200 bg-white pt-5 pr-3 pl-9 text-sm transition outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                />
+                <span className="pointer-events-none absolute top-1/2 left-12 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-[10px] peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-indigo-600 peer-[&:not(:placeholder-shown)]:top-[10px] peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-indigo-600">
+                  Cari kode / deskripsi
+                </span>
               </div>
               <button
                 type="button"
-                onClick={() => setChecklistMenuOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                onClick={() => setQuickToolsModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100 md:min-w-[220px]"
               >
-                <SlidersHorizontal size={14} />
-                Buka Menu
+                <SlidersHorizontal size={16} />
+                Filter & Dokumentasi
               </button>
             </div>
-          </div>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-            <span>
-              Menampilkan {visibleItems.length} / {total} instrument
-            </span>
-            {showOnlyUnchecked ? (
-              <span className="rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-700">
-                Filter: Belum dicek
-              </span>
+            <div className="mt-4 hidden gap-4 md:grid md:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowOnlyUnchecked((prev) => !prev)}
+                    className={`inline-flex min-w-[132px] items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                      showOnlyUnchecked
+                        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Eye size={14} />
+                    Belum dicek
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => refreshInstrumentProfiles()}
+                    disabled={syncingProfiles}
+                    className="inline-flex min-w-[168px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {syncingProfiles ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <RefreshCcw size={14} />
+                    )}
+                    Sync Foto Instrument
+                  </button>
+                  <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
+                    {profilesLoadedAt ? (
+                      <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-500">
+                        Sync:{" "}
+                        {new Date(profilesLoadedAt).toLocaleTimeString("id-ID")}
+                      </span>
+                    ) : null}
+                    <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600">
+                      InstrumentProfiles: {selectedProfileCount} item (
+                      {selected.key.toUpperCase()})
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  <Camera size={18} /> Upload Foto Office
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(event) =>
+                      handleDocumentationPhotoChange("office", event)
+                    }
+                    className="hidden"
+                  />
+                </label>
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  <Camera size={18} /> Upload Foto Hospital
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(event) =>
+                      handleDocumentationPhotoChange("hospital", event)
+                    }
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {hasOfficeDocumentation || hasHospitalDocumentation ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Dokumentasi Office
+                  </p>
+                  {hasOfficeDocumentation ? (
+                    <div className="mt-2 flex items-center gap-3">
+                      <Image
+                        src={officeDocumentationPreview}
+                        alt="Preview dokumentasi office"
+                        width={80}
+                        height={80}
+                        unoptimized
+                        className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-800">
+                          Foto Office siap disimpan
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {officePhotoName || "Foto Office"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeDocumentationPhoto("office")}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white"
+                      >
+                        <X size={14} /> Hapus
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Belum ada foto office.
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Dokumentasi Hospital
+                  </p>
+                  {hasHospitalDocumentation ? (
+                    <div className="mt-2 flex items-center gap-3">
+                      <Image
+                        src={hospitalDocumentationPreview}
+                        alt="Preview dokumentasi hospital"
+                        width={80}
+                        height={80}
+                        unoptimized
+                        className="h-14 w-14 rounded-lg object-cover md:h-20 md:w-20"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-800">
+                          Foto Hospital siap disimpan
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {hospitalPhotoName || "Foto Hospital"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeDocumentationPhoto("hospital")}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-white"
+                      >
+                        <X size={14} /> Hapus
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Belum ada foto hospital.
+                    </p>
+                  )}
+                </div>
+              </div>
             ) : null}
-          </div>
 
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-slate-900 transition-all" style={{ width: `${progress}%` }} />
-          </div>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Menu Checklist
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {checklistViewMode === "group"
+                      ? "Group Checklist"
+                      : "All Checklist"}{" "}
+                    · {visibleCompletedCount}/{visibleItems.length} item
+                    tercentang
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setChecklistMenuOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  <SlidersHorizontal size={14} />
+                  Buka Menu
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+              <span>
+                Menampilkan {visibleItems.length} / {total} instrument
+              </span>
+              {showOnlyUnchecked ? (
+                <span className="rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                  Filter: Belum dicek
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-slate-900 transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
 
             {checklistViewMode === "group" ? (
               <div className="mt-6 space-y-3">
-              {displayedGroupedItems.map((group) => {
-                const collapsed = isGroupCollapsed(group.groupName);
-                const completedPct = group.total
-                  ? Math.round((group.completed / group.total) * 100)
-                  : 0;
-                const groupStyle = getGroupColorVariant(group.groupName);
-                const isGroupDone = group.total > 0 && group.completed === group.total;
-                return (
-                  <div
-                    key={group.groupName}
-                    className={`overflow-hidden rounded-2xl border bg-white ${groupStyle.card}`}
-                  >
-                    <div className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5 md:px-4 ${groupStyle.header}`}>
-                      <button
-                        type="button"
-                        onClick={() => toggleGroupCollapsed(group.groupName)}
-                        className="inline-flex items-center gap-2 text-left"
+                {displayedGroupedItems.map((group) => {
+                  const collapsed = isGroupCollapsed(group.groupName);
+                  const completedPct = group.total
+                    ? Math.round((group.completed / group.total) * 100)
+                    : 0;
+                  const groupStyle = getGroupColorVariant(group.groupName);
+                  const isGroupDone =
+                    group.total > 0 && group.completed === group.total;
+                  return (
+                    <div
+                      key={group.groupName}
+                      className={`overflow-hidden rounded-2xl border bg-white ${groupStyle.card}`}
+                    >
+                      <div
+                        className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5 md:px-4 ${groupStyle.header}`}
                       >
-                        <ChevronDown
-                          size={16}
-                          className={`text-slate-500 transition-transform ${collapsed ? "-rotate-90" : "rotate-0"}`}
-                        />
-                        <div>
-                          <p className={`text-sm font-semibold ${groupStyle.title}`}>{group.groupName}</p>
-                          <p className={`text-[11px] ${groupStyle.meta}`}>
-                            {group.completed}/{group.total} selesai ({completedPct}%)
-                          </p>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroupCollapsed(group.groupName)}
+                          className="inline-flex items-center gap-2 text-left"
+                        >
+                          <ChevronDown
+                            size={16}
+                            className={`text-slate-500 transition-transform ${collapsed ? "-rotate-90" : "rotate-0"}`}
+                          />
+                          <div>
+                            <p
+                              className={`text-sm font-semibold ${groupStyle.title}`}
+                            >
+                              {group.groupName}
+                            </p>
+                            <p className={`text-[11px] ${groupStyle.meta}`}>
+                              {group.completed}/{group.total} selesai (
+                              {completedPct}%)
+                            </p>
+                          </div>
+                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`rounded-md px-2 py-1 text-[10px] font-semibold ${groupStyle.badge}`}
+                          >
+                            {isGroupDone ? "Selesai · Minimize" : "On Progress"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCheckedForItems(group.items, true)
+                            }
+                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${groupStyle.quickCheck}`}
+                          >
+                            Centang semua
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCheckedForItems(group.items, false)
+                            }
+                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${groupStyle.quickUncheck}`}
+                          >
+                            Batal semua
+                          </button>
                         </div>
-                      </button>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`rounded-md px-2 py-1 text-[10px] font-semibold ${groupStyle.badge}`}>
-                          {isGroupDone ? "Selesai · Minimize" : "On Progress"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setCheckedForItems(group.items, true)}
-                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${groupStyle.quickCheck}`}
-                        >
-                          Centang semua
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCheckedForItems(group.items, false)}
-                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${groupStyle.quickUncheck}`}
-                        >
-                          Batal semua
-                        </button>
                       </div>
+
+                      {!collapsed ? (
+                        <>
+                          <div className="hidden grid-cols-[64px_130px_1fr_90px_44px] gap-3 border-b border-slate-200 bg-white px-4 py-2.5 text-[11px] font-semibold tracking-wide text-slate-500 uppercase md:grid">
+                            <span>Foto</span>
+                            <span>Kode</span>
+                            <span>Deskripsi</span>
+                            <span>Piece</span>
+                            <span className="text-right">Cek</span>
+                          </div>
+                          <div className="divide-y divide-slate-100">
+                            {group.items.map((item) =>
+                              renderChecklistRow(item),
+                            )}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
+                  );
+                })}
 
-                    {!collapsed ? (
-                      <>
-                        <div className="hidden grid-cols-[64px_130px_1fr_90px_44px] gap-3 border-b border-slate-200 bg-white px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid">
-                          <span>Foto</span>
-                          <span>Kode</span>
-                          <span>Deskripsi</span>
-                          <span>Piece</span>
-                          <span className="text-right">Cek</span>
-                        </div>
-                        <div className="divide-y divide-slate-100">
-                          {group.items.map((item) => renderChecklistRow(item))}
-                        </div>
-                      </>
-                    ) : null}
+                {displayedGroupedItems.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                    Instrument tidak ditemukan.
                   </div>
-                );
-              })}
-
-              {displayedGroupedItems.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-                  Instrument tidak ditemukan.
-                </div>
-              ) : null}
+                ) : null}
               </div>
             ) : (
               <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <div className="hidden grid-cols-[64px_130px_1fr_90px_44px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
-                <span>Foto</span>
-                <span>Kode</span>
-                <span>Deskripsi</span>
-                <span>Piece</span>
-                <span className="text-right">Cek</span>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {visibleItems.map((item) => renderChecklistRow(item))}
-              </div>
-              {visibleItems.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-slate-500">
-                  Instrument tidak ditemukan.
+                <div className="hidden grid-cols-[64px_130px_1fr_90px_44px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase md:grid">
+                  <span>Foto</span>
+                  <span>Kode</span>
+                  <span>Deskripsi</span>
+                  <span>Piece</span>
+                  <span className="text-right">Cek</span>
                 </div>
-              ) : null}
+                <div className="divide-y divide-slate-100">
+                  {visibleItems.map((item) => renderChecklistRow(item))}
+                </div>
+                {visibleItems.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-slate-500">
+                    Instrument tidak ditemukan.
+                  </div>
+                ) : null}
               </div>
             )}
           </section>
@@ -3950,7 +5948,7 @@ export default function NormedInstrumentChecklistApp() {
                   </div>
                 ) : (
                   <div>
-                    <p className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="inline-flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       <CalendarDays size={13} /> Dashboard Harian
                     </p>
                     <p className="text-sm font-semibold text-slate-900">
@@ -3958,7 +5956,9 @@ export default function NormedInstrumentChecklistApp() {
                     </p>
                   </div>
                 )}
-                <div className={`flex items-center gap-1 ${dashboardCollapsed ? "flex-col" : ""}`}>
+                <div
+                  className={`flex items-center gap-1 ${dashboardCollapsed ? "flex-col" : ""}`}
+                >
                   {!dashboardCollapsed ? (
                     <button
                       type="button"
@@ -3986,7 +5986,7 @@ export default function NormedInstrumentChecklistApp() {
                           <RefreshCcw size={12} />
                         )}
                       </button>
-                      <span className="pointer-events-none absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-sm group-hover:block group-focus-within:block">
+                      <span className="pointer-events-none absolute top-1/2 right-full mr-2 hidden -translate-y-1/2 rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-white shadow-sm group-focus-within:block group-hover:block">
                         Refresh
                       </span>
                     </div>
@@ -3996,11 +5996,19 @@ export default function NormedInstrumentChecklistApp() {
                       type="button"
                       onClick={() => setDashboardCollapsed((prev) => !prev)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-700 hover:bg-white"
-                      aria-label={dashboardCollapsed ? "Expand dashboard" : "Collapse dashboard"}
+                      aria-label={
+                        dashboardCollapsed
+                          ? "Expand dashboard"
+                          : "Collapse dashboard"
+                      }
                     >
-                      {dashboardCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                      {dashboardCollapsed ? (
+                        <ChevronLeft size={14} />
+                      ) : (
+                        <ChevronRight size={14} />
+                      )}
                     </button>
-                    <span className="pointer-events-none absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white shadow-sm group-hover:block group-focus-within:block">
+                    <span className="pointer-events-none absolute top-1/2 right-full mr-2 hidden -translate-y-1/2 rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-white shadow-sm group-focus-within:block group-hover:block">
                       {dashboardCollapsed ? "Expand" : "Minimize"}
                     </span>
                   </div>
@@ -4010,49 +6018,80 @@ export default function NormedInstrumentChecklistApp() {
               {dashboardCollapsed ? (
                 <div className="mt-3 space-y-2">
                   <div className="rounded-xl border border-slate-200 bg-white/85 px-2 py-2 text-center">
-                    <p className="text-[10px] font-semibold uppercase text-slate-500">Total</p>
-                    <p className="text-base font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">
+                      Total
+                    </p>
+                    <p className="text-base font-bold text-slate-900">
+                      {dailyDashboard.totalToday}
+                    </p>
                   </div>
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/85 px-2 py-2 text-center">
-                    <p className="text-[10px] font-semibold uppercase text-emerald-700">Done</p>
-                    <p className="text-base font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+                    <p className="text-[10px] font-semibold text-emerald-700 uppercase">
+                      Done
+                    </p>
+                    <p className="text-base font-bold text-emerald-900">
+                      {dailyDashboard.completedToday}
+                    </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white/85 px-2 py-2 text-center">
-                    <p className="text-[10px] font-semibold uppercase text-slate-500">List</p>
-                    <p className="text-base font-bold text-slate-900">{dailyDashboard.submissions.length}</p>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">
+                      List
+                    </p>
+                    <p className="text-base font-bold text-slate-900">
+                      {dailyDashboard.submissions.length}
+                    </p>
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <article className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase text-slate-500">Total</p>
-                      <p className="text-base font-bold text-slate-900">{dailyDashboard.totalToday}</p>
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">
+                        Total
+                      </p>
+                      <p className="text-base font-bold text-slate-900">
+                        {dailyDashboard.totalToday}
+                      </p>
                     </article>
                     <article className="rounded-xl border border-emerald-200 bg-emerald-50/85 px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase text-emerald-700">Lengkap</p>
-                      <p className="text-base font-bold text-emerald-900">{dailyDashboard.completedToday}</p>
+                      <p className="text-[10px] font-semibold text-emerald-700 uppercase">
+                        Lengkap
+                      </p>
+                      <p className="text-base font-bold text-emerald-900">
+                        {dailyDashboard.completedToday}
+                      </p>
                     </article>
                     <article className="rounded-xl border border-blue-200 bg-blue-50/85 px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase text-blue-700">TKR</p>
-                      <p className="text-base font-bold text-blue-900">{dailyDashboard.byProcedure.tkr}</p>
+                      <p className="text-[10px] font-semibold text-blue-700 uppercase">
+                        TKR
+                      </p>
+                      <p className="text-base font-bold text-blue-900">
+                        {dailyDashboard.byProcedure.tkr}
+                      </p>
                     </article>
                     <article className="rounded-xl border border-violet-200 bg-violet-50/85 px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase text-violet-700">Bipolar</p>
-                      <p className="text-base font-bold text-violet-900">{dailyDashboard.byProcedure.bipolar}</p>
+                      <p className="text-[10px] font-semibold text-violet-700 uppercase">
+                        Bipolar
+                      </p>
+                      <p className="text-base font-bold text-violet-900">
+                        {dailyDashboard.byProcedure.bipolar}
+                      </p>
                     </article>
                   </div>
 
                   <article className="mt-2 rounded-xl border border-teal-200 bg-teal-50/85 px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase text-teal-700">THR / Stem</p>
+                    <p className="text-[10px] font-semibold text-teal-700 uppercase">
+                      THR / Stem
+                    </p>
                     <p className="text-base font-bold text-teal-900">
-                      {dailyDashboard.byProcedure.thr + dailyDashboard.byProcedure.stem}
+                      {dailyDashboard.byProcedure.thr +
+                        dailyDashboard.byProcedure.stem}
                     </p>
                   </article>
 
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-white/85 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                      <p className="text-[11px] font-semibold tracking-wide text-slate-600 uppercase">
                         Submission Tersimpan
                       </p>
                       <p className="text-[10px] text-slate-500">
@@ -4061,43 +6100,52 @@ export default function NormedInstrumentChecklistApp() {
                     </div>
                     {dailyDashboard.submissions.length ? (
                       <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
-                        {dailyDashboard.submissions.map((submission, submissionIndex) => (
-                          <div
-                            key={`${submission.submissionId || "submission"}-${submission.createdAt || "no-date"}-${submissionIndex}-side`}
-                            className="rounded-xl border border-slate-200 bg-white px-2.5 py-2"
-                          >
-                            <p className="truncate text-[11px] font-semibold text-slate-700">
-                              {submission.submissionId}
-                            </p>
-                            <p className="truncate text-xs font-semibold text-slate-900">
-                              {submission.procedureTitle || submission.procedureKey?.toUpperCase() || "-"}
-                            </p>
-                            <p className="truncate text-[11px] text-slate-500">
-                              {submission.hospitalName || "-"} · {submission.repAssist || "-"}
-                            </p>
-                            <div className="mt-2 flex items-center justify-between gap-1">
-                              <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
-                                {submission.progress}%
-                              </span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => loadSavedSubmission(submission)}
-                                  className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
-                                >
-                                  Muat
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openSubmissionEditor(submission)}
-                                  className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
-                                >
-                                  Edit
-                                </button>
+                        {dailyDashboard.submissions.map(
+                          (submission, submissionIndex) => (
+                            <div
+                              key={`${submission.submissionId || "submission"}-${submission.createdAt || "no-date"}-${submissionIndex}-side`}
+                              className="rounded-xl border border-slate-200 bg-white px-2.5 py-2"
+                            >
+                              <p className="truncate text-[11px] font-semibold text-slate-700">
+                                {submission.submissionId}
+                              </p>
+                              <p className="truncate text-xs font-semibold text-slate-900">
+                                {submission.procedureTitle ||
+                                  submission.procedureKey?.toUpperCase() ||
+                                  "-"}
+                              </p>
+                              <p className="truncate text-[11px] text-slate-500">
+                                {submission.hospitalName || "-"} ·{" "}
+                                {submission.repAssist || "-"}
+                              </p>
+                              <div className="mt-2 flex items-center justify-between gap-1">
+                                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                                  {submission.progress}%
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      loadSavedSubmission(submission)
+                                    }
+                                    className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                                  >
+                                    Muat
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openSubmissionEditor(submission)
+                                    }
+                                    className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ),
+                        )}
                       </div>
                     ) : (
                       <p className="mt-2 text-xs text-slate-500">
@@ -4131,7 +6179,7 @@ export default function NormedInstrumentChecklistApp() {
               >
                 <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       Operasi & Kontrol Tambahan
                     </p>
                     <p className="text-sm font-semibold text-slate-900">
@@ -4151,8 +6199,10 @@ export default function NormedInstrumentChecklistApp() {
                 <div className="max-h-[calc(90vh-126px)] space-y-4 overflow-y-auto p-4">
                   {!isOperationInfoComplete ? (
                     <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                      Isi minimal <span className="font-bold">Nama TS/operator</span> dan{" "}
-                      <span className="font-bold">Rumah sakit/lokasi</span> untuk lanjut checklist.
+                      Isi minimal{" "}
+                      <span className="font-bold">Nama TS/operator</span> dan{" "}
+                      <span className="font-bold">Rumah sakit/lokasi</span>{" "}
+                      untuk lanjut checklist.
                     </div>
                   ) : (
                     <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
@@ -4164,9 +6214,12 @@ export default function NormedInstrumentChecklistApp() {
                     <section className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 p-3">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-slate-800">Mode Tray Bipolar</p>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Mode Tray Bipolar
+                          </p>
                           <p className="text-xs text-slate-500">
-                            Pilih sumber list: hanya tray bipolar atau gabung tray stem + bipolar.
+                            Pilih sumber list: hanya tray bipolar atau gabung
+                            tray stem + bipolar.
                           </p>
                         </div>
                         <div className="inline-flex rounded-xl border border-violet-200 bg-white/80 p-1">
@@ -4201,9 +6254,12 @@ export default function NormedInstrumentChecklistApp() {
                     <section className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-3">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-slate-800">Mode Tray THR</p>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Mode Tray THR
+                          </p>
                           <p className="text-xs text-slate-500">
-                            Pilih list THR acetabular saja atau gabung THR + Stem.
+                            Pilih list THR acetabular saja atau gabung THR +
+                            Stem.
                           </p>
                         </div>
                         <div className="inline-flex rounded-xl border border-emerald-200 bg-white/80 p-1">
@@ -4235,17 +6291,23 @@ export default function NormedInstrumentChecklistApp() {
                   ) : null}
 
                   <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4">
-                    <p className="mb-3 text-sm font-semibold text-slate-800">Informasi Operasi</p>
+                    <p className="mb-3 text-sm font-semibold text-slate-800">
+                      Informasi Operasi
+                    </p>
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <FloatingInputField
                         value={operatorName}
-                        onChange={(event) => setOperatorName(event.target.value)}
+                        onChange={(event) =>
+                          setOperatorName(event.target.value)
+                        }
                         label="Nama TS / operator checklist"
                         required
                       />
                       <FloatingInputField
                         value={hospitalName}
-                        onChange={(event) => setHospitalName(event.target.value)}
+                        onChange={(event) =>
+                          setHospitalName(event.target.value)
+                        }
                         label="Rumah sakit / lokasi"
                         required
                       />
@@ -4285,7 +6347,7 @@ export default function NormedInstrumentChecklistApp() {
                     onClick={() => {
                       if (!isOperationInfoComplete) {
                         setMessage(
-                          "Lengkapi Nama TS/operator dan rumah sakit dulu sebelum mulai checklist."
+                          "Lengkapi Nama TS/operator dan rumah sakit dulu sebelum mulai checklist.",
                         );
                         return;
                       }
@@ -4321,14 +6383,15 @@ export default function NormedInstrumentChecklistApp() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       Upload Wajib
                     </p>
                     <h3 className="text-base font-bold text-slate-900">
                       Foto Dokumentasi Office & Hospital
                     </h3>
                     <p className="mt-1 text-xs text-slate-600">
-                      Checklist sudah selesai. Upload 2 foto dokumentasi sebelum simpan ke sheet.
+                      Checklist sudah selesai. Upload 2 foto dokumentasi sebelum
+                      simpan ke sheet.
                     </p>
                   </div>
                   <button
@@ -4348,13 +6411,16 @@ export default function NormedInstrumentChecklistApp() {
                       Upload Foto Office
                     </span>
                     <span className="truncate text-xs text-slate-500">
-                      {officePhotoName || (hasOfficeDocumentation ? "Sudah ada" : "Belum ada")}
+                      {officePhotoName ||
+                        (hasOfficeDocumentation ? "Sudah ada" : "Belum ada")}
                     </span>
                     <input
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onChange={(event) => handleDocumentationPhotoChange("office", event)}
+                      onChange={(event) =>
+                        handleDocumentationPhotoChange("office", event)
+                      }
                       className="hidden"
                     />
                   </label>
@@ -4364,13 +6430,16 @@ export default function NormedInstrumentChecklistApp() {
                       Upload Foto Hospital
                     </span>
                     <span className="truncate text-xs text-slate-500">
-                      {hospitalPhotoName || (hasHospitalDocumentation ? "Sudah ada" : "Belum ada")}
+                      {hospitalPhotoName ||
+                        (hasHospitalDocumentation ? "Sudah ada" : "Belum ada")}
                     </span>
                     <input
                       type="file"
                       accept="image/*"
                       capture="environment"
-                      onChange={(event) => handleDocumentationPhotoChange("hospital", event)}
+                      onChange={(event) =>
+                        handleDocumentationPhotoChange("hospital", event)
+                      }
                       className="hidden"
                     />
                   </label>
@@ -4415,15 +6484,17 @@ export default function NormedInstrumentChecklistApp() {
                 className="relative w-full max-w-xl overflow-hidden rounded-[28px] border border-white/70 bg-white/70 p-4 shadow-[0_30px_80px_rgba(15,23,42,0.28)] backdrop-blur-xl md:p-5"
                 onClick={(event) => event.stopPropagation()}
               >
-                <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-blue-400/20 blur-3xl" />
+                <div className="pointer-events-none absolute -top-16 -right-16 h-44 w-44 rounded-full bg-blue-400/20 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-14 -left-14 h-40 w-40 rounded-full bg-indigo-500/20 blur-3xl" />
 
                 <div className="relative flex items-center justify-between gap-2">
                   <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm backdrop-blur">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       Quick Tools
                     </p>
-                    <p className="text-sm font-bold text-slate-900">Filter & Dokumentasi</p>
+                    <p className="text-sm font-bold text-slate-900">
+                      Filter & Dokumentasi
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -4479,7 +6550,9 @@ export default function NormedInstrumentChecklistApp() {
                         type="file"
                         accept="image/*"
                         capture="environment"
-                        onChange={(event) => handleDocumentationPhotoChange("office", event)}
+                        onChange={(event) =>
+                          handleDocumentationPhotoChange("office", event)
+                        }
                         className="hidden"
                       />
                     </label>
@@ -4489,7 +6562,9 @@ export default function NormedInstrumentChecklistApp() {
                         type="file"
                         accept="image/*"
                         capture="environment"
-                        onChange={(event) => handleDocumentationPhotoChange("hospital", event)}
+                        onChange={(event) =>
+                          handleDocumentationPhotoChange("hospital", event)
+                        }
                         className="hidden"
                       />
                     </label>
@@ -4509,7 +6584,8 @@ export default function NormedInstrumentChecklistApp() {
                     Sync Foto Instrument
                   </button>
                   <div className="rounded-lg border border-white/70 bg-white/75 px-2.5 py-2 text-[11px] text-slate-600">
-                    InstrumentProfiles: {selectedProfileCount} item ({selected.key.toUpperCase()})
+                    InstrumentProfiles: {selectedProfileCount} item (
+                    {selected.key.toUpperCase()})
                   </div>
                 </div>
               </motion.div>
@@ -4537,7 +6613,7 @@ export default function NormedInstrumentChecklistApp() {
               >
                 <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       Edit Submission
                     </p>
                     <p className="text-sm font-bold text-slate-900">
@@ -4618,7 +6694,7 @@ export default function NormedInstrumentChecklistApp() {
 
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                         Dokumentasi Office
                       </p>
                       {submissionOfficePreview ? (
@@ -4631,7 +6707,9 @@ export default function NormedInstrumentChecklistApp() {
                           className="mt-2 h-20 w-20 rounded-lg object-cover"
                         />
                       ) : (
-                        <p className="mt-2 text-xs text-slate-500">Belum ada foto office.</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          Belum ada foto office.
+                        </p>
                       )}
                       <div className="mt-2 flex flex-wrap gap-2">
                         <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -4640,7 +6718,9 @@ export default function NormedInstrumentChecklistApp() {
                             type="file"
                             accept="image/*"
                             capture="environment"
-                            onChange={(event) => handleSubmissionEditorPhotoChange("office", event)}
+                            onChange={(event) =>
+                              handleSubmissionEditorPhotoChange("office", event)
+                            }
                             className="hidden"
                           />
                         </label>
@@ -4654,7 +6734,7 @@ export default function NormedInstrumentChecklistApp() {
                       </div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                         Dokumentasi Hospital
                       </p>
                       {submissionHospitalPreview ? (
@@ -4667,7 +6747,9 @@ export default function NormedInstrumentChecklistApp() {
                           className="mt-2 h-20 w-20 rounded-lg object-cover"
                         />
                       ) : (
-                        <p className="mt-2 text-xs text-slate-500">Belum ada foto hospital.</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          Belum ada foto hospital.
+                        </p>
                       )}
                       <div className="mt-2 flex flex-wrap gap-2">
                         <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -4676,13 +6758,20 @@ export default function NormedInstrumentChecklistApp() {
                             type="file"
                             accept="image/*"
                             capture="environment"
-                            onChange={(event) => handleSubmissionEditorPhotoChange("hospital", event)}
+                            onChange={(event) =>
+                              handleSubmissionEditorPhotoChange(
+                                "hospital",
+                                event,
+                              )
+                            }
                             className="hidden"
                           />
                         </label>
                         <button
                           type="button"
-                          onClick={() => removeSubmissionEditorPhoto("hospital")}
+                          onClick={() =>
+                            removeSubmissionEditorPhoto("hospital")
+                          }
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
                           <X size={12} /> Hapus
@@ -4738,7 +6827,7 @@ export default function NormedInstrumentChecklistApp() {
               >
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       Checklist Menu
                     </p>
                     <p className="text-sm font-semibold text-slate-900">
@@ -4780,8 +6869,9 @@ export default function NormedInstrumentChecklistApp() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {selected.key.toUpperCase()} · {previewCurrentItem.category || "Lainnya"}
+                    <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      {selected.key.toUpperCase()} ·{" "}
+                      {previewCurrentItem.category || "Lainnya"}
                     </p>
                     <h3 className="mt-1 text-base font-bold text-slate-900">
                       {previewCurrentItem.catalogNo} · {previewCurrentItem.name}
@@ -4834,20 +6924,26 @@ export default function NormedInstrumentChecklistApp() {
 
                   <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
                     <p className="text-slate-700">
-                      <span className="font-semibold">Kode:</span> {previewCurrentItem.catalogNo}
+                      <span className="font-semibold">Kode:</span>{" "}
+                      {previewCurrentItem.catalogNo}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Deskripsi:</span> {previewCurrentItem.name}
+                      <span className="font-semibold">Deskripsi:</span>{" "}
+                      {previewCurrentItem.name}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Group:</span> {previewCurrentItem.category || "-"}
+                      <span className="font-semibold">Group:</span>{" "}
+                      {previewCurrentItem.category || "-"}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Piece:</span> {previewCurrentItem.qty}
+                      <span className="font-semibold">Piece:</span>{" "}
+                      {previewCurrentItem.qty}
                     </p>
                     <p className="text-slate-700">
                       <span className="font-semibold">Status:</span>{" "}
-                      {checked[previewCurrentItem.id] ? "Sudah dicek" : "Belum dicek"}
+                      {checked[previewCurrentItem.id]
+                        ? "Sudah dicek"
+                        : "Belum dicek"}
                     </p>
                     {previewCurrentItem.isCustom ? (
                       <p className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
@@ -4880,7 +6976,9 @@ export default function NormedInstrumentChecklistApp() {
                         : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                     }`}
                   >
-                    {checked[previewCurrentItem.id] ? "Batalkan Checklist" : "Centang Item Ini"}
+                    {checked[previewCurrentItem.id]
+                      ? "Batalkan Checklist"
+                      : "Centang Item Ini"}
                   </button>
                 </div>
               </motion.div>

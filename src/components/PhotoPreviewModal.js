@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import DriveImageWithFallback from "./DriveImageWithFallback";
+import DriveImageWithFallback from "./media/DriveImageWithFallback";
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -18,7 +18,8 @@ export default function PhotoPreviewModal({
     () =>
       Array.isArray(items)
         ? items.filter(
-            (item) => item && typeof item.imageSrc === "string" && item.imageSrc.trim(),
+            (item) =>
+              item && typeof item.imageSrc === "string" && item.imageSrc.trim(),
           )
         : [],
     [items],
@@ -46,7 +47,11 @@ export default function PhotoPreviewModal({
         return;
       }
       if (event.key === "ArrowLeft") {
-        setIndex((prev) => (prev - 1 + Math.max(safeItems.length, 1)) % Math.max(safeItems.length, 1));
+        setIndex(
+          (prev) =>
+            (prev - 1 + Math.max(safeItems.length, 1)) %
+            Math.max(safeItems.length, 1),
+        );
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -70,9 +75,13 @@ export default function PhotoPreviewModal({
       <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
         <div className="flex items-center justify-between gap-2 border-b border-slate-700 px-4 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-slate-100">{title}</div>
+            <div className="truncate text-sm font-semibold text-slate-100">
+              {title}
+            </div>
             <div className="text-[11px] text-slate-400">
-              {safeItems.length > 0 ? `${index + 1} / ${safeItems.length}` : "0 / 0"}
+              {safeItems.length > 0
+                ? `${index + 1} / ${safeItems.length}`
+                : "0 / 0"}
             </div>
           </div>
           <button
@@ -100,16 +109,21 @@ export default function PhotoPreviewModal({
                     <button
                       type="button"
                       onClick={() =>
-                        setIndex((prev) => (prev - 1 + safeItems.length) % safeItems.length)
+                        setIndex(
+                          (prev) =>
+                            (prev - 1 + safeItems.length) % safeItems.length,
+                        )
                       }
-                      className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-900/80 px-2.5 py-1.5 text-lg text-slate-100"
+                      className="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-slate-900/80 px-2.5 py-1.5 text-lg text-slate-100"
                     >
                       ‹
                     </button>
                     <button
                       type="button"
-                      onClick={() => setIndex((prev) => (prev + 1) % safeItems.length)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-900/80 px-2.5 py-1.5 text-lg text-slate-100"
+                      onClick={() =>
+                        setIndex((prev) => (prev + 1) % safeItems.length)
+                      }
+                      className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-slate-900/80 px-2.5 py-1.5 text-lg text-slate-100"
                     >
                       ›
                     </button>
@@ -117,18 +131,22 @@ export default function PhotoPreviewModal({
                 ) : null}
               </>
             ) : (
-              <div className="text-sm text-slate-400">Tidak ada gambar untuk dipreview.</div>
+              <div className="text-sm text-slate-400">
+                Tidak ada gambar untuk dipreview.
+              </div>
             )}
           </div>
 
-          <aside className="border-t border-slate-700 bg-slate-900 p-3 lg:border-l lg:border-t-0">
+          <aside className="border-t border-slate-700 bg-slate-900 p-3 lg:border-t-0 lg:border-l">
             {current ? (
               <div className="mb-3 rounded-lg border border-slate-700 bg-slate-950 p-2">
                 <div className="truncate text-xs font-semibold text-slate-100">
                   {current.name || "Untitled"}
                 </div>
                 {current.meta ? (
-                  <div className="mt-1 text-[11px] text-slate-400">{current.meta}</div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    {current.meta}
+                  </div>
                 ) : null}
               </div>
             ) : null}

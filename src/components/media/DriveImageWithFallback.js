@@ -11,7 +11,7 @@ const INLINE_NO_IMAGE =
       <path d="M26 86l20-24 14 16 12-14 22 22H26z" fill="#cbd5e1"/>
       <circle cx="44" cy="46" r="7" fill="#94a3b8"/>
       <text x="60" y="105" text-anchor="middle" font-size="11" font-family="Arial, sans-serif" fill="#64748b">No Image</text>
-    </svg>`
+    </svg>`,
   );
 
 export default function DriveImageWithFallback({
@@ -24,9 +24,7 @@ export default function DriveImageWithFallback({
 }) {
   const candidates = useMemo(() => {
     const list = buildDriveImageCandidates(src, driveId);
-    if (fallbackSrc && !list.includes(fallbackSrc)) {
-      list.push(fallbackSrc);
-    }
+    if (fallbackSrc && !list.includes(fallbackSrc)) list.push(fallbackSrc);
     if (!list.length) list.push(INLINE_NO_IMAGE);
     return list;
   }, [src, driveId, fallbackSrc]);
@@ -49,11 +47,11 @@ export default function DriveImageWithFallback({
       referrerPolicy={imgProps.referrerPolicy || "no-referrer"}
       onError={(event) => {
         if (index < candidates.length - 1) {
-          setIndex((prev) => prev + 1);
+          setIndex((previous) => previous + 1);
         } else if (event.currentTarget.src !== INLINE_NO_IMAGE) {
           event.currentTarget.src = INLINE_NO_IMAGE;
         }
-        if (onError) onError(event);
+        onError?.(event);
       }}
     />
   );

@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import DriveImageWithFallback from "./DriveImageWithFallback";
+import DriveImageWithFallback from "./media/DriveImageWithFallback";
 import {
   SOFT_SURFACE_CLASS,
   SOFT_RAISED_CLASS,

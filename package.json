@@ -1,12 +1,15 @@
 {
-  "name": "starter-for-nextjs",
+  "name": "zakzav-templating",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck",
+    "test": "node --test tests/*.test.cjs",
+    "check": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@appwrite.io/pink-icons": "^1.0.0",

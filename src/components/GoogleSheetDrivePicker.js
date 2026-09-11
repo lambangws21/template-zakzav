@@ -12,7 +12,7 @@ import {
   DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
   parseSheetRawText,
 } from "@/lib/googleSheetImageUtils";
-import DriveImageWithFallback from "./DriveImageWithFallback";
+import DriveImageWithFallback from "./media/DriveImageWithFallback";
 
 import {
   SOFT_SURFACE_CLASS,

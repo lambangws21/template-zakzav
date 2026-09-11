@@ -6,7 +6,7 @@ import {
   DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
   parseSheetRawText,
 } from "@/lib/googleSheetImageUtils";
-import DriveImageWithFallback from "./DriveImageWithFallback";
+import DriveImageWithFallback from "./media/DriveImageWithFallback";
 import PhotoPreviewModal from "./PhotoPreviewModal";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -50,8 +50,10 @@ function queueStatusLabel(status) {
 }
 
 function queueStatusClass(status) {
-  if (status === "uploading") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "done") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "uploading")
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "done")
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "error") return "border-rose-200 bg-rose-50 text-rose-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
 }
@@ -59,7 +61,8 @@ function queueStatusClass(status) {
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onload = () =>
+      resolve(typeof reader.result === "string" ? reader.result : "");
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
@@ -86,7 +89,9 @@ export default function GoogleSheetDriveManager() {
   const [endpoint, setEndpoint] = useState(DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT);
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [notice, setNotice] = useState("Klik Load List untuk memuat data dari Google Drive.");
+  const [notice, setNotice] = useState(
+    "Klik Load List untuk memuat data dari Google Drive.",
+  );
   const [rawResponse, setRawResponse] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
@@ -124,7 +129,10 @@ export default function GoogleSheetDriveManager() {
   useEffect(
     () => () => {
       for (const queueItem of queueRef.current) {
-        if (queueItem?.previewUrl && String(queueItem.previewUrl).startsWith("blob:")) {
+        if (
+          queueItem?.previewUrl &&
+          String(queueItem.previewUrl).startsWith("blob:")
+        ) {
           URL.revokeObjectURL(queueItem.previewUrl);
         }
       }
@@ -137,15 +145,21 @@ export default function GoogleSheetDriveManager() {
     [items, selectedId],
   );
   const activeQueueItem = useMemo(
-    () => uploadQueue.find((item) => String(item.id) === String(activeQueueId)) || null,
+    () =>
+      uploadQueue.find((item) => String(item.id) === String(activeQueueId)) ||
+      null,
     [activeQueueId, uploadQueue],
   );
   const queueStats = useMemo(() => {
     const total = uploadQueue.length;
     const done = uploadQueue.filter((item) => item.status === "done").length;
-    const uploading = uploadQueue.filter((item) => item.status === "uploading").length;
+    const uploading = uploadQueue.filter(
+      (item) => item.status === "uploading",
+    ).length;
     const error = uploadQueue.filter((item) => item.status === "error").length;
-    const pending = uploadQueue.filter((item) => item.status === "pending").length;
+    const pending = uploadQueue.filter(
+      (item) => item.status === "pending",
+    ).length;
     return { total, done, uploading, error, pending };
   }, [uploadQueue]);
   const endpointHost = useMemo(() => {
@@ -181,20 +195,25 @@ export default function GoogleSheetDriveManager() {
       if (activeQueueId !== null) setActiveQueueId(null);
       return;
     }
-    const stillExists = uploadQueue.some((item) => String(item.id) === String(activeQueueId));
+    const stillExists = uploadQueue.some(
+      (item) => String(item.id) === String(activeQueueId),
+    );
     if (!stillExists) {
       setActiveQueueId(uploadQueue[0].id);
     }
   }, [activeQueueId, uploadQueue]);
 
-  const openPreviewModal = useCallback((title, previewItems, initialIndex = 0) => {
-    setPreviewModalState({
-      open: true,
-      title,
-      items: previewItems,
-      initialIndex,
-    });
-  }, []);
+  const openPreviewModal = useCallback(
+    (title, previewItems, initialIndex = 0) => {
+      setPreviewModalState({
+        open: true,
+        title,
+        items: previewItems,
+        initialIndex,
+      });
+    },
+    [],
+  );
 
   const closePreviewModal = useCallback(() => {
     setPreviewModalState((prev) => ({ ...prev, open: false }));
@@ -262,9 +281,12 @@ export default function GoogleSheetDriveManager() {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/google-sheet-images?url=${encodeURIComponent(url)}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/google-sheet-images?url=${encodeURIComponent(url)}`,
+        {
+          cache: "no-store",
+        },
+      );
       const payload = await parseApiResponse(response);
       const remoteData = payload.remote;
       if (!remoteData) {
@@ -274,11 +296,16 @@ export default function GoogleSheetDriveManager() {
       const nextItems = parseSheetRawText(remoteData);
       setItems(nextItems);
       setSelectedId((prev) => {
-        const stillExists = nextItems.some((item) => String(item.id) === String(prev));
+        const stillExists = nextItems.some(
+          (item) => String(item.id) === String(prev),
+        );
         if (stillExists) return prev;
         return nextItems[0]?.id || null;
       });
-      const rawStr = typeof remoteData === "string" ? remoteData : JSON.stringify(remoteData);
+      const rawStr =
+        typeof remoteData === "string"
+          ? remoteData
+          : JSON.stringify(remoteData);
       setRawResponse(rawStr.slice(0, 4000));
       setNotice(
         nextItems.length > 0
@@ -292,52 +319,55 @@ export default function GoogleSheetDriveManager() {
     }
   }, [getEndpoint]);
 
-  const appendFiles = useCallback((fileList) => {
-    const files = Array.from(fileList || []);
-    if (files.length === 0) return;
+  const appendFiles = useCallback(
+    (fileList) => {
+      const files = Array.from(fileList || []);
+      if (files.length === 0) return;
 
-    let rejectedType = 0;
-    let rejectedSize = 0;
-    const nextItems = [];
+      let rejectedType = 0;
+      let rejectedSize = 0;
+      const nextItems = [];
 
-    for (const file of files) {
-      if (!String(file?.type || "").startsWith("image/")) {
-        rejectedType += 1;
-        continue;
+      for (const file of files) {
+        if (!String(file?.type || "").startsWith("image/")) {
+          rejectedType += 1;
+          continue;
+        }
+        if (Number(file.size || 0) > MAX_UPLOAD_BYTES) {
+          rejectedSize += 1;
+          continue;
+        }
+        nextItems.push({
+          id: createQueueId(),
+          file,
+          name: file.name || "untitled-image",
+          customName: stripFileExtension(file.name || "untitled-image"),
+          customTags: String(createTags || "").trim(),
+          size: Number(file.size || 0),
+          previewUrl: URL.createObjectURL(file),
+          status: "pending",
+          message: "Menunggu upload",
+        });
       }
-      if (Number(file.size || 0) > MAX_UPLOAD_BYTES) {
-        rejectedSize += 1;
-        continue;
+
+      if (nextItems.length > 0) {
+        setUploadQueue((prev) => [...prev, ...nextItems]);
+        setActiveQueueId((prev) => prev || nextItems[0].id);
       }
-      nextItems.push({
-        id: createQueueId(),
-        file,
-        name: file.name || "untitled-image",
-        customName: stripFileExtension(file.name || "untitled-image"),
-        customTags: String(createTags || "").trim(),
-        size: Number(file.size || 0),
-        previewUrl: URL.createObjectURL(file),
-        status: "pending",
-        message: "Menunggu upload",
-      });
-    }
 
-    if (nextItems.length > 0) {
-      setUploadQueue((prev) => [...prev, ...nextItems]);
-      setActiveQueueId((prev) => prev || nextItems[0].id);
-    }
+      if (rejectedType > 0 || rejectedSize > 0) {
+        setNotice(
+          `File ditambahkan: ${nextItems.length}. Ditolak: type ${rejectedType}, size ${rejectedSize} (maks ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
+        );
+        return;
+      }
 
-    if (rejectedType > 0 || rejectedSize > 0) {
-      setNotice(
-        `File ditambahkan: ${nextItems.length}. Ditolak: type ${rejectedType}, size ${rejectedSize} (maks ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
-      );
-      return;
-    }
-
-    if (nextItems.length > 0) {
-      setNotice(`${nextItems.length} file ditambahkan ke antrean upload.`);
-    }
-  }, [createTags]);
+      if (nextItems.length > 0) {
+        setNotice(`${nextItems.length} file ditambahkan ke antrean upload.`);
+      }
+    },
+    [createTags],
+  );
 
   const removeQueueItem = useCallback((itemId) => {
     setUploadQueue((prev) => {
@@ -394,14 +424,17 @@ export default function GoogleSheetDriveManager() {
           url,
           action: "create",
           item: {
-            name: String(createName || "").trim() || `Drive ${driveId.slice(0, 8)}`,
+            name:
+              String(createName || "").trim() || `Drive ${driveId.slice(0, 8)}`,
             tags: String(createTags || "").trim(),
             driveId,
           },
         }),
       });
       const payload = await parseApiResponse(response);
-      setRawResponse(JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000));
+      setRawResponse(
+        JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000),
+      );
       setNotice("Create via Drive ID berhasil.");
       setCreateDriveId("");
       await loadItems();
@@ -434,7 +467,11 @@ export default function GoogleSheetDriveManager() {
         setUploadQueue((prev) =>
           prev.map((item) =>
             item.id === queueItem.id
-              ? { ...item, status: "uploading", message: `Uploading ${i + 1}/${targetQueue.length}` }
+              ? {
+                  ...item,
+                  status: "uploading",
+                  message: `Uploading ${i + 1}/${targetQueue.length}`,
+                }
               : item,
           ),
         );
@@ -471,7 +508,9 @@ export default function GoogleSheetDriveManager() {
             }),
           });
           const payload = await parseApiResponse(response);
-          setRawResponse(JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000));
+          setRawResponse(
+            JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000),
+          );
           successCount += 1;
           setUploadQueue((prev) =>
             prev.map((item) =>
@@ -495,7 +534,9 @@ export default function GoogleSheetDriveManager() {
       setIsBatchUploading(false);
     }
 
-    setNotice(`Bulk upload selesai. Berhasil ${successCount}, gagal ${failedCount}.`);
+    setNotice(
+      `Bulk upload selesai. Berhasil ${successCount}, gagal ${failedCount}.`,
+    );
     await loadItems();
   }, [createName, createTags, getEndpoint, loadItems, uploadQueue]);
 
@@ -524,7 +565,10 @@ export default function GoogleSheetDriveManager() {
           id: selectedItem.id,
           item: {
             id: selectedItem.id,
-            name: String(editName || "").trim() || selectedItem.name || "Untitled Image",
+            name:
+              String(editName || "").trim() ||
+              selectedItem.name ||
+              "Untitled Image",
             tags: String(editTags || "").trim(),
             driveId: String(editDriveId || "").trim(),
             fileName: editFile?.name || "",
@@ -535,7 +579,9 @@ export default function GoogleSheetDriveManager() {
       });
 
       const payload = await parseApiResponse(response);
-      setRawResponse(JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000));
+      setRawResponse(
+        JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000),
+      );
       setNotice(`Update "${selectedItem.name}" berhasil dikirim.`);
       setEditFile(null);
       await loadItems();
@@ -544,7 +590,15 @@ export default function GoogleSheetDriveManager() {
     } finally {
       setIsUpdating(false);
     }
-  }, [editDriveId, editFile, editName, editTags, getEndpoint, loadItems, selectedItem]);
+  }, [
+    editDriveId,
+    editFile,
+    editName,
+    editTags,
+    getEndpoint,
+    loadItems,
+    selectedItem,
+  ]);
 
   const handleDelete = useCallback(async () => {
     const url = getEndpoint();
@@ -570,7 +624,9 @@ export default function GoogleSheetDriveManager() {
       });
 
       const payload = await parseApiResponse(response);
-      setRawResponse(JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000));
+      setRawResponse(
+        JSON.stringify(payload.remote || payload, null, 2).slice(0, 4000),
+      );
       setNotice(`Delete "${selectedItem.name}" berhasil dikirim.`);
       await loadItems();
     } catch (error) {
@@ -582,14 +638,14 @@ export default function GoogleSheetDriveManager() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-100 via-cyan-50 to-emerald-50 p-4 sm:p-6">
-      <div className="pointer-events-none absolute -left-20 top-8 h-64 w-64 rounded-full bg-cyan-200/50 blur-3xl" />
+      <div className="pointer-events-none absolute top-8 -left-20 h-64 w-64 rounded-full bg-cyan-200/50 blur-3xl" />
       <div className="pointer-events-none absolute -right-20 bottom-8 h-72 w-72 rounded-full bg-emerald-200/50 blur-3xl" />
 
       <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-4">
         <section className="overflow-hidden rounded-3xl border border-white/60 bg-white/80 p-4 shadow-sm backdrop-blur-md sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-700">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-cyan-700 uppercase">
                 <span aria-hidden="true">✦</span>
                 Google Drive CRUD
               </div>
@@ -597,8 +653,8 @@ export default function GoogleSheetDriveManager() {
                 Upload Banyak File, CRUD, dan Preview Gambar
               </h1>
               <p className="text-xs text-slate-600 sm:text-sm">
-                Upload massal langsung ke Drive + simpan metadata di Sheet. Preview memakai
-                `driveId`.
+                Upload massal langsung ke Drive + simpan metadata di Sheet.
+                Preview memakai `driveId`.
               </p>
             </div>
             <Link
@@ -612,19 +668,31 @@ export default function GoogleSheetDriveManager() {
           <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
               <div className="text-[11px] text-slate-500">Total Item</div>
-              <div className="mt-0.5 text-lg font-semibold text-slate-900">{items.length}</div>
+              <div className="mt-0.5 text-lg font-semibold text-slate-900">
+                {items.length}
+              </div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
               <div className="text-[11px] text-slate-500">Queue</div>
-              <div className="mt-0.5 text-lg font-semibold text-slate-900">{queueStats.total}</div>
+              <div className="mt-0.5 text-lg font-semibold text-slate-900">
+                {queueStats.total}
+              </div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
               <div className="text-[11px] text-slate-500">Uploaded</div>
-              <div className="mt-0.5 text-lg font-semibold text-emerald-700">{queueStats.done}</div>
+              <div className="mt-0.5 text-lg font-semibold text-emerald-700">
+                {queueStats.done}
+              </div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
               <div className="text-[11px] text-slate-500">Status Drive</div>
-              <div className="mt-0.5 truncate text-sm font-medium text-slate-900">{isLoading ? "Memuat..." : items.length > 0 ? "Terhubung" : "Siap"}</div>
+              <div className="mt-0.5 truncate text-sm font-medium text-slate-900">
+                {isLoading
+                  ? "Memuat..."
+                  : items.length > 0
+                    ? "Terhubung"
+                    : "Siap"}
+              </div>
             </div>
           </div>
         </section>
@@ -636,9 +704,11 @@ export default function GoogleSheetDriveManager() {
             </p>
             <button
               type="button"
-              onClick={() => { void loadItems(); }}
+              onClick={() => {
+                void loadItems();
+              }}
               disabled={isLoading}
-              className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <SpinIndicator spinning={isLoading} />
               {isLoading ? "Loading..." : "Load List"}
@@ -699,14 +769,18 @@ export default function GoogleSheetDriveManager() {
                         <button
                           type="button"
                           onClick={() => openGalleryPreview(item.id)}
-                          className="absolute right-2 top-2 rounded-lg bg-slate-900/85 px-2 py-1 text-[10px] text-white"
+                          className="absolute top-2 right-2 rounded-lg bg-slate-900/85 px-2 py-1 text-[10px] text-white"
                         >
                           Preview
                         </button>
                       </div>
                       <div className="space-y-1 p-2.5">
-                        <div className="truncate text-xs font-semibold text-slate-800">{item.name}</div>
-                        <div className="truncate text-[11px] text-slate-500">id: {item.id}</div>
+                        <div className="truncate text-xs font-semibold text-slate-800">
+                          {item.name}
+                        </div>
+                        <div className="truncate text-[11px] text-slate-500">
+                          id: {item.id}
+                        </div>
                         <div className="truncate text-[11px] text-slate-500">
                           driveId: {item.driveId || "-"}
                         </div>
@@ -780,11 +854,14 @@ export default function GoogleSheetDriveManager() {
                   Drop and drop or browse files
                 </div>
                 <div className="text-xs text-slate-500">
-                  Maksimum {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB per file
+                  Maksimum {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB per
+                  file
                 </div>
               </div>
 
-              <div className="mt-4 text-xs font-semibold text-slate-700">Attachments:</div>
+              <div className="mt-4 text-xs font-semibold text-slate-700">
+                Attachments:
+              </div>
               <div className="mt-2 space-y-2">
                 {uploadQueue.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-[11px] text-slate-500">
@@ -804,9 +881,13 @@ export default function GoogleSheetDriveManager() {
                         onClick={() => setActiveQueueId(item.id)}
                         className="truncate text-left text-xs font-medium text-slate-700 hover:text-cyan-700"
                       >
-                        {item.customName || stripFileExtension(item.name) || item.name}
+                        {item.customName ||
+                          stripFileExtension(item.name) ||
+                          item.name}
                       </button>
-                      <div className="text-[11px] text-slate-500">{formatFileSize(item.size)}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {formatFileSize(item.size)}
+                      </div>
                       <button
                         type="button"
                         onClick={() => openQueuePreview(item.id)}
@@ -822,7 +903,9 @@ export default function GoogleSheetDriveManager() {
                         </span>
                         <button
                           type="button"
-                          disabled={item.status === "uploading" || isBatchUploading}
+                          disabled={
+                            item.status === "uploading" || isBatchUploading
+                          }
                           onClick={() => removeQueueItem(item.id)}
                           className="rounded-md px-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 disabled:opacity-40"
                         >
@@ -840,7 +923,10 @@ export default function GoogleSheetDriveManager() {
                   onClick={() => {
                     void handleUploadMany();
                   }}
-                  disabled={isBatchUploading || queueStats.pending + queueStats.error < 1}
+                  disabled={
+                    isBatchUploading ||
+                    queueStats.pending + queueStats.error < 1
+                  }
                   className="inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <SpinIndicator spinning={isBatchUploading} />
@@ -872,7 +958,7 @@ export default function GoogleSheetDriveManager() {
               </div>
 
               <div className="mt-3">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                <div className="mb-1 text-[11px] font-semibold tracking-wide text-slate-600 uppercase">
                   Thumbnails
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-1">
@@ -892,7 +978,7 @@ export default function GoogleSheetDriveManager() {
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/70 to-transparent px-1 py-1 text-left text-[10px] text-white">
                         {formatFileSize(item.size)}
                       </div>
-                      <div className="pointer-events-none absolute left-1 top-1 rounded bg-slate-900/70 px-1 py-0.5 text-[9px] text-white">
+                      <div className="pointer-events-none absolute top-1 left-1 rounded bg-slate-900/70 px-1 py-0.5 text-[9px] text-white">
                         {item.customName || stripFileExtension(item.name)}
                       </div>
                     </button>
@@ -913,7 +999,8 @@ export default function GoogleSheetDriveManager() {
                 </div>
                 {!activeQueueItem ? (
                   <div className="text-[11px] text-slate-500">
-                    Klik thumbnail atau nama file pada attachments untuk memilih file.
+                    Klik thumbnail atau nama file pada attachments untuk memilih
+                    file.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[96px_1fr]">
@@ -947,7 +1034,8 @@ export default function GoogleSheetDriveManager() {
                         className={TEXT_INPUT_CLASS}
                       />
                       <div className="text-[11px] text-slate-500">
-                        File asli: {activeQueueItem.name} • {formatFileSize(activeQueueItem.size)} •{" "}
+                        File asli: {activeQueueItem.name} •{" "}
+                        {formatFileSize(activeQueueItem.size)} •{" "}
                         {queueStatusLabel(activeQueueItem.status)}
                       </div>
                     </div>
@@ -956,7 +1044,9 @@ export default function GoogleSheetDriveManager() {
               </div>
 
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-xs font-semibold text-slate-700">Defaults & Manual Create</div>
+                <div className="mb-2 text-xs font-semibold text-slate-700">
+                  Defaults & Manual Create
+                </div>
                 <div className="space-y-2.5">
                   <input
                     type="text"
@@ -1009,7 +1099,9 @@ export default function GoogleSheetDriveManager() {
                     <div className="truncate text-xs font-semibold text-slate-800">
                       {selectedItem.name}
                     </div>
-                    <div className="truncate text-[11px] text-slate-500">id: {selectedItem.id}</div>
+                    <div className="truncate text-[11px] text-slate-500">
+                      id: {selectedItem.id}
+                    </div>
                   </div>
                   <div className="space-y-2.5">
                     <input
@@ -1036,7 +1128,9 @@ export default function GoogleSheetDriveManager() {
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(event) => setEditFile(event.target.files?.[0] || null)}
+                      onChange={(event) =>
+                        setEditFile(event.target.files?.[0] || null)
+                      }
                       className={FILE_INPUT_CLASS}
                     />
                   </div>
@@ -1070,10 +1164,12 @@ export default function GoogleSheetDriveManager() {
         </section>
 
         <section className="rounded-2xl border border-white/60 bg-white/85 p-4 shadow-sm backdrop-blur-md">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          <div className="mb-2 text-[11px] font-semibold tracking-wide text-slate-600 uppercase">
             Status
           </div>
-          <div className={`rounded-xl border px-3 py-2 text-xs ${noticeTone}`}>{notice}</div>
+          <div className={`rounded-xl border px-3 py-2 text-xs ${noticeTone}`}>
+            {notice}
+          </div>
           {/* rawResponse disembunyikan dari UI */}
         </section>
       </div>

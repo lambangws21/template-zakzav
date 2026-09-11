@@ -1,26 +1,34 @@
-# Next.js starter kit with Appwrite
+# Zakzav Templating
 
-Kickstart your Next.js development with this ready-to-use starter project integrated with [Appwrite](https://www.appwrite.io)
+Aplikasi web untuk pengukuran radiografi dan perencanaan templating ortopedi.
 
-## 🚀Getting started
+## Menjalankan Lokal
 
-###
-Clone the Project
-Clone this repository to your local machine using Git:
+1. Gunakan Node.js 20 atau versi LTS yang lebih baru.
+2. Jalankan `npm ci`.
+3. Salin `.env.example` menjadi `.env.local`, lalu isi konfigurasi yang diperlukan.
+4. Jalankan `npm run dev` dan buka `http://localhost:3000`.
 
-`git clone https://github.com/appwrite/starter-for-nextjs`
+Jangan memasukkan kredensial, data pasien, atau service-account JSON ke Git.
 
-## 🛠️ Development guid
-1. **Configure Appwrite**<br/>
-   Navigate to `.env` and update the values to match your Appwrite project credentials.
-2. **Customize as needed**<br/>
-   Modify the starter kit to suit your app's requirements. Adjust UI, features, or backend
-   integrations as per your needs.
-3. **Install dependencies**<br/>
-   Run `npm install` to install all dependencies.
-4. **Run the app**<br/>
-   Start the project by running `npm run dev`.
+## Quality Gate
 
-## 💡 Additional notes
-- This starter project is designed to streamline your Next.js development with Appwrite.
-- Refer to the [Appwrite documentation](https://appwrite.io/docs) for detailed integration guidance.
+- `npm run lint`: pemeriksaan tipe seluruh source.
+- `npm test`: unit test dengan Node test runner.
+- `npm run build`: production build Next.js.
+- `npm run check`: menjalankan seluruh pemeriksaan di atas.
+
+## Struktur
+
+- `src/app`: route, layout, dan API handlers Next.js.
+- `src/components`: komponen UI yang dapat digunakan ulang.
+- `src/context`: provider React lintas fitur.
+- `src/data`: katalog dan data statis yang dibundel aplikasi.
+- `src/hooks`: React hooks bersama.
+- `src/lib`: domain logic, adapter layanan, dan utilitas tanpa UI.
+- `public`: aset yang dilayani langsung oleh browser.
+- `docs`: panduan operasional dan integrasi eksternal.
+- `tests`: unit dan integration tests.
+
+Aturan kepemilikan folder dan rencana modularisasi dijelaskan di
+[`docs/architecture.md`](docs/architecture.md).

@@ -26,13 +26,16 @@ import {
   X,
 } from "lucide-react";
 import { buildMasterSeedRows } from "../master-seed-data";
-import DriveImageWithFallback from "@/components/DriveImageWithFallback.jsx";
+import DriveImageWithFallback from "@/components/media/DriveImageWithFallback";
 import {
   FloatingInputField,
   FloatingSelectField,
   FloatingTextareaField,
 } from "@/components/FloatingFields";
-import { extractDriveFileId, normalizeImageUrl } from "@/lib/googleSheetImageUtils";
+import {
+  extractDriveFileId,
+  normalizeImageUrl,
+} from "@/lib/googleSheetImageUtils";
 
 const GOOGLE_SHEET_ENDPOINT =
   process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
@@ -54,12 +57,7 @@ const ACTION_LIST_CANDIDATES_BY_TYPE = {
     "list",
     "read",
   ],
-  implant: [
-    "list_implant_profiles",
-    "read_implant_profiles",
-    "list",
-    "read",
-  ],
+  implant: ["list_implant_profiles", "read_implant_profiles", "list", "read"],
 };
 const ACTION_CREATE_BY_TYPE = {
   instrument: "create_instrument_profile",
@@ -222,7 +220,7 @@ function normalizeRows(rows) {
   return rows
     .map((row) => {
       const procedureKey = normalizeProcedureKey(
-        row?.procedureKey || row?.procedure || row?.systemKey
+        row?.procedureKey || row?.procedure || row?.systemKey,
       );
       const catalogNo = normalizeCatalogNo(row?.catalogNo || row?.code);
       const qtyValue = Number(row?.qty || row?.piece || 1);
@@ -239,11 +237,13 @@ function normalizeRows(rows) {
           row?.imageUrl ||
           row?.photoUrl ||
           row?.image ||
-          ""
+          "",
       );
       const imageUrl = normalizeImageUrl(
-        String(row?.imageSrc || row?.imageUrl || row?.photoUrl || row?.image || "").trim(),
-        driveId
+        String(
+          row?.imageSrc || row?.imageUrl || row?.photoUrl || row?.image || "",
+        ).trim(),
+        driveId,
       );
 
       return {
@@ -252,7 +252,8 @@ function normalizeRows(rows) {
         catalogNo,
         name: String(row?.name || "").trim(),
         category: String(row?.category || "Tray").trim() || "Tray",
-        qty: Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1,
+        qty:
+          Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1,
         driveId,
         imageUrl,
         updatedAt: String(row?.updatedAt || "").trim(),
@@ -287,9 +288,11 @@ function parseCsvRows(text) {
   if (lines.length < 2) return [];
 
   const splitCsv = (line) =>
-    line
-      .split(",")
-      .map((item) => String(item || "").trim().replace(/^"|"$/g, ""));
+    line.split(",").map((item) =>
+      String(item || "")
+        .trim()
+        .replace(/^"|"$/g, ""),
+    );
 
   const headers = splitCsv(lines[0]).map((header) => header.toLowerCase());
   const rows = [];
@@ -312,7 +315,8 @@ function extractProfileRowsFromRemote(remote) {
     (Array.isArray(remote.items) && remote.items) ||
     (Array.isArray(remote.rows) && remote.rows) ||
     (Array.isArray(remote.instrumentProfiles) && remote.instrumentProfiles) ||
-    (Array.isArray(remote?.data?.instrumentProfiles) && remote.data.instrumentProfiles) ||
+    (Array.isArray(remote?.data?.instrumentProfiles) &&
+      remote.data.instrumentProfiles) ||
     (Array.isArray(remote.data) && remote.data) ||
     [];
   if (direct.length) return direct;
@@ -344,26 +348,36 @@ function normalizeUsageSnapshotFromRemote(remote) {
   const rootData = toObjectSafe(root.data);
 
   const submissions = toArraySafe(
-    root.implantUsageSubmissions || rootData.implantUsageSubmissions
+    root.implantUsageSubmissions || rootData.implantUsageSubmissions,
   );
-  const items = toArraySafe(root.implantUsageItems || rootData.implantUsageItems);
+  const items = toArraySafe(
+    root.implantUsageItems || rootData.implantUsageItems,
+  );
   const signatures = toArraySafe(
-    root.implantUsageSignatures || rootData.implantUsageSignatures
+    root.implantUsageSignatures || rootData.implantUsageSignatures,
   );
 
   const counts = toObjectSafe(root.counts);
-  const submissionsCount = Number(counts.implantUsageSubmissions || submissions.length || 0);
+  const submissionsCount = Number(
+    counts.implantUsageSubmissions || submissions.length || 0,
+  );
   const itemsCount = Number(counts.implantUsageItems || items.length || 0);
-  const signaturesCount = Number(counts.implantUsageSignatures || signatures.length || 0);
+  const signaturesCount = Number(
+    counts.implantUsageSignatures || signatures.length || 0,
+  );
 
   return {
     submissions,
     items,
     signatures,
     counts: {
-      submissions: Number.isFinite(submissionsCount) ? submissionsCount : submissions.length,
+      submissions: Number.isFinite(submissionsCount)
+        ? submissionsCount
+        : submissions.length,
       items: Number.isFinite(itemsCount) ? itemsCount : items.length,
-      signatures: Number.isFinite(signaturesCount) ? signaturesCount : signatures.length,
+      signatures: Number.isFinite(signaturesCount)
+        ? signaturesCount
+        : signatures.length,
     },
   };
 }
@@ -427,7 +441,9 @@ export default function AdminInstrumentProfilePage() {
     signatures: 0,
   });
   const [usageAutoRefresh, setUsageAutoRefresh] = useState(true);
-  const [usageManageForm, setUsageManageForm] = useState(createUsageManageInitialForm);
+  const [usageManageForm, setUsageManageForm] = useState(
+    createUsageManageInitialForm,
+  );
   const [usageSignatureRows, setUsageSignatureRows] = useState([]);
   const [usageSlotPhotoFile, setUsageSlotPhotoFile] = useState(null);
   const [usageSignaturePhotoFile, setUsageSignaturePhotoFile] = useState(null);
@@ -451,7 +467,8 @@ export default function AdminInstrumentProfilePage() {
   const filteredItems = useMemo(() => {
     const search = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      if (filterProcedure !== "all" && item.procedureKey !== filterProcedure) return false;
+      if (filterProcedure !== "all" && item.procedureKey !== filterProcedure)
+        return false;
       if (!search) return true;
       return [item.catalogNo, item.name, item.category, item.procedureKey]
         .join(" ")
@@ -470,7 +487,8 @@ export default function AdminInstrumentProfilePage() {
       ? filteredItems[previewIndex]
       : items.find((item) => item.id === previewItemId) || null;
   const previewHasPrev = previewIndex > 0;
-  const previewHasNext = previewIndex >= 0 && previewIndex < filteredItems.length - 1;
+  const previewHasNext =
+    previewIndex >= 0 && previewIndex < filteredItems.length - 1;
 
   const usageIntegrityRows = useMemo(() => {
     if (!usageSubmissions.length) return [];
@@ -490,14 +508,17 @@ export default function AdminInstrumentProfilePage() {
     return usageSubmissions
       .map((submission) => {
         const submissionId = String(
-          submission?.submissionId || submission?.id || ""
+          submission?.submissionId || submission?.id || "",
         ).trim();
         const expectedItems = Number(submission?.slotsCount || 0);
         const expectedSignatures = Number(submission?.signaturesCount || 0);
         const actualItems = itemCountBySubmission.get(submissionId) || 0;
-        const actualSignatures = signatureCountBySubmission.get(submissionId) || 0;
+        const actualSignatures =
+          signatureCountBySubmission.get(submissionId) || 0;
         const slotsWithPhoto = Number(submission?.slotsWithPhoto || 0);
-        const signaturesWithPhoto = Number(submission?.signaturesWithPhoto || 0);
+        const signaturesWithPhoto = Number(
+          submission?.signaturesWithPhoto || 0,
+        );
         return {
           submissionId,
           submission,
@@ -510,13 +531,17 @@ export default function AdminInstrumentProfilePage() {
             submission?.reviewStatus ||
               submission?.statusReview ||
               submission?.review_state ||
-              ""
+              "",
           )
             .trim()
             .toLowerCase(),
-          reviewNote: String(submission?.reviewNote || submission?.review_note || "").trim(),
+          reviewNote: String(
+            submission?.reviewNote || submission?.review_note || "",
+          ).trim(),
           expectedItems: Number.isFinite(expectedItems) ? expectedItems : 0,
-          expectedSignatures: Number.isFinite(expectedSignatures) ? expectedSignatures : 0,
+          expectedSignatures: Number.isFinite(expectedSignatures)
+            ? expectedSignatures
+            : 0,
           slotsWithPhoto: Number.isFinite(slotsWithPhoto) ? slotsWithPhoto : 0,
           signaturesWithPhoto: Number.isFinite(signaturesWithPhoto)
             ? signaturesWithPhoto
@@ -524,7 +549,8 @@ export default function AdminInstrumentProfilePage() {
           actualItems,
           actualSignatures,
           mismatch:
-            (Number.isFinite(expectedItems) ? expectedItems : 0) !== actualItems ||
+            (Number.isFinite(expectedItems) ? expectedItems : 0) !==
+              actualItems ||
             (Number.isFinite(expectedSignatures) ? expectedSignatures : 0) !==
               actualSignatures,
         };
@@ -533,30 +559,44 @@ export default function AdminInstrumentProfilePage() {
   }, [usageItems, usageSignatures, usageSubmissions]);
 
   const usageMismatchCount = useMemo(
-    () => usageIntegrityRows.reduce((total, row) => total + (row.mismatch ? 1 : 0), 0),
-    [usageIntegrityRows]
+    () =>
+      usageIntegrityRows.reduce(
+        (total, row) => total + (row.mismatch ? 1 : 0),
+        0,
+      ),
+    [usageIntegrityRows],
   );
 
   const usageRowsForTable = useMemo(
     () => usageIntegrityRows.slice(0, 25),
-    [usageIntegrityRows]
+    [usageIntegrityRows],
   );
   const monitorNeedsScroll = usageRowsForTable.length > 10;
 
   const profilesWithImageCount = useMemo(
-    () => items.filter((item) => Boolean(String(item.driveId || item.imageUrl || "").trim())).length,
-    [items]
+    () =>
+      items.filter((item) =>
+        Boolean(String(item.driveId || item.imageUrl || "").trim()),
+      ).length,
+    [items],
   );
-  const profilesWithoutImageCount = Math.max(0, items.length - profilesWithImageCount);
+  const profilesWithoutImageCount = Math.max(
+    0,
+    items.length - profilesWithImageCount,
+  );
   const imageCoveragePercent = items.length
     ? Math.round((profilesWithImageCount / items.length) * 100)
     : 0;
   const reviewDoneCount = useMemo(
     () =>
       usageIntegrityRows.filter((row) =>
-        ["reviewed", "resolved"].includes(String(row.reviewStatus || "").trim().toLowerCase())
+        ["reviewed", "resolved"].includes(
+          String(row.reviewStatus || "")
+            .trim()
+            .toLowerCase(),
+        ),
       ).length,
-    [usageIntegrityRows]
+    [usageIntegrityRows],
   );
   const reviewProgressPercent = usageIntegrityRows.length
     ? Math.round((reviewDoneCount / usageIntegrityRows.length) * 100)
@@ -564,9 +604,11 @@ export default function AdminInstrumentProfilePage() {
   const procedureSummary = useMemo(
     () =>
       PROCEDURES.map((procedure) => {
-        const procedureItems = items.filter((item) => item.procedureKey === procedure.key);
+        const procedureItems = items.filter(
+          (item) => item.procedureKey === procedure.key,
+        );
         const withImage = procedureItems.filter((item) =>
-          Boolean(String(item.driveId || item.imageUrl || "").trim())
+          Boolean(String(item.driveId || item.imageUrl || "").trim()),
         ).length;
         return {
           ...procedure,
@@ -575,9 +617,12 @@ export default function AdminInstrumentProfilePage() {
           withoutImage: Math.max(0, procedureItems.length - withImage),
         };
       }),
-    [items]
+    [items],
   );
-  const recentSubmissionRows = useMemo(() => usageIntegrityRows.slice(0, 5), [usageIntegrityRows]);
+  const recentSubmissionRows = useMemo(
+    () => usageIntegrityRows.slice(0, 5),
+    [usageIntegrityRows],
+  );
   const recentUpdatedInstruments = useMemo(() => {
     return [...items]
       .sort((a, b) => {
@@ -593,7 +638,7 @@ export default function AdminInstrumentProfilePage() {
     if (!submissionId) return null;
     return (
       usageSubmissions.find(
-        (row) => String(row?.submissionId || "").trim() === submissionId
+        (row) => String(row?.submissionId || "").trim() === submissionId,
       ) || null
     );
   }, [usageManageForm.submissionId, usageSubmissions]);
@@ -602,10 +647,12 @@ export default function AdminInstrumentProfilePage() {
     const submissionId = String(usageManageForm.submissionId || "").trim();
     if (!submissionId) return [];
     const matched = usageItems.filter(
-      (row) => String(row?.submissionId || "").trim() === submissionId
+      (row) => String(row?.submissionId || "").trim() === submissionId,
     );
     if (matched.length) return matched;
-    const slotsJson = parseJsonSafe(selectedManagedSubmission?.slotsJson || "[]");
+    const slotsJson = parseJsonSafe(
+      selectedManagedSubmission?.slotsJson || "[]",
+    );
     return Array.isArray(slotsJson) ? slotsJson : [];
   }, [selectedManagedSubmission, usageItems, usageManageForm.submissionId]);
 
@@ -613,12 +660,18 @@ export default function AdminInstrumentProfilePage() {
     const submissionId = String(usageManageForm.submissionId || "").trim();
     if (!submissionId) return [];
     const matched = usageSignatures.filter(
-      (row) => String(row?.submissionId || "").trim() === submissionId
+      (row) => String(row?.submissionId || "").trim() === submissionId,
     );
     if (matched.length) return matched;
-    const signaturesJson = parseJsonSafe(selectedManagedSubmission?.signaturesJson || "[]");
+    const signaturesJson = parseJsonSafe(
+      selectedManagedSubmission?.signaturesJson || "[]",
+    );
     return Array.isArray(signaturesJson) ? signaturesJson : [];
-  }, [selectedManagedSubmission, usageManageForm.submissionId, usageSignatures]);
+  }, [
+    selectedManagedSubmission,
+    usageManageForm.submissionId,
+    usageSignatures,
+  ]);
 
   const showOverviewSection = activeSection === "overview";
   const showUsageSection = activeSection === "usage";
@@ -635,13 +688,13 @@ export default function AdminInstrumentProfilePage() {
 
   const zoomInPreview = useCallback(() => {
     setPreviewZoom((prev) =>
-      Math.min(PREVIEW_ZOOM_MAX, Number((prev + PREVIEW_ZOOM_STEP).toFixed(2)))
+      Math.min(PREVIEW_ZOOM_MAX, Number((prev + PREVIEW_ZOOM_STEP).toFixed(2))),
     );
   }, []);
 
   const zoomOutPreview = useCallback(() => {
     setPreviewZoom((prev) =>
-      Math.max(PREVIEW_ZOOM_MIN, Number((prev - PREVIEW_ZOOM_STEP).toFixed(2)))
+      Math.max(PREVIEW_ZOOM_MIN, Number((prev - PREVIEW_ZOOM_STEP).toFixed(2))),
     );
   }, []);
 
@@ -712,53 +765,59 @@ export default function AdminInstrumentProfilePage() {
         setCheckingAccessCode(false);
       }
     },
-    [accessCodeInput, verifyAdminCode]
+    [accessCodeInput, verifyAdminCode],
   );
 
-  const callAction = useCallback(async (action, payload = {}, options = {}) => {
-    if (!GOOGLE_SHEET_ENDPOINT) {
-      throw new Error("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi.");
-    }
+  const callAction = useCallback(
+    async (action, payload = {}, options = {}) => {
+      if (!GOOGLE_SHEET_ENDPOINT) {
+        throw new Error("NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT belum diisi.");
+      }
 
-    const targetProfileType =
-      options && options.profileType ? String(options.profileType) : profileType;
-    const targetSheet =
-      PROFILE_SHEET_BY_TYPE[targetProfileType] || PROFILE_SHEET_BY_TYPE.instrument;
+      const targetProfileType =
+        options && options.profileType
+          ? String(options.profileType)
+          : profileType;
+      const targetSheet =
+        PROFILE_SHEET_BY_TYPE[targetProfileType] ||
+        PROFILE_SHEET_BY_TYPE.instrument;
 
-    const response = await fetch("/api/google-sheet-images", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: GOOGLE_SHEET_ENDPOINT,
-        action,
-        sheet: targetSheet,
-        sheetName: targetSheet,
-        table: targetSheet,
-        ...payload,
-      }),
-    });
+      const response = await fetch("/api/google-sheet-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: GOOGLE_SHEET_ENDPOINT,
+          action,
+          sheet: targetSheet,
+          sheetName: targetSheet,
+          table: targetSheet,
+          ...payload,
+        }),
+      });
 
-    const result = await response.json();
-    const remote = result?.remote || result || {};
-    const remoteStatus = String(remote?.status || "").toLowerCase();
-    const remoteOk =
-      typeof remote?.ok === "boolean"
-        ? remote.ok
-        : remoteStatus
-          ? remoteStatus !== "error"
-          : true;
+      const result = await response.json();
+      const remote = result?.remote || result || {};
+      const remoteStatus = String(remote?.status || "").toLowerCase();
+      const remoteOk =
+        typeof remote?.ok === "boolean"
+          ? remote.ok
+          : remoteStatus
+            ? remoteStatus !== "error"
+            : true;
 
-    if (!response.ok || !result?.ok || !remoteOk) {
-      throw new Error(
-        remote?.error ||
-          remote?.message ||
-          result?.error ||
-          `Request gagal (HTTP ${response.status}).`
-      );
-    }
+      if (!response.ok || !result?.ok || !remoteOk) {
+        throw new Error(
+          remote?.error ||
+            remote?.message ||
+            result?.error ||
+            `Request gagal (HTTP ${response.status}).`,
+        );
+      }
 
-    return remote;
-  }, [profileType]);
+      return remote;
+    },
+    [profileType],
+  );
 
   const callActionGet = useCallback(async (action, payload = {}) => {
     if (!GOOGLE_SHEET_ENDPOINT) {
@@ -774,10 +833,13 @@ export default function AdminInstrumentProfilePage() {
       query.set(key, String(value));
     });
 
-    const response = await fetch(`/api/google-sheet-images?${query.toString()}`, {
-      method: "GET",
-      cache: "no-store",
-    });
+    const response = await fetch(
+      `/api/google-sheet-images?${query.toString()}`,
+      {
+        method: "GET",
+        cache: "no-store",
+      },
+    );
     const result = await response.json();
     const remote = result?.remote || result || {};
     const remoteStatus = String(remote?.status || "").toLowerCase();
@@ -793,50 +855,57 @@ export default function AdminInstrumentProfilePage() {
         remote?.error ||
           remote?.message ||
           result?.error ||
-          `Request GET gagal (HTTP ${response.status}).`
+          `Request GET gagal (HTTP ${response.status}).`,
       );
     }
     return remote;
   }, []);
 
-  const loadProfiles = useCallback(async (silent = false) => {
-    if (!silent) setMessage("");
-    setLoading(true);
-    try {
-      let rows = [];
-      let lastError = "";
-      const listActions =
-        ACTION_LIST_CANDIDATES_BY_TYPE[profileType] ||
-        ACTION_LIST_CANDIDATES_BY_TYPE.instrument;
-      const profileLabel =
-        PROFILE_TYPE_OPTIONS.find((option) => option.key === profileType)?.label ||
-        "Profile";
+  const loadProfiles = useCallback(
+    async (silent = false) => {
+      if (!silent) setMessage("");
+      setLoading(true);
+      try {
+        let rows = [];
+        let lastError = "";
+        const listActions =
+          ACTION_LIST_CANDIDATES_BY_TYPE[profileType] ||
+          ACTION_LIST_CANDIDATES_BY_TYPE.instrument;
+        const profileLabel =
+          PROFILE_TYPE_OPTIONS.find((option) => option.key === profileType)
+            ?.label || "Profile";
 
-      for (const actionName of listActions) {
-        try {
-          const remote = await callAction(actionName);
-          rows = extractProfileRowsFromRemote(remote);
-          if (rows.length) break;
-        } catch (error) {
-          lastError = error?.message || `Gagal membaca profile ${profileLabel.toLowerCase()}.`;
+        for (const actionName of listActions) {
+          try {
+            const remote = await callAction(actionName);
+            rows = extractProfileRowsFromRemote(remote);
+            if (rows.length) break;
+          } catch (error) {
+            lastError =
+              error?.message ||
+              `Gagal membaca profile ${profileLabel.toLowerCase()}.`;
+          }
         }
-      }
 
-      if (!rows.length && lastError) {
-        throw new Error(lastError);
-      }
+        if (!rows.length && lastError) {
+          throw new Error(lastError);
+        }
 
-      const normalized = normalizeRows(rows);
-      setItems(normalized);
-      if (!silent) {
-        setMessage(`Data profile ${profileLabel} ter-sync (${normalized.length} item).`);
+        const normalized = normalizeRows(rows);
+        setItems(normalized);
+        if (!silent) {
+          setMessage(
+            `Data profile ${profileLabel} ter-sync (${normalized.length} item).`,
+          );
+        }
+      } catch (error) {
+        setMessage(error?.message || "Gagal memuat data profile.");
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      setMessage(error?.message || "Gagal memuat data profile.");
-    } finally {
-      setLoading(false);
-    }
-  }, [callAction, profileType]);
+    },
+    [callAction, profileType],
+  );
 
   const loadUsageMonitor = useCallback(
     async (silent = false) => {
@@ -863,7 +932,9 @@ export default function AdminInstrumentProfilePage() {
             }
             if (actionName === "all" && !snapshot) snapshot = normalized;
           } catch (error) {
-            lastError = String(error?.message || "Gagal mengambil snapshot implant usage.");
+            lastError = String(
+              error?.message || "Gagal mengambil snapshot implant usage.",
+            );
           }
         }
 
@@ -883,7 +954,8 @@ export default function AdminInstrumentProfilePage() {
               if (actionName === "all" && !snapshot) snapshot = normalized;
             } catch (error) {
               lastError = String(
-                error?.message || "Gagal mengambil snapshot implant usage via POST."
+                error?.message ||
+                  "Gagal mengambil snapshot implant usage via POST.",
               );
             }
           }
@@ -906,7 +978,9 @@ export default function AdminInstrumentProfilePage() {
               };
               break;
             } catch (error) {
-              lastError = String(error?.message || "Gagal mengambil data submission.");
+              lastError = String(
+                error?.message || "Gagal mengambil data submission.",
+              );
             }
           }
         }
@@ -928,7 +1002,9 @@ export default function AdminInstrumentProfilePage() {
               };
               break;
             } catch (error) {
-              lastError = String(error?.message || "Gagal mengambil data submission via POST.");
+              lastError = String(
+                error?.message || "Gagal mengambil data submission via POST.",
+              );
             }
           }
         }
@@ -944,18 +1020,20 @@ export default function AdminInstrumentProfilePage() {
         setUsageMonitorAt(new Date().toISOString());
         if (!silent) {
           setMessage(
-            `Monitor implant usage di-refresh (${snapshot.counts.submissions} submission).`
+            `Monitor implant usage di-refresh (${snapshot.counts.submissions} submission).`,
           );
         }
       } catch (error) {
-        const msg = String(error?.message || "Gagal memuat monitor implant usage.");
+        const msg = String(
+          error?.message || "Gagal memuat monitor implant usage.",
+        );
         setUsageMonitorError(msg);
       } finally {
         usageRequestRef.current = false;
         setUsageMonitorLoading(false);
       }
     },
-    [callAction, callActionGet]
+    [callAction, callActionGet],
   );
 
   useEffect(() => {
@@ -1006,7 +1084,7 @@ export default function AdminInstrumentProfilePage() {
       setActiveSection(sectionKey);
       if (isMobileViewport) setMobileSidebarOpen(false);
     },
-    [isMobileViewport]
+    [isMobileViewport],
   );
 
   useEffect(() => {
@@ -1070,7 +1148,10 @@ export default function AdminInstrumentProfilePage() {
   }, [usageManageModalOpen]);
 
   useEffect(() => {
-    const count = Math.max(0, Math.floor(Number(usageManageForm.signaturesCount || 0)));
+    const count = Math.max(
+      0,
+      Math.floor(Number(usageManageForm.signaturesCount || 0)),
+    );
     setUsageSignatureRows((prev) => {
       if (prev.length === count) return prev;
       if (prev.length > count) return prev.slice(0, count);
@@ -1103,7 +1184,9 @@ export default function AdminInstrumentProfilePage() {
 
   function prefillUsageManageForm(submissionId) {
     const submission = usageSubmissions.find(
-      (row) => String(row?.submissionId || "").trim() === String(submissionId || "").trim()
+      (row) =>
+        String(row?.submissionId || "").trim() ===
+        String(submissionId || "").trim(),
     );
     if (!submission) return;
     const signaturesJson = parseJsonSafe(submission?.signaturesJson || "[]");
@@ -1111,17 +1194,23 @@ export default function AdminInstrumentProfilePage() {
       ? signaturesJson
       : [];
 
-    const nextCount = Number(submission?.signaturesCount || signaturesFromSubmission.length || 0);
+    const nextCount = Number(
+      submission?.signaturesCount || signaturesFromSubmission.length || 0,
+    );
     const preparedRows = [];
     for (let index = 0; index < nextCount; index += 1) {
       const source = signaturesFromSubmission[index] || {};
       preparedRows.push({
         id: `sig-prefill-${index}-${Date.now()}`,
-        signatureId:
-          String(source?.signatureId || source?.id || `${index + 1}`).trim(),
+        signatureId: String(
+          source?.signatureId || source?.id || `${index + 1}`,
+        ).trim(),
         roleLabel:
-          String(source?.roleLabel || source?.role || DEFAULT_SIGNATURE_ROLE_OPTIONS[0]).trim() ||
-          DEFAULT_SIGNATURE_ROLE_OPTIONS[0],
+          String(
+            source?.roleLabel ||
+              source?.role ||
+              DEFAULT_SIGNATURE_ROLE_OPTIONS[0],
+          ).trim() || DEFAULT_SIGNATURE_ROLE_OPTIONS[0],
         personName: String(source?.personName || source?.name || "").trim(),
       });
     }
@@ -1129,7 +1218,9 @@ export default function AdminInstrumentProfilePage() {
     setUsageManageMode("manage");
     setUsageManageForm({
       submissionId: String(submission?.submissionId || "").trim(),
-      operationDate: String(submission?.operationDate || "").trim() || new Date().toISOString().slice(0, 10),
+      operationDate:
+        String(submission?.operationDate || "").trim() ||
+        new Date().toISOString().slice(0, 10),
       doctorName: String(submission?.doctorName || "").trim(),
       hospitalName: String(submission?.hospitalName || "").trim(),
       repAssist: String(submission?.repAssist || "").trim(),
@@ -1144,7 +1235,10 @@ export default function AdminInstrumentProfilePage() {
       signaturesWithPhoto: Number(submission?.signaturesWithPhoto || 0),
       note: String(submission?.reviewNote || "").trim(),
       reviewStatus: String(
-        submission?.reviewStatus || submission?.statusReview || submission?.review_state || ""
+        submission?.reviewStatus ||
+          submission?.statusReview ||
+          submission?.review_state ||
+          "",
       )
         .trim()
         .toLowerCase(),
@@ -1153,7 +1247,7 @@ export default function AdminInstrumentProfilePage() {
     setUsageSlotPhotoFile(null);
     setUsageSignaturePhotoFile(null);
     setUsageFormMessage(
-      `Mode kelola aktif untuk submission ${String(submission?.submissionId || "").trim()}.`
+      `Mode kelola aktif untuk submission ${String(submission?.submissionId || "").trim()}.`,
     );
     setUsageManageModalOpen(true);
     setActiveSection("usage");
@@ -1165,7 +1259,7 @@ export default function AdminInstrumentProfilePage() {
 
   function handleUsageSignatureRowChange(rowId, key, value) {
     setUsageSignatureRows((prev) =>
-      prev.map((row) => (row.id === rowId ? { ...row, [key]: value } : row))
+      prev.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)),
     );
   }
 
@@ -1173,18 +1267,27 @@ export default function AdminInstrumentProfilePage() {
     event.preventDefault();
     setUsageFormMessage("");
 
-    const slotsCount = Math.max(0, Math.floor(Number(usageManageForm.slotsCount || 0)));
+    const slotsCount = Math.max(
+      0,
+      Math.floor(Number(usageManageForm.slotsCount || 0)),
+    );
     const slotsWithPhoto = Math.max(
       0,
-      Math.min(slotsCount, Math.floor(Number(usageManageForm.slotsWithPhoto || 0)))
+      Math.min(
+        slotsCount,
+        Math.floor(Number(usageManageForm.slotsWithPhoto || 0)),
+      ),
     );
     const signaturesCount = Math.max(
       0,
-      Math.floor(Number(usageManageForm.signaturesCount || 0))
+      Math.floor(Number(usageManageForm.signaturesCount || 0)),
     );
     const signaturesWithPhoto = Math.max(
       0,
-      Math.min(signaturesCount, Math.floor(Number(usageManageForm.signaturesWithPhoto || 0)))
+      Math.min(
+        signaturesCount,
+        Math.floor(Number(usageManageForm.signaturesWithPhoto || 0)),
+      ),
     );
 
     if (!usageManageForm.operationDate || !usageManageForm.hospitalName) {
@@ -1197,7 +1300,9 @@ export default function AdminInstrumentProfilePage() {
       return;
     }
     if (signaturesWithPhoto > 0 && !usageSignaturePhotoFile) {
-      setUsageFormMessage("Isi foto signature (shared) jika signaturesWithPhoto > 0.");
+      setUsageFormMessage(
+        "Isi foto signature (shared) jika signaturesWithPhoto > 0.",
+      );
       return;
     }
 
@@ -1212,7 +1317,8 @@ export default function AdminInstrumentProfilePage() {
       const slotPhotoMime =
         slotPhotoDataUrl.match(/^data:([^;]+);base64,/)?.[1] || "image/jpeg";
       const signaturePhotoMime =
-        signaturePhotoDataUrl.match(/^data:([^;]+);base64,/)?.[1] || "image/jpeg";
+        signaturePhotoDataUrl.match(/^data:([^;]+);base64,/)?.[1] ||
+        "image/jpeg";
 
       const slots = Array.from({ length: slotsCount }, (_, index) => ({
         slotNumber: index + 1,
@@ -1229,14 +1335,21 @@ export default function AdminInstrumentProfilePage() {
             : null,
       }));
 
-      const signatureRowsForSubmit = usageSignatureRows.slice(0, signaturesCount);
+      const signatureRowsForSubmit = usageSignatureRows.slice(
+        0,
+        signaturesCount,
+      );
       const signatures = Array.from({ length: signaturesCount }, (_, index) => {
-        const row = signatureRowsForSubmit[index] || createEmptySignatureRow(index + 1);
+        const row =
+          signatureRowsForSubmit[index] || createEmptySignatureRow(index + 1);
         return {
           signatureNumber: index + 1,
           signatureId:
-            String(row.signatureId || "").trim() || `${usageManageForm.submissionId || "manual"}-${index + 1}`,
-          roleLabel: String(row.roleLabel || DEFAULT_SIGNATURE_ROLE_OPTIONS[0]).trim(),
+            String(row.signatureId || "").trim() ||
+            `${usageManageForm.submissionId || "manual"}-${index + 1}`,
+          roleLabel: String(
+            row.roleLabel || DEFAULT_SIGNATURE_ROLE_OPTIONS[0],
+          ).trim(),
           personName: String(row.personName || "").trim(),
           imageUpload:
             index < signaturesWithPhoto && signaturePhotoDataUrl
@@ -1253,7 +1366,8 @@ export default function AdminInstrumentProfilePage() {
         action: "create_implant_usage",
         data: {
           source: "admin-implant-usage-manager",
-          submissionId: String(usageManageForm.submissionId || "").trim() || undefined,
+          submissionId:
+            String(usageManageForm.submissionId || "").trim() || undefined,
           operationDate: usageManageForm.operationDate,
           doctorName: String(usageManageForm.doctorName || "").trim(),
           hospitalName: String(usageManageForm.hospitalName || "").trim(),
@@ -1280,7 +1394,9 @@ export default function AdminInstrumentProfilePage() {
       resetUsageManageForm();
       setUsageManageModalOpen(false);
     } catch (error) {
-      const msg = String(error?.message || "Gagal menyimpan data implant usage.");
+      const msg = String(
+        error?.message || "Gagal menyimpan data implant usage.",
+      );
       setUsageFormMessage(msg);
       notify("error", msg);
     } finally {
@@ -1294,7 +1410,9 @@ export default function AdminInstrumentProfilePage() {
       setUsageFormMessage("Submission ID tidak ditemukan.");
       return;
     }
-    const normalizedStatus = String(nextStatus || "").trim().toLowerCase();
+    const normalizedStatus = String(nextStatus || "")
+      .trim()
+      .toLowerCase();
     if (!normalizedStatus) return;
 
     setUsageReviewSaving(true);
@@ -1324,7 +1442,10 @@ export default function AdminInstrumentProfilePage() {
             },
           });
 
-          setUsageManageForm((prev) => ({ ...prev, reviewStatus: normalizedStatus }));
+          setUsageManageForm((prev) => ({
+            ...prev,
+            reviewStatus: normalizedStatus,
+          }));
           setUsageFormMessage(`Status review diupdate: ${normalizedStatus}.`);
           notify("success", `Status ${normalizedStatus} tersimpan.`);
           await loadUsageMonitor(true);
@@ -1336,11 +1457,11 @@ export default function AdminInstrumentProfilePage() {
 
       throw new Error(
         lastError ||
-          "Action review status belum tersedia di Apps Script. Tambahkan endpoint review update lalu deploy ulang."
+          "Action review status belum tersedia di Apps Script. Tambahkan endpoint review update lalu deploy ulang.",
       );
     } catch (error) {
       const msg = String(
-        error?.message || "Gagal update review status ke Google Sheet."
+        error?.message || "Gagal update review status ke Google Sheet.",
       );
       setUsageFormMessage(msg);
       notify("error", msg);
@@ -1428,7 +1549,7 @@ export default function AdminInstrumentProfilePage() {
     }
 
     const confirmed = window.confirm(
-      "Masukkan semua master checklist (TKR/THR/Bipolar/Stem) ke Google Sheet sekarang?"
+      "Masukkan semua master checklist (TKR/THR/Bipolar/Stem) ke Google Sheet sekarang?",
     );
     if (!confirmed) return;
 
@@ -1469,11 +1590,15 @@ export default function AdminInstrumentProfilePage() {
         }
 
         try {
-          await callAction(ACTION_CREATE_BY_TYPE.instrument, {
-            id: item.id,
-            item,
-            deleteOldDriveFile: false,
-          }, { profileType: "instrument" });
+          await callAction(
+            ACTION_CREATE_BY_TYPE.instrument,
+            {
+              id: item.id,
+              item,
+              deleteOldDriveFile: false,
+            },
+            { profileType: "instrument" },
+          );
           successCount += 1;
           if (item.imageDataUrl) photoUploadedCount += 1;
         } catch (error) {
@@ -1484,13 +1609,15 @@ export default function AdminInstrumentProfilePage() {
       await loadProfiles(true);
       const errorSuffix = errors.length ? ` Gagal ${errors.length} item.` : "";
       setMessage(
-        `Seed selesai: ${successCount}/${rows.length} item masuk sheet, foto terupload ${photoUploadedCount}.${errorSuffix}`
+        `Seed selesai: ${successCount}/${rows.length} item masuk sheet, foto terupload ${photoUploadedCount}.${errorSuffix}`,
       );
       if (errors.length) {
         console.error("Seed instrument profile errors", errors.slice(0, 50));
       }
     } catch (error) {
-      setMessage(error?.message || "Gagal seed master checklist ke Google Sheet.");
+      setMessage(
+        error?.message || "Gagal seed master checklist ke Google Sheet.",
+      );
     } finally {
       setBulkSaving(false);
     }
@@ -1524,13 +1651,13 @@ export default function AdminInstrumentProfilePage() {
       setOrphanScanFolderName(String(remote?.folderName || ""));
       if (!silent) {
         setMessage(
-          `Scan Drive selesai. Scanned ${nextReport.scanned} · orphan ${nextReport.orphanInScannedFolder} · used ${nextReport.usedInScannedFolder}.`
+          `Scan Drive selesai. Scanned ${nextReport.scanned} · orphan ${nextReport.orphanInScannedFolder} · used ${nextReport.usedInScannedFolder}.`,
         );
         notify(
           nextReport.orphanInScannedFolder > 0 ? "warning" : "success",
           nextReport.orphanInScannedFolder > 0
             ? `Scan selesai: ditemukan ${nextReport.orphanInScannedFolder} file orphan.`
-            : "Scan selesai: tidak ada orphan file."
+            : "Scan selesai: tidak ada orphan file.",
         );
       }
       return nextReport;
@@ -1549,7 +1676,7 @@ export default function AdminInstrumentProfilePage() {
     const confirmed = window.confirm(
       onlyDuplicates
         ? "Hapus file orphan yang duplikat saja (masuk Trash)?"
-        : "Hapus semua file orphan (masuk Trash)?"
+        : "Hapus semua file orphan (masuk Trash)?",
     );
     if (!confirmed) return;
 
@@ -1567,12 +1694,15 @@ export default function AdminInstrumentProfilePage() {
       const deleted = Number(summary.deleted || 0);
       const failed = Number(summary.failed || 0);
       const mode = String(
-        summary.mode || (onlyDuplicates ? "duplicates-only" : "all-orphans")
+        summary.mode || (onlyDuplicates ? "duplicates-only" : "all-orphans"),
       );
       setMessage(
-        `Clean Drive selesai (${mode}). Deleted ${deleted} file · failed ${failed} file.`
+        `Clean Drive selesai (${mode}). Deleted ${deleted} file · failed ${failed} file.`,
       );
-      notify("success", `Clean selesai: ${deleted} file di-trash, ${failed} gagal.`);
+      notify(
+        "success",
+        `Clean selesai: ${deleted} file di-trash, ${failed} gagal.`,
+      );
       await scanDriveOrphans({ silent: true });
     } catch (error) {
       setMessage(error?.message || "Gagal membersihkan file orphan.");
@@ -1664,31 +1794,33 @@ export default function AdminInstrumentProfilePage() {
       setMessage(
         editId
           ? `${profileType === "implant" ? "Implant" : "Instrument"} ${catalogNo} berhasil diupdate dan data sudah di-refresh.`
-          : `${profileType === "implant" ? "Implant" : "Instrument"} ${catalogNo} berhasil ditambahkan dan data sudah di-refresh.`
+          : `${profileType === "implant" ? "Implant" : "Instrument"} ${catalogNo} berhasil ditambahkan dan data sudah di-refresh.`,
       );
       notify(
         "success",
         editId
           ? `Update ${catalogNo} berhasil.`
-          : `Tambah ${catalogNo} berhasil.`
+          : `Tambah ${catalogNo} berhasil.`,
       );
     } catch (error) {
       const rawError = String(error?.message || "");
       if (rawError.toLowerCase().includes("driveapp")) {
         setMessage(
-          "Upload dari Apps Script ditolak (DriveApp). Isi kolom Drive ID/Link dengan file yang sudah diupload ke Google Drive, lalu klik Update lagi."
+          "Upload dari Apps Script ditolak (DriveApp). Isi kolom Drive ID/Link dengan file yang sudah diupload ke Google Drive, lalu klik Update lagi.",
         );
         notify(
           "error",
-          "Upload ditolak Apps Script (DriveApp). Gunakan Drive ID/Link."
+          "Upload ditolak Apps Script (DriveApp). Gunakan Drive ID/Link.",
         );
       } else {
         setMessage(
-          rawError || `Gagal menyimpan ${profileType === "implant" ? "implant" : "instrument"}.`
+          rawError ||
+            `Gagal menyimpan ${profileType === "implant" ? "implant" : "instrument"}.`,
         );
         notify(
           "error",
-          rawError || `Gagal menyimpan ${profileType === "implant" ? "implant" : "instrument"}.`
+          rawError ||
+            `Gagal menyimpan ${profileType === "implant" ? "implant" : "instrument"}.`,
         );
       }
     } finally {
@@ -1698,7 +1830,7 @@ export default function AdminInstrumentProfilePage() {
 
   async function handleDelete(item) {
     const confirmed = window.confirm(
-      `Hapus ${profileType === "implant" ? "implant" : "instrument"} ${item.catalogNo} - ${item.name}?`
+      `Hapus ${profileType === "implant" ? "implant" : "instrument"} ${item.catalogNo} - ${item.name}?`,
     );
     if (!confirmed) return;
 
@@ -1713,17 +1845,19 @@ export default function AdminInstrumentProfilePage() {
       });
       setItems((prev) => prev.filter((row) => row.id !== item.id));
       if (editId === item.id) resetForm();
-      setMessage(`${profileType === "implant" ? "Implant" : "Instrument"} berhasil dihapus.`);
+      setMessage(
+        `${profileType === "implant" ? "Implant" : "Instrument"} berhasil dihapus.`,
+      );
       notify("success", `${item.catalogNo} berhasil dihapus.`);
     } catch (error) {
       setMessage(
         error?.message ||
-          `Gagal menghapus ${profileType === "implant" ? "implant" : "instrument"}.`
+          `Gagal menghapus ${profileType === "implant" ? "implant" : "instrument"}.`,
       );
       notify(
         "error",
         error?.message ||
-          `Gagal menghapus ${profileType === "implant" ? "implant" : "instrument"}.`
+          `Gagal menghapus ${profileType === "implant" ? "implant" : "instrument"}.`,
       );
     } finally {
       setDeletingId("");
@@ -1787,7 +1921,10 @@ export default function AdminInstrumentProfilePage() {
           <FloatingInputField
             value={form.catalogNo}
             onChange={(event) =>
-              setForm((prev) => ({ ...prev, catalogNo: event.target.value.toUpperCase() }))
+              setForm((prev) => ({
+                ...prev,
+                catalogNo: event.target.value.toUpperCase(),
+              }))
             }
             label={`Kode ${entityLabel.toLowerCase()}`}
             required
@@ -1858,7 +1995,13 @@ export default function AdminInstrumentProfilePage() {
             disabled={saving}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? <Loader2 size={15} className="animate-spin" /> : editId ? <Save size={15} /> : <Plus size={15} />}
+            {saving ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : editId ? (
+              <Save size={15} />
+            ) : (
+              <Plus size={15} />
+            )}
             {editId ? `Update ${entityLabel}` : `Tambah ${entityLabel}`}
           </button>
         </div>
@@ -1887,7 +2030,9 @@ export default function AdminInstrumentProfilePage() {
                 inputClassName="border-slate-200 focus:border-slate-900"
               />
               {accessCodeError ? (
-                <p className="text-xs font-medium text-rose-600">{accessCodeError}</p>
+                <p className="text-xs font-medium text-rose-600">
+                  {accessCodeError}
+                </p>
               ) : null}
               <button
                 type="submit"
@@ -1924,7 +2069,8 @@ export default function AdminInstrumentProfilePage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-lg font-bold md:text-2xl">
-                Admin · Manager Foto Checklist {profileType === "implant" ? "Implant" : "Instrument"}
+                Admin · Manager Foto Checklist{" "}
+                {profileType === "implant" ? "Implant" : "Instrument"}
               </h1>
               <p className="mt-1 text-sm text-slate-500">
                 {profileType === "implant"
@@ -1961,7 +2107,11 @@ export default function AdminInstrumentProfilePage() {
                 }
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+                {loading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <RefreshCcw size={14} />
+                )}
                 Refresh
               </button>
               <button
@@ -2046,8 +2196,14 @@ export default function AdminInstrumentProfilePage() {
                 }
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {bulkSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                {profileType === "instrument" ? "Seed Master Instrument" : "Seed Nonaktif (Implant)"}
+                {bulkSaving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Save size={14} />
+                )}
+                {profileType === "instrument"
+                  ? "Seed Master Instrument"
+                  : "Seed Nonaktif (Implant)"}
               </button>
               <Link
                 href="/ceklist-instrument-normed"
@@ -2098,7 +2254,7 @@ export default function AdminInstrumentProfilePage() {
           >
             <div className="mb-3 flex items-center justify-between">
               {!sidebarCollapsed ? (
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                   Admin Menu
                 </p>
               ) : null}
@@ -2108,7 +2264,11 @@ export default function AdminInstrumentProfilePage() {
                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
                 title={sidebarCollapsed ? "Buka sidebar" : "Kecilkan sidebar"}
               >
-                {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+                {sidebarCollapsed ? (
+                  <PanelLeftOpen size={14} />
+                ) : (
+                  <PanelLeftClose size={14} />
+                )}
               </button>
             </div>
             <nav className="space-y-1">
@@ -2132,565 +2292,641 @@ export default function AdminInstrumentProfilePage() {
           </aside>
 
           <div className="space-y-5">
-        {showOverviewSection ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900 md:text-base">Dashboard Admin</h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Ringkasan data instrument, foto, dan review submission.
-                </p>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Last monitor sync: {usageMonitorAt ? formatDateTime(usageMonitorAt) : "-"}
-              </p>
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Total Instrument
-                </p>
-                <p className="text-lg font-bold text-slate-900">{items.length}</p>
-              </article>
-              <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                  Ada Foto Profil
-                </p>
-                <p className="text-lg font-bold text-emerald-900">{profilesWithImageCount}</p>
-              </article>
-              <article className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                  Belum Ada Foto
-                </p>
-                <p className="text-lg font-bold text-amber-900">{profilesWithoutImageCount}</p>
-              </article>
-              <article className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">
-                  Review Selesai
-                </p>
-                <p className="text-lg font-bold text-blue-900">
-                  {reviewDoneCount}/{usageIntegrityRows.length}
-                </p>
-              </article>
-            </div>
-            <p className="mt-2 text-[11px] text-slate-500">
-              Ada foto = item memiliki driveId/imageSrc. Belum ada foto = item belum punya foto profil.
-            </p>
-
-            <div className="mt-3 grid gap-3 xl:grid-cols-[1.3fr_1fr]">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700">Kelengkapan Foto</p>
-                  <p className="text-xs font-bold text-slate-900">{imageCoveragePercent}%</p>
-                </div>
-                <div className="mt-2 h-2.5 rounded-full bg-slate-200">
-                  <div
-                    className="h-2.5 rounded-full bg-emerald-500 transition-all"
-                    style={{ width: `${imageCoveragePercent}%` }}
-                  />
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700">Progress Review</p>
-                  <p className="text-xs font-bold text-slate-900">{reviewProgressPercent}%</p>
-                </div>
-                <div className="mt-2 h-2.5 rounded-full bg-slate-200">
-                  <div
-                    className="h-2.5 rounded-full bg-blue-500 transition-all"
-                    style={{ width: `${reviewProgressPercent}%` }}
-                  />
+            {showOverviewSection ? (
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900 md:text-base">
+                      Dashboard Admin
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Ringkasan data instrument, foto, dan review submission.
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Last monitor sync:{" "}
+                    {usageMonitorAt ? formatDateTime(usageMonitorAt) : "-"}
+                  </p>
                 </div>
 
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {procedureSummary.map((procedure) => (
-                    <button
-                      key={procedure.key}
-                      type="button"
-                      onClick={() => {
-                        setFilterProcedure(procedure.key);
-                        setActiveSection("instruments");
-                      }}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-100"
-                    >
-                      <p className="text-[11px] font-semibold uppercase text-slate-500">
-                        {procedure.label}
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      Total Instrument
+                    </p>
+                    <p className="text-lg font-bold text-slate-900">
+                      {items.length}
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-[11px] font-semibold tracking-wide text-emerald-700 uppercase">
+                      Ada Foto Profil
+                    </p>
+                    <p className="text-lg font-bold text-emerald-900">
+                      {profilesWithImageCount}
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-[11px] font-semibold tracking-wide text-amber-700 uppercase">
+                      Belum Ada Foto
+                    </p>
+                    <p className="text-lg font-bold text-amber-900">
+                      {profilesWithoutImageCount}
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-[11px] font-semibold tracking-wide text-blue-700 uppercase">
+                      Review Selesai
+                    </p>
+                    <p className="text-lg font-bold text-blue-900">
+                      {reviewDoneCount}/{usageIntegrityRows.length}
+                    </p>
+                  </article>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Ada foto = item memiliki driveId/imageSrc. Belum ada foto =
+                  item belum punya foto profil.
+                </p>
+
+                <div className="mt-3 grid gap-3 xl:grid-cols-[1.3fr_1fr]">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Kelengkapan Foto
                       </p>
-                      <p className="text-sm font-bold text-slate-900">{procedure.total} item</p>
-                      <p className="text-[11px] text-slate-500">
-                        Ada foto: {procedure.withImage} · Belum ada: {procedure.withoutImage}
+                      <p className="text-xs font-bold text-slate-900">
+                        {imageCoveragePercent}%
                       </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-700">Quick Action</p>
-                <div className="mt-2 grid gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("usage")}
-                    className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-                  >
-                    Buka Implant Monitor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("instruments")}
-                    className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                  >
-                    Kelola {profileType === "implant" ? "Implant" : "Instrument"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openUsageManageModalManual}
-                    className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                  >
-                    Input Usage Manual
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isMobileViewport) openMobileCreateForm();
-                      else setActiveSection("instruments");
-                    }}
-                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                  >
-                    Tambah {profileType === "implant" ? "Implant" : "Instrument"}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-3 xl:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-700">Submission Terbaru</p>
-                <div className="mt-2 space-y-2">
-                  {recentSubmissionRows.map((row, index) => (
-                    <div
-                      key={getUsageRowKey(row, index)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-2"
-                    >
-                      <p className="font-mono text-[11px] text-slate-700">{row.submissionId || "-"}</p>
-                      <p className="text-xs font-semibold text-slate-900">
-                        {row.doctorName || "-"} · {row.hospitalName || "-"}
-                      </p>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <p className="text-[11px] text-slate-500">
-                          {formatDateTime(row.createdAt || row.operationDate)}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => prefillUsageManageForm(row.submissionId)}
-                          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Kelola
-                        </button>
-                      </div>
                     </div>
-                  ))}
-                  {!recentSubmissionRows.length ? (
-                    <p className="text-xs text-slate-500">Belum ada submission.</p>
-                  ) : null}
-                </div>
-              </div>
+                    <div className="mt-2 h-2.5 rounded-full bg-slate-200">
+                      <div
+                        className="h-2.5 rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${imageCoveragePercent}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Progress Review
+                      </p>
+                      <p className="text-xs font-bold text-slate-900">
+                        {reviewProgressPercent}%
+                      </p>
+                    </div>
+                    <div className="mt-2 h-2.5 rounded-full bg-slate-200">
+                      <div
+                        className="h-2.5 rounded-full bg-blue-500 transition-all"
+                        style={{ width: `${reviewProgressPercent}%` }}
+                      />
+                    </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-700">Instrument Terakhir Diupdate</p>
-                <div className="mt-2 space-y-2">
-                  {recentUpdatedInstruments.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-900">
-                          {item.catalogNo} · {item.name}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {item.procedureKey.toUpperCase()} · {item.updatedAt ? formatDateTime(item.updatedAt) : "No timestamp"}
-                        </p>
-                      </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {procedureSummary.map((procedure) => (
+                        <button
+                          key={procedure.key}
+                          type="button"
+                          onClick={() => {
+                            setFilterProcedure(procedure.key);
+                            setActiveSection("instruments");
+                          }}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-100"
+                        >
+                          <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                            {procedure.label}
+                          </p>
+                          <p className="text-sm font-bold text-slate-900">
+                            {procedure.total} item
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Ada foto: {procedure.withImage} · Belum ada:{" "}
+                            {procedure.withoutImage}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-700">
+                      Quick Action
+                    </p>
+                    <div className="mt-2 grid gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection("usage")}
+                        className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                      >
+                        Buka Implant Monitor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection("instruments")}
+                        className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                      >
+                        Kelola{" "}
+                        {profileType === "implant" ? "Implant" : "Instrument"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openUsageManageModalManual}
+                        className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                      >
+                        Input Usage Manual
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
-                          startEdit(item);
-                          setActiveSection("instruments");
+                          if (isMobileViewport) openMobileCreateForm();
+                          else setActiveSection("instruments");
                         }}
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                       >
-                        Edit
+                        Tambah{" "}
+                        {profileType === "implant" ? "Implant" : "Instrument"}
                       </button>
                     </div>
-                  ))}
-                  {!recentUpdatedInstruments.length ? (
-                    <p className="text-xs text-slate-500">Belum ada data instrument.</p>
-                  ) : null}
+                  </div>
                 </div>
-              </div>
-            </div>
-          </section>
-        ) : null}
 
-        <section
-          className={`rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm ${
-            showUsageSection ? "" : "hidden"
-          }`}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-emerald-900 md:text-base">
-                Monitor Realtime · Implant Usage
-              </h2>
-              <p className="mt-0.5 text-xs text-emerald-800">
-                Sheet: ImplantUsageSubmissions, ImplantUsageItems, ImplantUsageSignatures
-              </p>
-            </div>
-            <p className="text-[11px] text-emerald-800">
-              Last sync: {usageMonitorAt ? formatDateTime(usageMonitorAt) : "-"}
-            </p>
-          </div>
-
-          {usageMonitorError ? (
-            <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              {usageMonitorError}
-            </p>
-          ) : null}
-
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
-            <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                Submissions
-              </p>
-              <p className="text-lg font-bold text-emerald-900">{usageCounts.submissions}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                Items
-              </p>
-              <p className="text-lg font-bold text-emerald-900">{usageCounts.items}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                Signatures
-              </p>
-              <p className="text-lg font-bold text-emerald-900">{usageCounts.signatures}</p>
-            </div>
-            <div
-              className={`rounded-xl border px-3 py-2 ${
-                usageMismatchCount > 0
-                  ? "border-amber-300 bg-amber-50"
-                  : "border-emerald-200 bg-white"
-              }`}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                Mismatch
-              </p>
-              <p
-                className={`text-lg font-bold ${
-                  usageMismatchCount > 0 ? "text-amber-700" : "text-emerald-900"
-                }`}
-              >
-                {usageMismatchCount}
-              </p>
-            </div>
-          </div>
-
-          {isMobileViewport ? (
-            <div className="mt-3 space-y-2">
-              {usageRowsForTable.map((row, index) => (
-                <article
-                  key={getUsageRowKey(row, index)}
-                  className={`rounded-xl border px-3 py-2 ${
-                    row.mismatch ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-white"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-mono text-[11px] text-slate-700">{row.submissionId || "-"}</p>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          row.mismatch ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                        }`}
-                      >
-                        {row.mismatch ? "Perlu cek" : "OK"}
-                      </span>
-                      {row.reviewStatus ? (
-                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                          {row.reviewStatus}
-                        </span>
+                <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-700">
+                      Submission Terbaru
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {recentSubmissionRows.map((row, index) => (
+                        <div
+                          key={getUsageRowKey(row, index)}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-2"
+                        >
+                          <p className="font-mono text-[11px] text-slate-700">
+                            {row.submissionId || "-"}
+                          </p>
+                          <p className="text-xs font-semibold text-slate-900">
+                            {row.doctorName || "-"} · {row.hospitalName || "-"}
+                          </p>
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <p className="text-[11px] text-slate-500">
+                              {formatDateTime(
+                                row.createdAt || row.operationDate,
+                              )}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                prefillUsageManageForm(row.submissionId)
+                              }
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Kelola
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {!recentSubmissionRows.length ? (
+                        <p className="text-xs text-slate-500">
+                          Belum ada submission.
+                        </p>
                       ) : null}
                     </div>
                   </div>
-                  <p className="mt-1 text-xs font-semibold text-slate-900">
-                    {row.doctorName || "-"} · {row.hospitalName || "-"}
-                  </p>
-                  <p className="text-xs text-slate-600">Pasien: {row.patientName || "-"}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {formatDateTime(row.createdAt || row.operationDate)}
-                  </p>
-                  <div className="mt-1 grid grid-cols-2 gap-1 text-[11px] text-slate-600">
-                    <p>
-                      Item: {row.actualItems} / {row.expectedItems}
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-700">
+                      Instrument Terakhir Diupdate
                     </p>
-                    <p>
-                      Sign: {row.actualSignatures} / {row.expectedSignatures}
-                    </p>
-                    <p>Foto item: {row.slotsWithPhoto}</p>
-                    <p>Foto sign: {row.signaturesWithPhoto}</p>
+                    <div className="mt-2 space-y-2">
+                      {recentUpdatedInstruments.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-slate-900">
+                              {item.catalogNo} · {item.name}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {item.procedureKey.toUpperCase()} ·{" "}
+                              {item.updatedAt
+                                ? formatDateTime(item.updatedAt)
+                                : "No timestamp"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              startEdit(item);
+                              setActiveSection("instruments");
+                            }}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      ))}
+                      {!recentUpdatedInstruments.length ? (
+                        <p className="text-xs text-slate-500">
+                          Belum ada data instrument.
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => prefillUsageManageForm(row.submissionId)}
-                    className="mt-2 inline-flex items-center rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Kelola
-                  </button>
-                </article>
-              ))}
-              {!usageRowsForTable.length ? (
-                <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
-                  Belum ada data implant usage.
                 </div>
-              ) : null}
-            </div>
-          ) : (
-            <div
-              className={`mt-3 overflow-x-auto rounded-xl border border-emerald-200 bg-white ${
-                monitorNeedsScroll ? "max-h-[540px] overflow-y-auto" : ""
+              </section>
+            ) : null}
+
+            <section
+              className={`rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm ${
+                showUsageSection ? "" : "hidden"
               }`}
             >
-            <table className="min-w-[760px] text-left text-xs">
-              <thead className="bg-emerald-100/80 text-emerald-900">
-                <tr>
-                  <th className="px-3 py-2 font-semibold">Submission</th>
-                  <th className="px-3 py-2 font-semibold">Waktu</th>
-                  <th className="px-3 py-2 font-semibold">Dokter / RS</th>
-                  <th className="px-3 py-2 font-semibold">Pasien</th>
-                  <th className="px-3 py-2 font-semibold">Items</th>
-                  <th className="px-3 py-2 font-semibold">Signatures</th>
-                  <th className="px-3 py-2 font-semibold">Status</th>
-                  <th className="px-3 py-2 font-semibold">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usageRowsForTable.map((row, index) => (
-                  <tr
-                    key={getUsageRowKey(row, index)}
-                    className={row.mismatch ? "bg-amber-50/70" : "bg-white"}
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-emerald-900 md:text-base">
+                    Monitor Realtime · Implant Usage
+                  </h2>
+                  <p className="mt-0.5 text-xs text-emerald-800">
+                    Sheet: ImplantUsageSubmissions, ImplantUsageItems,
+                    ImplantUsageSignatures
+                  </p>
+                </div>
+                <p className="text-[11px] text-emerald-800">
+                  Last sync:{" "}
+                  {usageMonitorAt ? formatDateTime(usageMonitorAt) : "-"}
+                </p>
+              </div>
+
+              {usageMonitorError ? (
+                <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {usageMonitorError}
+                </p>
+              ) : null}
+
+              <div className="mt-3 grid gap-2 md:grid-cols-4">
+                <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold tracking-wide text-emerald-700 uppercase">
+                    Submissions
+                  </p>
+                  <p className="text-lg font-bold text-emerald-900">
+                    {usageCounts.submissions}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold tracking-wide text-emerald-700 uppercase">
+                    Items
+                  </p>
+                  <p className="text-lg font-bold text-emerald-900">
+                    {usageCounts.items}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold tracking-wide text-emerald-700 uppercase">
+                    Signatures
+                  </p>
+                  <p className="text-lg font-bold text-emerald-900">
+                    {usageCounts.signatures}
+                  </p>
+                </div>
+                <div
+                  className={`rounded-xl border px-3 py-2 ${
+                    usageMismatchCount > 0
+                      ? "border-amber-300 bg-amber-50"
+                      : "border-emerald-200 bg-white"
+                  }`}
+                >
+                  <p className="text-[11px] font-semibold tracking-wide text-emerald-700 uppercase">
+                    Mismatch
+                  </p>
+                  <p
+                    className={`text-lg font-bold ${
+                      usageMismatchCount > 0
+                        ? "text-amber-700"
+                        : "text-emerald-900"
+                    }`}
                   >
-                    <td className="px-3 py-2 font-mono text-[11px] text-slate-700">
-                      {row.submissionId || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-slate-700">
-                      {formatDateTime(row.createdAt || row.operationDate)}
-                    </td>
-                    <td className="px-3 py-2 text-slate-700">
-                      <div className="max-w-[220px] truncate">{row.doctorName || "-"}</div>
-                      <div className="max-w-[220px] truncate text-slate-500">
-                        {row.hospitalName || "-"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-slate-700">{row.patientName || "-"}</td>
-                    <td className="px-3 py-2 text-slate-700">
-                      {row.actualItems} / {row.expectedItems}
-                      <div className="text-[10px] text-slate-500">
-                        photo: {row.slotsWithPhoto}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-slate-700">
-                      {row.actualSignatures} / {row.expectedSignatures}
-                      <div className="text-[10px] text-slate-500">
-                        photo: {row.signaturesWithPhoto}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                            row.mismatch
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-emerald-100 text-emerald-700"
-                          }`}
-                        >
-                          {row.mismatch ? "Perlu cek" : "OK"}
-                        </span>
-                        {row.reviewStatus ? (
-                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                            {row.reviewStatus}
+                    {usageMismatchCount}
+                  </p>
+                </div>
+              </div>
+
+              {isMobileViewport ? (
+                <div className="mt-3 space-y-2">
+                  {usageRowsForTable.map((row, index) => (
+                    <article
+                      key={getUsageRowKey(row, index)}
+                      className={`rounded-xl border px-3 py-2 ${
+                        row.mismatch
+                          ? "border-amber-200 bg-amber-50/60"
+                          : "border-emerald-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-mono text-[11px] text-slate-700">
+                          {row.submissionId || "-"}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              row.mismatch
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {row.mismatch ? "Perlu cek" : "OK"}
                           </span>
-                        ) : null}
+                          {row.reviewStatus ? (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                              {row.reviewStatus}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-3 py-2">
+                      <p className="mt-1 text-xs font-semibold text-slate-900">
+                        {row.doctorName || "-"} · {row.hospitalName || "-"}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        Pasien: {row.patientName || "-"}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {formatDateTime(row.createdAt || row.operationDate)}
+                      </p>
+                      <div className="mt-1 grid grid-cols-2 gap-1 text-[11px] text-slate-600">
+                        <p>
+                          Item: {row.actualItems} / {row.expectedItems}
+                        </p>
+                        <p>
+                          Sign: {row.actualSignatures} /{" "}
+                          {row.expectedSignatures}
+                        </p>
+                        <p>Foto item: {row.slotsWithPhoto}</p>
+                        <p>Foto sign: {row.signaturesWithPhoto}</p>
+                      </div>
                       <button
                         type="button"
                         onClick={() => prefillUsageManageForm(row.submissionId)}
-                        className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        className="mt-2 inline-flex items-center rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
                       >
                         Kelola
                       </button>
-                    </td>
-                  </tr>
-                ))}
-                {!usageRowsForTable.length ? (
-                  <tr>
-                    <td colSpan={8} className="px-3 py-4 text-center text-slate-500">
-                      Belum ada data implant usage.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-            </div>
-          )}
-        </section>
-
-        <section
-          className={`rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm ${
-            showUsageSection ? "" : "hidden"
-          }`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-blue-900 md:text-base">
-                Management · Implant Usage
-              </h2>
-              <p className="mt-0.5 text-xs text-blue-800">
-                Kelola data submission lewat modal agar UI lebih clean.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={openUsageManageModalManual}
-              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
-            >
-              <Plus size={13} />
-              Kelola Manual
-            </button>
-          </div>
-        </section>
-
-        {showInstrumentSection ? (
-          <>
-            {isMobileViewport ? (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={openMobileCreateForm}
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  <Plus size={14} />
-                  Tambah Instrument
-                </button>
-              </div>
-            ) : null}
-
-            <section className={`grid gap-4 ${isMobileViewport ? "" : "lg:grid-cols-[340px_1fr]"}`}>
-              {!isMobileViewport ? renderEditorForm() : null}
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 grid gap-2 md:grid-cols-[160px_1fr]">
-                  <FloatingSelectField
-                    value={filterProcedure}
-                    onChange={(event) => setFilterProcedure(event.target.value)}
-                    label="Filter Procedure"
-                    selectClassName="border-slate-200 focus:border-slate-900"
-                  >
-                    <option value="all">Semua Procedure</option>
-                    {PROCEDURES.map((item) => (
-                      <option key={item.key} value={item.key}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </FloatingSelectField>
-                  <FloatingInputField
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    label="Cari kode, nama, atau group"
-                    inputClassName="border-slate-200 focus:border-slate-900"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  {filteredItems.map((item) => (
-                    <article
-                      key={item.id}
-                      ref={(element) => {
-                        if (element) itemRefs.current.set(item.id, element);
-                        else itemRefs.current.delete(item.id);
-                      }}
-                      className={`rounded-xl border bg-slate-50 p-3 transition ${
-                        highlightItemId === item.id
-                          ? "border-emerald-300 ring-2 ring-emerald-100"
-                          : "border-slate-200"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                          <DriveImageWithFallback
-                            src={item.imageUrl}
-                            driveId={item.driveId}
-                            alt={item.name}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold uppercase text-slate-500">
-                            {item.procedureKey}
-                          </p>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {item.catalogNo} · {item.name}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {item.category} · Piece: {item.qty}
-                          </p>
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openPreview(item.id)}
-                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
-                            title="Preview"
-                          >
-                            <ImageIcon size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startEdit(item)}
-                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
-                            title="Edit"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(item)}
-                            disabled={deletingId === item.id}
-                            className="rounded-lg border border-rose-200 bg-white p-2 text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            title="Hapus"
-                          >
-                            {deletingId === item.id ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <Trash2 size={14} />
-                            )}
-                          </button>
-                        </div>
-                      </div>
                     </article>
                   ))}
-
-                  {!filteredItems.length ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 px-3 py-5 text-center text-sm text-slate-500">
-                      Data instrument tidak ditemukan.
+                  {!usageRowsForTable.length ? (
+                    <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500">
+                      Belum ada data implant usage.
                     </div>
                   ) : null}
                 </div>
-              </section>
+              ) : (
+                <div
+                  className={`mt-3 overflow-x-auto rounded-xl border border-emerald-200 bg-white ${
+                    monitorNeedsScroll ? "max-h-[540px] overflow-y-auto" : ""
+                  }`}
+                >
+                  <table className="min-w-[760px] text-left text-xs">
+                    <thead className="bg-emerald-100/80 text-emerald-900">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Submission</th>
+                        <th className="px-3 py-2 font-semibold">Waktu</th>
+                        <th className="px-3 py-2 font-semibold">Dokter / RS</th>
+                        <th className="px-3 py-2 font-semibold">Pasien</th>
+                        <th className="px-3 py-2 font-semibold">Items</th>
+                        <th className="px-3 py-2 font-semibold">Signatures</th>
+                        <th className="px-3 py-2 font-semibold">Status</th>
+                        <th className="px-3 py-2 font-semibold">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usageRowsForTable.map((row, index) => (
+                        <tr
+                          key={getUsageRowKey(row, index)}
+                          className={
+                            row.mismatch ? "bg-amber-50/70" : "bg-white"
+                          }
+                        >
+                          <td className="px-3 py-2 font-mono text-[11px] text-slate-700">
+                            {row.submissionId || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {formatDateTime(row.createdAt || row.operationDate)}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            <div className="max-w-[220px] truncate">
+                              {row.doctorName || "-"}
+                            </div>
+                            <div className="max-w-[220px] truncate text-slate-500">
+                              {row.hospitalName || "-"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.patientName || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.actualItems} / {row.expectedItems}
+                            <div className="text-[10px] text-slate-500">
+                              photo: {row.slotsWithPhoto}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.actualSignatures} / {row.expectedSignatures}
+                            <div className="text-[10px] text-slate-500">
+                              photo: {row.signaturesWithPhoto}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span
+                                className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                  row.mismatch
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-emerald-100 text-emerald-700"
+                                }`}
+                              >
+                                {row.mismatch ? "Perlu cek" : "OK"}
+                              </span>
+                              {row.reviewStatus ? (
+                                <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                                  {row.reviewStatus}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                prefillUsageManageForm(row.submissionId)
+                              }
+                              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Kelola
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!usageRowsForTable.length ? (
+                        <tr>
+                          <td
+                            colSpan={8}
+                            className="px-3 py-4 text-center text-slate-500"
+                          >
+                            Belum ada data implant usage.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
-          </>
-        ) : null}
+
+            <section
+              className={`rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm ${
+                showUsageSection ? "" : "hidden"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-blue-900 md:text-base">
+                    Management · Implant Usage
+                  </h2>
+                  <p className="mt-0.5 text-xs text-blue-800">
+                    Kelola data submission lewat modal agar UI lebih clean.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={openUsageManageModalManual}
+                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  <Plus size={13} />
+                  Kelola Manual
+                </button>
+              </div>
+            </section>
+
+            {showInstrumentSection ? (
+              <>
+                {isMobileViewport ? (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={openMobileCreateForm}
+                      className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                    >
+                      <Plus size={14} />
+                      Tambah Instrument
+                    </button>
+                  </div>
+                ) : null}
+
+                <section
+                  className={`grid gap-4 ${isMobileViewport ? "" : "lg:grid-cols-[340px_1fr]"}`}
+                >
+                  {!isMobileViewport ? renderEditorForm() : null}
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="mb-3 grid gap-2 md:grid-cols-[160px_1fr]">
+                      <FloatingSelectField
+                        value={filterProcedure}
+                        onChange={(event) =>
+                          setFilterProcedure(event.target.value)
+                        }
+                        label="Filter Procedure"
+                        selectClassName="border-slate-200 focus:border-slate-900"
+                      >
+                        <option value="all">Semua Procedure</option>
+                        {PROCEDURES.map((item) => (
+                          <option key={item.key} value={item.key}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </FloatingSelectField>
+                      <FloatingInputField
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        label="Cari kode, nama, atau group"
+                        inputClassName="border-slate-200 focus:border-slate-900"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      {filteredItems.map((item) => (
+                        <article
+                          key={item.id}
+                          ref={(element) => {
+                            if (element) itemRefs.current.set(item.id, element);
+                            else itemRefs.current.delete(item.id);
+                          }}
+                          className={`rounded-xl border bg-slate-50 p-3 transition ${
+                            highlightItemId === item.id
+                              ? "border-emerald-300 ring-2 ring-emerald-100"
+                              : "border-slate-200"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                              <DriveImageWithFallback
+                                src={item.imageUrl}
+                                driveId={item.driveId}
+                                alt={item.name}
+                                className="h-full w-full object-cover"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-slate-500 uppercase">
+                                {item.procedureKey}
+                              </p>
+                              <p className="text-sm font-semibold text-slate-900">
+                                {item.catalogNo} · {item.name}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {item.category} · Piece: {item.qty}
+                              </p>
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openPreview(item.id)}
+                                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
+                                title="Preview"
+                              >
+                                <ImageIcon size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => startEdit(item)}
+                                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
+                                title="Edit"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(item)}
+                                disabled={deletingId === item.id}
+                                className="rounded-lg border border-rose-200 bg-white p-2 text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                title="Hapus"
+                              >
+                                {deletingId === item.id ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={14} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+
+                      {!filteredItems.length ? (
+                        <div className="rounded-xl border border-dashed border-slate-300 px-3 py-5 text-center text-sm text-slate-500">
+                          Data instrument tidak ditemukan.
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                </section>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -2704,7 +2940,7 @@ export default function AdminInstrumentProfilePage() {
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
                   Menu Admin
                 </p>
                 <button
@@ -2786,26 +3022,43 @@ export default function AdminInstrumentProfilePage() {
                   <div className="grid gap-2 md:grid-cols-4">
                     <FloatingInputField
                       value={usageManageForm.submissionId}
-                      onChange={(event) => handleUsageFormChange("submissionId", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange(
+                          "submissionId",
+                          event.target.value,
+                        )
+                      }
                       label="Submission ID (opsional)"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
                     <FloatingInputField
                       value={usageManageForm.operationDate}
-                      onChange={(event) => handleUsageFormChange("operationDate", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange(
+                          "operationDate",
+                          event.target.value,
+                        )
+                      }
                       type="date"
                       label="Tanggal Operasi"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
                     <FloatingInputField
                       value={usageManageForm.doctorName}
-                      onChange={(event) => handleUsageFormChange("doctorName", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange("doctorName", event.target.value)
+                      }
                       label="Doctor"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
                     <FloatingInputField
                       value={usageManageForm.hospitalName}
-                      onChange={(event) => handleUsageFormChange("hospitalName", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange(
+                          "hospitalName",
+                          event.target.value,
+                        )
+                      }
                       label="Hospital"
                       required
                       inputClassName="border-blue-200 focus:border-blue-500"
@@ -2815,25 +3068,33 @@ export default function AdminInstrumentProfilePage() {
                   <div className="grid gap-2 md:grid-cols-4">
                     <FloatingInputField
                       value={usageManageForm.repAssist}
-                      onChange={(event) => handleUsageFormChange("repAssist", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange("repAssist", event.target.value)
+                      }
                       label="Rep / Assist"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
                     <FloatingInputField
                       value={usageManageForm.systemName}
-                      onChange={(event) => handleUsageFormChange("systemName", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange("systemName", event.target.value)
+                      }
                       label="System"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
                     <FloatingInputField
                       value={usageManageForm.patientName}
-                      onChange={(event) => handleUsageFormChange("patientName", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange("patientName", event.target.value)
+                      }
                       label="Patient"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
                     <FloatingInputField
                       value={usageManageForm.medrec}
-                      onChange={(event) => handleUsageFormChange("medrec", event.target.value)}
+                      onChange={(event) =>
+                        handleUsageFormChange("medrec", event.target.value)
+                      }
                       label="Medrec"
                       inputClassName="border-blue-200 focus:border-blue-500"
                     />
@@ -2843,7 +3104,10 @@ export default function AdminInstrumentProfilePage() {
                     <FloatingInputField
                       value={usageManageForm.slotsCount}
                       onChange={(event) =>
-                        handleUsageFormChange("slotsCount", Number(event.target.value || 0))
+                        handleUsageFormChange(
+                          "slotsCount",
+                          Number(event.target.value || 0),
+                        )
                       }
                       type="number"
                       min={0}
@@ -2853,7 +3117,10 @@ export default function AdminInstrumentProfilePage() {
                     <FloatingInputField
                       value={usageManageForm.slotsWithPhoto}
                       onChange={(event) =>
-                        handleUsageFormChange("slotsWithPhoto", Number(event.target.value || 0))
+                        handleUsageFormChange(
+                          "slotsWithPhoto",
+                          Number(event.target.value || 0),
+                        )
                       }
                       type="number"
                       min={0}
@@ -2863,7 +3130,10 @@ export default function AdminInstrumentProfilePage() {
                     <FloatingInputField
                       value={usageManageForm.signaturesCount}
                       onChange={(event) =>
-                        handleUsageFormChange("signaturesCount", Number(event.target.value || 0))
+                        handleUsageFormChange(
+                          "signaturesCount",
+                          Number(event.target.value || 0),
+                        )
                       }
                       type="number"
                       min={0}
@@ -2875,7 +3145,7 @@ export default function AdminInstrumentProfilePage() {
                       onChange={(event) =>
                         handleUsageFormChange(
                           "signaturesWithPhoto",
-                          Number(event.target.value || 0)
+                          Number(event.target.value || 0),
                         )
                       }
                       type="number"
@@ -2887,23 +3157,33 @@ export default function AdminInstrumentProfilePage() {
 
                   <FloatingTextareaField
                     value={usageManageForm.note}
-                    onChange={(event) => handleUsageFormChange("note", event.target.value)}
+                    onChange={(event) =>
+                      handleUsageFormChange("note", event.target.value)
+                    }
                     label="Catatan review (opsional)"
                     rows={2}
                     textareaClassName="border-blue-200 focus:border-blue-500"
                   />
 
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <p className="text-xs font-semibold text-emerald-800">Aksi Review Status</p>
+                    <p className="text-xs font-semibold text-emerald-800">
+                      Aksi Review Status
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {REVIEW_STATUS_OPTIONS.map((option) => (
                         <button
                           key={option.value}
                           type="button"
-                          onClick={() => handleUsageReviewStatusUpdate(option.value)}
-                          disabled={usageReviewSaving || !usageManageForm.submissionId}
+                          onClick={() =>
+                            handleUsageReviewStatusUpdate(option.value)
+                          }
+                          disabled={
+                            usageReviewSaving || !usageManageForm.submissionId
+                          }
                           className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                            String(usageManageForm.reviewStatus || "").trim() === option.value
+                            String(
+                              usageManageForm.reviewStatus || "",
+                            ).trim() === option.value
                               ? "border-emerald-600 bg-emerald-600 text-white"
                               : "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
                           } disabled:cursor-not-allowed disabled:opacity-60`}
@@ -2918,7 +3198,8 @@ export default function AdminInstrumentProfilePage() {
                       ))}
                     </div>
                     <p className="mt-1 text-[11px] text-emerald-700">
-                      Action ini butuh endpoint Apps Script untuk update review status.
+                      Action ini butuh endpoint Apps Script untuk update review
+                      status.
                     </p>
                   </div>
 
@@ -2940,7 +3221,9 @@ export default function AdminInstrumentProfilePage() {
                         type="file"
                         accept="image/*"
                         onChange={(event) =>
-                          setUsageSignaturePhotoFile(event.target.files?.[0] || null)
+                          setUsageSignaturePhotoFile(
+                            event.target.files?.[0] || null,
+                          )
                         }
                         className="block w-full text-[11px]"
                       />
@@ -2950,18 +3233,22 @@ export default function AdminInstrumentProfilePage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-xl border border-blue-200 bg-white p-3">
                       <p className="text-xs font-semibold text-blue-800">
-                        Checklist Implant Signatures ({usageSignatureRows.length})
+                        Checklist Implant Signatures (
+                        {usageSignatureRows.length})
                       </p>
                       <div className="mt-2 space-y-2">
                         {usageSignatureRows.map((row, index) => (
-                          <div key={row.id} className="grid gap-2 md:grid-cols-[110px_150px_1fr]">
+                          <div
+                            key={row.id}
+                            className="grid gap-2 md:grid-cols-[110px_150px_1fr]"
+                          >
                             <FloatingInputField
                               value={row.signatureId}
                               onChange={(event) =>
                                 handleUsageSignatureRowChange(
                                   row.id,
                                   "signatureId",
-                                  event.target.value
+                                  event.target.value,
                                 )
                               }
                               label={`Sig ID ${index + 1}`}
@@ -2973,7 +3260,7 @@ export default function AdminInstrumentProfilePage() {
                                 handleUsageSignatureRowChange(
                                   row.id,
                                   "roleLabel",
-                                  event.target.value
+                                  event.target.value,
                                 )
                               }
                               label="Role"
@@ -2991,7 +3278,7 @@ export default function AdminInstrumentProfilePage() {
                                 handleUsageSignatureRowChange(
                                   row.id,
                                   "personName",
-                                  event.target.value
+                                  event.target.value,
                                 )
                               }
                               label="Nama penanda tangan"
@@ -3008,8 +3295,12 @@ export default function AdminInstrumentProfilePage() {
                       </p>
                       <div className="mt-2 space-y-1 text-xs text-slate-600">
                         <p>Items: {selectedManagedUsageItems.length}</p>
-                        <p>Signatures: {selectedManagedUsageSignatures.length}</p>
-                        <p>Review status: {usageManageForm.reviewStatus || "-"}</p>
+                        <p>
+                          Signatures: {selectedManagedUsageSignatures.length}
+                        </p>
+                        <p>
+                          Review status: {usageManageForm.reviewStatus || "-"}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -3067,8 +3358,9 @@ export default function AdminInstrumentProfilePage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {String(previewItem.procedureKey || "").toUpperCase()} · {previewItem.category || "Tray"}
+                    <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      {String(previewItem.procedureKey || "").toUpperCase()} ·{" "}
+                      {previewItem.category || "Tray"}
                     </p>
                     <h3 className="mt-1 text-base font-bold text-slate-900">
                       {previewItem.catalogNo} · {previewItem.name}
@@ -3161,19 +3453,24 @@ export default function AdminInstrumentProfilePage() {
 
                   <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
                     <p className="text-slate-700">
-                      <span className="font-semibold">ID:</span> {previewItem.id}
+                      <span className="font-semibold">ID:</span>{" "}
+                      {previewItem.id}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Kode:</span> {previewItem.catalogNo}
+                      <span className="font-semibold">Kode:</span>{" "}
+                      {previewItem.catalogNo}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Deskripsi:</span> {previewItem.name}
+                      <span className="font-semibold">Deskripsi:</span>{" "}
+                      {previewItem.name}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Piece:</span> {previewItem.qty}
+                      <span className="font-semibold">Piece:</span>{" "}
+                      {previewItem.qty}
                     </p>
                     <p className="text-slate-700">
-                      <span className="font-semibold">Drive ID:</span> {previewItem.driveId || "-"}
+                      <span className="font-semibold">Drive ID:</span>{" "}
+                      {previewItem.driveId || "-"}
                     </p>
                     <p className="text-[11px] text-slate-500">
                       {previewIndex >= 0
@@ -3204,16 +3501,23 @@ export default function AdminInstrumentProfilePage() {
             </div>
             <p className="mt-1">
               {orphanScanFolderName ? `folder ${orphanScanFolderName} · ` : ""}
-              scanned {orphanScanReport.scanned} · orphan {orphanScanReport.orphanInScannedFolder} · used{" "}
-              {orphanScanReport.usedInScannedFolder} · preview {orphanScanReport.previewCount}
-              {orphanScanReport.scanTruncated ? ` · truncated (max ${orphanScanReport.maxScan})` : ""}
+              scanned {orphanScanReport.scanned} · orphan{" "}
+              {orphanScanReport.orphanInScannedFolder} · used{" "}
+              {orphanScanReport.usedInScannedFolder} · preview{" "}
+              {orphanScanReport.previewCount}
+              {orphanScanReport.scanTruncated
+                ? ` · truncated (max ${orphanScanReport.maxScan})`
+                : ""}
             </p>
             {orphanDuplicateGroups.length ? (
               <div className="mt-2">
                 <p className="font-semibold">Duplikat terdeteksi:</p>
                 <ul className="mt-1 space-y-1">
                   {orphanDuplicateGroups.slice(0, 5).map((group) => (
-                    <li key={group.key} className="rounded-md bg-white/70 px-2 py-1">
+                    <li
+                      key={group.key}
+                      className="rounded-md bg-white/70 px-2 py-1"
+                    >
                       {group.count} file · key: {group.key}
                     </li>
                   ))}
@@ -3233,7 +3537,10 @@ export default function AdminInstrumentProfilePage() {
                   </thead>
                   <tbody>
                     {orphanScanRows.slice(0, 30).map((row) => (
-                      <tr key={row.driveId} className="border-t border-indigo-100">
+                      <tr
+                        key={row.driveId}
+                        className="border-t border-indigo-100"
+                      >
                         <td className="px-2 py-1.5">
                           <a
                             href={row.url}
@@ -3248,8 +3555,12 @@ export default function AdminInstrumentProfilePage() {
                         <td className="px-2 py-1.5 font-mono text-[10px]">
                           {String(row.driveId || "").slice(0, 14)}...
                         </td>
-                        <td className="px-2 py-1.5">{formatBytes(row.sizeBytes)}</td>
-                        <td className="px-2 py-1.5">{formatDateTime(row.updatedAt)}</td>
+                        <td className="px-2 py-1.5">
+                          {formatBytes(row.sizeBytes)}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {formatDateTime(row.updatedAt)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -3261,7 +3572,7 @@ export default function AdminInstrumentProfilePage() {
       </section>
 
       {notifications.length ? (
-        <div className="pointer-events-none fixed right-4 top-4 z-[70] flex w-[min(92vw,360px)] flex-col gap-2">
+        <div className="pointer-events-none fixed top-4 right-4 z-[70] flex w-[min(92vw,360px)] flex-col gap-2">
           {notifications.map((item) => (
             <div
               key={item.id}

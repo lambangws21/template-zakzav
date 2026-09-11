@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ImageIcon, Loader2, RefreshCcw, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  ImageIcon,
+  Loader2,
+  RefreshCcw,
+  Search,
+} from "lucide-react";
 import { FloatingSelectField } from "@/components/FloatingFields";
-import DriveImageWithFallback from "@/components/DriveImageWithFallback.jsx";
+import DriveImageWithFallback from "@/components/media/DriveImageWithFallback";
 import {
   buildGoogleDriveDirectImageUrl,
   extractDriveIdFromRecord,
@@ -38,12 +44,15 @@ function normalizeProcedureKey(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_");
-  if (raw === "tkr" || raw === "thr" || raw === "bipolar" || raw === "stem") return raw;
+  if (raw === "tkr" || raw === "thr" || raw === "bipolar" || raw === "stem")
+    return raw;
   return "";
 }
 
 function normalizeCatalogNo(value) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "")
+    .trim()
+    .toUpperCase();
 }
 
 function parseJsonSafe(value) {
@@ -66,9 +75,11 @@ function parseCsvRows(text) {
   if (lines.length < 2) return [];
 
   const splitCsv = (line) =>
-    line
-      .split(",")
-      .map((item) => String(item || "").trim().replace(/^"|"$/g, ""));
+    line.split(",").map((item) =>
+      String(item || "")
+        .trim()
+        .replace(/^"|"$/g, ""),
+    );
 
   const headers = splitCsv(lines[0]).map((header) => header.toLowerCase());
   const rows = [];
@@ -89,7 +100,8 @@ function extractRowsFromRemote(remote) {
     (Array.isArray(remote.items) && remote.items) ||
     (Array.isArray(remote.rows) && remote.rows) ||
     (Array.isArray(remote.instrumentProfiles) && remote.instrumentProfiles) ||
-    (Array.isArray(remote?.data?.instrumentProfiles) && remote.data.instrumentProfiles) ||
+    (Array.isArray(remote?.data?.instrumentProfiles) &&
+      remote.data.instrumentProfiles) ||
     (Array.isArray(remote.data) && remote.data) ||
     [];
   if (direct.length) return direct;
@@ -109,7 +121,12 @@ function parseTagMetadata(value) {
   const raw = String(value || "").trim();
   if (!raw) return {};
   const parsedJson = parseJsonSafe(raw);
-  if (parsedJson && typeof parsedJson === "object" && !Array.isArray(parsedJson)) return parsedJson;
+  if (
+    parsedJson &&
+    typeof parsedJson === "object" &&
+    !Array.isArray(parsedJson)
+  )
+    return parsedJson;
 
   const meta = {};
   raw.split(/[;|]/).forEach((segment) => {
@@ -141,7 +158,9 @@ function normalizeRows(rows) {
 
   return rows
     .map((row) => {
-      const meta = parseTagMetadata(row?.tags || row?.tag || row?.metadata || row?.meta);
+      const meta = parseTagMetadata(
+        row?.tags || row?.tag || row?.metadata || row?.meta,
+      );
       const procedureKey = normalizeProcedureKey(
         row?.procedureKey ||
           row?.procedure ||
@@ -152,7 +171,7 @@ function normalizeRows(rows) {
           meta?.procedureKey ||
           meta?.procedure ||
           meta?.systemKey ||
-          meta?.system
+          meta?.system,
       );
       const catalogNo = normalizeCatalogNo(
         row?.catalogNo ||
@@ -162,12 +181,21 @@ function normalizeRows(rows) {
           row?.catalogno ||
           meta?.catalogNo ||
           meta?.code ||
-          meta?.kode
+          meta?.kode,
       );
       const qtyRaw = Number(
-        row?.qty || row?.piece || row?.pieces || row?.pcs || row?.jumlah || meta?.qty || 1
+        row?.qty ||
+          row?.piece ||
+          row?.pieces ||
+          row?.pcs ||
+          row?.jumlah ||
+          meta?.qty ||
+          1,
       );
-      const driveId = extractDriveIdFromRecord({ ...(meta || {}), ...(row || {}) });
+      const driveId = extractDriveIdFromRecord({
+        ...(meta || {}),
+        ...(row || {}),
+      });
       const imageSource =
         driveIdToImageUrl(driveId) ||
         String(
@@ -178,7 +206,7 @@ function normalizeRows(rows) {
             row?.image ||
             meta?.imageSrc ||
             meta?.imageUrl ||
-            ""
+            "",
         ).trim();
 
       return {
@@ -192,7 +220,7 @@ function normalizeRows(rows) {
             row?.instrument ||
             meta?.name ||
             meta?.description ||
-            ""
+            "",
         ).trim(),
         category:
           String(
@@ -202,7 +230,7 @@ function normalizeRows(rows) {
               row?.groupName ||
               meta?.category ||
               meta?.group ||
-              "Tray"
+              "Tray",
           ).trim() || "Tray",
         qty: Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 1,
         driveId,
@@ -222,7 +250,9 @@ function normalizeRows(rows) {
 }
 
 function procedureLabel(key) {
-  return PROCEDURES.find((item) => item.key === key)?.label || key.toUpperCase();
+  return (
+    PROCEDURES.find((item) => item.key === key)?.label || key.toUpperCase()
+  );
 }
 
 function extractRemoteRawText(remote) {
@@ -231,7 +261,9 @@ function extractRemoteRawText(remote) {
 }
 
 function isHtmlPayload(text) {
-  const raw = String(text || "").trim().toLowerCase();
+  const raw = String(text || "")
+    .trim()
+    .toLowerCase();
   return raw.startsWith("<!doctype html") || raw.startsWith("<html");
 }
 
@@ -281,7 +313,11 @@ export default function InstrumentProfilesPage() {
               : true;
 
         if (!response.ok || !result?.ok || !remoteOk) {
-          lastError = remote?.error || remote?.message || result?.error || `HTTP ${response.status}`;
+          lastError =
+            remote?.error ||
+            remote?.message ||
+            result?.error ||
+            `HTTP ${response.status}`;
           continue;
         }
 
@@ -295,17 +331,20 @@ export default function InstrumentProfilesPage() {
           sheetName: INSTRUMENT_PROFILE_SHEET_NAME,
           table: INSTRUMENT_PROFILE_SHEET_NAME,
         });
-        const response = await fetch(`/api/google-sheet-images?${queryParams.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `/api/google-sheet-images?${queryParams.toString()}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
         const result = await response.json();
         const remote = result?.remote || result || {};
         const remoteRaw = extractRemoteRawText(remote);
         if (isHtmlPayload(remoteRaw)) {
           htmlPayloadDetected = true;
           throw new Error(
-            "Endpoint Apps Script mengembalikan halaman HTML. Pastikan URL `.../exec` valid dan Web App sudah deploy dengan akses publik."
+            "Endpoint Apps Script mengembalikan halaman HTML. Pastikan URL `.../exec` valid dan Web App sudah deploy dengan akses publik.",
           );
         }
         const remoteStatus = String(remote?.status || "").toLowerCase();
@@ -321,7 +360,7 @@ export default function InstrumentProfilesPage() {
               remote?.message ||
               result?.error ||
               lastError ||
-              `Request gagal (HTTP ${response.status}).`
+              `Request gagal (HTTP ${response.status}).`,
           );
         }
         rows = extractRowsFromRemote(remote);
@@ -330,13 +369,16 @@ export default function InstrumentProfilesPage() {
       if (!rows.length && htmlPayloadDetected) {
         throw new Error(
           lastError ||
-            "Endpoint Apps Script tidak mengembalikan JSON data. Cek deploy Web App dan permission akses."
+            "Endpoint Apps Script tidak mengembalikan JSON data. Cek deploy Web App dan permission akses.",
         );
       }
 
       const normalized = normalizeRows(rows);
       setItems(normalized);
-      if (!silent) setMessage(`InstrumentProfiles berhasil dimuat (${normalized.length} item).`);
+      if (!silent)
+        setMessage(
+          `InstrumentProfiles berhasil dimuat (${normalized.length} item).`,
+        );
     } catch (error) {
       setMessage(error?.message || "Gagal memuat InstrumentProfiles.");
     } finally {
@@ -351,7 +393,8 @@ export default function InstrumentProfilesPage() {
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((item) => {
-      if (procedureFilter !== "all" && item.procedureKey !== procedureFilter) return false;
+      if (procedureFilter !== "all" && item.procedureKey !== procedureFilter)
+        return false;
       if (!q) return true;
       return [item.catalogNo, item.name, item.category, item.procedureKey]
         .join(" ")
@@ -375,7 +418,7 @@ export default function InstrumentProfilesPage() {
 
   const withPhotoCount = useMemo(
     () => filteredItems.filter((item) => Boolean(item.imageUrl)).length,
-    [filteredItems]
+    [filteredItems],
   );
 
   return (
@@ -384,9 +427,13 @@ export default function InstrumentProfilesPage() {
         <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-lg font-bold md:text-2xl">UI Instrument Profiles</h1>
+              <h1 className="text-lg font-bold md:text-2xl">
+                UI Instrument Profiles
+              </h1>
               <p className="mt-1 text-sm text-slate-500">
-                Menampilkan data sheet <span className="font-semibold">InstrumentProfiles</span> dari Apps Script.
+                Menampilkan data sheet{" "}
+                <span className="font-semibold">InstrumentProfiles</span> dari
+                Apps Script.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -396,7 +443,11 @@ export default function InstrumentProfilesPage() {
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+                {loading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <RefreshCcw size={14} />
+                )}
                 Refresh
               </button>
               <Link
@@ -413,16 +464,24 @@ export default function InstrumentProfilesPage() {
         <section className="grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-medium text-slate-500">Total Item</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{filteredItems.length}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">
+              {filteredItems.length}
+            </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-medium text-slate-500">Dengan Foto</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{withPhotoCount}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">
+              {withPhotoCount}
+            </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-slate-500">Procedure Aktif</p>
+            <p className="text-xs font-medium text-slate-500">
+              Procedure Aktif
+            </p>
             <p className="mt-1 text-2xl font-bold text-slate-900">
-              {procedureFilter === "all" ? "ALL" : procedureLabel(procedureFilter)}
+              {procedureFilter === "all"
+                ? "ALL"
+                : procedureLabel(procedureFilter)}
             </p>
           </div>
         </section>
@@ -443,14 +502,17 @@ export default function InstrumentProfilesPage() {
               ))}
             </FloatingSelectField>
             <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search
+                size={16}
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400"
+              />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder=" "
-                className="peer h-12 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 pt-5 text-sm outline-none transition focus:border-slate-900"
+                className="peer h-12 w-full rounded-xl border border-slate-200 bg-white pt-5 pr-3 pl-9 text-sm transition outline-none focus:border-slate-900"
               />
-              <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-0 peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-slate-700 peer-[&:not(:placeholder-shown)]:top-0 peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-slate-700">
+              <span className="pointer-events-none absolute top-1/2 left-9 -translate-y-1/2 rounded bg-white px-1 text-sm text-slate-500 transition-all duration-150 peer-focus:top-0 peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-slate-700 peer-[&:not(:placeholder-shown)]:top-0 peer-[&:not(:placeholder-shown)]:text-[11px] peer-[&:not(:placeholder-shown)]:font-semibold peer-[&:not(:placeholder-shown)]:text-slate-700">
                 Cari kode, nama, atau kategori
               </span>
             </div>
@@ -470,17 +532,30 @@ export default function InstrumentProfilesPage() {
               className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
             >
               <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-sm font-semibold text-slate-800">{procedureLabel(procedureKey)}</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  {procedureLabel(procedureKey)}
+                </p>
                 <p className="text-xs text-slate-500">
-                  {Array.from(categoryMap.values()).reduce((sum, rows) => sum + rows.length, 0)} item
+                  {Array.from(categoryMap.values()).reduce(
+                    (sum, rows) => sum + rows.length,
+                    0,
+                  )}{" "}
+                  item
                 </p>
               </div>
 
               <div className="divide-y divide-slate-100">
                 {Array.from(categoryMap.entries()).map(([category, rows]) => (
-                  <details key={`${procedureKey}-${category}`} open className="group">
+                  <details
+                    key={`${procedureKey}-${category}`}
+                    open
+                    className="group"
+                  >
                     <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-medium text-slate-700">
-                      {category} <span className="text-xs text-slate-500">({rows.length})</span>
+                      {category}{" "}
+                      <span className="text-xs text-slate-500">
+                        ({rows.length})
+                      </span>
                     </summary>
                     <div className="space-y-2 px-3 pb-3">
                       {rows.map((item) => (
@@ -497,9 +572,15 @@ export default function InstrumentProfilesPage() {
                             />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold uppercase text-slate-500">{item.catalogNo}</p>
-                            <p className="line-clamp-2 text-sm font-semibold text-slate-900">{item.name}</p>
-                            <p className="text-xs text-slate-500">Piece: {item.qty}</p>
+                            <p className="text-xs font-semibold text-slate-500 uppercase">
+                              {item.catalogNo}
+                            </p>
+                            <p className="line-clamp-2 text-sm font-semibold text-slate-900">
+                              {item.name}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Piece: {item.qty}
+                            </p>
                           </div>
                         </div>
                       ))}
