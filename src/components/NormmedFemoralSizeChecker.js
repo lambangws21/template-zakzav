@@ -8,15 +8,9 @@ import {
   RulerDimensionLine,
   X,
 } from "lucide-react";
+import { NORMMED_FEMORAL_SIZES } from "../lib/digitalTemplating/implantLibrary";
 
-export const NORMMED_TKR_PS_FEMORAL_SIZES = [
-  { size: "1", width: 56, length: 45.3, height: 51.8 },
-  { size: "2", width: 60.5, length: 49.25, height: 56.65 },
-  { size: "3", width: 64.15, length: 52.3, height: 61 },
-  { size: "4", width: 68, length: 54.4, height: 64.9 },
-  { size: "5", width: 72.6, length: 57.1, height: 68.7 },
-  { size: "6", width: 77, length: 59.65, height: 72.7 },
-];
+export const NORMMED_TKR_PS_FEMORAL_SIZES = NORMMED_FEMORAL_SIZES;
 
 const DIMENSION_OPTIONS = [
   {
@@ -134,9 +128,9 @@ export default function NormmedFemoralSizeChecker({
             <Calculator className="h-4 w-4 shrink-0 text-cyan-700" />
             <span>Normmed TKR PS/CR Femoral Size</span>
           </div>
-          <p className="mt-1 text-[10px] font-semibold leading-snug text-slate-500 sm:text-xs">
-            Cek ukuran femoral dari Width, Length, atau Height berdasarkan
-            tabel Normmed/Gordion Total Knee System PS/CR.
+          <p className="mt-1 text-[10px] leading-snug font-semibold text-slate-500 sm:text-xs">
+            Cek ukuran femoral dari Width, Length, atau Height berdasarkan tabel
+            Normmed/Gordion Total Knee System PS/CR.
           </p>
         </div>
         {onClose ? (
@@ -171,7 +165,7 @@ export default function NormmedFemoralSizeChecker({
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+        <label className="block text-[10px] font-black tracking-widest text-slate-500 uppercase">
           Nilai {selectedDimension.label} (mm)
           <input
             type="number"
@@ -183,7 +177,7 @@ export default function NormmedFemoralSizeChecker({
               setSource("manual");
             }}
             placeholder="Masukkan mm manual"
-            className="mt-1.5 h-10 w-full rounded-[16px] border border-white/80 bg-[#eef2f7] px-3 text-sm font-bold text-slate-800 outline-none shadow-[inset_3px_3px_8px_rgba(100,116,139,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.8)]"
+            className="mt-1.5 h-10 w-full rounded-[16px] border border-white/80 bg-[#eef2f7] px-3 text-sm font-bold text-slate-800 shadow-[inset_3px_3px_8px_rgba(100,116,139,0.16),inset_-3px_-3px_8px_rgba(255,255,255,0.8)] outline-none"
           />
         </label>
 
@@ -239,13 +233,13 @@ export default function NormmedFemoralSizeChecker({
           <div className="flex items-start gap-2">
             <ToneIcon className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-black uppercase tracking-widest opacity-75">
+              <div className="text-[10px] font-black tracking-widest uppercase opacity-75">
                 Rekomendasi Normmed
               </div>
-              <div className="mt-0.5 text-2xl font-black leading-none">
+              <div className="mt-0.5 text-2xl leading-none font-black">
                 Size {recommended.size}
               </div>
-              <p className="mt-1 text-[10px] font-bold leading-snug">
+              <p className="mt-1 text-[10px] leading-snug font-bold">
                 {selectedDimension.label}: data pasien {formatMm(measuredMm)}.
                 Referensi size {recommended.size}:{" "}
                 {formatMm(recommended.referenceMm)}. Selisih{" "}
@@ -255,7 +249,7 @@ export default function NormmedFemoralSizeChecker({
           </div>
         </div>
       ) : (
-        <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10px] font-bold leading-snug text-amber-800">
+        <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10px] leading-snug font-bold text-amber-800">
           Pilih line yang sudah dikalibrasi atau isi nilai mm manual untuk
           melihat rekomendasi size femoral.
         </div>
@@ -286,7 +280,7 @@ export default function NormmedFemoralSizeChecker({
 
       {!compact ? (
         <div className="mt-3 overflow-hidden rounded-[18px] border border-white/70 bg-white/28">
-          <div className="grid grid-cols-4 bg-slate-900 px-2 py-2 text-[9px] font-black uppercase tracking-wider text-white">
+          <div className="grid grid-cols-4 bg-slate-900 px-2 py-2 text-[9px] font-black tracking-wider text-white uppercase">
             <span>Size</span>
             <span>Width</span>
             <span>Length</span>
@@ -313,7 +307,7 @@ export default function NormmedFemoralSizeChecker({
         </div>
       ) : null}
 
-      <p className="mt-2 text-[9px] font-semibold leading-snug text-slate-400">
+      <p className="mt-2 text-[9px] leading-snug font-semibold text-slate-400">
         Data referensi diambil dari tabel Normmed/Gordion Total Knee System
         PS/CR yang kamu berikan. Validasi akhir tetap mengikuti evaluasi klinis
         dan templating intra-operatif.

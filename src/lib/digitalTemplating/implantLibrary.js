@@ -17,6 +17,7 @@ import { TRAUMA_IMPLANTS } from "../../data/traumaImplants.js";
  * @property {number} [physicalWidthMm]
  * @property {number} [physicalHeightMm]
  * @property {boolean} [transparentWhiteBackground]
+ * @property {"ap"|"lateral"|string} [implantViewMode]
  */
 
 export const IMPLANT_LIBRARY_TYPE_LABELS = {
@@ -25,6 +26,45 @@ export const IMPLANT_LIBRARY_TYPE_LABELS = {
   knee: "Knee",
   trauma: "Trauma",
 };
+
+export const NORMMED_FEMORAL_SIZES = [
+  { size: 1, width: 56, length: 45.3, height: 51.8 },
+  { size: 2, width: 60.5, length: 49.25, height: 56.65 },
+  { size: 3, width: 64.15, length: 52.3, height: 61 },
+  { size: 4, width: 68, length: 54.4, height: 64.9 },
+  { size: 5, width: 72.6, length: 57.1, height: 68.7 },
+  { size: 6, width: 77, length: 59.65, height: 72.7 },
+];
+
+const NORMMED_FEMORAL_LIBRARY = NORMMED_FEMORAL_SIZES.flatMap((dimensions) =>
+  [
+    {
+      view: "AP",
+      viewKey: "ap",
+      physicalWidthMm: dimensions.width + 1,
+      physicalHeightMm: dimensions.length + 1,
+    },
+    {
+      view: "Lateral",
+      viewKey: "lateral",
+      physicalWidthMm: dimensions.length + 1,
+      physicalHeightMm: dimensions.height + 1,
+    },
+  ].map((view) => ({
+    id: `normmed-femoral-${view.viewKey}-${dimensions.size}`,
+    brand: "Normmed",
+    system: `Normmed Femoral ${view.view}`,
+    type: "knee",
+    size: dimensions.size,
+    label: `Normmed Femoral ${view.view} Size ${dimensions.size}`,
+    imageSrc: `/Femoral_AP_Lateral_Size_1-6_Normmed/Femoral_${view.view}_Size_${dimensions.size}.svg`,
+    physicalSize: null,
+    physicalWidthMm: view.physicalWidthMm,
+    physicalHeightMm: view.physicalHeightMm,
+    transparentWhiteBackground: false,
+    implantViewMode: view.viewKey,
+  })),
+);
 
 /**
  * Port tahap 1:
@@ -295,6 +335,7 @@ const BASE_LIBRARY = [
     transparentWhiteBackground: false,
     implantViewMode: "ap",
   })),
+  ...NORMMED_FEMORAL_LIBRARY,
   {
     id: "nexgen-ruler",
     brand: "Zimmer",

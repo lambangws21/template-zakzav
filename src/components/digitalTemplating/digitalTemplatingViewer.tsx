@@ -930,21 +930,29 @@ export default function ImplantTemplatingCanvas() {
      HELPERS
      ===================================================== */
 
-  const createImplant = (item: ImplantLibraryItem): ImplantCanvasObject => ({
-    id: createId(),
-    type: "implant",
-    name: item.label,
-    imageSrc: item.imageSrc,
-    position: { x: 300, y: 200 },
-    scaleX: 1,
-    scaleY: 1,
-    flipX: 1,
-    flipY: 1,
-    rotation: 0,
-    opacity: 0.6,
-    locked: true,
-    scaleLocked: false,
-  });
+  const createImplant = (item: ImplantLibraryItem): ImplantCanvasObject => {
+    const calibratedScale =
+      item.physicalWidthMm && effectivePixelsPerMm
+        ? (item.physicalWidthMm * effectivePixelsPerMm) / 300
+        : 1;
+
+    return {
+      id: createId(),
+      type: "implant",
+      name: item.label,
+      imageSrc: item.imageSrc,
+      position: { x: 300, y: 200 },
+      scaleX: calibratedScale,
+      scaleY: calibratedScale,
+      flipX: 1,
+      flipY: 1,
+      rotation: 0,
+      opacity: 0.6,
+      locked: true,
+      scaleLocked: false,
+      realLengthMm: item.physicalWidthMm,
+    };
+  };
 
   const createShape = useCallback(
     (shape: "circle" | "square" | "triangle"): TemplatingCanvasObject => ({

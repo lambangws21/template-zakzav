@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="73.6mm" height="58.1mm"
+     viewBox="-0.5 -0.5 73.6 58.1">
+  <title>Femoral AP Size 5 - Draft</title>
+  <desc>Approximate contour. Verify orientation, geometry and scale.</desc>
+  <metadata>{"component":"Femoral","view":"AP","size":5,"units":"mm","nominalContourWidth":72.6,"nominalContourHeight":57.1,"transparentPaddingEachSide":0.5,"sourceDimensions":{"size":5,"width":72.6,"length":57.1,"height":68.7},"status":"Approximate traced contour; not clinically validated","mapping":"AP: Width x Length; Lateral: Length x Height"}</metadata>
+  <g id="femoral-ap-size-5"
+     transform="scale(0.726 0.5710000000000001)"
+     fill="none" stroke="#009900" stroke-width="0.45"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 88 L0 51 Q0 43 7 37
+     C13 11 20 0 32 0
+     C49 0 63 19 74 37
+     C88 29 100 31 100 51
+     L100 86
+     C100 96 91 98 82 98
+     C69 98 59 85 50 85
+     C40 85 31 100 19 100
+     C10 100 0 99 0 88 Z"/>
+    <path d="M0 88 C2 70 5 48 7 37"/>
+    <path d="M74 37 C82 65 93 85 100 80"/>
+  </g>
+</svg>

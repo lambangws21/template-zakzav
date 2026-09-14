@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="53.3mm" height="62mm"
+     viewBox="-0.5 -0.5 53.3 62">
+  <title>Femoral Lateral Size 3 - Draft</title>
+  <desc>Approximate contour. Verify orientation, geometry and scale.</desc>
+  <metadata>{"component":"Femoral","view":"Lateral","size":3,"units":"mm","nominalContourWidth":52.3,"nominalContourHeight":61,"transparentPaddingEachSide":0.5,"sourceDimensions":{"size":3,"width":64.15,"length":52.3,"height":61},"status":"Approximate traced contour; not clinically validated","mapping":"AP: Width x Length; Lateral: Length x Height"}</metadata>
+  <g id="femoral-lateral-size-3"
+     transform="scale(0.523 0.61)"
+     fill="none" stroke="#009900" stroke-width="0.45"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 11
+     C12 6 23 0 37 0
+     C72 0 100 24 100 56
+     C100 83 85 100 63 100
+     C48 100 38 91 34 79
+     L73 78 L80 74 L80 28 L55 15 L0 13 Z"/>
+    <path d="M44 15 L61 27 L61 52"/>
+    <path d="M61 61 L61 75 Q61 78 58 78"/>
+    <path d="M80 52 H60 C51 52 51 61 60 61 H80"/>
+  </g>
+</svg>
