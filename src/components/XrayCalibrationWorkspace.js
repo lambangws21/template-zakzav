@@ -116,7 +116,6 @@ import {
 } from "../lib/digitalTemplating/implantLibrary";
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import ImplantLayer from "./ImplantLayer";
-import NormmedStemLayer from "./NormmedStemLayer";
 import CalibrationWizard from "./KalibrasiWizzard";
 import FreeWarpOverlay from "./FreeWarpOverlay";
 import { SHAPE_PRESETS } from "../data/shapePresets";
@@ -19055,6 +19054,7 @@ export default function XrayCalibrationWorkspace({
         transparentWhiteBackground: Boolean(
           implantItem.transparentWhiteBackground,
         ),
+        implantViewMode: implantItem.implantViewMode || null,
       }).then((added) => {
         if (!added || mmPerPixel !== null) return;
         if (isSimpleUiMode) {
@@ -19091,39 +19091,6 @@ export default function XrayCalibrationWorkspace({
       }).then((added) => {
         if (!added || mmPerPixel !== null) return;
         const msg = `Template "${name}" ditambahkan. Klik Calib/Ruler dan buat garis kalibrasi agar ukuran implant otomatis menyesuaikan X-ray.`;
-        if (isSimpleUiMode) {
-          openSimpleCalibrationModal(msg);
-          return;
-        }
-        focusCalibrationStep(msg);
-      });
-    },
-    [
-      addTemplateToCanvas,
-      focusCalibrationStep,
-      isSimpleUiMode,
-      mmPerPixel,
-      openSimpleCalibrationModal,
-    ],
-  );
-
-  const handleAddNormmedStemLayer = useCallback(
-    ({ imageSrc, physicalWidthMm, physicalHeightMm, label }) => {
-      void addTemplateToCanvas({
-        id: `normmed-stem-${Date.now()}`,
-        name: label || "Normmed Stem",
-        imageSrc,
-        sourceWidth: 0,
-        sourceHeight: 0,
-        autoScaleFromCalibration: Boolean(physicalWidthMm || physicalHeightMm),
-        physicalSize: null,
-        physicalWidthMm: physicalWidthMm ?? null,
-        physicalHeightMm: physicalHeightMm ?? null,
-        transparentWhiteBackground: false,
-        implantViewMode: "ap",
-      }).then((added) => {
-        if (!added || mmPerPixel !== null) return;
-        const msg = `Template "${label}" ditambahkan. Klik Calib/Ruler dan buat garis kalibrasi agar ukuran stem otomatis menyesuaikan X-ray.`;
         if (isSimpleUiMode) {
           openSimpleCalibrationModal(msg);
           return;
@@ -28465,7 +28432,7 @@ export default function XrayCalibrationWorkspace({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-5"
+              className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/25 p-0 sm:items-center sm:p-5"
               role="presentation"
               onMouseDown={() => setPlanningImplantModalOpen(false)}
             >
@@ -28477,34 +28444,33 @@ export default function XrayCalibrationWorkspace({
                 aria-modal="true"
                 aria-label="Implant Template"
                 onMouseDown={(event) => event.stopPropagation()}
-                className={`implant-template-modal flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-[18px] border sm:max-w-[860px] sm:rounded-xl ${
+                className={`implant-template-modal flex max-h-[48dvh] w-full flex-col overflow-hidden rounded-t-xl border sm:max-h-[78dvh] sm:max-w-[620px] sm:rounded-xl ${
                   isDark
                     ? "border-slate-600 bg-slate-900 text-slate-100"
                     : "border-slate-300 bg-[#eef2f7] text-slate-900"
                 }`}
               >
                 <header
-                  className={`flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 ${isDark ? "border-slate-700" : "border-slate-300"}`}
+                  className={`flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 ${isDark ? "border-slate-700" : "border-slate-300"}`}
                 >
                   <div className="min-w-0">
-                    <h2 className="text-sm font-black">Implant Template</h2>
+                    <h2 className="text-xs font-black">Pilih Implant</h2>
                     <p
-                      className={`mt-0.5 text-[10px] ${isDark ? "text-slate-300" : "text-slate-600"}`}
+                      className={`mt-0.5 text-[9px] ${isDark ? "text-slate-300" : "text-slate-600"}`}
                     >
-                      Pilih cup, stem, atau komponen lain. Ukuran mengikuti
-                      skala kalibrasi aktif.
+                      Jenis, model, lalu ukuran.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setPlanningImplantModalOpen(false)}
-                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg border ${isDark ? "border-slate-600 bg-slate-800" : "border-white bg-white/70"}`}
+                    className={`grid h-8 w-8 shrink-0 place-items-center rounded-md border ${isDark ? "border-slate-600 bg-slate-800" : "border-slate-300 bg-white"}`}
                     aria-label="Tutup Implant Template"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </header>
-                <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 md:grid-cols-2">
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
                   <ImplantLayer
                     items={LOCAL_IMPLANT_LIBRARY}
                     selectedType={selectedImplantType}
@@ -28525,17 +28491,10 @@ export default function XrayCalibrationWorkspace({
                     )}
                     scaleInstruction={implantLibraryScaleInstruction}
                     calibrated={hasCalibration}
+                    compact
                     disabled={!image || !modelWidth || !modelHeight}
-                    title="Implant Layer"
-                    subtitle="Template lokal"
-                  />
-                  <NormmedStemLayer
-                    onUseSelected={(item) => {
-                      handleAddNormmedStemLayer(item);
-                      setPlanningImplantModalOpen(false);
-                    }}
-                    calibrated={hasCalibration}
-                    disabled={!image || !modelWidth || !modelHeight}
+                    title="Template Implant"
+                    subtitle="Normmed tersedia di kategori Stem"
                   />
                 </div>
               </motion.section>
@@ -34054,12 +34013,6 @@ export default function XrayCalibrationWorkspace({
                 disabled={!image || !modelWidth || !modelHeight}
                 title="Implant Layer"
                 subtitle="Template lokal"
-              />
-              <NormmedStemLayer
-                onUseSelected={handleAddNormmedStemLayer}
-                calibrated={hasCalibration}
-                compact={isLeftSidebarCompact}
-                disabled={!image || !modelWidth || !modelHeight}
               />
               <div className="flex flex-col gap-1.5">
                 {cutLayers.length === 0 ? (

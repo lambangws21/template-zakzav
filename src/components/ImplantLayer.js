@@ -5,9 +5,8 @@ import {
   AlertCircle,
   Check,
   ChevronDown,
-  Eye,
-  FolderOpen,
-  Info,
+  Layers,
+  Replace,
   Search,
   X,
 } from "lucide-react";
@@ -19,120 +18,46 @@ import {
 } from "../lib/digitalTemplating/implantLibrary";
 
 const TYPE_KEYS = Object.keys(IMPLANT_LIBRARY_TYPE_LABELS);
+const ICON_ROOT = "/Zakzav_Implant_Icons_512";
+const TYPE_ICONS = {
+  stem: `${ICON_ROOT}/01_Stem_512.png`,
+  cup: `${ICON_ROOT}/02_Cup_512.png`,
+  knee: `${ICON_ROOT}/07_TKA_512.png`,
+};
 
-const IMPLANT_LAYER_STYLES = `
-  .implant-layer-card {
-    background: #eef2f7;
-    box-shadow: 0 4px 14px rgba(15,23,42,0.10);
-    border: 1px solid #cbd5e1;
-    color: #1e293b;
+function getItemIcon(item) {
+  const signature =
+    `${item?.id || ""} ${item?.system || ""} ${item?.label || ""}`.toLowerCase();
+  if (signature.includes("bipolar")) return `${ICON_ROOT}/03_Bipolar_512.png`;
+  if (signature.includes("wagner") || signature.includes("long stem")) {
+    return `${ICON_ROOT}/04_LongStem_512.png`;
   }
-  .implant-layer-soft {
-    background: #f8fafc;
-    box-shadow: none;
-    border: 1px solid #cbd5e1;
+  if (signature.includes("femoral") || signature.includes("fem-")) {
+    return `${ICON_ROOT}/08_Femur_TKA_512.png`;
   }
-  .implant-layer-inset {
-    background: #f8fafc;
-    box-shadow: none;
-    border: 1px solid #cbd5e1;
+  if (signature.includes("tibial") || signature.includes("tib-")) {
+    return `${ICON_ROOT}/09_Tibia_TKA_512.png`;
   }
-  .implant-layer-active {
-    background: #1f2937;
-    color: #ffffff;
-    box-shadow: none;
-    border-color: #0f172a;
-  }
-  .implant-layer-label-hi { color: #0f172a; }
-  .implant-layer-label-md { color: #475569; }
-  .implant-layer-label-lo { color: #94a3b8; }
-  .implant-layer-select { color: #1e293b; }
-  .implant-layer-divider { border-color: rgba(203,213,225,0.35); }
-  .implant-layer-metric {
-    background: rgba(255,255,255,0.42);
-    border: 1px solid rgba(255,255,255,0.65);
-    box-shadow: none;
-  }
-  .implant-layer-btn-use {
-    border: 1px solid #6ee7b7;
-    background: rgba(209,250,229,0.80);
-    color: #065f46;
-    box-shadow: none;
-  }
-  .implant-layer-btn-use:hover { background: rgba(187,247,208,0.9); }
-  .implant-layer-btn-replace {
-    border: 1px solid #a5f3fc;
-    background: rgba(207,250,254,0.75);
-    color: #0e7490;
-    box-shadow: none;
-  }
-  .implant-layer-btn-replace:hover { background: rgba(165,243,252,0.9); }
-  .implant-layer-hint { color: #64748b; }
-
-  /* ─── Dark mode ─────────────────────────────────────────── */
-  [data-theme="dark"] .implant-layer-card {
-    background: rgba(15,23,42,0.92);
-    box-shadow: 0 5px 16px rgba(0,0,0,0.28);
-    border: 1px solid rgba(148,163,184,0.28);
-    color: #e2e8f0;
-  }
-  [data-theme="dark"] .implant-layer-soft {
-    background: rgba(30,41,59,0.80);
-    box-shadow: none;
-    border: 1px solid rgba(255,255,255,0.09);
-  }
-  [data-theme="dark"] .implant-layer-inset {
-    background: rgba(8,14,28,0.70);
-    box-shadow: none;
-    border: 1px solid rgba(255,255,255,0.07);
-  }
-  [data-theme="dark"] .implant-layer-active {
-    background: rgba(14,165,233,0.18);
-    color: #38bdf8;
-    box-shadow: none;
-    border-color: rgba(14,165,233,0.35);
-  }
-  [data-theme="dark"] .implant-layer-label-hi { color: #f1f5f9; }
-  [data-theme="dark"] .implant-layer-label-md { color: #94a3b8; }
-  [data-theme="dark"] .implant-layer-label-lo { color: #475569; }
-  [data-theme="dark"] .implant-layer-select { color: #cbd5e1; }
-  [data-theme="dark"] .implant-layer-divider { border-color: rgba(255,255,255,0.08); }
-  [data-theme="dark"] .implant-layer-metric {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.09);
-    box-shadow: none;
-  }
-  [data-theme="dark"] .implant-layer-btn-use {
-    border: 1px solid rgba(52,211,153,0.30);
-    background: rgba(6,78,59,0.55);
-    color: #6ee7b7;
-    box-shadow: none;
-  }
-  [data-theme="dark"] .implant-layer-btn-use:hover { background: rgba(6,78,59,0.75); }
-  [data-theme="dark"] .implant-layer-btn-replace {
-    border: 1px solid rgba(34,211,238,0.28);
-    background: rgba(8,51,68,0.55);
-    color: #67e8f9;
-    box-shadow: none;
-  }
-  [data-theme="dark"] .implant-layer-btn-replace:hover { background: rgba(8,51,68,0.75); }
-  [data-theme="dark"] .implant-layer-hint { color: #475569; }
-`;
-
-function MetricPill({ label, value }) {
-  const displayValue =
-    value === null || value === undefined || value === "" ? "-" : String(value);
-  return (
-    <div className="implant-layer-metric min-w-0 rounded-2xl px-3 py-2">
-      <div className="implant-layer-label-lo text-[9px] font-black tracking-widest uppercase">
-        {label}
-      </div>
-      <div className="implant-layer-label-hi truncate text-[11px] font-extrabold">
-        {displayValue}
-      </div>
-    </div>
-  );
+  if (signature.includes("insert")) return `${ICON_ROOT}/10_Insert_TKA_512.png`;
+  if (signature.includes("patella"))
+    return `${ICON_ROOT}/11_Patella_TKA_512.png`;
+  return TYPE_ICONS[item?.type] || null;
 }
+
+const STYLES = `
+  .implant-picker { background:#eef2f7; border:1px solid #cbd5e1; color:#1e293b; }
+  .implant-picker-surface { background:#f8fafc; border:1px solid #cbd5e1; }
+  .implant-picker-muted { color:#64748b; }
+  .implant-picker-tab { background:#f8fafc; border:1px solid #dbe3ec; color:#475569; }
+  .implant-picker-tab-active { background:#1e293b; border-color:#0f172a; color:#fff; }
+  .implant-picker-use { background:#059669; border:1px solid #047857; color:#fff; }
+  .implant-picker-replace { background:#0891b2; border:1px solid #0e7490; color:#fff; }
+  [data-theme="dark"] .implant-picker { background:#0f172a; border-color:#334155; color:#f1f5f9; }
+  [data-theme="dark"] .implant-picker-surface { background:#111c2f; border-color:#334155; }
+  [data-theme="dark"] .implant-picker-muted { color:#94a3b8; }
+  [data-theme="dark"] .implant-picker-tab { background:#172033; border-color:#334155; color:#cbd5e1; }
+  [data-theme="dark"] .implant-picker-tab-active { background:#0e7490; border-color:#22d3ee; color:#fff; }
+`;
 
 export default function ImplantLayer({
   items = [],
@@ -150,8 +75,8 @@ export default function ImplantLayer({
   className = "",
   compact = false,
   showClose = false,
-  title = "Implant Layer",
-  subtitle = "Template overlay",
+  title = "Pilih Implant",
+  subtitle = "Jenis, model, dan ukuran",
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedType = TYPE_KEYS.includes(selectedType)
@@ -175,280 +100,247 @@ export default function ImplantLayer({
   const selectedSystemItems = groupedItems[selectedSystem] || [];
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searchResults = useMemo(
-    () => normalizedSearch
-      ? items
-          .filter((item) =>
-            [item.label, item.brand, item.system, item.size, item.type]
-              .filter(Boolean)
-              .some((value) => String(value).toLowerCase().includes(normalizedSearch)),
-          )
-          .slice(0, 30)
-      : [],
+    () =>
+      normalizedSearch
+        ? items
+            .filter((item) =>
+              [item.label, item.brand, item.system, item.size, item.type]
+                .filter(Boolean)
+                .some((value) =>
+                  String(value).toLowerCase().includes(normalizedSearch),
+                ),
+            )
+            .slice(0, 24)
+        : [],
     [items, normalizedSearch],
   );
 
-  const handleTypeChange = (type) => {
+  const selectType = (type) => {
     setSearchQuery("");
     onSelectType?.(type);
     const firstItem = getImplantLibraryItemsByType(type, items)[0];
     if (firstItem) onSelectItemId?.(firstItem.id);
   };
 
+  const chooseSearchResult = (item) => {
+    onSelectType?.(item.type);
+    onSelectItemId?.(item.id);
+    setSearchQuery("");
+  };
+
+  const selectedIcon = getItemIcon(selectedItem);
+
   return (
     <section
-      className={`implant-layer-card w-full rounded-xl ${
-        compact ? "space-y-2 p-2.5" : "space-y-4 p-4"
-      } ${className}`}
+      className={`implant-picker w-full space-y-2.5 rounded-lg ${compact ? "p-2.5" : "p-3.5"} ${className}`}
     >
-      <style>{IMPLANT_LAYER_STYLES}</style>
+      <style>{STYLES}</style>
 
-      {/* Header */}
-      <div className={`implant-layer-divider flex items-start justify-between border-b ${compact ? "gap-2 pb-2" : "gap-3 pb-3"}`}>
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className={`implant-layer-soft flex shrink-0 items-center justify-center rounded-lg text-cyan-600 ${compact ? "h-8 w-8" : "h-9 w-9"}`}>
-            <FolderOpen className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="implant-layer-label-hi truncate text-xs font-black tracking-wider uppercase">
-              {compact ? "Implant" : title}
-            </h2>
-            <p className="implant-layer-label-lo mt-0.5 truncate text-[9px] font-extrabold tracking-wider uppercase">
-              {subtitle}
-            </p>
-          </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-xs font-black">{title}</h2>
+          <p className="implant-picker-muted truncate text-[9px] font-semibold">
+            {subtitle}
+          </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          {scaleInstruction ? (
-            <button
-              type="button"
-              className="implant-layer-soft flex h-9 w-9 items-center justify-center rounded-full text-cyan-500"
-              title={scaleInstruction}
-              aria-label={scaleInstruction}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!calibrated ? (
+            <span
+              className="implant-picker-surface grid h-8 w-8 place-items-center rounded-md text-amber-500"
+              title={scaleInstruction || "Kalibrasi belum aktif"}
             >
               <AlertCircle className="h-4 w-4" />
-            </button>
+            </span>
           ) : null}
           {showClose ? (
             <button
               type="button"
               onClick={onClose}
-              className="implant-layer-soft flex h-9 w-9 items-center justify-center rounded-full"
-              aria-label="Tutup implant layer"
+              className="implant-picker-surface grid h-8 w-8 place-items-center rounded-md"
+              aria-label="Tutup pemilih implant"
               title="Tutup"
             >
-              <X className="implant-layer-label-md h-4 w-4" />
+              <X className="h-4 w-4" />
             </button>
           ) : null}
         </div>
       </div>
 
-      {/* Count pills */}
-      {!compact ? (
-        <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${TYPE_KEYS.length}, minmax(0, 1fr))` }}>
-          {TYPE_KEYS.map((type) => (
-            <MetricPill key={type} label={IMPLANT_LIBRARY_TYPE_LABELS[type]} value={counts[type] || 0} />
-          ))}
-        </div>
-      ) : null}
-
-      {/* Type tabs */}
-      <div className={`implant-layer-inset flex overflow-x-auto rounded-lg ${compact ? "gap-1 p-1" : "gap-1.5 p-1.5"}`} role="tablist" aria-label="Kategori implant">
+      <div
+        className="grid grid-cols-4 gap-1.5"
+        role="tablist"
+        aria-label="Jenis implant"
+      >
         {TYPE_KEYS.map((type) => {
-          const label = IMPLANT_LIBRARY_TYPE_LABELS[type];
           const isActive = normalizedType === type;
+          const iconSrc = TYPE_ICONS[type];
           return (
             <button
-              key={`implant-layer-type-${type}`}
+              key={type}
               type="button"
-              onClick={() => handleTypeChange(type)}
-              className={`${compact ? "min-h-8 min-w-[62px] text-[8px]" : "min-h-10 min-w-[76px] text-[10px]"} flex-1 rounded-md px-2 font-black uppercase transition-colors ${
-                isActive ? "implant-layer-active" : "implant-layer-soft implant-layer-label-md"
-              }`}
-              title={label}
+              onClick={() => selectType(type)}
+              className={`${isActive ? "implant-picker-tab-active" : "implant-picker-tab"} flex min-h-12 min-w-0 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[9px] font-black`}
+              title={IMPLANT_LIBRARY_TYPE_LABELS[type]}
+              role="tab"
+              aria-selected={isActive}
             >
-              {compact ? label.slice(0, 4) : label}
+              {iconSrc ? (
+                <img
+                  src={iconSrc}
+                  alt=""
+                  className="h-8 w-8 shrink-0 object-contain"
+                />
+              ) : (
+                <Layers className="h-4 w-4 shrink-0" />
+              )}
+              <span className="truncate">
+                {IMPLANT_LIBRARY_TYPE_LABELS[type]}
+                <small className="ml-1 opacity-60">{counts[type] || 0}</small>
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Searchable two-step selector: category -> model -> size. */}
-      <div className={compact ? "space-y-1.5" : "space-y-2"}>
-        <label className="block space-y-1.5">
-          <span className="implant-layer-label-lo px-1 text-[9px] font-black tracking-widest uppercase">
-            Cari template
-          </span>
-          <div className="implant-layer-inset relative rounded-lg">
-            <Search className="implant-layer-label-lo pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Wagner, Tibial, LCP..."
-              className={`implant-layer-select w-full bg-transparent pl-9 pr-3 font-bold outline-none ${compact ? "min-h-9 text-[9px]" : "min-h-10 text-[10px]"}`}
-            />
-          </div>
-        </label>
+      <label className="implant-picker-surface relative block rounded-md">
+        <Search className="implant-picker-muted pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Cari model atau ukuran..."
+          className="min-h-9 w-full bg-transparent pr-2.5 pl-8 text-[10px] font-semibold outline-none"
+        />
+      </label>
 
-        {normalizedSearch ? (
-          <div className="implant-layer-inset max-h-48 space-y-1 overflow-y-auto rounded-lg p-1.5">
-            {searchResults.length ? searchResults.map((item) => (
+      {normalizedSearch ? (
+        <div className="implant-picker-surface max-h-36 space-y-1 overflow-y-auto rounded-md p-1">
+          {searchResults.length ? (
+            searchResults.map((item) => (
               <button
-                key={`implant-search-${item.id}`}
+                key={item.id}
                 type="button"
-                onClick={() => {
-                  onSelectType?.(item.type);
-                  onSelectItemId?.(item.id);
-                  setSearchQuery("");
-                }}
-                className={`flex min-h-10 w-full items-center gap-2 rounded-md border px-2 text-left transition ${
-                  String(item.id) === String(selectedItem?.id)
-                    ? "border-cyan-400 bg-cyan-50/80 text-cyan-900"
-                    : "border-transparent hover:border-slate-300 hover:bg-white/55"
-                }`}
+                onClick={() => chooseSearchResult(item)}
+                className="flex min-h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-cyan-500/10"
               >
-                <span className="min-w-0 flex-1">
-                  <strong className="implant-layer-label-hi block truncate text-[9px]">{item.label}</strong>
-                  <small className="implant-layer-label-md block truncate text-[8px] font-semibold">{item.brand} | {item.system}</small>
-                </span>
-                <span className="implant-layer-soft shrink-0 rounded-full px-2 py-1 text-[7px] font-black uppercase">{item.type}</span>
+                <strong className="min-w-0 flex-1 truncate text-[9px]">
+                  {item.label}
+                </strong>
+                <small className="implant-picker-muted shrink-0 text-[8px]">
+                  {item.system}
+                </small>
               </button>
-            )) : (
-              <div className="implant-layer-label-md px-3 py-5 text-center text-[9px] font-semibold">
-                Template tidak ditemukan.
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            <label className="min-w-0 space-y-1">
-              <span className="implant-layer-label-lo px-1 text-[8px] font-black tracking-wider uppercase">1. Model</span>
-              <div className="implant-layer-inset relative rounded-lg">
-                <select
-                  value={selectedSystem}
-                  onChange={(event) => {
-                    const firstItem = groupedItems[event.target.value]?.[0];
-                    if (firstItem) onSelectItemId?.(firstItem.id);
-                  }}
-                  className={`implant-layer-select w-full cursor-pointer appearance-none bg-transparent px-2 pr-7 font-bold outline-none ${compact ? "min-h-9 text-[8px]" : "min-h-10 text-[9px]"}`}
-                  title="Pilih model implant"
-                >
-                  {systems.length ? systems.map((system) => (
-                    <option key={`implant-system-${system}`} value={system}>{system}</option>
-                  )) : <option value="">Belum ada model</option>}
-                </select>
-                <ChevronDown className="implant-layer-label-md pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-              </div>
-            </label>
-            <label className="min-w-0 space-y-1">
-              <span className="implant-layer-label-lo px-1 text-[8px] font-black tracking-wider uppercase">2. Ukuran</span>
-              <div className="implant-layer-inset relative rounded-lg">
-                <select
-                  value={selectedItem?.id || ""}
-                  onChange={(event) => onSelectItemId?.(event.target.value)}
-                  className={`implant-layer-select w-full cursor-pointer appearance-none bg-transparent px-2 pr-7 font-bold outline-none ${compact ? "min-h-9 text-[8px]" : "min-h-10 text-[9px]"}`}
-                  title="Pilih ukuran implant"
-                >
-                  {selectedSystemItems.length ? selectedSystemItems.map((item) => (
-                    <option key={item.id} value={item.id}>{item.size || item.label}</option>
-                  )) : <option value="">Belum ada ukuran</option>}
-                </select>
-                <ChevronDown className="implant-layer-label-md pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-              </div>
-            </label>
-          </div>
-        )}
-      </div>
-
-      {/* Preview */}
-      {selectedItem ? (
-        compact ? (
-          <div className="implant-layer-inset min-w-0 rounded-2xl px-3 py-2">
-            <div className="implant-layer-label-hi truncate text-[11px] font-black">
-              {selectedItem.label}
-            </div>
-            <div className="implant-layer-label-md mt-0.5 truncate text-[10px] font-semibold">
-              {selectedItem.brand} | {selectedItem.system} | Size {selectedItem.size}
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_130px]">
-            <div className="implant-layer-inset min-w-0 rounded-2xl p-3">
-              <div className="implant-layer-label-hi truncate text-sm font-black">
-                {selectedItem.label}
-              </div>
-              <div className="mt-1 grid grid-cols-2 gap-2">
-                <MetricPill label="Brand" value={selectedItem.brand} />
-                <MetricPill label="System" value={selectedItem.system} />
-                <MetricPill label="Size" value={selectedItem.size} />
-                <MetricPill
-                  label="Type"
-                  value={IMPLANT_LIBRARY_TYPE_LABELS[selectedItem.type]}
-                />
-              </div>
-            </div>
-            <div className="implant-layer-inset flex min-h-32 items-center justify-center overflow-hidden rounded-2xl bg-slate-950/95 p-2">
-              <img
-                src={selectedItem.imageSrc}
-                alt={selectedItem.label}
-                className="max-h-40 w-full object-contain"
-              />
-            </div>
-          </div>
-        )
+            ))
+          ) : (
+            <p className="implant-picker-muted px-2 py-4 text-center text-[9px]">
+              Implant tidak ditemukan.
+            </p>
+          )}
+        </div>
       ) : (
-        <div className="implant-layer-inset implant-layer-label-md rounded-2xl px-3 py-4 text-center text-xs font-semibold">
-          Belum ada template implant untuk kategori ini.
+        <div className="grid grid-cols-2 gap-2">
+          <label className="min-w-0">
+            <span className="implant-picker-muted mb-1 block text-[8px] font-black uppercase">
+              Model
+            </span>
+            <span className="implant-picker-surface relative block rounded-md">
+              <select
+                value={selectedSystem}
+                onChange={(event) => {
+                  const firstItem = groupedItems[event.target.value]?.[0];
+                  if (firstItem) onSelectItemId?.(firstItem.id);
+                }}
+                className="min-h-9 w-full cursor-pointer appearance-none bg-transparent px-2 pr-7 text-[10px] font-bold outline-none"
+              >
+                {systems.length ? (
+                  systems.map((system) => (
+                    <option key={system} value={system}>
+                      {system}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Belum tersedia</option>
+                )}
+              </select>
+              <ChevronDown className="implant-picker-muted pointer-events-none absolute top-1/2 right-2 h-3.5 w-3.5 -translate-y-1/2" />
+            </span>
+          </label>
+          <label className="min-w-0">
+            <span className="implant-picker-muted mb-1 block text-[8px] font-black uppercase">
+              Ukuran
+            </span>
+            <span className="implant-picker-surface relative block rounded-md">
+              <select
+                value={selectedItem?.id || ""}
+                onChange={(event) => onSelectItemId?.(event.target.value)}
+                className="min-h-9 w-full cursor-pointer appearance-none bg-transparent px-2 pr-7 text-[10px] font-bold outline-none"
+              >
+                {selectedSystemItems.length ? (
+                  selectedSystemItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.size || item.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Belum tersedia</option>
+                )}
+              </select>
+              <ChevronDown className="implant-picker-muted pointer-events-none absolute top-1/2 right-2 h-3.5 w-3.5 -translate-y-1/2" />
+            </span>
+          </label>
         </div>
       )}
 
-      {/* Scale instruction */}
-      {scaleInstruction ? (
-        <div className="implant-layer-inset flex items-start gap-2 rounded-2xl px-3 py-2 text-[10px] font-semibold leading-4">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-500" />
-          <span className="implant-layer-label-md">{scaleInstruction}</span>
+      {selectedItem ? (
+        <div className="implant-picker-surface flex min-h-12 items-center gap-2 rounded-md px-2 py-1.5">
+          {selectedIcon ? (
+            <img
+              src={selectedIcon}
+              alt=""
+              className="h-10 w-10 shrink-0 object-contain"
+            />
+          ) : (
+            <Layers className="implant-picker-muted h-5 w-5 shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">
+            <strong className="block truncate text-[10px]">
+              {selectedItem.label}
+            </strong>
+            <span className="implant-picker-muted block truncate text-[9px]">
+              {selectedItem.brand} | {selectedItem.system} | Size{" "}
+              {selectedItem.size}
+            </span>
+          </div>
         </div>
       ) : null}
 
-      {/* Calibration warning — shown when image is loaded but kalibrasi belum aktif */}
       {!calibrated ? (
-        <div className="flex items-start gap-2 rounded-2xl border border-amber-400/40 bg-amber-50/80 px-3 py-2 text-[10px] font-semibold leading-4 text-amber-800 dark:border-amber-400/20 dark:bg-amber-900/20 dark:text-amber-300">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-          <span>Kalibrasi belum aktif — ukuran implant tidak akan akurat. Lakukan kalibrasi sebelum memakai template.</span>
-        </div>
+        <p className="rounded-md border border-amber-400/40 bg-amber-50 px-2 py-1.5 text-[9px] font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          Kalibrasi belum aktif. Ukuran implant dapat tidak akurat.
+        </p>
       ) : null}
 
-      {/* Action buttons */}
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onUseSelected}
           disabled={disabled || !selectedItem}
-          className={`implant-layer-btn-use flex w-full items-center justify-center rounded-lg font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${compact ? "min-h-10 gap-1.5 px-2 py-2 text-[10px]" : "min-h-12 gap-2 px-3 py-3 text-xs"}`}
-          title={calibrated ? "Tambahkan implant sebagai layer template baru" : "Kalibrasi belum aktif — ukuran implant mungkin tidak akurat"}
+          className="implant-picker-use flex min-h-9 items-center justify-center gap-1.5 rounded-md px-2 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {calibrated ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
-          Tambah Layer
+          <Check className="h-3.5 w-3.5" />
+          Tambah
         </button>
         <button
           type="button"
           onClick={onReplaceSelected}
           disabled={disabled || !selectedItem || !canReplaceSelected}
-          className={`implant-layer-btn-replace flex w-full items-center justify-center rounded-lg font-black transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 ${compact ? "min-h-10 gap-1.5 px-2 py-2 text-[10px]" : "min-h-12 gap-2 px-3 py-3 text-xs"}`}
-          title="Ganti layer/template aktif tanpa mengubah posisi dan ukuran tampilan"
+          className="implant-picker-replace flex min-h-9 items-center justify-center gap-1.5 rounded-md px-2 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-40"
+          title="Ganti layer aktif tanpa mengubah posisinya"
         >
-          <FolderOpen className="h-4 w-4" />
+          <Replace className="h-3.5 w-3.5" />
           Ganti Aktif
         </button>
       </div>
-
-      {!compact ? (
-        <div className="implant-layer-hint flex items-center justify-center gap-2 text-[10px] font-black tracking-wider uppercase">
-          <Eye className="h-3.5 w-3.5" />
-          Preview mengikuti template lokal yang dipilih
-        </div>
-      ) : null}
     </section>
   );
 }

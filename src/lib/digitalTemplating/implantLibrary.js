@@ -100,7 +100,7 @@ const BASE_LIBRARY = [
     physicalSize: "A5",
     transparentWhiteBackground: true,
   },
- 
+
   {
     id: "bipolar-50-54",
     brand: "Zimmer",
@@ -283,6 +283,18 @@ const BASE_LIBRARY = [
     label: "Wagner SL Size 24-25",
     imageSrc: "/images/implant/wagner/wagner24-25.png",
   },
+  ...[1, 2, 3, 4, 5, 6, 7].map((size) => ({
+    id: `normmed-nm-${size}`,
+    brand: "Normmed",
+    system: "Normmed NM",
+    type: "stem",
+    size,
+    label: `Normmed NM Stem Size ${size}`,
+    imageSrc: `/Zakzav_NM_Green_Layers/NM_Size_0${size}_Green_Transparent.png`,
+    physicalSize: null,
+    transparentWhiteBackground: false,
+    implantViewMode: "ap",
+  })),
   {
     id: "nexgen-ruler",
     brand: "Zimmer",
@@ -402,7 +414,7 @@ const BASE_LIBRARY = [
   },
 ].map((item) => ({
   ...item,
-  physicalSize: item.physicalSize || "A5",
+  physicalSize: item.physicalSize === undefined ? "A5" : item.physicalSize,
   transparentWhiteBackground: item.transparentWhiteBackground ?? true,
 }));
 
@@ -445,11 +457,17 @@ export const LOCAL_IMPLANT_LIBRARY = [...BASE_LIBRARY, ...TRAUMA_LIBRARY];
 
 export const LOCAL_IMPLANT_LIBRARY_TYPES = ["stem", "cup", "knee", "trauma"];
 
-export function getImplantLibraryItemById(itemId, items = LOCAL_IMPLANT_LIBRARY) {
+export function getImplantLibraryItemById(
+  itemId,
+  items = LOCAL_IMPLANT_LIBRARY,
+) {
   return items.find((item) => String(item.id) === String(itemId)) || null;
 }
 
-export function getImplantLibraryItemsByType(type, items = LOCAL_IMPLANT_LIBRARY) {
+export function getImplantLibraryItemsByType(
+  type,
+  items = LOCAL_IMPLANT_LIBRARY,
+) {
   return items.filter((item) => item.type === type);
 }
 
