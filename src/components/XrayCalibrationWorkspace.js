@@ -23711,7 +23711,8 @@ export default function XrayCalibrationWorkspace({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92, y: 4 }}
                 transition={{ duration: 0.14 }}
-                className="pointer-events-none fixed z-[121]"
+                className="pointer-events-auto fixed z-[121]"
+                onPointerLeave={() => setSizingLineHoverInfo(null)}
                 style={{ left: tx, top: ty, width: TOOLTIP_W }}
               >
                 <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl">
@@ -23776,30 +23777,50 @@ export default function XrayCalibrationWorkspace({
                         </div>
 
                         {sizing.kind === "femoral" ? (
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {sizing.dimensionItems.map((item) => (
-                              <div
-                                key={item.key}
-                                className={`rounded-lg border px-1.5 py-1 ${
-                                  item.active
-                                    ? "border-cyan-300 bg-cyan-50 text-cyan-900"
-                                    : "border-slate-200 bg-slate-50 text-slate-500"
-                                }`}
-                              >
-                                <div className="text-[7px] font-black tracking-widest uppercase">
-                                  {item.label}
-                                </div>
-                                <div className="mt-0.5 text-[11px] font-black">
-                                  {item.match ? `Size ${item.match.size}` : "-"}
-                                </div>
-                                {item.match ? (
-                                  <div className="text-[8px] font-semibold">
-                                    {formatHoverMm(item.match.value, 2)}
+                          <>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {sizing.dimensionItems.map((item) => (
+                                <div
+                                  key={item.key}
+                                  className={`rounded-lg border px-1.5 py-1 ${
+                                    item.active
+                                      ? "border-cyan-300 bg-cyan-50 text-cyan-900"
+                                      : "border-slate-200 bg-slate-50 text-slate-500"
+                                  }`}
+                                >
+                                  <div className="text-[7px] font-black tracking-widest uppercase">
+                                    {item.label}
                                   </div>
-                                ) : null}
-                              </div>
-                            ))}
-                          </div>
+                                  <div className="mt-0.5 text-[11px] font-black">
+                                    {item.match
+                                      ? `Size ${item.match.size}`
+                                      : "-"}
+                                  </div>
+                                  {item.match ? (
+                                    <div className="text-[8px] font-semibold">
+                                      {formatHoverMm(item.match.referenceMm, 2)}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                            {sizing.primary ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedLineId(line.id);
+                                  useRecommendedNormmedFemoralTemplate({
+                                    size: sizing.primary.size,
+                                    dimension: sizing.inferredDimension,
+                                  });
+                                  setSizingLineHoverInfo(null);
+                                }}
+                                className="mt-2 min-h-9 w-full rounded-xl bg-cyan-700 px-3 text-[10px] font-black text-white shadow-sm transition hover:bg-cyan-800"
+                              >
+                                Gunakan Normmed Size {sizing.primary.size}
+                              </button>
+                            ) : null}
+                          </>
                         ) : (
                           <p className="rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1.5 text-[10px] leading-snug font-semibold text-indigo-900">
                             {sizing.message}
@@ -45079,7 +45100,14 @@ export default function XrayCalibrationWorkspace({
                           </p>
                         ) : null}
 
-                        <div className="grid grid-cols-4 gap-1.5">
+                        <div
+                          className={`grid gap-1.5 ${
+                            mobileNativeLineSizing?.kind === "femoral" &&
+                            mobileNativeLineSizing?.primary
+                              ? "grid-cols-5"
+                              : "grid-cols-4"
+                          }`}
+                        >
                           <button
                             type="button"
                             onClick={() => {
@@ -45157,6 +45185,24 @@ export default function XrayCalibrationWorkspace({
                           >
                             Size
                           </button>
+                          {mobileNativeLineSizing?.kind === "femoral" &&
+                          mobileNativeLineSizing?.primary ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedLineId(mobileNativeLineInfoLine.id);
+                                useRecommendedNormmedFemoralTemplate({
+                                  size: mobileNativeLineSizing.primary.size,
+                                  dimension:
+                                    mobileNativeLineSizing.inferredDimension,
+                                });
+                                clearTouchHoverDetails();
+                              }}
+                              className="min-h-8 rounded-[14px] border border-cyan-300/30 bg-cyan-500/20 text-[8px] font-black text-cyan-100"
+                            >
+                              Gunakan
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </motion.div>
@@ -47708,6 +47754,7 @@ export default function XrayCalibrationWorkspace({
           if (item?.type) setSelectedImplantType(item.type);
           if (item?.id) setSelectedImplantLibraryId(item.id);
           setImplantSizePanelOpen(false);
+          if (item?.id) useSelectedImplantLibraryAsLayer(item.id);
         }}
       />
 
