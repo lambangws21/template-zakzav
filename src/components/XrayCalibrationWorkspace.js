@@ -34599,37 +34599,45 @@ export default function XrayCalibrationWorkspace({
                                 max="180"
                                 step="1"
                                 value={layerRotation}
+                                disabled={layer.lockRotation}
                                 onChange={(event) => {
                                   const nextDeg = Number(event.target.value);
                                   setCutLayers((prev) =>
                                     prev.map((item) =>
                                       item.id === layer.id
-                                        ? {
-                                            ...item,
-                                            rotation: (nextDeg + 360) % 360,
-                                          }
+                                        ? item.lockRotation
+                                          ? item
+                                          : {
+                                              ...item,
+                                              rotation: (nextDeg + 360) % 360,
+                                            }
                                         : item,
                                     ),
                                   );
                                 }}
-                                className="mt-1 w-full"
+                                className="mt-1 w-full disabled:opacity-40"
                               />
                             </label>
 
-                            <div className="grid grid-cols-6 gap-1.5">
+                            <div className="grid grid-cols-7 gap-1.5">
                               <IconButton
                                 icon="rotateLeft"
                                 label="Rotate Layer -5"
+                                disabled={layer.lockRotation}
                                 onClick={() =>
                                   setCutLayers((prev) =>
                                     prev.map((item) =>
                                       item.id === layer.id
-                                        ? {
-                                            ...item,
-                                            rotation:
-                                              ((item.rotation || 0) - 5 + 360) %
-                                              360,
-                                          }
+                                        ? item.lockRotation
+                                          ? item
+                                          : {
+                                              ...item,
+                                              rotation:
+                                                ((item.rotation || 0) -
+                                                  5 +
+                                                  360) %
+                                                360,
+                                            }
                                         : item,
                                     ),
                                   )
@@ -34639,20 +34647,49 @@ export default function XrayCalibrationWorkspace({
                               <IconButton
                                 icon="rotateRight"
                                 label="Rotate Layer +5"
+                                disabled={layer.lockRotation}
+                                onClick={() =>
+                                  setCutLayers((prev) =>
+                                    prev.map((item) =>
+                                      item.id === layer.id
+                                        ? item.lockRotation
+                                          ? item
+                                          : {
+                                              ...item,
+                                              rotation:
+                                                ((item.rotation || 0) +
+                                                  5 +
+                                                  360) %
+                                                360,
+                                            }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                                className="h-8 w-8"
+                              />
+                              <IconButton
+                                icon={
+                                  layer.lockRotation ? "lock" : "rotateRight"
+                                }
+                                label={
+                                  layer.lockRotation
+                                    ? `Unlock Sudut ${layerRotation}°`
+                                    : `Lock Sudut ${layerRotation}°`
+                                }
                                 onClick={() =>
                                   setCutLayers((prev) =>
                                     prev.map((item) =>
                                       item.id === layer.id
                                         ? {
                                             ...item,
-                                            rotation:
-                                              ((item.rotation || 0) + 5 + 360) %
-                                              360,
+                                            lockRotation: !item.lockRotation,
                                           }
                                         : item,
                                     ),
                                   )
                                 }
+                                active={layer.lockRotation}
                                 className="h-8 w-8"
                               />
                               <IconButton
