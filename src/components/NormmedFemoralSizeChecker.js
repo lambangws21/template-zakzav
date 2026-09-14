@@ -89,6 +89,7 @@ export default function NormmedFemoralSizeChecker({
   selectedLineAutoDetected = false,
   scaleSourceLabel = "",
   onStartLine,
+  onUseRecommended,
   onClose,
 }) {
   const selectedLineValue = Number.isFinite(selectedLineLengthMm)
@@ -245,6 +246,21 @@ export default function NormmedFemoralSizeChecker({
                 {formatMm(recommended.referenceMm)}. Selisih{" "}
                 {formatMm(recommended.deltaMm, 2)} ({tone.label}).
               </p>
+              {onUseRecommended ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUseRecommended({
+                      size: recommended.size,
+                      dimension,
+                      measuredMm,
+                    })
+                  }
+                  className="mt-2 min-h-9 rounded-[14px] bg-cyan-700 px-3 py-2 text-[10px] font-black text-white shadow-[2px_2px_7px_rgba(8,145,178,0.24)] transition hover:bg-cyan-800"
+                >
+                  Pasang Template Size {recommended.size}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

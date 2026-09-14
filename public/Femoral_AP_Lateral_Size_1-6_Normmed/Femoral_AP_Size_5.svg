@@ -7,7 +7,7 @@
   <metadata>{"component":"Femoral","view":"AP","size":5,"units":"mm","nominalContourWidth":72.6,"nominalContourHeight":57.1,"transparentPaddingEachSide":0.5,"sourceDimensions":{"size":5,"width":72.6,"length":57.1,"height":68.7},"status":"Approximate traced contour; not clinically validated","mapping":"AP: Width x Length; Lateral: Length x Height"}</metadata>
   <g id="femoral-ap-size-5"
      transform="scale(0.726 0.5710000000000001)"
-     fill="none" stroke="#009900" stroke-width="0.45"
+     fill="none" stroke="#009900" stroke-width="1.25"
      stroke-linecap="round" stroke-linejoin="round">
     <path d="M0 88 L0 51 Q0 43 7 37
      C13 11 20 0 32 0

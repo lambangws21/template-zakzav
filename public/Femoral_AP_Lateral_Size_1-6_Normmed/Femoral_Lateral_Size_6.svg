@@ -7,7 +7,7 @@
   <metadata>{"component":"Femoral","view":"Lateral","size":6,"units":"mm","nominalContourWidth":59.65,"nominalContourHeight":72.7,"transparentPaddingEachSide":0.5,"sourceDimensions":{"size":6,"width":77,"length":59.65,"height":72.7},"status":"Approximate traced contour; not clinically validated","mapping":"AP: Width x Length; Lateral: Length x Height"}</metadata>
   <g id="femoral-lateral-size-6"
      transform="scale(0.5965 0.727)"
-     fill="none" stroke="#009900" stroke-width="0.45"
+     fill="none" stroke="#009900" stroke-width="1.25"
      stroke-linecap="round" stroke-linejoin="round">
     <path d="M0 11
      C12 6 23 0 37 0

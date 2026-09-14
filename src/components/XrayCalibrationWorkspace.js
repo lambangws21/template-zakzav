@@ -3644,7 +3644,9 @@ export default function XrayCalibrationWorkspace({
       if (isExcluded) return null;
 
       const selectedFemoralSizingLine =
-        (normmedFemoralSizerOpen || isNativeMobileSimpleUi) &&
+        (normmedFemoralSizerOpen ||
+          isNativeMobileSimpleUi ||
+          selectedImplantType === "knee") &&
         selectedLineId !== null &&
         line.id === selectedLineId;
       const hasFemoralContext =
@@ -3679,7 +3681,12 @@ export default function XrayCalibrationWorkspace({
       }
       return null;
     },
-    [isNativeMobileSimpleUi, normmedFemoralSizerOpen, selectedLineId],
+    [
+      isNativeMobileSimpleUi,
+      normmedFemoralSizerOpen,
+      selectedImplantType,
+      selectedLineId,
+    ],
   );
 
   const getNormmedFemoralSizingForLine = useCallback(
@@ -3780,6 +3787,29 @@ export default function XrayCalibrationWorkspace({
     },
     [calibrationLineId, getSizingLineIntent, lineTypeLabel, lines, mmPerPixel],
   );
+
+  const recommendedNormmedFemoralTemplate = useMemo(() => {
+    const sizing = getNormmedFemoralSizingForLine(
+      normmedFemoralMeasurement.line,
+    );
+    if (!sizing?.available || sizing.kind !== "femoral" || !sizing.primary) {
+      return null;
+    }
+
+    const viewMode = sizing.inferredDimension === "width" ? "ap" : "lateral";
+    return LOCAL_IMPLANT_LIBRARY.find(
+      (item) =>
+        item.id ===
+        `normmed-femoral-${viewMode}-${String(sizing.primary.size)}`,
+    );
+  }, [getNormmedFemoralSizingForLine, normmedFemoralMeasurement.line]);
+
+  useEffect(() => {
+    if (selectedImplantType !== "knee" || !recommendedNormmedFemoralTemplate) {
+      return;
+    }
+    setSelectedImplantLibraryId(recommendedNormmedFemoralTemplate.id);
+  }, [recommendedNormmedFemoralTemplate, selectedImplantType]);
 
   const lineTypeColor = useCallback((type) => {
     if (type === "dorrOuter") return "#10b981";
@@ -21871,6 +21901,26 @@ export default function XrayCalibrationWorkspace({
     setNormmedFemoralSizerOpen(true);
   }, [normmedFemoralMeasurement.line, triggerSelectionPulse]);
 
+  const useRecommendedNormmedFemoralTemplate = useCallback(
+    ({ size, dimension }) => {
+      const viewMode = dimension === "width" ? "ap" : "lateral";
+      const itemId = `normmed-femoral-${viewMode}-${String(size)}`;
+      const item = getImplantLibraryItemById(itemId, LOCAL_IMPLANT_LIBRARY);
+      if (!item) {
+        setNotice("Template Normmed yang direkomendasikan tidak ditemukan.");
+        return;
+      }
+
+      setSelectedImplantType("knee");
+      setSelectedImplantLibraryId(item.id);
+      useSelectedImplantLibraryAsLayer(item.id);
+      setNotice(
+        `${item.label} dipasang otomatis dari hasil ruler ${dimension === "width" ? "ML" : "AP/Lateral"}.`,
+      );
+    },
+    [useSelectedImplantLibraryAsLayer],
+  );
+
   const simpleToolMenuItems = [
     {
       icon: "draw",
@@ -30871,6 +30921,7 @@ export default function XrayCalibrationWorkspace({
                       scaleSourceLabel={
                         normmedFemoralMeasurement.scaleSourceLabel
                       }
+                      onUseRecommended={useRecommendedNormmedFemoralTemplate}
                       onStartLine={() => {
                         setSimplePlanningModal(null);
                         handleToolChange("draw");
@@ -31006,6 +31057,7 @@ export default function XrayCalibrationWorkspace({
                   normmedFemoralMeasurement.autoDetected
                 }
                 scaleSourceLabel={normmedFemoralMeasurement.scaleSourceLabel}
+                onUseRecommended={useRecommendedNormmedFemoralTemplate}
                 onStartLine={() => {
                   setNormmedFemoralSizerOpen(false);
                   handleToolChange("draw");
