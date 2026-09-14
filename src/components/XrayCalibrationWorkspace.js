@@ -2681,9 +2681,18 @@ export default function XrayCalibrationWorkspace({
     setCutLayers((prev) =>
       prev.map((item) => {
         if (item.id !== layerId) return item;
-        return typeof updater === "function"
-          ? updater(item)
-          : { ...item, ...updater };
+        const nextItem =
+          typeof updater === "function"
+            ? updater(item)
+            : { ...item, ...updater };
+        if (
+          item.lockRotation &&
+          nextItem?.lockRotation !== false &&
+          Number(nextItem?.rotation || 0) !== Number(item.rotation || 0)
+        ) {
+          return { ...nextItem, rotation: item.rotation };
+        }
+        return nextItem;
       }),
     );
   }, []);
@@ -3218,6 +3227,15 @@ export default function XrayCalibrationWorkspace({
     (deltaDegrees) => {
       if (!selectedCutLayer) {
         setNotice("Pilih layer dulu untuk rotasi.");
+        return;
+      }
+      if (selectedCutLayer.lockRotation) {
+        const lockedAngle = Math.round(
+          normalizeRotationDegrees(Number(selectedCutLayer.rotation || 0)),
+        );
+        setNotice(
+          `Sudut ${lockedAngle}° terkunci. Buka Lock Sudut dulu untuk rotate.`,
+        );
         return;
       }
       updateLayerById(selectedCutLayer.id, (layer) => ({
@@ -4025,6 +4043,7 @@ export default function XrayCalibrationWorkspace({
         contrast: Number.isFinite(layer.contrast) ? layer.contrast : 100,
         level: Number.isFinite(layer.level) ? layer.level : 100,
         lockScale: Boolean(layer.lockScale),
+        lockRotation: Boolean(layer.lockRotation),
         hidden: Boolean(layer.hidden),
         autoScaleFromCalibration: Boolean(layer.autoScaleFromCalibration),
         rulerPxPerMm: Number.isFinite(Number(layer.rulerPxPerMm))
@@ -5205,6 +5224,7 @@ export default function XrayCalibrationWorkspace({
         contrast: 100,
         level: 100,
         lockScale: false,
+        lockRotation: false,
         hidden: false,
         fillColor: DEFAULT_FREE_LINE_COLOR,
         drawMode: "point",
@@ -6546,6 +6566,28 @@ export default function XrayCalibrationWorkspace({
     [handleToolChange],
   );
 
+  const activateCanvasFreeCut = useCallback(() => {
+    if (!image) {
+      mainUploadInputRef.current?.click();
+      setNotice("Upload X-ray dulu sebelum memakai Free Cut.");
+      return;
+    }
+
+    setDraftCut(null);
+    setHistoryPaused(false);
+    setSelectedCutLayerId(null);
+    setSelectedCutLayerExtraIds([]);
+    setSelectedFreeLinePointIndex(null);
+    setMobileObjectSettingsOpen(false);
+    setSimpleMobilePanel(null);
+    setPlanningImplantModalOpen(false);
+    setMobileControlsOpen(false);
+    handleToolChange("cut");
+    setNotice(
+      "Free Cut X-ray aktif. Buat minimal 3 titik pada canvas, lalu tap titik awal atau tekan Enter untuk selesai.",
+    );
+  }, [handleToolChange, image]);
+
   const completeDraftCut = useCallback(() => {
     if (!image || !draftCut || !Array.isArray(draftCut.points)) return false;
     if (draftCut.points.length < MIN_FREE_CUT_POINTS) {
@@ -7074,6 +7116,7 @@ export default function XrayCalibrationWorkspace({
                 contrast: clamp(Number(layer.contrast ?? 100), 10, 300),
                 level: clamp(Number(layer.level ?? 100), 10, 300),
                 lockScale: Boolean(layer.lockScale),
+                lockRotation: Boolean(layer.lockRotation),
                 hidden: Boolean(layer.hidden),
                 autoScaleFromCalibration: Boolean(
                   layer.autoScaleFromCalibration,
@@ -12354,6 +12397,7 @@ export default function XrayCalibrationWorkspace({
         contrast: 100,
         level: 100,
         lockScale: false,
+        lockRotation: false,
         hidden: false,
         autoScaleFromCalibration: Boolean(autoScaleFromCalibration),
         rulerPxPerMm: detectedTemplateRulerScale?.pxPerMm || null,
@@ -12974,6 +13018,7 @@ export default function XrayCalibrationWorkspace({
                     originDisplayHeight: Number(layer?.displayHeight || 16),
                     originRotation: Number(layer?.rotation || 0),
                     lockScale: Boolean(layer?.lockScale),
+                    lockRotation: Boolean(layer?.lockRotation),
                   };
                 }),
               };
@@ -13820,6 +13865,12 @@ export default function XrayCalibrationWorkspace({
             );
             return;
           }
+          if (targetLayer.lockRotation && isRotateHandle) {
+            setNotice(
+              `Sudut ${Math.round(Number(targetLayer.rotation || 0))}° terkunci. Buka Lock Sudut dulu.`,
+            );
+            return;
+          }
           setHistoryPaused(true);
           if (isRotateHandle) {
             interactionRef.current = {
@@ -13908,6 +13959,12 @@ export default function XrayCalibrationWorkspace({
             isTouchLikePointer &&
             mobileToolMode === "rotate"
           ) {
+            if (targetLayer.lockRotation) {
+              setNotice(
+                `Sudut ${Math.round(Number(targetLayer.rotation || 0))}° terkunci. Buka Lock Sudut dulu.`,
+              );
+              return;
+            }
             setHistoryPaused(true);
             interactionRef.current = {
               mode: "mobile-rotate-cut-layer",
@@ -14573,6 +14630,12 @@ export default function XrayCalibrationWorkspace({
           setNotice("Scale layer terkunci. Buka Lock Scale dulu untuk resize.");
           return;
         }
+        if (targetLayer.lockRotation && isRotateHandle) {
+          setNotice(
+            `Sudut ${Math.round(Number(targetLayer.rotation || 0))}° terkunci. Buka Lock Sudut dulu.`,
+          );
+          return;
+        }
         if (tool === "pan") {
           setHistoryPaused(true);
           if (isRotateHandle) {
@@ -14668,6 +14731,12 @@ export default function XrayCalibrationWorkspace({
             isTouchLikePointer &&
             mobileToolMode === "rotate"
           ) {
+            if (targetLayer.lockRotation) {
+              setNotice(
+                `Sudut ${Math.round(Number(targetLayer.rotation || 0))}° terkunci. Buka Lock Sudut dulu.`,
+              );
+              return;
+            }
             setHistoryPaused(true);
             interactionRef.current = {
               mode: "mobile-rotate-cut-layer",
@@ -15621,6 +15690,7 @@ export default function XrayCalibrationWorkspace({
             const origin = origins.find((item) => item.layerId === layer.id);
             if (!origin) return layer;
             const canScale = !origin.lockScale && !layer.lockScale;
+            const canRotate = !origin.lockRotation && !layer.lockRotation;
             const nextCenterX =
               Number(origin.originCenterX || layer.centerX || 0) + dx;
             const nextCenterY =
@@ -15643,12 +15713,13 @@ export default function XrayCalibrationWorkspace({
                   Math.max(16, modelHeight * 3),
                 )
               : layer.displayHeight;
-            const nextRotation =
-              Math.round(
-                normalizeRotationDegrees(
-                  Number(origin.originRotation || 0) + rotationDeltaDeg,
-                ) * 10,
-              ) / 10;
+            const nextRotation = canRotate
+              ? Math.round(
+                  normalizeRotationDegrees(
+                    Number(origin.originRotation || 0) + rotationDeltaDeg,
+                  ) * 10,
+                ) / 10
+              : layer.rotation;
             if (
               Object.is(layer.centerX, nextCenterX) &&
               Object.is(layer.centerY, nextCenterY) &&
@@ -16521,10 +16592,12 @@ export default function XrayCalibrationWorkspace({
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layer.id === layerId
-              ? {
-                  ...layer,
-                  rotation: nextRotation,
-                }
+              ? layer.lockRotation
+                ? layer
+                : {
+                    ...layer,
+                    rotation: nextRotation,
+                  }
               : layer,
           ),
         );
@@ -16563,10 +16636,12 @@ export default function XrayCalibrationWorkspace({
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layer.id === layerId
-              ? {
-                  ...layer,
-                  rotation: nextRotation,
-                }
+              ? layer.lockRotation
+                ? layer
+                : {
+                    ...layer,
+                    rotation: nextRotation,
+                  }
               : layer,
           ),
         );
@@ -19544,7 +19619,7 @@ export default function XrayCalibrationWorkspace({
         opacity: `${Math.round((layer.opacity ?? 1) * 100)}%`,
         contrast: `${Math.round(clamp(Number(layer.contrast ?? 100), 10, 300))}%`,
         level: `${Math.round(clamp(Number(layer.level ?? 100), 10, 300))}%`,
-        rotation: `${Math.round(((layer.rotation || 0) + 360) % 360)}°`,
+        rotation: `${Math.round(((layer.rotation || 0) + 360) % 360)}°${layer.lockRotation ? " locked" : ""}`,
       };
     });
   }, [cutLayers, measurementUnit, mmPerPixel]);
@@ -20967,7 +21042,7 @@ export default function XrayCalibrationWorkspace({
       if (key === "g") handleToolChange("freeLine");
       if (key === "h" || key === "m" || key === "p" || key === "v")
         handleToolChange("pan");
-      if (key === "c") handleToolChange("cut");
+      if (key === "c") activateCanvasFreeCut();
       if (key === "a") handleToolChange("angle");
       if (key === "n") handleToolChange("annotation");
       if (key === "o") handleToolChange("circle");
@@ -21009,6 +21084,7 @@ export default function XrayCalibrationWorkspace({
   }, [
     completeDraftCut,
     completeDraftFreeLine,
+    activateCanvasFreeCut,
     draftAnglePoints,
     draftAxisBuilderPoints,
     draftCenterFinderPoints,
@@ -22630,7 +22706,7 @@ export default function XrayCalibrationWorkspace({
     library: () => setLibraryModalOpen(true),
     calibrate: () => openSimpleCalibrationModal(),
     properties: openPlanningProperties,
-    freeCut: () => handleToolChange("cut"),
+    freeCut: activateCanvasFreeCut,
     implantLibrary: () => openSimpleImplantTemplateOverlay(),
     report: () => setPreOpReportModalOpen(true),
     saveLocal: savePlanningLocally,
@@ -26298,7 +26374,7 @@ export default function XrayCalibrationWorkspace({
                           <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
                             Aksi Cepat
                           </div>
-                          <div className="grid grid-cols-3 gap-1.5">
+                          <div className="grid grid-cols-4 gap-1.5">
                             {[
                               {
                                 key: "move",
@@ -26362,6 +26438,24 @@ export default function XrayCalibrationWorkspace({
                                     (item) => ({
                                       ...item,
                                       lockScale: !item.lockScale,
+                                    }),
+                                  ),
+                              },
+                              {
+                                key: "lock-angle",
+                                icon: selectedCutLayer.lockRotation
+                                  ? "lock"
+                                  : "rotateRight",
+                                label: selectedCutLayer.lockRotation
+                                  ? `${selectedLayerRotationValue}° Locked`
+                                  : "Lock Sudut",
+                                tone: "text-amber-500",
+                                onClick: () =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      lockRotation: !item.lockRotation,
                                     }),
                                   ),
                               },
@@ -26602,6 +26696,7 @@ export default function XrayCalibrationWorkspace({
                                 valueText: `${selectedLayerMetrics.rotation}°`,
                                 min: -180,
                                 max: 180,
+                                disabled: selectedCutLayer.lockRotation,
                                 onChange: (nextValue) =>
                                   updateLayerById(selectedCutLayer.id, {
                                     rotation: (nextValue + 360) % 360,
@@ -31939,6 +32034,7 @@ export default function XrayCalibrationWorkspace({
                               valueText: `${selectedLayerMetrics.rotation}°`,
                               min: -180,
                               max: 180,
+                              disabled: selectedCutLayer.lockRotation,
                               onChange: (nextValue) =>
                                 updateLayerById(selectedCutLayer.id, {
                                   rotation: (nextValue + 360) % 360,
@@ -33703,7 +33799,7 @@ export default function XrayCalibrationWorkspace({
                 <ToolIconButton
                   icon="cut"
                   label="Free Cut (C)"
-                  onClick={() => handleToolChange("cut")}
+                  onClick={activateCanvasFreeCut}
                   active={tool === "cut"}
                 />
                 <div className="flex">
@@ -35725,7 +35821,7 @@ export default function XrayCalibrationWorkspace({
                     key: "cut",
                     icon: "cut",
                     label: "Free Cut",
-                    onClick: () => handleToolChange("cut"),
+                    onClick: activateCanvasFreeCut,
                     active: tool === "cut",
                   },
                   {
@@ -35865,7 +35961,7 @@ export default function XrayCalibrationWorkspace({
                   <ToolIconButton
                     icon="cut"
                     label="Free Cut (C)"
-                    onClick={() => handleToolChange("cut")}
+                    onClick={activateCanvasFreeCut}
                     active={tool === "cut"}
                     className="h-9 w-full"
                   />
@@ -39253,6 +39349,7 @@ export default function XrayCalibrationWorkspace({
                 ...row,
                 hidden: Boolean(layer?.hidden),
                 locked: Boolean(layer?.lockScale),
+                rotationLocked: Boolean(layer?.lockRotation),
                 kind: layer?.kind === "free-cut" ? "crop" : "implant",
                 opacityValue: Number(layer?.opacity ?? 1),
                 contrastValue: clamp(Number(layer?.contrast ?? 100), 10, 300),
@@ -39268,12 +39365,25 @@ export default function XrayCalibrationWorkspace({
               setSelectedCutLayerId(id);
               openLayerSettingsModal(id);
             }}
-            onUpdateLayer={(id, patch) =>
-              updateLayerById(
-                id,
-                "locked" in patch ? { lockScale: patch.locked } : patch,
-              )
-            }
+            onUpdateLayer={(id, patch) => {
+              const layer = cutLayers.find((item) => item.id === id);
+              if ("rotation" in patch && layer?.lockRotation) {
+                setNotice(
+                  `Sudut ${Math.round(Number(layer.rotation || 0))}° terkunci. Buka Lock Sudut dulu.`,
+                );
+                return;
+              }
+              const normalizedPatch = { ...patch };
+              if ("locked" in normalizedPatch) {
+                normalizedPatch.lockScale = normalizedPatch.locked;
+                delete normalizedPatch.locked;
+              }
+              if ("rotationLocked" in normalizedPatch) {
+                normalizedPatch.lockRotation = normalizedPatch.rotationLocked;
+                delete normalizedPatch.rotationLocked;
+              }
+              updateLayerById(id, normalizedPatch);
+            }}
             annotations={annotations}
             guides={planningGuideRows}
             note={planNote}
@@ -39898,12 +40008,16 @@ export default function XrayCalibrationWorkspace({
                                   +
                                 </button>
                               </div>
-                              <div className="mt-1 text-[7px] font-semibold text-slate-500 sm:text-[8px]">
-                                Rotate tetap aktif. Lock hanya menonaktifkan
-                                re-scale.
+                              <div className="mt-1 flex items-center justify-between gap-2 text-[7px] font-semibold text-slate-500 sm:text-[8px]">
+                                <span>Sudut {selectedLayerRotationValue}°</span>
+                                <span>
+                                  {selectedCutLayer.lockRotation
+                                    ? "Terkunci"
+                                    : "Bisa diputar"}
+                                </span>
                               </div>
                             </div>
-                            <div className="grid grid-cols-6 gap-0.5 sm:gap-1">
+                            <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
                               <LayerToolbarActionButton
                                 icon={showLayerToolbarName ? "eyeOff" : "eye"}
                                 label={
@@ -39944,6 +40058,7 @@ export default function XrayCalibrationWorkspace({
                                 icon="rotateLeft"
                                 label="Rotate -1"
                                 onClick={() => rotateSelectedLayerBy(-1)}
+                                disabled={selectedCutLayer.lockRotation}
                                 className="h-8 w-8"
                                 iconClassName="h-3.5 w-3.5"
                               />
@@ -39951,6 +40066,31 @@ export default function XrayCalibrationWorkspace({
                                 icon="rotateRight"
                                 label="Rotate +1"
                                 onClick={() => rotateSelectedLayerBy(1)}
+                                disabled={selectedCutLayer.lockRotation}
+                                className="h-8 w-8"
+                                iconClassName="h-3.5 w-3.5"
+                              />
+                              <LayerToolbarActionButton
+                                icon={
+                                  selectedCutLayer.lockRotation
+                                    ? "lock"
+                                    : "unlock"
+                                }
+                                label={
+                                  selectedCutLayer.lockRotation
+                                    ? `Unlock Sudut ${selectedLayerRotationValue}°`
+                                    : `Lock Sudut ${selectedLayerRotationValue}°`
+                                }
+                                onClick={() =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      lockRotation: !item.lockRotation,
+                                    }),
+                                  )
+                                }
+                                active={selectedCutLayer.lockRotation}
                                 className="h-8 w-8"
                                 iconClassName="h-3.5 w-3.5"
                               />
@@ -43045,6 +43185,7 @@ export default function XrayCalibrationWorkspace({
                         <div className="truncate text-[6px] font-bold text-cyan-700">
                           Scale {selectedLayerScalePercent}% · Rotate{" "}
                           {selectedLayerRotationValue}°
+                          {selectedCutLayer.lockRotation ? " · Locked" : ""}
                         </div>
                       </button>
                       <button
@@ -43120,7 +43261,7 @@ export default function XrayCalibrationWorkspace({
                         <span />
                       </div>
 
-                      <div className="grid grid-cols-4 gap-1.5">
+                      <div className="grid grid-cols-5 gap-1.5">
                         <button
                           type="button"
                           onClick={() => scaleSelectedLayerBy(0.97)}
@@ -43140,14 +43281,16 @@ export default function XrayCalibrationWorkspace({
                         <button
                           type="button"
                           onClick={() => rotateSelectedLayerBy(-1)}
-                          className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm"
+                          disabled={selectedCutLayer.lockRotation}
+                          className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm disabled:opacity-40"
                         >
                           -1°
                         </button>
                         <button
                           type="button"
                           onClick={() => rotateSelectedLayerBy(1)}
-                          className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm"
+                          disabled={selectedCutLayer.lockRotation}
+                          className="min-h-9 rounded-[13px] border border-white/70 bg-white/65 text-[10px] font-black text-slate-700 shadow-sm disabled:opacity-40"
                         >
                           +1°
                         </button>
@@ -43165,7 +43308,26 @@ export default function XrayCalibrationWorkspace({
                               : "border-white/70 bg-white/65 text-slate-700"
                           }`}
                         >
-                          {selectedCutLayer.lockScale ? "Unlock" : "Lock"}
+                          {selectedCutLayer.lockScale ? "Unlock S" : "Lock S"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateLayerById(selectedCutLayer.id, (item) => ({
+                              ...item,
+                              lockRotation: !item.lockRotation,
+                            }))
+                          }
+                          className={`min-h-9 rounded-[13px] border text-[8px] font-black shadow-sm ${
+                            selectedCutLayer.lockRotation
+                              ? "border-amber-300 bg-amber-50 text-amber-700"
+                              : "border-white/70 bg-white/65 text-slate-700"
+                          }`}
+                          title={`Sudut ${selectedLayerRotationValue}°`}
+                        >
+                          {selectedCutLayer.lockRotation
+                            ? `${selectedLayerRotationValue}° Lock`
+                            : "Lock A"}
                         </button>
                         <button
                           type="button"
@@ -43360,16 +43522,18 @@ export default function XrayCalibrationWorkspace({
 
                       {selectedCutLayer && selectedLayerMetrics ? (
                         <div className="space-y-1">
-                          <div className="grid grid-cols-6 gap-1">
+                          <div className="grid grid-cols-7 gap-1">
                             {[
                               {
                                 key: "rotate-left",
                                 label: "-1°",
+                                disabled: selectedCutLayer.lockRotation,
                                 onClick: () => rotateSelectedLayerBy(-1),
                               },
                               {
                                 key: "rotate-right",
                                 label: "+1°",
+                                disabled: selectedCutLayer.lockRotation,
                                 onClick: () => rotateSelectedLayerBy(1),
                               },
                               {
@@ -43407,6 +43571,20 @@ export default function XrayCalibrationWorkspace({
                                     (item) => ({
                                       ...item,
                                       lockScale: !item.lockScale,
+                                    }),
+                                  ),
+                              },
+                              {
+                                key: "lock-angle",
+                                label: selectedCutLayer.lockRotation
+                                  ? `${selectedLayerRotationValue}° L`
+                                  : "Lock A",
+                                onClick: () =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      lockRotation: !item.lockRotation,
                                     }),
                                   ),
                               },
@@ -43468,6 +43646,7 @@ export default function XrayCalibrationWorkspace({
                                 max: 180,
                                 stepSize: 1,
                                 unit: "°",
+                                disabled: selectedCutLayer.lockRotation,
                                 onChange: (nextValue) =>
                                   updateLayerById(selectedCutLayer.id, {
                                     rotation:
@@ -46367,6 +46546,7 @@ export default function XrayCalibrationWorkspace({
                 contrast: 100,
                 level: 100,
                 lockScale: false,
+                lockRotation: false,
                 hidden: false,
                 autoScaleFromCalibration: false,
                 rulerPxPerMm: null,

@@ -1,10 +1,25 @@
-import { clamp, getLineLength, getDistance, degToRad, rotateVector, normalizeRotationDegrees, pointInPolygon, projectPointOnSegment, normalizeRect, getPolygonBounds, getSignedAngleDeltaDegrees } from "./geometryUtils";
+import {
+  clamp,
+  getLineLength,
+  getDistance,
+  degToRad,
+  rotateVector,
+  normalizeRotationDegrees,
+  pointInPolygon,
+  projectPointOnSegment,
+  normalizeRect,
+  getPolygonBounds,
+  getSignedAngleDeltaDegrees,
+} from "./geometryUtils";
 import { tracePolygonPath } from "./canvasUtils";
-import { getLayerDisplaySize, getLayerFilterValue, transformLayerLocalPoint } from "./layerUtils";
+import {
+  getLayerDisplaySize,
+  getLayerFilterValue,
+  transformLayerLocalPoint,
+} from "./layerUtils";
 import { toLayerMaskPoint } from "./freeLineUtils";
 
 const MIN_FREE_CUT_POINTS = 3;
-
 
 export function constrainLineByPreset(draft, _preset) {
   return draft;
@@ -94,7 +109,6 @@ const TOOL_CONFIG_MODAL_MIN_WIDTH = 420;
 const TOOL_CONFIG_MODAL_MIN_HEIGHT = 260;
 
 export const IMG_PROC_DEBOUNCE_MS = 260;
-
 
 export function buildFreeCutLayerFromPoints({
   sourceImage,
@@ -198,6 +212,7 @@ export function buildFreeCutLayerFromPoints({
     contrast: 100,
     level: 100,
     lockScale: false,
+    lockRotation: false,
     hidden: false,
     curveStrength: DEFAULT_FREE_LINE_CURVE_POINT,
     maskPoints: normalizedPoints.map((point) => ({
@@ -206,7 +221,6 @@ export function buildFreeCutLayerFromPoints({
     })),
   };
 }
-
 
 export function buildFreeCutLayerFromLayerPoints({
   sourceLayer,
@@ -336,6 +350,7 @@ export function buildFreeCutLayerFromLayerPoints({
     contrast: 100,
     level: 100,
     lockScale: false,
+    lockRotation: false,
     hidden: false,
     sourceLayerId: sourceLayer.id,
     curveStrength: DEFAULT_FREE_LINE_CURVE_POINT,
@@ -345,7 +360,6 @@ export function buildFreeCutLayerFromLayerPoints({
     })),
   };
 }
-
 
 export function buildFreeLineLayerFromPoints({
   polygonPoints,
@@ -392,6 +406,7 @@ export function buildFreeLineLayerFromPoints({
     contrast: 100,
     level: 100,
     lockScale: false,
+    lockRotation: false,
     hidden: false,
     fillColor,
     drawMode,
@@ -410,7 +425,6 @@ export function buildFreeLineLayerFromPoints({
     })),
   };
 }
-
 
 export function buildValgusCutGeometry(anchorStart, anchorEnd, params) {
   const axis = {
@@ -455,7 +469,6 @@ export function buildValgusCutGeometry(anchorStart, anchorEnd, params) {
   };
 }
 
-
 export function buildTibialSlopeGeometry(anchorStart, anchorEnd, params) {
   const axis = {
     x: anchorEnd.x - anchorStart.x,
@@ -499,7 +512,6 @@ export function buildTibialSlopeGeometry(anchorStart, anchorEnd, params) {
   };
 }
 
-
 export function buildTibialCutGeometry(anchorStart, anchorEnd, params) {
   const axis = {
     x: anchorEnd.x - anchorStart.x,
@@ -542,4 +554,3 @@ export function buildTibialCutGeometry(anchorStart, anchorEnd, params) {
     cutCenter,
   };
 }
-
