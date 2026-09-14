@@ -1,4 +1,4 @@
-import zimmerData from "../../../docs/zimmer_ml_taper_complete_with_reduced_neck.json";
+import zimmerData from "@/data/zimmer_ml_taper_complete_with_reduced_neck.json";
 
 export const ZIMMER_ML_TAPER = zimmerData;
 export const ZIMMER_HEAD_NECK_OPTIONS = zimmerData.headNeckOptions;

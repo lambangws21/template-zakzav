@@ -2,6 +2,9 @@
   "name": "zakzav-templating",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <25"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
