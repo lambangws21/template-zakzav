@@ -7,6 +7,7 @@ import {
   parseSheetRawText,
 } from "@/lib/googleSheetImageUtils";
 import DriveImageWithFallback from "./media/DriveImageWithFallback";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import PhotoPreviewModal from "./PhotoPreviewModal";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -281,7 +282,7 @@ export default function GoogleSheetDriveManager() {
 
     setIsLoading(true);
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `/api/google-sheet-images?url=${encodeURIComponent(url)}`,
         {
           cache: "no-store",
@@ -417,7 +418,7 @@ export default function GoogleSheetDriveManager() {
 
     setIsCreating(true);
     try {
-      const response = await fetch("/api/google-sheet-images", {
+      const response = await authenticatedFetch("/api/google-sheet-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -492,7 +493,7 @@ export default function GoogleSheetDriveManager() {
                 : `${namePrefix} - ${baseName}`
               : baseName);
 
-          const response = await fetch("/api/google-sheet-images", {
+          const response = await authenticatedFetch("/api/google-sheet-images", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -556,7 +557,7 @@ export default function GoogleSheetDriveManager() {
         if (!imageDataUrl) throw new Error("File update tidak terbaca.");
       }
 
-      const response = await fetch("/api/google-sheet-images", {
+      const response = await authenticatedFetch("/api/google-sheet-images", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -612,7 +613,7 @@ export default function GoogleSheetDriveManager() {
 
     setIsDeleting(true);
     try {
-      const response = await fetch("/api/google-sheet-images", {
+      const response = await authenticatedFetch("/api/google-sheet-images", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

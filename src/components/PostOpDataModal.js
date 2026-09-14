@@ -8,11 +8,12 @@ import {
   Ruler, Calendar, FileText, ArrowRight, Lock, Pencil,
   Camera, ImagePlus, Trash2, ZoomIn, Minus,
 } from "lucide-react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
 
 async function apiUpdateCase(id, data) {
-  const res = await fetch("/api/google-sheet-images", {
+  const res = await authenticatedFetch("/api/google-sheet-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "update_patient_case", id, data }),

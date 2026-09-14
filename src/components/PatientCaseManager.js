@@ -48,6 +48,7 @@ import CaseFullReportModal from "./CaseFullReportModal";
 import CaseCompareModal from "./CaseCompareModal";
 import ThemeToggle from "./ThemeToggle";
 import UserProfileBadge from "./UserProfileBadge";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 const STORAGE_KEY = "zakzav_patient_cases_v1";
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
@@ -288,7 +289,7 @@ function buildStructuredLabel(procType, preOpSizes) {
 async function apiListCases() {
   if (!APPS_SCRIPT_URL) return null;
   const url = `/api/google-sheet-images?url=${encodeURIComponent(APPS_SCRIPT_URL)}&action=list_patient_cases`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await authenticatedFetch(url, { cache: "no-store" });
   const json = await res.json();
   if (!res.ok || !json?.ok || !json?.remote?.ok) {
     throw new Error(json?.remote?.error || json?.error || "Gagal memuat kasus dari cloud.");
@@ -298,7 +299,7 @@ async function apiListCases() {
 
 async function apiCreateCase(data) {
   if (!APPS_SCRIPT_URL) throw new Error("Apps Script URL tidak dikonfigurasi.");
-  const res = await fetch("/api/google-sheet-images", {
+  const res = await authenticatedFetch("/api/google-sheet-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "create_patient_case", data }),
@@ -312,7 +313,7 @@ async function apiCreateCase(data) {
 
 async function apiUpdateCase(id, data) {
   if (!APPS_SCRIPT_URL) throw new Error("Apps Script URL tidak dikonfigurasi.");
-  const res = await fetch("/api/google-sheet-images", {
+  const res = await authenticatedFetch("/api/google-sheet-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "update_patient_case", id, data }),
@@ -326,7 +327,7 @@ async function apiUpdateCase(id, data) {
 
 async function apiDeleteCase(id) {
   if (!APPS_SCRIPT_URL) throw new Error("Apps Script URL tidak dikonfigurasi.");
-  const res = await fetch("/api/google-sheet-images", {
+  const res = await authenticatedFetch("/api/google-sheet-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "delete_patient_case", id }),

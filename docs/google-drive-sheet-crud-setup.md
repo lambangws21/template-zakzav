@@ -2,12 +2,14 @@
 
 1. Buka Google Sheets baru.
 2. Masuk ke `Extensions > Apps Script`.
-3. Copy isi file [google-drive-sheet-crud-appscript.gs](/Users/macbookairm1/Documents/starter-for-nextjs/docs/google-drive-sheet-crud-appscript.gs) ke editor Apps Script.
+3. Copy isi file [`google-drive-upload-appscript.gs`](./google-drive-upload-appscript.gs) ke editor Apps Script. File ini adalah sumber resmi dan mencakup CRUD gambar, kasus pasien, serta data Post-Op.
 4. (Opsional) isi `DRIVE_FOLDER_ID` jika upload harus masuk folder tertentu.
 5. Klik `Deploy > New deployment > Web app`.
 6. Set:
-  - `Execute as`: `Me`
-  - `Who has access`: `Anyone`
+
+- `Execute as`: `Me`
+- `Who has access`: `Anyone`
+
 7. Copy URL Web App (`.../exec`) dan gunakan di halaman `/google-sheet-drive`.
 
 ## Payload dari UI
@@ -16,6 +18,11 @@
 - `POST /api/google-sheet-images` action `create` -> create row + upload file (jika `imageDataUrl` ada).
 - `PUT /api/google-sheet-images` action `update` -> update metadata / replace gambar.
 - `DELETE /api/google-sheet-images` action `delete` -> hapus row (opsional hapus file Drive jika `deleteDriveFile: true`).
+- `POST /api/google-sheet-images` action `create_patient_case` -> simpan kasus baru.
+- `POST /api/google-sheet-images` action `update_patient_case` -> simpan data dan foto Post-Op.
+- `POST /api/google-sheet-images` action `delete_patient_case` -> hapus kasus pasien.
+
+Setelah script diubah, buat deployment versi baru melalui `Deploy > Manage deployments > Edit > New version`. Menyimpan kode tanpa membuat versi deployment baru tidak mengubah endpoint `/exec` yang digunakan aplikasi.
 
 ## Struktur kolom sheet
 

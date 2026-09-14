@@ -2219,7 +2219,7 @@ function updatePatientCase_(payload) {
   // cupAssessmentJson (row[20]) tidak diupdate di sini — diset saat createCase
 
   // Upload foto post-op ke Drive, simpan URL-nya (bukan dataURL mentah)
-  if (Array.isArray(data.postOpPhotos) && data.postOpPhotos.length > 0) {
+  if (Array.isArray(data.postOpPhotos)) {
     var existingUrls = [];
     try { existingUrls = JSON.parse(String(row[21] || "[]")); } catch (_e) {}
     var photoUrls = [];
