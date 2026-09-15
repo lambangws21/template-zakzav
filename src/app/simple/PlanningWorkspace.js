@@ -407,6 +407,7 @@ export default function PlanningWorkspace({
     setZimmerTemplateSource("ruler");
     setZimmerStemFamily("");
     setCupType("");
+    setLogOpen(true);
     setMetricEditor(null);
     setStepExpanded(true);
     setGuideItemId(null);
@@ -1473,7 +1474,12 @@ export default function PlanningWorkspace({
   const openPlanningLog = () => {
     setFocus(false);
     setExpanded(false);
-    setSheet("log");
+    if (window.matchMedia("(max-width: 1199px)").matches) {
+      setSheet("log");
+    } else {
+      setSheet(null);
+      setLogOpen(true);
+    }
     setMoreOpen(false);
   };
   const openMoreSheet = () => {
@@ -2155,222 +2161,234 @@ export default function PlanningWorkspace({
         </div>
         <aside
           className={styles.inspector}
-          aria-label="Object properties and layers"
+          aria-label={logOpen ? "Planning Log" : "Object properties and layers"}
         >
-          <div className={styles.inspectorHeading}>
-            <div>
-              <small>
-                {selectedLayer
-                  ? "Selected object"
-                  : selectedImplant
-                    ? "Selected template"
-                    : "Workspace"}
-              </small>
-              <h2>
-                {selectedLayer?.name || selectedImplant?.label || "Properties"}
-              </h2>
-            </div>
-            <Action
-              icon={SlidersHorizontal}
-              aria-label="Open detailed properties"
-              disabled={!hasImage || !selectedLayer}
-              onClick={() => activate(actions.properties)}
-            />
-          </div>
-          {selectedLayer ? (
-            <div className={styles.inspectorBody}>
-              <div className={styles.propertySummary}>
-                <span>{selectedLayer.kind}</span>
-                <strong>{selectedLayer.size}</strong>
-              </div>
-              <label>
-                Rotation{" "}
-                <span>
-                  {selectedLayer.rotationLocked
-                    ? `${selectedLayer.rotation} · terkunci`
-                    : selectedLayer.rotation}
-                </span>
-                <div className={styles.stepper}>
-                  <button
-                    type="button"
-                    disabled={selectedLayer.rotationLocked}
-                    onClick={() =>
-                      onUpdateLayer(selectedLayer.id, {
-                        rotation: (selectedLayer.rotationValue || 0) - 1,
-                      })
-                    }
-                  >
-                    −
-                  </button>
-                  <strong>{selectedLayer.rotation}</strong>
-                  <button
-                    type="button"
-                    disabled={selectedLayer.rotationLocked}
-                    onClick={() =>
-                      onUpdateLayer(selectedLayer.id, {
-                        rotation: (selectedLayer.rotationValue || 0) + 1,
-                      })
-                    }
-                  >
-                    +
-                  </button>
+          {logOpen ? (
+            log
+          ) : (
+            <>
+              <div className={styles.inspectorHeading}>
+                <div>
+                  <small>
+                    {selectedLayer
+                      ? "Selected object"
+                      : selectedImplant
+                        ? "Selected template"
+                        : "Workspace"}
+                  </small>
+                  <h2>
+                    {selectedLayer?.name ||
+                      selectedImplant?.label ||
+                      "Properties"}
+                  </h2>
                 </div>
-              </label>
-              <label>
-                Opacity <span>{selectedLayer.opacity}</span>
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  step="1"
-                  value={Math.round((selectedLayer.opacityValue ?? 1) * 100)}
-                  onChange={(event) =>
-                    onUpdateLayer(selectedLayer.id, {
-                      opacity: Number(event.target.value) / 100,
-                    })
-                  }
+                <Action
+                  icon={SlidersHorizontal}
+                  aria-label="Open detailed properties"
+                  disabled={!hasImage || !selectedLayer}
+                  onClick={() => activate(actions.properties)}
                 />
-              </label>
-              {selectedLayer.imageBacked && (
-                <div className={styles.imageAdjustments}>
-                  <div className={styles.sectionHeading}>
-                    <strong>Image adjustment</strong>
-                    <button
-                      type="button"
+              </div>
+              {selectedLayer ? (
+                <div className={styles.inspectorBody}>
+                  <div className={styles.propertySummary}>
+                    <span>{selectedLayer.kind}</span>
+                    <strong>{selectedLayer.size}</strong>
+                  </div>
+                  <label>
+                    Rotation{" "}
+                    <span>
+                      {selectedLayer.rotationLocked
+                        ? `${selectedLayer.rotation} · terkunci`
+                        : selectedLayer.rotation}
+                    </span>
+                    <div className={styles.stepper}>
+                      <button
+                        type="button"
+                        disabled={selectedLayer.rotationLocked}
+                        onClick={() =>
+                          onUpdateLayer(selectedLayer.id, {
+                            rotation: (selectedLayer.rotationValue || 0) - 1,
+                          })
+                        }
+                      >
+                        −
+                      </button>
+                      <strong>{selectedLayer.rotation}</strong>
+                      <button
+                        type="button"
+                        disabled={selectedLayer.rotationLocked}
+                        onClick={() =>
+                          onUpdateLayer(selectedLayer.id, {
+                            rotation: (selectedLayer.rotationValue || 0) + 1,
+                          })
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+                  </label>
+                  <label>
+                    Opacity <span>{selectedLayer.opacity}</span>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      step="1"
+                      value={Math.round(
+                        (selectedLayer.opacityValue ?? 1) * 100,
+                      )}
+                      onChange={(event) =>
+                        onUpdateLayer(selectedLayer.id, {
+                          opacity: Number(event.target.value) / 100,
+                        })
+                      }
+                    />
+                  </label>
+                  {selectedLayer.imageBacked && (
+                    <div className={styles.imageAdjustments}>
+                      <div className={styles.sectionHeading}>
+                        <strong>Image adjustment</strong>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateLayer(selectedLayer.id, {
+                              contrast: 100,
+                              level: 100,
+                            })
+                          }
+                        >
+                          Reset
+                        </button>
+                      </div>
+                      <label>
+                        Contrast <span>{selectedLayer.contrast}</span>
+                        <input
+                          type="range"
+                          min="10"
+                          max="300"
+                          step="1"
+                          value={selectedLayer.contrastValue ?? 100}
+                          onChange={(event) =>
+                            onUpdateLayer(selectedLayer.id, {
+                              contrast: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Level <span>{selectedLayer.level}</span>
+                        <input
+                          type="range"
+                          min="10"
+                          max="300"
+                          step="1"
+                          value={selectedLayer.levelValue ?? 100}
+                          onChange={(event) =>
+                            onUpdateLayer(selectedLayer.id, {
+                              level: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <div className={styles.inspectorActions}>
+                    <Action
+                      icon={selectedLayer.hidden ? EyeOff : Eye}
                       onClick={() =>
                         onUpdateLayer(selectedLayer.id, {
-                          contrast: 100,
-                          level: 100,
+                          hidden: !selectedLayer.hidden,
                         })
                       }
                     >
-                      Reset
-                    </button>
+                      {selectedLayer.hidden ? "Show" : "Hide"}
+                    </Action>
+                    <Action
+                      icon={selectedLayer.locked ? Lock : LockOpen}
+                      onClick={() =>
+                        onUpdateLayer(selectedLayer.id, {
+                          locked: !selectedLayer.locked,
+                        })
+                      }
+                    >
+                      {selectedLayer.locked ? "Unlock" : "Lock"}
+                    </Action>
+                    <Action
+                      icon={selectedLayer.rotationLocked ? Lock : RotateCw}
+                      onClick={() =>
+                        onUpdateLayer(selectedLayer.id, {
+                          rotationLocked: !selectedLayer.rotationLocked,
+                        })
+                      }
+                    >
+                      {selectedLayer.rotationLocked
+                        ? "Unlock Sudut"
+                        : "Lock Sudut"}
+                    </Action>
+                    <Action icon={Trash2} onClick={actions.deleteLayer}>
+                      Delete
+                    </Action>
                   </div>
-                  <label>
-                    Contrast <span>{selectedLayer.contrast}</span>
-                    <input
-                      type="range"
-                      min="10"
-                      max="300"
-                      step="1"
-                      value={selectedLayer.contrastValue ?? 100}
-                      onChange={(event) =>
-                        onUpdateLayer(selectedLayer.id, {
-                          contrast: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Level <span>{selectedLayer.level}</span>
-                    <input
-                      type="range"
-                      min="10"
-                      max="300"
-                      step="1"
-                      value={selectedLayer.levelValue ?? 100}
-                      onChange={(event) =>
-                        onUpdateLayer(selectedLayer.id, {
-                          level: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
+                  <Action icon={Maximize2} onClick={() => runTool("size")}>
+                    Scale on canvas
+                  </Action>
+                </div>
+              ) : selectedImplant ? (
+                <div className={styles.inspectorBody}>
+                  <div className={styles.implantPreview}>
+                    <img src={selectedImplant.imageSrc} alt="" />
+                    <span>
+                      {selectedImplant.brand}
+                      <strong>{selectedImplant.system}</strong>
+                    </span>
+                  </div>
+                  <div className={styles.propertySummary}>
+                    <span>
+                      {selectedImplant.type} ·{" "}
+                      {selectedImplant.templateSource || "template"}
+                    </span>
+                    <strong>Size {selectedImplant.size}</strong>
+                  </div>
+                  <Action
+                    icon={Plus}
+                    disabled={!calibrated}
+                    onClick={insertSelectedImplant}
+                  >
+                    Insert active template
+                  </Action>
+                </div>
+              ) : (
+                <div className={styles.inspectorEmpty}>
+                  <MousePointer2 size={20} />
+                  <p>Select an implant or layer to edit its properties.</p>
                 </div>
               )}
-              <div className={styles.inspectorActions}>
+              <div className={styles.layerSection}>
+                <div className={styles.sectionHeading}>
+                  <strong>Layers</strong>
+                  <span>{layers.length}</span>
+                </div>
+                {implantList}
+              </div>
+              <div className={styles.inspectorFooter}>
                 <Action
-                  icon={selectedLayer.hidden ? EyeOff : Eye}
-                  onClick={() =>
-                    onUpdateLayer(selectedLayer.id, {
-                      hidden: !selectedLayer.hidden,
-                    })
-                  }
+                  icon={Plus}
+                  disabled={!hasImage}
+                  onClick={startImplantBrowser}
                 >
-                  {selectedLayer.hidden ? "Show" : "Hide"}
-                </Action>
-                <Action
-                  icon={selectedLayer.locked ? Lock : LockOpen}
-                  onClick={() =>
-                    onUpdateLayer(selectedLayer.id, {
-                      locked: !selectedLayer.locked,
-                    })
-                  }
-                >
-                  {selectedLayer.locked ? "Unlock" : "Lock"}
+                  Select Implant
                 </Action>
                 <Action
-                  icon={selectedLayer.rotationLocked ? Lock : RotateCw}
-                  onClick={() =>
-                    onUpdateLayer(selectedLayer.id, {
-                      rotationLocked: !selectedLayer.rotationLocked,
-                    })
-                  }
+                  icon={ClipboardList}
+                  disabled={!hasImage}
+                  onClick={() => setLogOpen(true)}
                 >
-                  {selectedLayer.rotationLocked ? "Unlock Sudut" : "Lock Sudut"}
-                </Action>
-                <Action icon={Trash2} onClick={actions.deleteLayer}>
-                  Delete
+                  Planning Log
                 </Action>
               </div>
-              <Action icon={Maximize2} onClick={() => runTool("size")}>
-                Scale on canvas
-              </Action>
-            </div>
-          ) : selectedImplant ? (
-            <div className={styles.inspectorBody}>
-              <div className={styles.implantPreview}>
-                <img src={selectedImplant.imageSrc} alt="" />
-                <span>
-                  {selectedImplant.brand}
-                  <strong>{selectedImplant.system}</strong>
-                </span>
-              </div>
-              <div className={styles.propertySummary}>
-                <span>
-                  {selectedImplant.type} ·{" "}
-                  {selectedImplant.templateSource || "template"}
-                </span>
-                <strong>Size {selectedImplant.size}</strong>
-              </div>
-              <Action
-                icon={Plus}
-                disabled={!calibrated}
-                onClick={insertSelectedImplant}
-              >
-                Insert active template
-              </Action>
-            </div>
-          ) : (
-            <div className={styles.inspectorEmpty}>
-              <MousePointer2 size={20} />
-              <p>Select an implant or layer to edit its properties.</p>
-            </div>
+            </>
           )}
-          <div className={styles.layerSection}>
-            <div className={styles.sectionHeading}>
-              <strong>Layers</strong>
-              <span>{layers.length}</span>
-            </div>
-            {implantList}
-          </div>
-          <div className={styles.inspectorFooter}>
-            <Action
-              icon={Plus}
-              disabled={!hasImage}
-              onClick={startImplantBrowser}
-            >
-              Select Implant
-            </Action>
-            <Action
-              icon={ClipboardList}
-              disabled={!hasImage}
-              onClick={() => setSheet("log")}
-            >
-              Planning Log
-            </Action>
-          </div>
         </aside>
       </div>
       <div
