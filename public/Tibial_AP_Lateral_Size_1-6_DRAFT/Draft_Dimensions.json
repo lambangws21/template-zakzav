@@ -1,0 +1,38 @@
+[
+  {
+    "size": 1,
+    "width": 56,
+    "length": 45.3,
+    "height": 40.8
+  },
+  {
+    "size": 2,
+    "width": 60.5,
+    "length": 49.25,
+    "height": 41.8
+  },
+  {
+    "size": 3,
+    "width": 64.15,
+    "length": 52.3,
+    "height": 42.8
+  },
+  {
+    "size": 4,
+    "width": 68,
+    "length": 54.4,
+    "height": 43.8
+  },
+  {
+    "size": 5,
+    "width": 72.6,
+    "length": 57.1,
+    "height": 44.8
+  },
+  {
+    "size": 6,
+    "width": 77,
+    "length": 59.65,
+    "height": 45.8
+  }
+]

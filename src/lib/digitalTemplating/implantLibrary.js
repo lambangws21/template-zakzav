@@ -36,6 +36,15 @@ export const NORMMED_FEMORAL_SIZES = [
   { size: 6, width: 77, length: 59.65, height: 72.7 },
 ];
 
+export const NORMMED_TIBIAL_SIZES = [
+  { size: 1, width: 56, length: 45.3, height: 40.8 },
+  { size: 2, width: 60.5, length: 49.25, height: 41.8 },
+  { size: 3, width: 64.15, length: 52.3, height: 42.8 },
+  { size: 4, width: 68, length: 54.4, height: 43.8 },
+  { size: 5, width: 72.6, length: 57.1, height: 44.8 },
+  { size: 6, width: 77, length: 59.65, height: 45.8 },
+];
+
 const NORMMED_FEMORAL_LIBRARY = NORMMED_FEMORAL_SIZES.flatMap((dimensions) =>
   [
     {
@@ -58,6 +67,36 @@ const NORMMED_FEMORAL_LIBRARY = NORMMED_FEMORAL_SIZES.flatMap((dimensions) =>
     size: dimensions.size,
     label: `Normmed Femoral ${view.view} Size ${dimensions.size}`,
     imageSrc: `/Femoral_AP_Lateral_Size_1-6_Normmed/Femoral_${view.view}_Size_${dimensions.size}.svg`,
+    physicalSize: null,
+    physicalWidthMm: view.physicalWidthMm,
+    physicalHeightMm: view.physicalHeightMm,
+    transparentWhiteBackground: false,
+    implantViewMode: view.viewKey,
+  })),
+);
+
+const NORMMED_TIBIAL_LIBRARY = NORMMED_TIBIAL_SIZES.flatMap((dimensions) =>
+  [
+    {
+      view: "AP",
+      viewKey: "ap",
+      physicalWidthMm: dimensions.width + 1,
+      physicalHeightMm: dimensions.height + 1,
+    },
+    {
+      view: "Lateral",
+      viewKey: "lateral",
+      physicalWidthMm: dimensions.length + 1,
+      physicalHeightMm: dimensions.height + 1,
+    },
+  ].map((view) => ({
+    id: `normmed-tibial-${view.viewKey}-${dimensions.size}`,
+    brand: "Normmed",
+    system: `Normmed Tibial ${view.view} (DRAFT)`,
+    type: "knee",
+    size: dimensions.size,
+    label: `Normmed Tibial ${view.view} Size ${dimensions.size} (DRAFT)`,
+    imageSrc: `/Tibial_AP_Lateral_Size_1-6_DRAFT/Tibial_${view.view}_Size_0${dimensions.size}_DRAFT.svg`,
     physicalSize: null,
     physicalWidthMm: view.physicalWidthMm,
     physicalHeightMm: view.physicalHeightMm,
@@ -336,6 +375,7 @@ const BASE_LIBRARY = [
     implantViewMode: "ap",
   })),
   ...NORMMED_FEMORAL_LIBRARY,
+  ...NORMMED_TIBIAL_LIBRARY,
   {
     id: "nexgen-ruler",
     brand: "Zimmer",

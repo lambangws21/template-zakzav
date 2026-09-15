@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="57mm"
+     height="41.8mm"
+     viewBox="-0.5 -0.5 57 41.8">
+  <title>Tibial AP Size 1 - DRAFT</title>
+  <desc>
+    Approximate schematic contour with borrowed femoral dimensions.
+    Not calibrated or validated for clinical tibial templating.
+  </desc>
+  <metadata>{"component":"Tibial","view":"AP","size":1,"units":"mm","status":"DRAFT - NOT CLINICALLY VALIDATED","geometry":"Schematic projections inferred from a perspective image","dimensionsSource":"Femoral table reused at user request","dimensions":{"size":1,"width":56,"length":45.3,"height":40.8},"mapping":"AP: Width x Height; Lateral: Length x Height","heightInterpretation":"Temporary total contour height, including stem","contourBounds":{"x":0,"y":0,"width":56,"height":40.8},"canvasPaddingMm":0.5}</metadata>
+  <g id="tibial-ap-size-1"
+     transform="scale(0.56 0.408)"
+     fill="none"
+     stroke="#009900"
+     stroke-width="1.25"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M0 3
+     C0 1 13 0 31 0
+     C34 0 36 0 36 2
+     C36 3.5 43 3.5 48 3.5
+     C53 3.5 59 3.5 59 2
+     C59 0 64 0 70 0
+     C86 0 100 1 100 3
+     C100 6 75 7 50 7
+     C25 7 0 6 0 3 Z"/>
+    <path d="M0 3
+     L0 16
+     C12 21 28 23 38 23
+     L60 23
+     C73 23 89 21 100 16
+     L100 3"/>
+    <path d="M38.5 23
+     L40 88
+     C40 95 43.5 100 49 100
+     C54.5 100 57.5 95 57.5 88
+     L59 23"/>
+    <path d="M26 22
+     L39.4 63"/>
+    <path d="M71 22
+     L58.1 63"/>
+  </g>
+</svg>

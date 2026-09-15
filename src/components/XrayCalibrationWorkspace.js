@@ -113,6 +113,7 @@ import {
   getImplantLibraryItemById,
   LOCAL_IMPLANT_LIBRARY,
   LOCAL_IMPLANT_LIBRARY_TYPES,
+  NORMMED_TIBIAL_SIZES,
 } from "../lib/digitalTemplating/implantLibrary";
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
 import ImplantLayer from "./ImplantLayer";
@@ -3738,16 +3739,44 @@ export default function XrayCalibrationWorkspace({
 
       const lineLengthMm = getLineLength(line) * mmPerPixel;
       if (sizingIntent === "tibial") {
+        const lineSignature = `${line.name || ""} ${line.type || ""}`;
+        const inferredDimension = /height|tinggi/i.test(lineSignature)
+          ? "height"
+          : /length|panjang|ap|lateral/i.test(lineSignature)
+            ? "length"
+            : "width";
+        const dimensionItems = [
+          { key: "width", label: "Width / ML" },
+          { key: "length", label: "Length / AP" },
+          { key: "height", label: "Height" },
+        ].map((item) => {
+          const match = NORMMED_TIBIAL_SIZES.map((sizeItem) => ({
+            ...sizeItem,
+            referenceMm: sizeItem[item.key],
+            deltaMm: lineLengthMm - sizeItem[item.key],
+            absDeltaMm: Math.abs(lineLengthMm - sizeItem[item.key]),
+          })).sort((a, b) => a.absDeltaMm - b.absDeltaMm)[0];
+          return {
+            ...item,
+            match,
+            active: item.key === inferredDimension,
+          };
+        });
+        const primary =
+          dimensionItems.find((item) => item.active)?.match ||
+          dimensionItems[0]?.match ||
+          null;
+
         return {
           available: true,
           kind: "tibial",
-          title: "Tibial sizing",
+          title: "Normmed Tibial sizing (DRAFT)",
           sourceText,
           lineLengthMm,
-          primary: null,
-          dimensionItems: [],
-          message:
-            "Tabel ukuran tibial baseplate belum tersedia, jadi hover hanya menampilkan ukuran line terkalibrasi.",
+          inferredDimension,
+          primary,
+          dimensionItems,
+          message: "Dimensi tibial masih DRAFT dan belum tervalidasi klinis.",
         };
       }
 
@@ -3788,11 +3817,11 @@ export default function XrayCalibrationWorkspace({
     [calibrationLineId, getSizingLineIntent, lineTypeLabel, lines, mmPerPixel],
   );
 
-  const recommendedNormmedFemoralTemplate = useMemo(() => {
+  const recommendedNormmedTemplate = useMemo(() => {
     const sizing = getNormmedFemoralSizingForLine(
       normmedFemoralMeasurement.line,
     );
-    if (!sizing?.available || sizing.kind !== "femoral" || !sizing.primary) {
+    if (!sizing?.available || !sizing.primary) {
       return null;
     }
 
@@ -3800,16 +3829,16 @@ export default function XrayCalibrationWorkspace({
     return LOCAL_IMPLANT_LIBRARY.find(
       (item) =>
         item.id ===
-        `normmed-femoral-${viewMode}-${String(sizing.primary.size)}`,
+        `normmed-${sizing.kind}-${viewMode}-${String(sizing.primary.size)}`,
     );
   }, [getNormmedFemoralSizingForLine, normmedFemoralMeasurement.line]);
 
   useEffect(() => {
-    if (selectedImplantType !== "knee" || !recommendedNormmedFemoralTemplate) {
+    if (selectedImplantType !== "knee" || !recommendedNormmedTemplate) {
       return;
     }
-    setSelectedImplantLibraryId(recommendedNormmedFemoralTemplate.id);
-  }, [recommendedNormmedFemoralTemplate, selectedImplantType]);
+    setSelectedImplantLibraryId(recommendedNormmedTemplate.id);
+  }, [recommendedNormmedTemplate, selectedImplantType]);
 
   const lineTypeColor = useCallback((type) => {
     if (type === "dorrOuter") return "#10b981";
@@ -21901,10 +21930,10 @@ export default function XrayCalibrationWorkspace({
     setNormmedFemoralSizerOpen(true);
   }, [normmedFemoralMeasurement.line, triggerSelectionPulse]);
 
-  const useRecommendedNormmedFemoralTemplate = useCallback(
-    ({ size, dimension }) => {
+  const useRecommendedNormmedTemplate = useCallback(
+    ({ size, dimension, component = "femoral" }) => {
       const viewMode = dimension === "width" ? "ap" : "lateral";
-      const itemId = `normmed-femoral-${viewMode}-${String(size)}`;
+      const itemId = `normmed-${component}-${viewMode}-${String(size)}`;
       const item = getImplantLibraryItemById(itemId, LOCAL_IMPLANT_LIBRARY);
       if (!item) {
         setNotice("Template Normmed yang direkomendasikan tidak ditemukan.");
@@ -21915,7 +21944,7 @@ export default function XrayCalibrationWorkspace({
       setSelectedImplantLibraryId(item.id);
       useSelectedImplantLibraryAsLayer(item.id);
       setNotice(
-        `${item.label} dipasang otomatis dari hasil ruler ${dimension === "width" ? "ML" : "AP/Lateral"}.`,
+        `${item.label} dipasang otomatis dari hasil line ${dimension === "width" ? "ML" : "AP/Lateral"}.`,
       );
     },
     [useSelectedImplantLibraryAsLayer],
@@ -23467,6 +23496,9 @@ export default function XrayCalibrationWorkspace({
   const mobileNativeLineSizing = mobileNativeLineInfoLine
     ? getNormmedFemoralSizingForLine(mobileNativeLineInfoLine)
     : null;
+  const selectedLineSizing = selectedLine
+    ? getNormmedFemoralSizingForLine(selectedLine)
+    : null;
   const mobileNativeLinePreset = mobileNativeLineInfoLine?.type || "normal";
   const mobileNativeLinePresetInfo =
     HIP_FUNCTION_SUMMARY_BY_KEY[mobileNativeLinePreset] ?? null;
@@ -23776,7 +23808,7 @@ export default function XrayCalibrationWorkspace({
                           ) : null}
                         </div>
 
-                        {sizing.kind === "femoral" ? (
+                        {sizing.dimensionItems?.length ? (
                           <>
                             <div className="grid grid-cols-3 gap-1.5">
                               {sizing.dimensionItems.map((item) => (
@@ -23809,9 +23841,10 @@ export default function XrayCalibrationWorkspace({
                                 type="button"
                                 onClick={() => {
                                   setSelectedLineId(line.id);
-                                  useRecommendedNormmedFemoralTemplate({
+                                  useRecommendedNormmedTemplate({
                                     size: sizing.primary.size,
                                     dimension: sizing.inferredDimension,
+                                    component: sizing.kind,
                                   });
                                   setSizingLineHoverInfo(null);
                                 }}
@@ -23834,15 +23867,63 @@ export default function XrayCalibrationWorkspace({
                     )}
 
                     <p className="mt-1.5 text-[8px] leading-snug font-semibold text-slate-400">
-                      Rekomendasi femoral memakai tabel Normmed/Gordion TKR
-                      PS/CR. Aktif untuk Line/Ruler bernama Fem Size, Femur ML,
-                      ML, AP, Width, Length, Height, atau Tibia/Baseplate.
+                      Gunakan nama line Femoral ML/AP atau Tibial ML/AP agar
+                      komponen, view, dan size dapat dikenali. Template Tibial
+                      masih DRAFT dan perlu validasi klinis.
                     </p>
                   </div>
                 </div>
               </motion.div>
             );
           })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedLineSizing?.available &&
+        selectedLineSizing.primary &&
+        !sizingLineHoverInfo &&
+        !isNativeMobileSimpleUi ? (
+          <motion.div
+            key={`selected-line-size-${selectedLine?.id}`}
+            initial={{ opacity: 0, y: 8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.96 }}
+            className="fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[119] flex w-[min(270px,calc(100vw-24px))] items-center gap-2 rounded-[16px] border border-cyan-300/30 bg-slate-950/92 p-2 text-white shadow-[0_8px_26px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:right-5 sm:bottom-5"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[8px] font-black tracking-widest text-cyan-300 uppercase">
+                {selectedLineSizing.kind === "tibial"
+                  ? "Normmed Tibial DRAFT"
+                  : "Normmed Femoral"}
+              </p>
+              <p className="truncate text-[11px] font-black">
+                {selectedLine?.name || `Line #${selectedLine?.id}`} · Size{" "}
+                {selectedLineSizing.primary.size}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                useRecommendedNormmedTemplate({
+                  size: selectedLineSizing.primary.size,
+                  dimension: selectedLineSizing.inferredDimension,
+                  component: selectedLineSizing.kind,
+                })
+              }
+              className="min-h-9 shrink-0 rounded-xl bg-cyan-600 px-3 text-[9px] font-black text-white"
+            >
+              Gunakan
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedLineId(null)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8 text-slate-300"
+              aria-label="Tutup rekomendasi"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        ) : null}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -30942,7 +31023,7 @@ export default function XrayCalibrationWorkspace({
                       scaleSourceLabel={
                         normmedFemoralMeasurement.scaleSourceLabel
                       }
-                      onUseRecommended={useRecommendedNormmedFemoralTemplate}
+                      onUseRecommended={useRecommendedNormmedTemplate}
                       onStartLine={() => {
                         setSimplePlanningModal(null);
                         handleToolChange("draw");
@@ -31078,7 +31159,7 @@ export default function XrayCalibrationWorkspace({
                   normmedFemoralMeasurement.autoDetected
                 }
                 scaleSourceLabel={normmedFemoralMeasurement.scaleSourceLabel}
-                onUseRecommended={useRecommendedNormmedFemoralTemplate}
+                onUseRecommended={useRecommendedNormmedTemplate}
                 onStartLine={() => {
                   setNormmedFemoralSizerOpen(false);
                   handleToolChange("draw");
@@ -45102,7 +45183,6 @@ export default function XrayCalibrationWorkspace({
 
                         <div
                           className={`grid gap-1.5 ${
-                            mobileNativeLineSizing?.kind === "femoral" &&
                             mobileNativeLineSizing?.primary
                               ? "grid-cols-5"
                               : "grid-cols-4"
@@ -45185,16 +45265,16 @@ export default function XrayCalibrationWorkspace({
                           >
                             Size
                           </button>
-                          {mobileNativeLineSizing?.kind === "femoral" &&
-                          mobileNativeLineSizing?.primary ? (
+                          {mobileNativeLineSizing?.primary ? (
                             <button
                               type="button"
                               onClick={() => {
                                 setSelectedLineId(mobileNativeLineInfoLine.id);
-                                useRecommendedNormmedFemoralTemplate({
+                                useRecommendedNormmedTemplate({
                                   size: mobileNativeLineSizing.primary.size,
                                   dimension:
                                     mobileNativeLineSizing.inferredDimension,
+                                  component: mobileNativeLineSizing.kind,
                                 });
                                 clearTouchHoverDetails();
                               }}
