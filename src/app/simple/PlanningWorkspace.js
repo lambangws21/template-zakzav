@@ -52,6 +52,27 @@ import {
 import styles from "./PlanningWorkspace.module.css";
 import { GuideContent } from "@/components/LandmarkGuide";
 
+const KNEE_COMPONENTS = [
+  {
+    key: "femoral",
+    label: "Femoral",
+    icon: "/Zakzav_Implant_Icons_512/08_Femur_TKA_512.png",
+  },
+  {
+    key: "tibial",
+    label: "Tibia",
+    icon: "/Zakzav_Implant_Icons_512/09_Tibia_TKA_512.png",
+  },
+];
+
+function getKneeComponent(item) {
+  const signature =
+    `${item?.id || ""} ${item?.label || ""} ${item?.system || ""}`.toLowerCase();
+  return /\b(tibial|tibia)\b|(?:^|-)tib(?:-|$)/.test(signature)
+    ? "tibial"
+    : "femoral";
+}
+
 function Action({ icon: Icon, children, active, className = "", ...props }) {
   return (
     <button
@@ -180,6 +201,7 @@ export default function PlanningWorkspace({
   const [brand, setBrand] = useState("");
   const [system, setSystem] = useState("");
   const [component, setComponent] = useState("");
+  const [kneeComponent, setKneeComponent] = useState("femoral");
   const [guideItemId, setGuideItemId] = useState(null);
   const [guideMinimized, setGuideMinimized] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
@@ -244,15 +266,26 @@ export default function PlanningWorkspace({
   const available = catalog.filter((item) =>
     procedure === "tka" ? item.type === "knee" : item.type !== "knee",
   );
-  const brands = [...new Set(available.map((item) => item.brand))];
+  const kneeComponentCounts = available.reduce(
+    (result, item) => {
+      if (procedure === "tka") result[getKneeComponent(item)] += 1;
+      return result;
+    },
+    { femoral: 0, tibial: 0 },
+  );
+  const componentAvailable =
+    procedure === "tka"
+      ? available.filter((item) => getKneeComponent(item) === kneeComponent)
+      : available;
+  const brands = [...new Set(componentAvailable.map((item) => item.brand))];
   const systems = [
     ...new Set(
-      available
+      componentAvailable
         .filter((item) => !brand || item.brand === brand)
         .map((item) => item.system),
     ),
   ];
-  const choices = available.filter(
+  const choices = componentAvailable.filter(
     (item) =>
       (!brand || item.brand === brand) &&
       (!system || item.system === system) &&
@@ -310,11 +343,21 @@ export default function PlanningWorkspace({
     setBrand("");
     setSystem("");
     setComponent("");
+    setKneeComponent("femoral");
     setMetricEditor(null);
     setStepExpanded(true);
     setGuideItemId(null);
     setGuideVisualOpen(false);
   }, [procedure]);
+  useEffect(() => {
+    if (procedure !== "tka" || !selectedImplantId) return;
+    const selectedCatalogItem = catalog.find(
+      (item) => item.id === selectedImplantId && item.type === "knee",
+    );
+    if (selectedCatalogItem) {
+      setKneeComponent(getKneeComponent(selectedCatalogItem));
+    }
+  }, [catalog, procedure, selectedImplantId]);
   useEffect(() => {
     if (
       !enabled ||
@@ -2451,6 +2494,41 @@ export default function PlanningWorkspace({
                 </button>
               )}
             </div>
+            {procedure === "tka" ? (
+              <div
+                className={styles.kneeComponentTabs}
+                role="tablist"
+                aria-label="Knee implant component"
+              >
+                {KNEE_COMPONENTS.map((item) => (
+                  <button
+                    type="button"
+                    key={item.key}
+                    data-active={kneeComponent === item.key}
+                    role="tab"
+                    aria-selected={kneeComponent === item.key}
+                    onClick={() => {
+                      setKneeComponent(item.key);
+                      setBrand("");
+                      setSystem("");
+                      setImplantSearch("");
+                      const firstItem = available.find(
+                        (implant) => getKneeComponent(implant) === item.key,
+                      );
+                      if (firstItem) onSelectImplant(firstItem.id);
+                    }}
+                  >
+                    <img src={item.icon} alt="" />
+                    <span>
+                      <strong>{item.label}</strong>
+                      <small>
+                        {kneeComponentCounts[item.key] || 0} template
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <label>
               Brand
               <select
