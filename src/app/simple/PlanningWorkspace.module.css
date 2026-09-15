@@ -112,6 +112,7 @@
 .panelHeading { display: flex; flex-shrink: 0; align-items: flex-start; justify-content: space-between; gap: 6px; padding: 14px 12px; border-bottom: 1px solid var(--pw-line); }
 .panelHeading small { display: block; font-size: 9px; color: var(--pw-muted); margin-bottom: 4px; }
 .panelHeading .button { border: 0; padding: 4px; background: transparent; }
+.panelHeadingActions { display: flex; align-items: center; gap: 3px; }
 .steps { list-style: none; margin: 0; padding: 9px; border-bottom: 1px solid var(--pw-line); }
 .steps > li > button { width: 100%; display: flex; gap: 8px; align-items: center; text-align: left; padding: 9px 6px; background: transparent; color: var(--pw-muted); border: 1px solid transparent; border-radius: 6px; min-height: 40px; line-height: 1.4; }
 .steps > li > button[aria-current="step"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-line); font-weight: 650; }

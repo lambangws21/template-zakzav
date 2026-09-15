@@ -1110,12 +1110,21 @@ export default function PlanningWorkspace({
           </small>
           <h2>Planning Log</h2>
         </div>
-        <Action
-          icon={PanelRightClose}
-          className={styles.desktopOnly}
-          onClick={() => setLogOpen(false)}
-          aria-label="Tutup Planning Log"
-        />
+        <div className={styles.panelHeadingActions}>
+          <Action
+            icon={ImagePlus}
+            disabled={!hasImage || !actions.addPhoto}
+            onClick={() => activate(actions.addPhoto)}
+            aria-label="Tambah foto ke canvas"
+            title="Tambah foto ke canvas"
+          />
+          <Action
+            icon={PanelRightClose}
+            className={styles.desktopOnly}
+            onClick={() => setLogOpen(false)}
+            aria-label="Tutup Planning Log"
+          />
+        </div>
       </div>
       <div className={styles.logBody}>
         <div
@@ -1362,13 +1371,22 @@ export default function PlanningWorkspace({
             <section className={styles.logSection}>
               <h2>Selected Implants & Fragments</h2>
               {implantList}
-              <Action
-                icon={Plus}
-                disabled={!hasImage}
-                onClick={() => startImplantBrowser()}
-              >
-                Pilih Implant Template
-              </Action>
+              <div className={styles.buttonGrid}>
+                <Action
+                  icon={Plus}
+                  disabled={!hasImage}
+                  onClick={() => startImplantBrowser()}
+                >
+                  Pilih Implant
+                </Action>
+                <Action
+                  icon={ImagePlus}
+                  disabled={!hasImage || !actions.addPhoto}
+                  onClick={() => activate(actions.addPhoto)}
+                >
+                  Tambah Foto
+                </Action>
+              </div>
             </section>
           )}
           {logTab === "texts" && (
@@ -1578,6 +1596,14 @@ export default function PlanningWorkspace({
         <button type="button" onClick={() => activate(actions.upload)}>
           <ImagePlus size={16} />
           Open X-ray
+        </button>
+        <button
+          type="button"
+          disabled={!hasImage || !actions.addPhoto}
+          onClick={() => activate(actions.addPhoto)}
+        >
+          <ImagePlus size={16} />
+          Tambah Foto ke Canvas
         </button>
         <button
           type="button"

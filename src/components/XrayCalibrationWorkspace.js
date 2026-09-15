@@ -818,6 +818,7 @@ export default function XrayCalibrationWorkspace({
   const compareCanvasRef = useRef(null);
   const mainUploadInputRef = useRef(null);
   const layerUploadInputRef = useRef(null);
+  const canvasPhotoUploadInputRef = useRef(null);
   const compareUploadInputRef = useRef(null);
   const mainImageFileRef = useRef(null);
   const compareImageFileRef = useRef(null);
@@ -18868,6 +18869,50 @@ export default function XrayCalibrationWorkspace({
     [addImageAsWorkspaceLayer, image, modelHeight, modelWidth],
   );
 
+  const handleCanvasPhotoUpload = useCallback(
+    (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      if (!image || !modelWidth || !modelHeight) {
+        setNotice("Upload X-ray utama sebelum menambahkan foto ke canvas.");
+        event.target.value = "";
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      const photo = new Image();
+      photo.onload = () => {
+        const width = photo.naturalWidth || photo.width || 0;
+        const height = photo.naturalHeight || photo.height || 0;
+        if (!width || !height) {
+          URL.revokeObjectURL(objectUrl);
+          setNotice("Foto tambahan tidak memiliki dimensi yang valid.");
+          event.target.value = "";
+          return;
+        }
+
+        layerObjectUrlsRef.current.add(objectUrl);
+        addImageAsWorkspaceLayer({
+          layerImage: photo,
+          imageSrc: objectUrl,
+          name: `Foto - ${file.name}`,
+          sizeMode: "template",
+          opacity: 1,
+          noticeText: `Foto "${file.name}" ditambahkan ke canvas sebagai layer baru.`,
+        });
+        event.target.value = "";
+      };
+      photo.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        setNotice("Gagal membaca foto tambahan.");
+        event.target.value = "";
+      };
+      photo.src = objectUrl;
+    },
+    [addImageAsWorkspaceLayer, image, modelHeight, modelWidth],
+  );
+
   const saveStoryNow = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
@@ -22875,6 +22920,7 @@ export default function XrayCalibrationWorkspace({
   };
   const planningActions = {
     upload: () => mainUploadInputRef.current?.click(),
+    addPhoto: () => canvasPhotoUploadInputRef.current?.click(),
     library: () => setLibraryModalOpen(true),
     calibrate: () => openSimpleCalibrationModal(),
     properties: openPlanningProperties,
@@ -23651,6 +23697,15 @@ export default function XrayCalibrationWorkspace({
         type="file"
         accept="image/*"
         onChange={handleCompareUpload}
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      <input
+        ref={canvasPhotoUploadInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleCanvasPhotoUpload}
         className="hidden"
         aria-hidden="true"
         tabIndex={-1}
