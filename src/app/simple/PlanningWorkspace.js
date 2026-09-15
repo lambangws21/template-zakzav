@@ -77,6 +77,17 @@ function getZimmerTemplateSource(item) {
   return item?.templateSource === "svg" ? "svg" : "ruler";
 }
 
+function getZimmerStemFamily(item) {
+  const signature = `${item?.system || ""} ${item?.label || ""}`.toLowerCase();
+  if (signature.includes("avenir")) return "Avenir Standard";
+  if (/m\/?l taper|\bml taper\b/.test(signature)) return "M/L Taper";
+  if (signature.includes("cpt cemented")) return "CPT Cemented";
+  if (signature.includes("wagner sl")) return "Wagner SL";
+  return String(item?.system || "Zimmer Stem")
+    .replace(/\s+(AP|Lateral)\s*(\(SVG\))?$/i, "")
+    .replace(/\s*\(SVG\)$/i, "");
+}
+
 function Action({ icon: Icon, children, active, className = "", ...props }) {
   return (
     <button
@@ -320,6 +331,18 @@ export default function PlanningWorkspace({
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query));
   });
+  const groupZimmerStems =
+    procedure === "hip" && component === "stem" && brand === "Zimmer";
+  const visibleChoiceGroups = groupZimmerStems
+    ? Array.from(
+        visibleChoices.reduce((groups, item) => {
+          const family = getZimmerStemFamily(item);
+          if (!groups.has(family)) groups.set(family, []);
+          groups.get(family).push(item);
+          return groups;
+        }, new Map()),
+      )
+    : [];
   const selectedImplant = choices.find((item) => item.id === selectedImplantId);
   const selectedLayer =
     layers.find((item) => item.id === selectedLayerId) || null;
@@ -2634,23 +2657,53 @@ export default function PlanningWorkspace({
             ) : null}
             <div className={styles.implantGrid}>
               {visibleChoices.length ? (
-                visibleChoices.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    data-selected={item.id === selectedImplantId}
-                    onClick={() => onSelectImplant(item.id)}
-                  >
-                    <img src={item.imageSrc} alt="" />
-                    <span>
-                      <strong>{item.label}</strong>
-                      <small>
-                        {item.brand} · {item.system}
-                      </small>
-                      <em>Size {item.size}</em>
-                    </span>
-                  </button>
-                ))
+                groupZimmerStems ? (
+                  visibleChoiceGroups.map(([family, items]) => (
+                    <section className={styles.implantFamily} key={family}>
+                      <div className={styles.implantFamilyHeading}>
+                        <strong>{family}</strong>
+                        <span>{items.length} template</span>
+                      </div>
+                      <div className={styles.implantFamilyItems}>
+                        {items.map((item) => (
+                          <button
+                            type="button"
+                            key={item.id}
+                            data-selected={item.id === selectedImplantId}
+                            onClick={() => onSelectImplant(item.id)}
+                          >
+                            <img src={item.imageSrc} alt="" />
+                            <span>
+                              <strong>{item.label}</strong>
+                              <small>
+                                {item.brand} · {item.system}
+                              </small>
+                              <em>Size {item.size}</em>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ))
+                ) : (
+                  visibleChoices.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      data-selected={item.id === selectedImplantId}
+                      onClick={() => onSelectImplant(item.id)}
+                    >
+                      <img src={item.imageSrc} alt="" />
+                      <span>
+                        <strong>{item.label}</strong>
+                        <small>
+                          {item.brand} · {item.system}
+                        </small>
+                        <em>Size {item.size}</em>
+                      </span>
+                    </button>
+                  ))
+                )
               ) : (
                 <p className={styles.empty}>Implant tidak ditemukan.</p>
               )}
