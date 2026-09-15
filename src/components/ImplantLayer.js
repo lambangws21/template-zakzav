@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -24,6 +24,27 @@ const TYPE_ICONS = {
   cup: `${ICON_ROOT}/02_Cup_512.png`,
   knee: `${ICON_ROOT}/07_TKA_512.png`,
 };
+
+const KNEE_SECTIONS = [
+  {
+    key: "femoral",
+    label: "Femoral",
+    icon: `${ICON_ROOT}/08_Femur_TKA_512.png`,
+  },
+  {
+    key: "tibial",
+    label: "Tibia",
+    icon: `${ICON_ROOT}/09_Tibia_TKA_512.png`,
+  },
+];
+
+function getKneeSection(item) {
+  const signature =
+    `${item?.id || ""} ${item?.system || ""} ${item?.label || ""}`.toLowerCase();
+  return /\b(tibial|tibia)\b|(?:^|-)tib(?:-|$)/.test(signature)
+    ? "tibial"
+    : "femoral";
+}
 
 function getItemIcon(item) {
   const signature =
@@ -79,13 +100,34 @@ export default function ImplantLayer({
   subtitle = "Jenis, model, dan ukuran",
 }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [kneeSection, setKneeSection] = useState("femoral");
   const normalizedType = TYPE_KEYS.includes(selectedType)
     ? selectedType
     : TYPE_KEYS[0] || "cup";
   const counts = useMemo(() => countImplantLibraryByType(items), [items]);
-  const filteredItems = useMemo(
+  const typeItems = useMemo(
     () => getImplantLibraryItemsByType(normalizedType, items),
     [items, normalizedType],
+  );
+  const kneeSectionCounts = useMemo(
+    () =>
+      typeItems.reduce(
+        (result, item) => {
+          if (normalizedType === "knee") {
+            result[getKneeSection(item)] += 1;
+          }
+          return result;
+        },
+        { femoral: 0, tibial: 0 },
+      ),
+    [normalizedType, typeItems],
+  );
+  const filteredItems = useMemo(
+    () =>
+      normalizedType === "knee"
+        ? typeItems.filter((item) => getKneeSection(item) === kneeSection)
+        : typeItems,
+    [kneeSection, normalizedType, typeItems],
   );
   const groupedItems = useMemo(
     () => groupImplantLibraryBySystem(filteredItems),
@@ -115,15 +157,40 @@ export default function ImplantLayer({
     [items, normalizedSearch],
   );
 
+  useEffect(() => {
+    if (normalizedType !== "knee") return;
+    const selectedKneeItem = typeItems.find(
+      (item) => String(item.id) === String(selectedItemId),
+    );
+    if (selectedKneeItem) {
+      setKneeSection(getKneeSection(selectedKneeItem));
+    }
+  }, [normalizedType, selectedItemId, typeItems]);
+
   const selectType = (type) => {
     setSearchQuery("");
     onSelectType?.(type);
     const firstItem = getImplantLibraryItemsByType(type, items)[0];
+    if (type === "knee" && firstItem) {
+      setKneeSection(getKneeSection(firstItem));
+    }
+    if (firstItem) onSelectItemId?.(firstItem.id);
+  };
+
+  const selectKneeSection = (section) => {
+    setSearchQuery("");
+    setKneeSection(section);
+    const firstItem = typeItems.find(
+      (item) => getKneeSection(item) === section,
+    );
     if (firstItem) onSelectItemId?.(firstItem.id);
   };
 
   const chooseSearchResult = (item) => {
     onSelectType?.(item.type);
+    if (item.type === "knee") {
+      setKneeSection(getKneeSection(item));
+    }
     onSelectItemId?.(item.id);
     setSearchQuery("");
   };
@@ -201,6 +268,40 @@ export default function ImplantLayer({
           );
         })}
       </div>
+
+      {normalizedType === "knee" ? (
+        <div
+          className="implant-picker-surface grid grid-cols-2 gap-1 rounded-md p-1"
+          role="tablist"
+          aria-label="Komponen knee"
+        >
+          {KNEE_SECTIONS.map((section) => {
+            const isActive = kneeSection === section.key;
+            return (
+              <button
+                key={section.key}
+                type="button"
+                onClick={() => selectKneeSection(section.key)}
+                className={`${
+                  isActive ? "implant-picker-tab-active" : "implant-picker-tab"
+                } flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-[9px] font-black`}
+                role="tab"
+                aria-selected={isActive}
+              >
+                <img
+                  src={section.icon}
+                  alt=""
+                  className="h-7 w-7 shrink-0 object-contain"
+                />
+                <span>{section.label}</span>
+                <small className="opacity-60">
+                  {kneeSectionCounts[section.key] || 0}
+                </small>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <label className="implant-picker-surface relative block rounded-md">
         <Search className="implant-picker-muted pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />

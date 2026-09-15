@@ -1,10 +1,12 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { useMemo, useState } from "react";
 import {
   CheckCircle2,
   Image as ImageIcon,
   Layers,
+  Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
@@ -16,6 +18,34 @@ import {
   SOFT_PRIMARY_BUTTON_CLASS,
   PANEL_VARIANTS,
 } from "@/lib/uiTokens";
+
+const TEMPLATE_GROUPS = [
+  { key: "all", label: "Semua" },
+  { key: "femoral", label: "Femoral" },
+  { key: "tibial", label: "Tibia" },
+];
+
+function getTemplateGroup(template) {
+  const signature = [
+    template?.id,
+    template?.name,
+    template?.label,
+    template?.category,
+    template?.system,
+    template?.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (/\b(tibial|tibia)\b|(?:^|[-_])tib(?:[-_]|$)/.test(signature)) {
+    return "tibial";
+  }
+  if (/\b(femoral|femur)\b|(?:^|[-_])fem(?:[-_]|$)/.test(signature)) {
+    return "femoral";
+  }
+  return "other";
+}
 
 export default function TemplateStoragePicker({
   templates,
@@ -30,6 +60,45 @@ export default function TemplateStoragePicker({
   sourceLabel,
   compact = false,
 }) {
+  const [activeGroup, setActiveGroup] = useState("all");
+  const groupCounts = useMemo(
+    () =>
+      templates.reduce(
+        (result, template) => {
+          const group = getTemplateGroup(template);
+          result.all += 1;
+          if (group === "femoral" || group === "tibial") result[group] += 1;
+          return result;
+        },
+        { all: 0, femoral: 0, tibial: 0 },
+      ),
+    [templates],
+  );
+  const visibleTemplates = useMemo(
+    () =>
+      activeGroup === "all"
+        ? templates
+        : templates.filter(
+            (template) => getTemplateGroup(template) === activeGroup,
+          ),
+    [activeGroup, templates],
+  );
+
+  const selectGroup = (group) => {
+    setActiveGroup(group);
+    if (group === "all") return;
+    const selectedStillVisible = templates.some(
+      (template) =>
+        String(template.id) === String(selectedTemplateId) &&
+        getTemplateGroup(template) === group,
+    );
+    if (selectedStillVisible) return;
+    const firstTemplate = templates.find(
+      (template) => getTemplateGroup(template) === group,
+    );
+    if (firstTemplate) onSelectTemplate(firstTemplate.id);
+  };
+
   return (
     <motion.div
       layout
@@ -81,6 +150,35 @@ export default function TemplateStoragePicker({
         </button>
       </div>
 
+      <div
+        className="grid grid-cols-3 gap-1 rounded-md border border-slate-200 bg-slate-100/70 p-1"
+        role="tablist"
+        aria-label="Kelompok template"
+      >
+        {TEMPLATE_GROUPS.map((group) => {
+          const active = activeGroup === group.key;
+          return (
+            <button
+              key={group.key}
+              type="button"
+              onClick={() => selectGroup(group.key)}
+              className={`min-h-8 rounded px-1.5 text-[9px] font-black transition ${
+                active
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-white/80 hover:text-slate-800"
+              }`}
+              role="tab"
+              aria-selected={active}
+            >
+              {group.label}
+              <small className="ml-1 opacity-60">
+                {groupCounts[group.key] || 0}
+              </small>
+            </button>
+          );
+        })}
+      </div>
+
       {templates.length === 0 ? (
         <div
           className={`${SOFT_INSET_CLASS} px-3 py-3 text-[11px] text-slate-500`}
@@ -89,7 +187,15 @@ export default function TemplateStoragePicker({
         </div>
       ) : (
         <div className="max-h-44 space-y-1.5 overflow-y-auto">
-          {templates.map((template) => {
+          {visibleTemplates.length === 0 ? (
+            <div
+              className={`${SOFT_INSET_CLASS} px-3 py-3 text-center text-[10px] text-slate-500`}
+            >
+              Belum ada template{" "}
+              {activeGroup === "tibial" ? "Tibia" : "Femoral"}.
+            </div>
+          ) : null}
+          {visibleTemplates.map((template) => {
             const isSelected =
               String(template.id) === String(selectedTemplateId);
             return (
