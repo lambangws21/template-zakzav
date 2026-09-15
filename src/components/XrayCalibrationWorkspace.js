@@ -8105,7 +8105,7 @@ export default function XrayCalibrationWorkspace({
   const findClosestLineId = useCallback(
     (imagePoint) => {
       const thresholdInImage =
-        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 8) / view.scale;
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 14) / view.scale;
       let pickedId = null;
       let minDistance = Infinity;
 
@@ -12778,18 +12778,19 @@ export default function XrayCalibrationWorkspace({
 
       if (hitLine) {
         const sizingIntent = getSizingLineIntent(hitLine);
-        if (isNativeMobileSimpleUi) {
+        if (isNativeMobileSimpleUi || sizingIntent) {
           setSelectedLineId(hitLine.id);
         }
         setHoveredMeasurementInfo(null);
         if (sizingIntent) {
           setLineLabelHoverInfo(null);
           setSizingLineHoverInfo({ lineId: hitLine.id, ...tooltipPoint });
+          clearTouchHoverDismissTimer();
         } else {
           setSizingLineHoverInfo(null);
           setLineLabelHoverInfo({ lineId: hitLine.id, ...tooltipPoint });
+          scheduleTouchHoverDismiss();
         }
-        scheduleTouchHoverDismiss();
         return true;
       }
 
@@ -12836,6 +12837,7 @@ export default function XrayCalibrationWorkspace({
       return false;
     },
     [
+      clearTouchHoverDismissTimer,
       clearTouchHoverDetails,
       findAngleLabelByPoint,
       findCircleLabelByPoint,
@@ -15888,20 +15890,11 @@ export default function XrayCalibrationWorkspace({
               key: hoveredResultKey,
               startedAt: now,
             };
-            scheduleTouchHoverDismiss();
           }
-          const hoverResultExpired = Boolean(
-            hoveredResultKey &&
-              now - desktopHoverSessionRef.current.startedAt >= 3000,
-          );
           const hoverScreenX = Math.round(point.x);
           const hoverScreenY = Math.round(point.y);
           setLineLabelHoverInfo((cur) => {
-            if (
-              !hoveredLineLabel ||
-              hoveredLabelSizingIntent ||
-              hoverResultExpired
-            ) {
+            if (!hoveredLineLabel || hoveredLabelSizingIntent) {
               return cur ? null : cur;
             }
             if (
@@ -15918,12 +15911,8 @@ export default function XrayCalibrationWorkspace({
             };
           });
           setSizingLineHoverInfo((cur) => {
-            if (
-              !hoveredSizingLine ||
-              !hoveredLineSizingIntent ||
-              hoverResultExpired
-            ) {
-              return cur ? null : cur;
+            if (!hoveredSizingLine || !hoveredLineSizingIntent) {
+              return cur;
             }
             if (
               cur?.lineId === hoveredSizingLine.id &&
@@ -15939,7 +15928,6 @@ export default function XrayCalibrationWorkspace({
             };
           });
           setHoveredMeasurementInfo((current) => {
-            if (hoverResultExpired) return current ? null : current;
             if (hoveredHkaId !== null) {
               if (current?.type === "hka" && current.id === hoveredHkaId) {
                 return current;
@@ -17053,7 +17041,6 @@ export default function XrayCalibrationWorkspace({
       scheduleHkaUpdate,
       scheduleLinesUpdate,
       schedulePlanningGuidesUpdate,
-      scheduleTouchHoverDismiss,
       scheduleViewportUpdate,
       screenToImagePoint,
       sizingLineHoverInfo,
@@ -17634,7 +17621,9 @@ export default function XrayCalibrationWorkspace({
         return false;
       }
       const apparentSizeMm = realSizeMm * (magFactor / 100);
-      const factor = apparentSizeMm / lenPx;
+      // The reference is already a known real-world size. Applying the
+      // magnification percentage again inflated every subsequent measurement.
+      const factor = realSizeMm / lenPx;
       const normalizedAt100Mag = factor * (Number(sourceZoomPercent) / 100);
       setMmPerPixel(factor);
       setCalibrationLineId(referenceMagLine.id);
@@ -17643,7 +17632,7 @@ export default function XrayCalibrationWorkspace({
         setMmPerPixelAt100Input(normalizedAt100Mag.toFixed(6));
       }
       setNotice(
-        `Kalibrasi magnifikasi ${magFactor}% aktif. Real: ${realSizeMm}mm → Tampak: ${apparentSizeMm.toFixed(1)}mm. Faktor: ${factor.toFixed(6)} mm/px.`,
+        `Kalibrasi magnifikasi aktif. Referensi nyata: ${realSizeMm}mm (estimasi tampak ${apparentSizeMm.toFixed(1)}mm pada ${magFactor}%). Faktor: ${factor.toFixed(6)} mm/px.`,
       );
       return true;
     }
@@ -23718,23 +23707,16 @@ export default function XrayCalibrationWorkspace({
               Number.isFinite(value)
                 ? `${value.toFixed(digits).replace(/\.?0+$/, "")} mm`
                 : "-";
-            const TOOLTIP_W = sizing.kind === "femoral" ? 300 : 280;
-            const TOOLTIP_OFFSET = 18;
             const vpW =
               typeof window !== "undefined" ? window.innerWidth : 1200;
-            const vpH =
-              typeof window !== "undefined" ? window.innerHeight : 800;
-            let tx = sizingLineHoverInfo.screenX + TOOLTIP_OFFSET;
-            let ty = sizingLineHoverInfo.screenY + TOOLTIP_OFFSET;
-            if (tx + TOOLTIP_W > vpW - 8) {
-              tx = sizingLineHoverInfo.screenX - TOOLTIP_W - TOOLTIP_OFFSET;
-            }
-            if (ty > vpH * 0.6) {
-              ty =
-                sizingLineHoverInfo.screenY -
-                TOOLTIP_OFFSET -
-                (sizing.kind === "femoral" ? 190 : 135);
-            }
+            const canvasRect =
+              overlayCanvasRef.current?.getBoundingClientRect?.() || null;
+            const TOOLTIP_W = Math.min(
+              sizing.kind === "femoral" ? 300 : 280,
+              vpW - 24,
+            );
+            const tx = Math.max(12, Math.round((canvasRect?.left || 0) + 12));
+            const ty = Math.max(72, Math.round((canvasRect?.top || 60) + 12));
 
             return (
               <motion.div
@@ -23744,7 +23726,6 @@ export default function XrayCalibrationWorkspace({
                 exit={{ opacity: 0, scale: 0.92, y: 4 }}
                 transition={{ duration: 0.14 }}
                 className="pointer-events-auto fixed z-[121]"
-                onPointerLeave={() => setSizingLineHoverInfo(null)}
                 style={{ left: tx, top: ty, width: TOOLTIP_W }}
               >
                 <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-[0_8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl">
@@ -23766,6 +23747,14 @@ export default function XrayCalibrationWorkspace({
                     <span className="truncate text-[8px] font-bold text-slate-400">
                       {sizing.sourceText}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setSizingLineHoverInfo(null)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-500"
+                      aria-label="Tutup rekomendasi implant"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
 
                   <div className="px-3 py-2">
@@ -23888,40 +23877,61 @@ export default function XrayCalibrationWorkspace({
             initial={{ opacity: 0, y: 8, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.96 }}
-            className="fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[119] flex w-[min(270px,calc(100vw-24px))] items-center gap-2 rounded-[16px] border border-cyan-300/30 bg-slate-950/92 p-2 text-white shadow-[0_8px_26px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:right-5 sm:bottom-5"
+            className="fixed top-[calc(env(safe-area-inset-top)+72px)] left-3 z-[119] w-[min(290px,calc(100vw-24px))] rounded-[16px] border border-cyan-300/30 bg-slate-950/92 p-2 text-white shadow-[0_8px_26px_rgba(0,0,0,0.36)] backdrop-blur-xl"
           >
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[8px] font-black tracking-widest text-cyan-300 uppercase">
-                {selectedLineSizing.kind === "tibial"
-                  ? "Normmed Tibial DRAFT"
-                  : "Normmed Femoral"}
-              </p>
-              <p className="truncate text-[11px] font-black">
-                {selectedLine?.name || `Line #${selectedLine?.id}`} · Size{" "}
-                {selectedLineSizing.primary.size}
-              </p>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[8px] font-black tracking-widest text-cyan-300 uppercase">
+                  {selectedLineSizing.kind === "tibial"
+                    ? "Normmed Tibial DRAFT"
+                    : "Normmed Femoral"}
+                </p>
+                <p className="truncate text-[11px] font-black">
+                  {selectedLine?.name || `Line #${selectedLine?.id}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedLineId(null)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8 text-slate-300"
+                aria-label="Tutup rekomendasi"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                useRecommendedNormmedTemplate({
-                  size: selectedLineSizing.primary.size,
-                  dimension: selectedLineSizing.inferredDimension,
-                  component: selectedLineSizing.kind,
-                })
-              }
-              className="min-h-9 shrink-0 rounded-xl bg-cyan-600 px-3 text-[9px] font-black text-white"
-            >
-              Gunakan
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedLineId(null)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/8 text-slate-300"
-              aria-label="Tutup rekomendasi"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              {selectedLineSizing.dimensionItems
+                ?.filter(
+                  (item) => item.key === "width" || item.key === "length",
+                )
+                .map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() =>
+                      useRecommendedNormmedTemplate({
+                        size: item.match.size,
+                        dimension: item.key,
+                        component: selectedLineSizing.kind,
+                      })
+                    }
+                    className={`min-h-10 rounded-xl border px-2 text-left ${
+                      item.active
+                        ? "border-cyan-300/50 bg-cyan-500/20"
+                        : "border-white/10 bg-white/7"
+                    }`}
+                  >
+                    <span className="block text-[8px] font-bold text-slate-400">
+                      {item.key === "width"
+                        ? "ML / AP View"
+                        : "AP / Lateral View"}
+                    </span>
+                    <span className="block text-[11px] font-black text-white">
+                      Size {item.match.size}
+                    </span>
+                  </button>
+                ))}
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -45150,7 +45160,7 @@ export default function XrayCalibrationWorkspace({
 
                       <div className="px-2.5 py-2">
                         {mobileNativeLineSizing ? (
-                          <div className="mb-1.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-[14px] border border-white/10 bg-white/7 px-2 py-1.5">
+                          <div className="mb-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5 rounded-[14px] border border-white/10 bg-white/7 px-2 py-1.5">
                             <div className="min-w-0">
                               <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">
                                 {mobileNativeLineSizing.title}
@@ -45161,19 +45171,39 @@ export default function XrayCalibrationWorkspace({
                                   : mobileNativeLineSizing.message}
                               </p>
                             </div>
-                            {mobileNativeLineSizing.primary ? (
-                              <div className="rounded-2xl bg-white/10 px-2 py-1 text-center">
-                                <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">
-                                  Normmed
-                                </p>
-                                <p
-                                  className="text-lg font-black"
-                                  style={{ color: mobileNativeLineColor }}
+                            {mobileNativeLineSizing.dimensionItems
+                              ?.filter(
+                                (item) =>
+                                  item.key === "width" || item.key === "length",
+                              )
+                              .map((item) => (
+                                <button
+                                  key={item.key}
+                                  type="button"
+                                  onClick={() =>
+                                    useRecommendedNormmedTemplate({
+                                      size: item.match.size,
+                                      dimension: item.key,
+                                      component: mobileNativeLineSizing.kind,
+                                    })
+                                  }
+                                  className={`min-w-12 rounded-xl border px-1.5 py-1 text-center ${
+                                    item.active
+                                      ? "border-cyan-300/40 bg-cyan-400/16"
+                                      : "border-white/10 bg-white/8"
+                                  }`}
                                 >
-                                  {mobileNativeLineSizing.primary.size}
-                                </p>
-                              </div>
-                            ) : null}
+                                  <span className="block text-[7px] font-black text-slate-400 uppercase">
+                                    {item.key === "width" ? "ML" : "AP"}
+                                  </span>
+                                  <span
+                                    className="block text-[11px] font-black"
+                                    style={{ color: mobileNativeLineColor }}
+                                  >
+                                    S{item.match.size}
+                                  </span>
+                                </button>
+                              ))}
                           </div>
                         ) : mobileNativeLinePresetInfo ? (
                           <p className="mb-1.5 line-clamp-1 rounded-[14px] border border-white/10 bg-white/7 px-2 py-1.5 text-[9px] leading-4 font-semibold text-slate-300">
