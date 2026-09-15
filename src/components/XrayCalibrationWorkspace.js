@@ -963,6 +963,8 @@ export default function XrayCalibrationWorkspace({
   const [draftCut, setDraftCut] = useState(null);
   const [draftFreeLine, setDraftFreeLine] = useState(null);
   const [freeLineMode, setFreeLineMode] = useState(DEFAULT_FREE_LINE_MODE);
+  const [freeCutMode, setFreeCutMode] = useState("copy");
+  const [freeCutModePickerOpen, setFreeCutModePickerOpen] = useState(false);
   const [draftFreeLineTargetLayerId, setDraftFreeLineTargetLayerId] =
     useState(null);
   const [cutLayers, setCutLayers] = useState([]);
@@ -4126,6 +4128,14 @@ export default function XrayCalibrationWorkspace({
         imageSrc: isImageBackedLayerKind(layer.kind)
           ? getPersistableImageSrc(layer.imageSrc)
           : "",
+        cutMode: layer.cutMode === "real" ? "real" : "copy",
+        sourceLayerId: layer.sourceLayerId ?? null,
+        sourceCutoutPolygon: Array.isArray(layer.sourceCutoutPolygon)
+          ? layer.sourceCutoutPolygon.map((point) => cloneMaskPoint(point))
+          : null,
+        sourceCutoutPoints: Array.isArray(layer.sourceCutoutPoints)
+          ? layer.sourceCutoutPoints.map((point) => cloneMaskPoint(point))
+          : null,
         maskPoints: Array.isArray(layer.maskPoints)
           ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
@@ -6625,27 +6635,47 @@ export default function XrayCalibrationWorkspace({
     [handleToolChange],
   );
 
-  const activateCanvasFreeCut = useCallback(() => {
-    if (!image) {
-      mainUploadInputRef.current?.click();
-      setNotice("Upload X-ray dulu sebelum memakai Free Cut.");
-      return;
-    }
+  const activateCanvasFreeCut = useCallback(
+    (requestedMode) => {
+      if (!image) {
+        mainUploadInputRef.current?.click();
+        setNotice("Upload X-ray dulu sebelum memakai Free Cut.");
+        return;
+      }
 
-    setDraftCut(null);
-    setHistoryPaused(false);
-    setSelectedCutLayerId(null);
-    setSelectedCutLayerExtraIds([]);
-    setSelectedFreeLinePointIndex(null);
-    setMobileObjectSettingsOpen(false);
-    setSimpleMobilePanel(null);
-    setPlanningImplantModalOpen(false);
-    setMobileControlsOpen(false);
-    handleToolChange("cut");
-    setNotice(
-      "Free Cut X-ray aktif. Buat minimal 3 titik pada canvas, lalu tap titik awal atau tekan Enter untuk selesai.",
-    );
-  }, [handleToolChange, image]);
+      if (requestedMode !== "copy" && requestedMode !== "real") {
+        setFreeCutModePickerOpen(true);
+        return;
+      }
+
+      setFreeCutMode(requestedMode);
+      setFreeCutModePickerOpen(false);
+      setDraftCut(null);
+      setHistoryPaused(false);
+      setSelectedCutLayerExtraIds([]);
+      setSelectedFreeLinePointIndex(null);
+      setMobileObjectSettingsOpen(false);
+      setSimpleMobilePanel(null);
+      setPlanningImplantModalOpen(false);
+      setMobileControlsOpen(false);
+      handleToolChange("cut");
+      setNotice(
+        requestedMode === "real"
+          ? "Real Cut aktif. Area sumber akan dilubangi setelah fragmen dibuat. Buat minimal 3 titik, lalu tap titik awal atau tekan Enter."
+          : "Copy Cut aktif. Sumber tetap utuh. Buat minimal 3 titik, lalu tap titik awal atau tekan Enter.",
+      );
+    },
+    [handleToolChange, image],
+  );
+
+  useEffect(() => {
+    if (!freeCutModePickerOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setFreeCutModePickerOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [freeCutModePickerOpen]);
 
   const completeDraftCut = useCallback(() => {
     if (!image || !draftCut || !Array.isArray(draftCut.points)) return false;
@@ -6670,7 +6700,7 @@ export default function XrayCalibrationWorkspace({
           sourceImage: targetLayer.image,
           polygonPoints: draftCut.points,
           layerId: nextCutLayerIdRef.current,
-          name: `Free Cut ${nextCutLayerIdRef.current} from ${targetLayer.name || `Layer #${targetLayer.id}`}`,
+          name: `${freeCutMode === "real" ? "Real Cut" : "Copy Cut"} ${nextCutLayerIdRef.current} from ${targetLayer.name || `Layer #${targetLayer.id}`}`,
         })
       : buildFreeCutLayerFromPoints({
           sourceImage: image,
@@ -6678,7 +6708,7 @@ export default function XrayCalibrationWorkspace({
           sourceOffsetY: cropRect?.y || 0,
           polygonPoints: draftCut.points,
           layerId: nextCutLayerIdRef.current,
-          name: `Free Cut ${nextCutLayerIdRef.current}`,
+          name: `${freeCutMode === "real" ? "Real Cut" : "Copy Cut"} ${nextCutLayerIdRef.current}`,
         });
 
     if (!nextLayer) {
@@ -6686,6 +6716,20 @@ export default function XrayCalibrationWorkspace({
       setHistoryPaused(false);
       setNotice("Free cut gagal dibuat. Pastikan area cut cukup besar.");
       return false;
+    }
+
+    nextLayer.cutMode = freeCutMode;
+    if (freeCutMode === "real") {
+      if (canCutTargetLayer) {
+        nextLayer.sourceCutoutPoints = draftCut.points.map((point) =>
+          toLayerMaskPoint(point, targetLayer, { clampToBounds: true }),
+        );
+      } else {
+        nextLayer.sourceCutoutPolygon = draftCut.points.map((point) => ({
+          x: point.x,
+          y: point.y,
+        }));
+      }
     }
 
     nextCutLayerIdRef.current += 1;
@@ -6700,8 +6744,8 @@ export default function XrayCalibrationWorkspace({
     setNotice(
       nextLayer.imageSrc
         ? canCutTargetLayer
-          ? `Free cut dari ${targetLayer.name || `Layer #${targetLayer.id}`} berhasil dibuat sebagai layer baru.`
-          : "Free cut berhasil dibuat sebagai layer baru."
+          ? `${freeCutMode === "real" ? "Real cut" : "Copy cut"} dari ${targetLayer.name || `Layer #${targetLayer.id}`} berhasil dibuat sebagai layer baru.`
+          : `${freeCutMode === "real" ? "Real cut" : "Copy cut"} berhasil dibuat sebagai layer baru.`
         : "Free cut berhasil dibuat. Layer ini tampil normal, tetapi sumber remote tidak bisa diekspor ulang.",
     );
     setTool(getIdleTool());
@@ -6714,6 +6758,7 @@ export default function XrayCalibrationWorkspace({
     cutLayers,
     draftCut,
     focusLayerSettings,
+    freeCutMode,
     getIdleTool,
     image,
     shouldUseMobileOneShotTool,
@@ -7202,6 +7247,18 @@ export default function XrayCalibrationWorkspace({
                 curveStrength: getFreeLineCurveStrength(layer),
                 isFreeLineDraftLayer: Boolean(layer.isFreeLineDraftLayer),
                 imageSrc: layer.imageSrc || "",
+                cutMode: layer.cutMode === "real" ? "real" : "copy",
+                sourceLayerId: layer.sourceLayerId ?? null,
+                sourceCutoutPolygon: Array.isArray(layer.sourceCutoutPolygon)
+                  ? layer.sourceCutoutPolygon
+                      .map((point) => cloneMaskPoint(point))
+                      .filter(Boolean)
+                  : null,
+                sourceCutoutPoints: Array.isArray(layer.sourceCutoutPoints)
+                  ? layer.sourceCutoutPoints
+                      .map((point) => cloneMaskPoint(point))
+                      .filter(Boolean)
+                  : null,
                 maskPoints: Array.isArray(layer.maskPoints)
                   ? layer.maskPoints
                       .map((point) => cloneMaskPoint(point))
@@ -7844,6 +7901,12 @@ export default function XrayCalibrationWorkspace({
       annotations: annotations.map((item) => cloneAnnotation(item)),
       cutLayers: cutLayers.map((layer) => ({
         ...layer,
+        sourceCutoutPolygon: Array.isArray(layer.sourceCutoutPolygon)
+          ? layer.sourceCutoutPolygon.map((point) => cloneMaskPoint(point))
+          : null,
+        sourceCutoutPoints: Array.isArray(layer.sourceCutoutPoints)
+          ? layer.sourceCutoutPoints.map((point) => cloneMaskPoint(point))
+          : null,
         maskPoints: Array.isArray(layer.maskPoints)
           ? layer.maskPoints.map((point) => cloneMaskPoint(point))
           : null,
@@ -9254,19 +9317,27 @@ export default function XrayCalibrationWorkspace({
         );
       }
 
-      const alignmentMaskLayer = cutLayers.find(
-        (layer) =>
-          !layer.hidden &&
-          Array.isArray(layer.alignmentMaskPolygons) &&
-          layer.alignmentMaskPolygons.length > 0,
-      );
-      if (alignmentMaskLayer) {
+      const baseCutoutPolygons = cutLayers.flatMap((layer) => {
+        const alignmentPolygons =
+          !layer.hidden && Array.isArray(layer.alignmentMaskPolygons)
+            ? layer.alignmentMaskPolygons
+            : [];
+        const realCutPolygon =
+          layer.kind === "free-cut" &&
+          layer.cutMode === "real" &&
+          !layer.sourceLayerId &&
+          Array.isArray(layer.sourceCutoutPolygon)
+            ? [layer.sourceCutoutPolygon]
+            : [];
+        return [...alignmentPolygons, ...realCutPolygon];
+      });
+      if (baseCutoutPolygons.length > 0) {
         imageCtx.save();
         imageCtx.globalCompositeOperation = "destination-out";
         imageCtx.globalAlpha = 1;
         imageCtx.filter = "none";
         imageCtx.fillStyle = "#000000";
-        for (const polygon of alignmentMaskLayer.alignmentMaskPolygons) {
+        for (const polygon of baseCutoutPolygons) {
           if (!Array.isArray(polygon) || polygon.length < 3) continue;
           tracePolygonPath(imageCtx, polygon);
           imageCtx.fill();
@@ -9322,6 +9393,39 @@ export default function XrayCalibrationWorkspace({
               getFreeLineCurveStrength(layer),
             );
             imageCtx.clip();
+          }
+          const sourceCutouts = cutLayers.filter(
+            (cutLayer) =>
+              cutLayer.kind === "free-cut" &&
+              cutLayer.cutMode === "real" &&
+              cutLayer.sourceLayerId === layer.id &&
+              Array.isArray(cutLayer.sourceCutoutPoints) &&
+              cutLayer.sourceCutoutPoints.length >= MIN_FREE_CUT_POINTS,
+          );
+          if (sourceCutouts.length > 0) {
+            const scaleX =
+              displaySize.width / Math.max(1, Number(layer.sourceWidth || 1));
+            const scaleY =
+              displaySize.height / Math.max(1, Number(layer.sourceHeight || 1));
+            imageCtx.beginPath();
+            imageCtx.rect(
+              -displaySize.width / 2,
+              -displaySize.height / 2,
+              displaySize.width,
+              displaySize.height,
+            );
+            for (const cutLayer of sourceCutouts) {
+              const polygon = cutLayer.sourceCutoutPoints;
+              imageCtx.moveTo(polygon[0].x * scaleX, polygon[0].y * scaleY);
+              for (let index = 1; index < polygon.length; index += 1) {
+                imageCtx.lineTo(
+                  polygon[index].x * scaleX,
+                  polygon[index].y * scaleY,
+                );
+              }
+              imageCtx.closePath();
+            }
+            imageCtx.clip("evenodd");
           }
           const didDrawWarped = drawWarpedImageLayer(
             imageCtx,
@@ -23551,6 +23655,78 @@ export default function XrayCalibrationWorkspace({
         aria-hidden="true"
         tabIndex={-1}
       />
+      <AnimatePresence>
+        {freeCutModePickerOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setFreeCutModePickerOpen(false);
+              }
+            }}
+          >
+            <motion.section
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="free-cut-mode-title"
+              className={`${SOFT_PANEL_CLASS} w-full max-w-md rounded-lg border border-white/70 p-3 text-slate-800 shadow-2xl`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[9px] font-black text-cyan-700 uppercase">
+                    Free Cut
+                  </div>
+                  <h2
+                    id="free-cut-mode-title"
+                    className="mt-0.5 text-base font-black text-slate-950"
+                  >
+                    Pilih jenis potongan
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFreeCutModePickerOpen(false)}
+                  className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 bg-white/65 text-slate-600"
+                  aria-label="Tutup pilihan Free Cut"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => activateCanvasFreeCut("copy")}
+                  className="min-h-24 rounded-md border border-slate-300 bg-white/60 p-3 text-left text-slate-700 transition hover:border-cyan-400 hover:bg-cyan-50"
+                >
+                  <Layers className="h-5 w-5 text-cyan-700" />
+                  <strong className="mt-2 block text-xs">Copy Cut</strong>
+                  <span className="mt-1 block text-[10px] leading-4 text-slate-500">
+                    Membuat fragmen baru dan mempertahankan sumber tetap utuh.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => activateCanvasFreeCut("real")}
+                  className="min-h-24 rounded-md border border-slate-300 bg-white/60 p-3 text-left text-slate-700 transition hover:border-rose-400 hover:bg-rose-50"
+                >
+                  <Slice className="h-5 w-5 text-rose-600" />
+                  <strong className="mt-2 block text-xs">Real Cut</strong>
+                  <span className="mt-1 block text-[10px] leading-4 text-slate-500">
+                    Membuat fragmen dan melubangi area asal saat dipindahkan.
+                  </span>
+                </button>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <AnimatePresence>
         {actionToast ? (
           <motion.div
