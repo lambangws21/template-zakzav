@@ -1,0 +1,272 @@
+[
+  {
+    "source_page": 1,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      610.0,
+      1201.0,
+      1790.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      359.0,
+      945.0,
+      1523.0,
+      2105.0
+    ],
+    "px_per_mm_x": 11.799999999999999,
+    "px_per_mm_y": 11.632,
+    "maximum_ruler_linear_fit_residual_mm": 0.2407152682255807,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 2,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      615.0,
+      1205.0,
+      1796.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      368.0,
+      952.0,
+      1531.0,
+      2113.0
+    ],
+    "px_per_mm_x": 11.81,
+    "px_per_mm_y": 11.628,
+    "maximum_ruler_linear_fit_residual_mm": 0.14619883040936063,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 3,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      617.0,
+      1208.0,
+      1796.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      365.0,
+      951.0,
+      1530.0,
+      2111.0
+    ],
+    "px_per_mm_x": 11.79,
+    "px_per_mm_y": 11.634000000000002,
+    "maximum_ruler_linear_fit_residual_mm": 0.22348289496302173,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 4,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      632.0,
+      1222.0,
+      1812.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      366.0,
+      952.0,
+      1535.0,
+      2119.0
+    ],
+    "px_per_mm_x": 11.8,
+    "px_per_mm_y": 11.684000000000001,
+    "maximum_ruler_linear_fit_residual_mm": 0.09414584046556672,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 5,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      628.0,
+      1213.0,
+      1804.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      363.0,
+      946.0,
+      1529.0,
+      2110.0
+    ],
+    "px_per_mm_x": 11.76,
+    "px_per_mm_y": 11.648000000000001,
+    "maximum_ruler_linear_fit_residual_mm": 0.1700680272109037,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 6,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      619.0,
+      1213.0,
+      1805.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      383.0,
+      968.0,
+      1548.0,
+      2129.0
+    ],
+    "px_per_mm_x": 11.86,
+    "px_per_mm_y": 11.636,
+    "maximum_ruler_linear_fit_residual_mm": 0.1632863526985101,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 7,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      616.0,
+      1207.0,
+      1798.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      390.0,
+      974.0,
+      1555.0,
+      2138.0
+    ],
+    "px_per_mm_x": 11.819999999999999,
+    "px_per_mm_y": 11.65,
+    "maximum_ruler_linear_fit_residual_mm": 0.08583690987122511,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 8,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      615.0,
+      1207.0,
+      1798.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      375.0,
+      960.0,
+      1539.0,
+      2124.0
+    ],
+    "px_per_mm_x": 11.83,
+    "px_per_mm_y": 11.652,
+    "maximum_ruler_linear_fit_residual_mm": 0.15447991761072624,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  },
+  {
+    "source_page": 9,
+    "horizontal_ticks_mm": [
+      50,
+      100,
+      150
+    ],
+    "horizontal_ticks_source_px": [
+      605.0,
+      1198.0,
+      1787.0
+    ],
+    "vertical_ticks_mm": [
+      0,
+      50,
+      100,
+      150
+    ],
+    "vertical_ticks_source_px": [
+      390.0,
+      972.0,
+      1553.0,
+      2137.0
+    ],
+    "px_per_mm_x": 11.820000000000002,
+    "px_per_mm_y": 11.644,
+    "maximum_ruler_linear_fit_residual_mm": 0.112803158488412,
+    "source_printed_magnification": "1.15:1",
+    "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+  }
+]

@@ -73,6 +73,10 @@ function getKneeComponent(item) {
     : "femoral";
 }
 
+function getZimmerTemplateSource(item) {
+  return item?.templateSource === "svg" ? "svg" : "ruler";
+}
+
 function Action({ icon: Icon, children, active, className = "", ...props }) {
   return (
     <button
@@ -202,6 +206,7 @@ export default function PlanningWorkspace({
   const [system, setSystem] = useState("");
   const [component, setComponent] = useState("");
   const [kneeComponent, setKneeComponent] = useState("femoral");
+  const [zimmerTemplateSource, setZimmerTemplateSource] = useState("ruler");
   const [guideItemId, setGuideItemId] = useState(null);
   const [guideMinimized, setGuideMinimized] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
@@ -278,16 +283,33 @@ export default function PlanningWorkspace({
       ? available.filter((item) => getKneeComponent(item) === kneeComponent)
       : available;
   const brands = [...new Set(componentAvailable.map((item) => item.brand))];
-  const systems = [
-    ...new Set(
-      componentAvailable
-        .filter((item) => !brand || item.brand === brand)
-        .map((item) => item.system),
-    ),
-  ];
-  const choices = componentAvailable.filter(
+  const templateSourceScope = componentAvailable.filter(
+    (item) => !component || item.type === component,
+  );
+  const zimmerTemplateSourceCounts = templateSourceScope.reduce(
+    (result, item) => {
+      if (item.brand === "Zimmer") {
+        result[getZimmerTemplateSource(item)] += 1;
+      }
+      return result;
+    },
+    { svg: 0, ruler: 0 },
+  );
+  const brandAvailable = componentAvailable.filter(
+    (item) => !brand || item.brand === brand,
+  );
+  const canChooseZimmerSource =
+    brand === "Zimmer" &&
+    zimmerTemplateSourceCounts.svg > 0 &&
+    (procedure === "tka" || component === "stem");
+  const sourceAvailable = canChooseZimmerSource
+    ? brandAvailable.filter(
+        (item) => getZimmerTemplateSource(item) === zimmerTemplateSource,
+      )
+    : brandAvailable;
+  const systems = [...new Set(sourceAvailable.map((item) => item.system))];
+  const choices = sourceAvailable.filter(
     (item) =>
-      (!brand || item.brand === brand) &&
       (!system || item.system === system) &&
       (!component || item.type === component),
   );
@@ -344,6 +366,7 @@ export default function PlanningWorkspace({
     setSystem("");
     setComponent("");
     setKneeComponent("femoral");
+    setZimmerTemplateSource("ruler");
     setMetricEditor(null);
     setStepExpanded(true);
     setGuideItemId(null);
@@ -2483,7 +2506,22 @@ export default function PlanningWorkspace({
                     type="button"
                     key={type}
                     data-active={component === type}
-                    onClick={() => setComponent(component === type ? "" : type)}
+                    onClick={() => {
+                      const nextComponent = component === type ? "" : type;
+                      setComponent(nextComponent);
+                      setSystem("");
+                      setImplantSearch("");
+                      const firstItem = componentAvailable.find(
+                        (item) =>
+                          (!nextComponent || item.type === nextComponent) &&
+                          (!brand || item.brand === brand) &&
+                          (brand !== "Zimmer" ||
+                            nextComponent !== "stem" ||
+                            getZimmerTemplateSource(item) ===
+                              zimmerTemplateSource),
+                      );
+                      if (firstItem) onSelectImplant(firstItem.id);
+                    }}
                   >
                     {type}
                   </button>
@@ -2534,8 +2572,21 @@ export default function PlanningWorkspace({
               <select
                 value={brand}
                 onChange={(event) => {
-                  setBrand(event.target.value);
+                  const nextBrand = event.target.value;
+                  setBrand(nextBrand);
                   setSystem("");
+                  const shouldFilterSource =
+                    nextBrand === "Zimmer" &&
+                    zimmerTemplateSourceCounts.svg > 0 &&
+                    (procedure === "tka" || component === "stem");
+                  const firstItem = componentAvailable.find(
+                    (item) =>
+                      (!nextBrand || item.brand === nextBrand) &&
+                      (!component || item.type === component) &&
+                      (!shouldFilterSource ||
+                        getZimmerTemplateSource(item) === zimmerTemplateSource),
+                  );
+                  if (firstItem) onSelectImplant(firstItem.id);
                 }}
               >
                 <option value="">All brands</option>
@@ -2544,6 +2595,43 @@ export default function PlanningWorkspace({
                 ))}
               </select>
             </label>
+            {canChooseZimmerSource ? (
+              <div
+                className={styles.zimmerSourceTabs}
+                role="tablist"
+                aria-label="Sumber template Zimmer"
+              >
+                {[
+                  { key: "ruler", label: "Ruler" },
+                  { key: "svg", label: "SVG" },
+                ].map((source) => (
+                  <button
+                    type="button"
+                    key={source.key}
+                    data-active={zimmerTemplateSource === source.key}
+                    role="tab"
+                    aria-selected={zimmerTemplateSource === source.key}
+                    onClick={() => {
+                      setZimmerTemplateSource(source.key);
+                      setSystem("");
+                      setImplantSearch("");
+                      const firstItem = componentAvailable.find(
+                        (item) =>
+                          item.brand === "Zimmer" &&
+                          (!component || item.type === component) &&
+                          getZimmerTemplateSource(item) === source.key,
+                      );
+                      if (firstItem) onSelectImplant(firstItem.id);
+                    }}
+                  >
+                    <strong>{source.label}</strong>
+                    <small>
+                      {zimmerTemplateSourceCounts[source.key] || 0} template
+                    </small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className={styles.implantGrid}>
               {visibleChoices.length ? (
                 visibleChoices.map((item) => (

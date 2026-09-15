@@ -1,0 +1,45 @@
+AVENIR STANDARD RIGHT - STEM ONLY SVG
+
+Isi: 18 SVG terpisah, Size 1-9, AP dan lateral.
+Sumber: Avenir stem Templating in Keynote.pdf, 9 halaman.
+Label sumber: Avenir Muller Stem, Standard, Right.
+
+GAMBAR
+Hanya kontur stem dan detail sambungan taper yang terlihat pada tampak
+lateral. Tidak ada teks, ruler, titik pusat kepala, sumbu, atau garis ukur.
+Garis hijau #009900, tebal 0.18 mm. Latar dan interior benar-benar transparan.
+Semua bentuk berupa path SVG; tidak ada PNG/JPEG yang disisipkan.
+Kontur ditelusuri dari raster sumber dan celah kecil di garis disambungkan.
+Ini bukan file CAD asli produsen; beberapa sisi sumber kabur/berbayang.
+
+SKALA DARI RULER
+1 unit viewBox SVG = 1 mm. Atribut width dan height menggunakan mm.
+Kalibrasi setiap halaman dilakukan terpisah:
+- Sumbu X: tick 5, 10, 15 cm pada ruler horizontal.
+- Sumbu Y: tick 0, 5, 10, 15 cm pada ruler vertikal.
+Regresi linear dipakai untuk tiap sumbu agar perubahan proporsi raster
+pada slide diperhitungkan. Tidak ada pengalian 1.15 lagi: ukuran mm
+langsung mengikuti angka pada ruler. Informasi Magnification 1.15:1
+pada sumber dicatat di metadata untuk pelacakan.
+
+PNG PREVIEW menggunakan pembesaran fisik yang sama untuk semua size,
+tetapi bukan file yang dipakai untuk kalibrasi atau pengukuran.
+
+MARGIN DAN IMPOR
+Setiap SVG memiliki margin transparan 1 mm pada tiap sisi.
+Ukuran canvas karena itu 2 mm lebih besar daripada bounding box kontur.
+Dimensi bounding box bukan ukuran stem nominal dari katalog.
+Gunakan Dimensi_SVG_mm.csv atau metadata SVG ketika mengimpor ke aplikasi.
+Jika aplikasi mengubah SVG menjadi piksel, jangan menganggap 1 px = 1 mm.
+Pertahankan skala berdasarkan dimensi mm file, dan kalibrasikan X-ray
+secara terpisah. Cetak hanya pada Actual Size/100%, tanpa Fit to Page,
+dan periksa hasil cetak terhadap penggaris sebelum digunakan.
+
+PEMERIKSAAN
+Semua SVG dibuka dan dirender kembali; ukuran fisik dan transparansi
+diperiksa. Kontur ditinjau sebagai overlay pada gambar sumber.
+Koordinat tick ruler ada di Kalibrasi_Ruler.json.
+Perbandingan posisi path terhadap garis raster ada di Pemeriksaan.json;
+angka tersebut bukan toleransi klinis dan bukan pengujian ukuran implan.
+Periksa terhadap template resmi dan kalibrasi yang benar sebelum digunakan
+untuk keputusan klinis.

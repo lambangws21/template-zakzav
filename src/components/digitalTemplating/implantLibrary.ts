@@ -22,6 +22,7 @@ export type ImplantLibraryItem = {
   physicalWidthMm?: number;
   physicalHeightMm?: number;
   implantViewMode?: "ap" | "lateral";
+  templateSource?: "svg" | "ruler";
 };
 
 export type CanvasObjectBase = {
@@ -67,7 +68,175 @@ export type TemplatingCanvasObject =
   | ShapeCanvasObject
   | ImageCanvasObject;
 
+const AVENIR_STANDARD_SVG_SIZES = [
+  { size: 1, ap: [54.79661, 152.36107], lateral: [16.66102, 153.47868] },
+  { size: 2, ap: [55.51397, 159.03474], lateral: [16.81795, 159.98074] },
+  { size: 3, ap: [56.62256, 164.36892], lateral: [16.92791, 166.17397] },
+  { size: 4, ap: [57.67797, 170.69223], lateral: [17, 171.71927] },
+  { size: 5, ap: [58.46259, 177.39492], lateral: [17.98639, 178.33929] },
+  { size: 6, ap: [59.84148, 183.50567], lateral: [18.27319, 184.53695] },
+  { size: 7, ap: [61.64467, 189.03863], lateral: [18.83587, 190.24034] },
+  { size: 8, ap: [64.29924, 194.67079], lateral: [19.32883, 196.21559] },
+  { size: 9, ap: [66.3824, 201.15836], lateral: [19.6819, 202.3607] },
+];
+
+const AVENIR_STANDARD_SVG_LIBRARY: ImplantLibraryItem[] =
+  AVENIR_STANDARD_SVG_SIZES.flatMap((dimensions) =>
+    [
+      { view: "AP", viewKey: "ap" as const, canvas: dimensions.ap },
+      {
+        view: "Lateral",
+        viewKey: "lateral" as const,
+        canvas: dimensions.lateral,
+      },
+    ].map((view) => ({
+      id: `avenir-standard-right-${view.viewKey}-${dimensions.size}-svg`,
+      brand: "Zimmer",
+      system: `Avenir Standard Right ${view.view} (SVG)`,
+      type: "stem" as const,
+      size: dimensions.size,
+      label: `Avenir Standard Right ${view.view} Size ${dimensions.size}`,
+      imageSrc: `/Avenir_Stem_Only_SVG/${view.view === "AP" ? "AP" : "Lateral"}/Avenir_Standard_Right_Size_0${dimensions.size}_${view.view}.svg`,
+      physicalWidthMm: view.canvas[0],
+      physicalHeightMm: view.canvas[1],
+      implantViewMode: view.viewKey,
+      templateSource: "svg" as const,
+    })),
+  );
+
+const ML_TAPER_SVG_SIZES = [
+  {
+    size: 4,
+    fileSize: "4",
+    ap: [77.8313253, 173.85352194],
+    lateral: [16.86746988, 172.88766904],
+  },
+  {
+    size: 5,
+    fileSize: "5",
+    ap: [76.9047619, 177.82634304],
+    lateral: [16.66666667, 176.87157072],
+  },
+  {
+    size: 6,
+    fileSize: "6",
+    ap: [76.9047619, 177.88189393],
+    lateral: [16.66666667, 176.92682336],
+  },
+  {
+    size: 7.5,
+    fileSize: "7_5",
+    ap: [76.9047619, 177.66662537],
+    lateral: [16.66666667, 176.7127106],
+  },
+  {
+    size: 9,
+    fileSize: "9",
+    ap: [75.11627907, 174.40459314],
+    lateral: [16.27906977, 173.46186561],
+  },
+  {
+    size: 10,
+    fileSize: "10",
+    ap: [77.8313253, 178.30002196],
+    lateral: [16.86746988, 177.33362618],
+  },
+  {
+    size: 11,
+    fileSize: "11",
+    ap: [77.8313253, 178.27764706],
+    lateral: [16.86746988, 177.31137255],
+  },
+  {
+    size: 12.5,
+    fileSize: "12_5",
+    ap: [78.7804878, 181.76605286],
+    lateral: [17.07317073, 180.80049614],
+  },
+];
+
+const ML_TAPER_SVG_LIBRARY: ImplantLibraryItem[] = ML_TAPER_SVG_SIZES.flatMap(
+  (dimensions) =>
+    [
+      { view: "AP", viewKey: "ap" as const, canvas: dimensions.ap },
+      {
+        view: "Lateral",
+        viewKey: "lateral" as const,
+        canvas: dimensions.lateral,
+      },
+    ].map((view) => ({
+      id: `ml-taper-svg-${view.viewKey}-${String(dimensions.size).replace(".", "-")}`,
+      brand: "Zimmer",
+      system: `M/L Taper ${view.view} (SVG)`,
+      type: "stem" as const,
+      size: dimensions.size,
+      label: `M/L Taper ${view.view} Size ${dimensions.size} (SVG)`,
+      imageSrc: `/ML_Taper_SVG/ML_Taper_Size_${dimensions.fileSize}_${view.view}_Reference.svg`,
+      physicalWidthMm: view.canvas[0],
+      physicalHeightMm: view.canvas[1],
+      implantViewMode: view.viewKey,
+      templateSource: "svg" as const,
+    })),
+);
+
+const ZIMMER_KNEE_SVG_LIBRARY: ImplantLibraryItem[] = [
+  {
+    id: "zimmer-nexgen-svg-femoral-a-ap",
+    brand: "Zimmer",
+    system: "NexGen Femoral SVG (Provisional)",
+    type: "knee",
+    size: "A",
+    label: "NexGen Femoral A AP (SVG, Provisional)",
+    imageSrc: "/Knee_Femoral_Tibia_Zimmer_SVG/Femoral_A_AP.svg",
+    physicalWidthMm: 55.732064,
+    physicalHeightMm: 43.256018,
+    implantViewMode: "ap",
+    templateSource: "svg",
+  },
+  {
+    id: "zimmer-nexgen-svg-femoral-a-lateral",
+    brand: "Zimmer",
+    system: "NexGen Femoral SVG (Provisional)",
+    type: "knee",
+    size: "A",
+    label: "NexGen Femoral A Lateral (SVG, Provisional)",
+    imageSrc: "/Knee_Femoral_Tibia_Zimmer_SVG/Femoral_A_Lateral.svg",
+    physicalWidthMm: 48.218082,
+    physicalHeightMm: 44.67375,
+    implantViewMode: "lateral",
+    templateSource: "svg",
+  },
+  {
+    id: "zimmer-nexgen-svg-tibial-1-ap",
+    brand: "Zimmer",
+    system: "NexGen Tibial SVG (Provisional)",
+    type: "knee",
+    size: 1,
+    label: "NexGen Tibia Size 1 AP (SVG, Provisional)",
+    imageSrc: "/Knee_Femoral_Tibia_Zimmer_SVG/Tibia_Size_1_AP.svg",
+    physicalWidthMm: 52.476313,
+    physicalHeightMm: 45.48381,
+    implantViewMode: "ap",
+    templateSource: "svg",
+  },
+  {
+    id: "zimmer-nexgen-svg-tibial-1-lateral",
+    brand: "Zimmer",
+    system: "NexGen Tibial SVG (Provisional)",
+    type: "knee",
+    size: 1,
+    label: "NexGen Tibia Size 1 Lateral (SVG, Provisional)",
+    imageSrc: "/Knee_Femoral_Tibia_Zimmer_SVG/Tibia_Size_1_Lateral.svg",
+    physicalWidthMm: 44.20775,
+    physicalHeightMm: 44.810686,
+    implantViewMode: "lateral",
+    templateSource: "svg",
+  },
+];
+
 export const STEM_LIBRARY: ImplantLibraryItem[] = [
+  ...AVENIR_STANDARD_SVG_LIBRARY,
+  ...ML_TAPER_SVG_LIBRARY,
   {
     id: "cup-trilogy",
     brand: "Zimmer",
@@ -393,6 +562,7 @@ export const STEM_LIBRARY: ImplantLibraryItem[] = [
     label: "NexGen Ruler",
     imageSrc: "/images/implant/nexgen/Ruler.png",
   },
+  ...ZIMMER_KNEE_SVG_LIBRARY,
   ...[
     { size: 1, width: 56, length: 45.3, height: 51.8 },
     { size: 2, width: 60.5, length: 49.25, height: 56.65 },

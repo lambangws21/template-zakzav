@@ -1,0 +1,992 @@
+[
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 1,
+    "view": "AP",
+    "reference_number": "01.06010.001",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 1,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 52.79661,
+      "height": 150.36107
+    },
+    "canvas_mm": {
+      "width": 54.79661,
+      "height": 152.36107
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 1,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        610.0,
+        1201.0,
+        1790.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        359.0,
+        945.0,
+        1523.0,
+        2105.0
+      ],
+      "px_per_mm_x": 11.799999999999999,
+      "px_per_mm_y": 11.632,
+      "maximum_ruler_linear_fit_residual_mm": 0.2407152682255807,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_01_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 1,
+    "view": "Lateral",
+    "reference_number": "01.06010.001",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 1,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 14.66102,
+      "height": 151.47868
+    },
+    "canvas_mm": {
+      "width": 16.66102,
+      "height": 153.47868
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 1,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        610.0,
+        1201.0,
+        1790.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        359.0,
+        945.0,
+        1523.0,
+        2105.0
+      ],
+      "px_per_mm_x": 11.799999999999999,
+      "px_per_mm_y": 11.632,
+      "maximum_ruler_linear_fit_residual_mm": 0.2407152682255807,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_01_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 2,
+    "view": "AP",
+    "reference_number": "01.06010.002",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 2,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 53.51397,
+      "height": 157.03474
+    },
+    "canvas_mm": {
+      "width": 55.51397,
+      "height": 159.03474
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 2,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        615.0,
+        1205.0,
+        1796.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        368.0,
+        952.0,
+        1531.0,
+        2113.0
+      ],
+      "px_per_mm_x": 11.81,
+      "px_per_mm_y": 11.628,
+      "maximum_ruler_linear_fit_residual_mm": 0.14619883040936063,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_02_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 2,
+    "view": "Lateral",
+    "reference_number": "01.06010.002",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 2,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 14.81795,
+      "height": 157.98074
+    },
+    "canvas_mm": {
+      "width": 16.81795,
+      "height": 159.98074
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 2,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        615.0,
+        1205.0,
+        1796.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        368.0,
+        952.0,
+        1531.0,
+        2113.0
+      ],
+      "px_per_mm_x": 11.81,
+      "px_per_mm_y": 11.628,
+      "maximum_ruler_linear_fit_residual_mm": 0.14619883040936063,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_02_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 3,
+    "view": "AP",
+    "reference_number": "01.06010.003",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 3,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 54.62256,
+      "height": 162.36892
+    },
+    "canvas_mm": {
+      "width": 56.62256,
+      "height": 164.36892
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 3,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        617.0,
+        1208.0,
+        1796.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        365.0,
+        951.0,
+        1530.0,
+        2111.0
+      ],
+      "px_per_mm_x": 11.79,
+      "px_per_mm_y": 11.634000000000002,
+      "maximum_ruler_linear_fit_residual_mm": 0.22348289496302173,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_03_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 3,
+    "view": "Lateral",
+    "reference_number": "01.06010.003",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 3,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 14.92791,
+      "height": 164.17397
+    },
+    "canvas_mm": {
+      "width": 16.92791,
+      "height": 166.17397
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 3,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        617.0,
+        1208.0,
+        1796.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        365.0,
+        951.0,
+        1530.0,
+        2111.0
+      ],
+      "px_per_mm_x": 11.79,
+      "px_per_mm_y": 11.634000000000002,
+      "maximum_ruler_linear_fit_residual_mm": 0.22348289496302173,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_03_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 4,
+    "view": "AP",
+    "reference_number": "01.06010.004",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 4,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 55.67797,
+      "height": 168.69223
+    },
+    "canvas_mm": {
+      "width": 57.67797,
+      "height": 170.69223
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 4,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        632.0,
+        1222.0,
+        1812.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        366.0,
+        952.0,
+        1535.0,
+        2119.0
+      ],
+      "px_per_mm_x": 11.8,
+      "px_per_mm_y": 11.684000000000001,
+      "maximum_ruler_linear_fit_residual_mm": 0.09414584046556672,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_04_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 4,
+    "view": "Lateral",
+    "reference_number": "01.06010.004",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 4,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 15.0,
+      "height": 169.71927
+    },
+    "canvas_mm": {
+      "width": 17.0,
+      "height": 171.71927
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 4,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        632.0,
+        1222.0,
+        1812.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        366.0,
+        952.0,
+        1535.0,
+        2119.0
+      ],
+      "px_per_mm_x": 11.8,
+      "px_per_mm_y": 11.684000000000001,
+      "maximum_ruler_linear_fit_residual_mm": 0.09414584046556672,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_04_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 5,
+    "view": "AP",
+    "reference_number": "01.06010.005",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 5,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 56.46259,
+      "height": 175.39492
+    },
+    "canvas_mm": {
+      "width": 58.46259,
+      "height": 177.39492
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 5,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        628.0,
+        1213.0,
+        1804.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        363.0,
+        946.0,
+        1529.0,
+        2110.0
+      ],
+      "px_per_mm_x": 11.76,
+      "px_per_mm_y": 11.648000000000001,
+      "maximum_ruler_linear_fit_residual_mm": 0.1700680272109037,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_05_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 5,
+    "view": "Lateral",
+    "reference_number": "01.06010.005",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 5,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 15.98639,
+      "height": 176.33929
+    },
+    "canvas_mm": {
+      "width": 17.98639,
+      "height": 178.33929
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 5,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        628.0,
+        1213.0,
+        1804.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        363.0,
+        946.0,
+        1529.0,
+        2110.0
+      ],
+      "px_per_mm_x": 11.76,
+      "px_per_mm_y": 11.648000000000001,
+      "maximum_ruler_linear_fit_residual_mm": 0.1700680272109037,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_05_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 6,
+    "view": "AP",
+    "reference_number": "01.06010.006",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 6,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 57.84148,
+      "height": 181.50567
+    },
+    "canvas_mm": {
+      "width": 59.84148,
+      "height": 183.50567
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 6,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        619.0,
+        1213.0,
+        1805.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        383.0,
+        968.0,
+        1548.0,
+        2129.0
+      ],
+      "px_per_mm_x": 11.86,
+      "px_per_mm_y": 11.636,
+      "maximum_ruler_linear_fit_residual_mm": 0.1632863526985101,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_06_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 6,
+    "view": "Lateral",
+    "reference_number": "01.06010.006",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 6,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 16.27319,
+      "height": 182.53695
+    },
+    "canvas_mm": {
+      "width": 18.27319,
+      "height": 184.53695
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 6,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        619.0,
+        1213.0,
+        1805.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        383.0,
+        968.0,
+        1548.0,
+        2129.0
+      ],
+      "px_per_mm_x": 11.86,
+      "px_per_mm_y": 11.636,
+      "maximum_ruler_linear_fit_residual_mm": 0.1632863526985101,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_06_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 7,
+    "view": "AP",
+    "reference_number": "01.06010.007",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 7,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 59.64467,
+      "height": 187.03863
+    },
+    "canvas_mm": {
+      "width": 61.64467,
+      "height": 189.03863
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 7,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        616.0,
+        1207.0,
+        1798.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        390.0,
+        974.0,
+        1555.0,
+        2138.0
+      ],
+      "px_per_mm_x": 11.819999999999999,
+      "px_per_mm_y": 11.65,
+      "maximum_ruler_linear_fit_residual_mm": 0.08583690987122511,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_07_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 7,
+    "view": "Lateral",
+    "reference_number": "01.06010.007",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 7,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 16.83587,
+      "height": 188.24034
+    },
+    "canvas_mm": {
+      "width": 18.83587,
+      "height": 190.24034
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 7,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        616.0,
+        1207.0,
+        1798.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        390.0,
+        974.0,
+        1555.0,
+        2138.0
+      ],
+      "px_per_mm_x": 11.819999999999999,
+      "px_per_mm_y": 11.65,
+      "maximum_ruler_linear_fit_residual_mm": 0.08583690987122511,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_07_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 8,
+    "view": "AP",
+    "reference_number": "01.06010.008",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 8,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 62.29924,
+      "height": 192.67079
+    },
+    "canvas_mm": {
+      "width": 64.29924,
+      "height": 194.67079
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 8,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        615.0,
+        1207.0,
+        1798.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        375.0,
+        960.0,
+        1539.0,
+        2124.0
+      ],
+      "px_per_mm_x": 11.83,
+      "px_per_mm_y": 11.652,
+      "maximum_ruler_linear_fit_residual_mm": 0.15447991761072624,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_08_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 8,
+    "view": "Lateral",
+    "reference_number": "01.06010.008",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 8,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 17.32883,
+      "height": 194.21559
+    },
+    "canvas_mm": {
+      "width": 19.32883,
+      "height": 196.21559
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 8,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        615.0,
+        1207.0,
+        1798.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        375.0,
+        960.0,
+        1539.0,
+        2124.0
+      ],
+      "px_per_mm_x": 11.83,
+      "px_per_mm_y": 11.652,
+      "maximum_ruler_linear_fit_residual_mm": 0.15447991761072624,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_08_Lateral.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 9,
+    "view": "AP",
+    "reference_number": "01.06010.009",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 9,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 64.3824,
+      "height": 199.15836
+    },
+    "canvas_mm": {
+      "width": 66.3824,
+      "height": 201.15836
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 9,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        605.0,
+        1198.0,
+        1787.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        390.0,
+        972.0,
+        1553.0,
+        2137.0
+      ],
+      "px_per_mm_x": 11.820000000000002,
+      "px_per_mm_y": 11.644,
+      "maximum_ruler_linear_fit_residual_mm": 0.112803158488412,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "AP/Avenir_Standard_Right_Size_09_AP.svg"
+  },
+  {
+    "implant": "Avenir Muller Stem",
+    "variant": "Standard",
+    "side_as_printed": "Right",
+    "size": 9,
+    "view": "Lateral",
+    "reference_number": "01.06010.009",
+    "source_pdf": "Avenir stem Templating in Keynote.pdf",
+    "source_page": 9,
+    "units": "mm",
+    "svg_user_unit_mm": 1,
+    "contour_bounds_mm": {
+      "width": 17.6819,
+      "height": 200.3607
+    },
+    "canvas_mm": {
+      "width": 19.6819,
+      "height": 202.3607
+    },
+    "transparent_padding_mm": 1,
+    "stroke_width_mm": 0.18,
+    "calibration": {
+      "source_page": 9,
+      "horizontal_ticks_mm": [
+        50,
+        100,
+        150
+      ],
+      "horizontal_ticks_source_px": [
+        605.0,
+        1198.0,
+        1787.0
+      ],
+      "vertical_ticks_mm": [
+        0,
+        50,
+        100,
+        150
+      ],
+      "vertical_ticks_source_px": [
+        390.0,
+        972.0,
+        1553.0,
+        2137.0
+      ],
+      "px_per_mm_x": 11.820000000000002,
+      "px_per_mm_y": 11.644,
+      "maximum_ruler_linear_fit_residual_mm": 0.112803158488412,
+      "source_printed_magnification": "1.15:1",
+      "conversion": "Source ruler labels define mm directly. No second 1.15 multiplier. Separate linear X and Y calibration."
+    },
+    "method": "Guided contour tracing of supplied raster, not manufacturer CAD. Measurement axes, circles, rulers and text removed. Lateral taper interface retained.",
+    "status": "Calibrated to source ruler; verify source/image calibration before clinical use.",
+    "file": "Lateral/Avenir_Standard_Right_Size_09_Lateral.svg"
+  }
+]
