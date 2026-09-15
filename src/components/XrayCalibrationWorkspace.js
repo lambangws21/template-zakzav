@@ -39564,7 +39564,6 @@ export default function XrayCalibrationWorkspace({
             selectedLayerId={selectedCutLayerId}
             onSelectLayer={(id) => {
               setSelectedCutLayerId(id);
-              openLayerSettingsModal(id);
             }}
             onUpdateLayer={(id, patch) => {
               const layer = cutLayers.find((item) => item.id === id);

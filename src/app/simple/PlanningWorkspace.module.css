@@ -470,17 +470,12 @@
 .zimmerSourceTabs strong { font-size: 10px; }
 .zimmerSourceTabs small { margin-top: 2px; color: var(--pw-muted); font-size: 8px; }
 .implantGrid { display: grid; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; padding: 4px 14px 14px; }
-.implantFamily { grid-column: 1 / -1; min-width: 0; }
-.implantFamilyHeading { display: flex; align-items: center; justify-content: space-between; padding: 5px 2px 7px; color: var(--pw-text); }
-.implantFamilyHeading strong { font-size: 11px; }
-.implantFamilyHeading span { color: var(--pw-muted); font-size: 8px; }
-.implantFamilyItems { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.implantGrid > button, .implantFamilyItems > button { display: grid; min-height: 112px; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; text-align: left; }
-.implantGrid > button[data-selected="true"], .implantFamilyItems > button[data-selected="true"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-accent); }
-.implantGrid > button img, .implantFamilyItems > button img { width: 64px; height: 90px; object-fit: contain; background: #fff; border-radius: 4px; }
-.implantGrid > button strong, .implantGrid > button small, .implantGrid > button em, .implantFamilyItems > button strong, .implantFamilyItems > button small, .implantFamilyItems > button em { display: block; overflow-wrap: anywhere; }
-.implantGrid > button small, .implantFamilyItems > button small { margin-top: 5px; color: var(--pw-muted); font-size: 9px; }
-.implantGrid > button em, .implantFamilyItems > button em { margin-top: 8px; font-size: 10px; font-style: normal; font-weight: 700; }
+.implantGrid > button { display: grid; min-height: 112px; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; text-align: left; }
+.implantGrid > button[data-selected="true"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-accent); }
+.implantGrid > button img { width: 64px; height: 90px; object-fit: contain; background: #fff; border-radius: 4px; }
+.implantGrid > button strong, .implantGrid > button small, .implantGrid > button em { display: block; overflow-wrap: anywhere; }
+.implantGrid > button small { margin-top: 5px; color: var(--pw-muted); font-size: 9px; }
+.implantGrid > button em { margin-top: 8px; font-size: 10px; font-style: normal; font-weight: 700; }
 .exportPanel { width: min(420px, calc(100% - 24px)); }
 .exportPanel > p { padding: 4px 14px 0; color: var(--pw-muted); }
 .exportOptions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px 16px; }
@@ -555,8 +550,8 @@
   .viewTools { top: 6px; right: max(6px, env(safe-area-inset-right)); }
   .modalBackdrop { align-items: end; padding: 0; }
   .modalPanel, .implantBrowser, .exportPanel { width: 100%; max-width: none; max-height: min(78dvh, 720px); border-radius: 16px 16px 0 0; border-bottom: 0; }
-  .implantGrid, .implantFamilyItems { grid-template-columns: 1fr; }
-  .implantGrid > button, .implantFamilyItems > button { min-height: 96px; }
+  .implantGrid { grid-template-columns: 1fr; }
+  .implantGrid > button { min-height: 96px; }
   .kneeComponentTabs > button { min-height: 44px; padding-inline: 7px; }
   .kneeComponentTabs img { width: 30px; height: 30px; flex-basis: 30px; }
   .exportOptions { grid-template-columns: 1fr; }
