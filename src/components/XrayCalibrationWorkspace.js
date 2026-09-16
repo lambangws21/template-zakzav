@@ -8205,15 +8205,52 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const guide of planningGuides) {
-        const distance = distancePointToSegment(imagePoint, {
-          x1: guide.anchorStart.x,
-          y1: guide.anchorStart.y,
-          x2: guide.anchorEnd.x,
-          y2: guide.anchorEnd.y,
-        });
-        if (distance <= thresholdInImage && distance < minDistance) {
-          minDistance = distance;
-          pickedId = guide.id;
+        if (guide.hidden) continue;
+        const geometry =
+          guide.kind === "valgusCut"
+            ? buildValgusCutGeometry(guide.anchorStart, guide.anchorEnd, guide)
+            : guide.kind === "tibialSlope"
+              ? buildTibialSlopeGeometry(
+                  guide.anchorStart,
+                  guide.anchorEnd,
+                  guide,
+                )
+              : buildTibialCutGeometry(
+                  guide.anchorStart,
+                  guide.anchorEnd,
+                  guide,
+                );
+        const visibleSegments = [
+          {
+            x1: guide.anchorStart.x,
+            y1: guide.anchorStart.y,
+            x2: guide.anchorEnd.x,
+            y2: guide.anchorEnd.y,
+          },
+          geometry
+            ? {
+                x1: geometry.baseA.x,
+                y1: geometry.baseA.y,
+                x2: geometry.baseB.x,
+                y2: geometry.baseB.y,
+              }
+            : null,
+          geometry
+            ? {
+                x1: geometry.cutA.x,
+                y1: geometry.cutA.y,
+                x2: geometry.cutB.x,
+                y2: geometry.cutB.y,
+              }
+            : null,
+        ].filter(Boolean);
+
+        for (const segment of visibleSegments) {
+          const distance = distancePointToSegment(imagePoint, segment);
+          if (distance <= thresholdInImage && distance < minDistance) {
+            minDistance = distance;
+            pickedId = guide.id;
+          }
         }
       }
 
@@ -13456,7 +13493,27 @@ export default function XrayCalibrationWorkspace({
         tool === "pan"
       ) {
         const directLayerId = findCutLayerByPoint(imagePoint);
-        if (directLayerId !== null) {
+        const directLineHandle = findClosestHandle(imagePoint);
+        const directLineId = findClosestLineId(imagePoint);
+        const directLineLabelId = findLineLabelByPoint(point);
+        const hasEditableDirectLineHit = [
+          directLineHandle?.lineId,
+          directLineLabelId,
+          directLineId,
+        ].some(
+          (lineId) =>
+            lineId !== null && lineId !== undefined && !isLineLocked(lineId),
+        );
+        const hasDirectPlanningGuideHit = Boolean(
+          findPlanningGuideLabelByPoint(point) !== null ||
+            findClosestPlanningGuideHandle(imagePoint) ||
+            findClosestPlanningGuideId(imagePoint) !== null,
+        );
+        if (
+          directLayerId !== null &&
+          !hasEditableDirectLineHit &&
+          !hasDirectPlanningGuideHit
+        ) {
           const targetLayer = cutLayers.find(
             (layer) => layer.id === directLayerId,
           );
@@ -13714,9 +13771,21 @@ export default function XrayCalibrationWorkspace({
           (lineId) =>
             lineId !== null && lineId !== undefined && !isLineLocked(lineId),
         );
+      const planningGuideLabelHitId =
+        tool === "pan" ? findPlanningGuideLabelByPoint(point) : null;
+      const planningGuideHandleHit =
+        tool === "pan" ? findClosestPlanningGuideHandle(imagePoint) : null;
+      const planningGuideBodyHitId =
+        tool === "pan" ? findClosestPlanningGuideId(imagePoint) : null;
+      const shouldPrioritizePlanningGuideInteraction = Boolean(
+        planningGuideLabelHitId !== null ||
+          planningGuideHandleHit ||
+          planningGuideBodyHitId !== null,
+      );
       const shouldPrioritizeTouchLayer =
         touchLayerHitId !== null &&
         !shouldPrioritizeLineInteraction &&
+        !shouldPrioritizePlanningGuideInteraction &&
         (mobileCanvasMode === "edit" ||
           selectedCutLayerIdsSet.has(touchLayerHitId));
 
@@ -14000,7 +14069,11 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      if (tool === "pan" && !shouldPrioritizeLineInteraction) {
+      if (
+        tool === "pan" &&
+        !shouldPrioritizeLineInteraction &&
+        !shouldPrioritizePlanningGuideInteraction
+      ) {
         const hitFreeLineCurveHandle = findFreeLineCurveHandle(imagePoint);
         if (hitFreeLineCurveHandle) {
           const targetLayer = cutLayers.find(
@@ -18045,6 +18118,15 @@ export default function XrayCalibrationWorkspace({
       return;
     }
 
+    if (selectedPlanningGuide) {
+      setPlanningGuides((prev) =>
+        prev.filter((guide) => guide.id !== selectedPlanningGuide.id),
+      );
+      setSelectedPlanningGuideId(null);
+      setNotice("Planning guide terpilih dihapus.");
+      return;
+    }
+
     if (selectedCutLayer) {
       setCutLayers((prev) =>
         prev.filter((item) => item.id !== selectedCutLayer.id),
@@ -18067,6 +18149,7 @@ export default function XrayCalibrationWorkspace({
     selectedCutLayer,
     selectedHka,
     selectedLine,
+    selectedPlanningGuide,
   ]);
   const shouldEmphasizeCalibration =
     highlightCalibrationPanel ||
@@ -21644,7 +21727,11 @@ export default function XrayCalibrationWorkspace({
       selectedPlanningGuide,
   );
   const hasColorEditableSelection = Boolean(
-    selectedLine || selectedCircle || selectedHka || selectedAnnotation,
+    selectedLine ||
+      selectedCircle ||
+      selectedHka ||
+      selectedAnnotation ||
+      selectedPlanningGuide,
   );
   const simpleColorPanelTitle = selectedLine
     ? selectedLine.name || `Line #${selectedLine.id}`
@@ -21654,11 +21741,17 @@ export default function XrayCalibrationWorkspace({
         ? `HKA #${selectedHka.id}`
         : selectedAnnotation
           ? selectedAnnotation.text || `Text #${selectedAnnotation.id}`
-          : "Color";
+          : selectedPlanningGuide
+            ? selectedPlanningGuide.kind === "valgusCut"
+              ? "Distal Cutting"
+              : selectedPlanningGuide.kind === "tibialSlope"
+                ? "Tibial Slope"
+                : "Tibial Cutting"
+            : "Color";
   const openSimpleColorPanel = useCallback(() => {
     if (!hasColorEditableSelection) {
       setNotice(
-        "Pilih Line, Text, Circle, atau HKA dulu untuk mengubah warna.",
+        "Pilih Line, Guide, Text, Circle, atau HKA dulu untuk mengubah warna.",
       );
       return;
     }
@@ -22808,6 +22901,26 @@ export default function XrayCalibrationWorkspace({
         value: linear(circle.radius * 2),
       }),
     );
+    planningGuides.forEach((guide, index) => {
+      const guideName =
+        guide.kind === "valgusCut"
+          ? "Distal Cutting"
+          : guide.kind === "tibialSlope"
+            ? "Tibial Slope"
+            : "Tibial Cutting";
+      entries.push({
+        id: `guide:${guide.id}`,
+        name: `${guideName} #${index + 1}`,
+        metric: getPlanningGuideLabelText(guide, index),
+        type: "planningGuide",
+        unit: "deg",
+        value: Number.isFinite(Number(guide.angleDeg))
+          ? Number(guide.angleDeg)
+          : null,
+        guideId: guide.id,
+        color: guide.color || getPlanningGuideAutoColor(guide),
+      });
+    });
     hkaSets
       .slice()
       .reverse()
@@ -22906,6 +23019,7 @@ export default function XrayCalibrationWorkspace({
   }, [
     isPlanningLayout,
     lines,
+    planningGuides,
     angles,
     circles,
     hkaSets,
@@ -22913,6 +23027,8 @@ export default function XrayCalibrationWorkspace({
     hasCalibration,
     mmPerPixel,
     lineTypeLabel,
+    getPlanningGuideAutoColor,
+    getPlanningGuideLabelText,
     lineIntersectionAngleOverlays,
     canvasCup,
     planningSession.side,
@@ -26426,6 +26542,52 @@ export default function XrayCalibrationWorkspace({
                         &#65291; Tambah Panah &#8594; Tap Struktur
                       </button>
                     )}
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedPlanningGuide ? (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-black tracking-widest text-slate-400 uppercase">
+                    Guide Color
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {LINE_COLOR_OPTIONS.map((color) => (
+                      <ColorSwatchButton
+                        key={`quick-guide-color-${color}`}
+                        color={color}
+                        active={selectedPlanningGuideColor === color}
+                        label={`Warna guide ${color}`}
+                        onClick={() =>
+                          setPlanningGuides((prev) =>
+                            prev.map((guide) =>
+                              guide.id === selectedPlanningGuide.id
+                                ? { ...guide, color, customColor: true }
+                                : guide,
+                            ),
+                          )
+                        }
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={selectedPlanningGuideColor}
+                      onChange={(event) =>
+                        setPlanningGuides((prev) =>
+                          prev.map((guide) =>
+                            guide.id === selectedPlanningGuide.id
+                              ? {
+                                  ...guide,
+                                  color: event.target.value,
+                                  customColor: true,
+                                }
+                              : guide,
+                          ),
+                        )
+                      }
+                      className="h-9 w-12 cursor-pointer rounded-xl border border-white/70 bg-transparent"
+                      aria-label="Custom guide color"
+                    />
                   </div>
                 </div>
               ) : null}
@@ -39955,6 +40117,40 @@ export default function XrayCalibrationWorkspace({
                 );
               }
               setNotice(`Nama info pengukuran diubah menjadi “${name}”.`);
+            }}
+            onSelectMeasurement={(measurementId) => {
+              const [kind, ...idParts] = String(measurementId).split(":");
+              if (kind !== "guide") return;
+              const rawId = idParts.join(":");
+              const guide = planningGuides.find(
+                (item) => String(item.id) === rawId,
+              );
+              if (!guide) return;
+              handleToolChange("pan");
+              selectPlanningGuideForEdit(guide.id);
+              triggerSelectionPulse("planning", guide.id);
+            }}
+            onDeleteMeasurement={(measurementId) => {
+              const [kind, ...idParts] = String(measurementId).split(":");
+              if (kind !== "guide") return;
+              const rawId = idParts.join(":");
+              const guide = planningGuides.find(
+                (item) => String(item.id) === rawId,
+              );
+              if (guide) removePlanningGuide(guide.id);
+            }}
+            onUpdateMeasurementColor={(measurementId, color) => {
+              const [kind, ...idParts] = String(measurementId).split(":");
+              if (kind !== "guide") return;
+              const rawId = idParts.join(":");
+              setPlanningGuides((previous) =>
+                previous.map((guide) =>
+                  String(guide.id) === rawId
+                    ? { ...guide, color, customColor: true }
+                    : guide,
+                ),
+              );
+              setNotice("Warna planning guide diperbarui.");
             }}
           >
             <div

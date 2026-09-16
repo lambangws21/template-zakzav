@@ -197,6 +197,9 @@ export default function PlanningWorkspace({
   isDark,
   onToggleMeasurementLabel,
   onRenameMeasurement,
+  onSelectMeasurement,
+  onDeleteMeasurement,
+  onUpdateMeasurementColor,
   alignmentPlan,
   alignmentSettings,
   onAlignmentSetting,
@@ -267,6 +270,8 @@ export default function PlanningWorkspace({
           ? item.sourceLineIds
           : [],
         sourceShowLabel: item.sourceShowLabel !== false,
+        color: item.color || null,
+        type: item.type || null,
         clinical: false,
       }));
     return [...clinicalRows, ...supplementalRows];
@@ -1282,6 +1287,11 @@ export default function PlanningWorkspace({
                   )
                     ? sourceMeasurement.id
                     : null;
+                  const guideMeasurementId = /^guide:/.test(
+                    sourceMeasurement?.id || "",
+                  )
+                    ? sourceMeasurement.id
+                    : null;
                   const displayName =
                     sourceMeasurement?.name || row.name || row.key;
                   return (
@@ -1308,6 +1318,41 @@ export default function PlanningWorkspace({
                             }}
                           />
                         </label>
+                      )}
+                      {guideMeasurementId && (
+                        <div className={styles.metricEditorActions}>
+                          <Action
+                            icon={MousePointer2}
+                            onClick={() =>
+                              onSelectMeasurement?.(guideMeasurementId)
+                            }
+                          >
+                            Pilih di Canvas
+                          </Action>
+                          <label className={styles.metricColorControl}>
+                            Warna
+                            <input
+                              type="color"
+                              value={sourceMeasurement?.color || "#38bdf8"}
+                              onChange={(event) =>
+                                onUpdateMeasurementColor?.(
+                                  guideMeasurementId,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                          <Action
+                            icon={Trash2}
+                            className={styles.dangerAction}
+                            onClick={() => {
+                              onDeleteMeasurement?.(guideMeasurementId);
+                              setMetricEditor(null);
+                            }}
+                          >
+                            Hapus
+                          </Action>
+                        </div>
                       )}
                       {row.clinical && (
                         <label>
