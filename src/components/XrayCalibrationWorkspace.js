@@ -13680,7 +13680,7 @@ export default function XrayCalibrationWorkspace({
         tool === "pan" && isTouchLikePointer
           ? findMobileHandleAssistHit(point)
           : null;
-      const shouldPrioritizeSelectedLineInteraction = Boolean(
+      const selectedLineDirectHit = Boolean(
         tool === "pan" &&
           selectedLineForHit &&
           !isLineLocked(selectedLineForHit.id) &&
@@ -13697,9 +13697,26 @@ export default function XrayCalibrationWorkspace({
               selectedLineBodyThreshold ||
             findLineLabelByPoint(point) === selectedLineForHit.id),
       );
+      const lineHandleHit =
+        tool === "pan" ? findClosestHandle(imagePoint) : null;
+      const lineLabelHitId =
+        tool === "pan" ? findLineLabelByPoint(point) : null;
+      const lineBodyHitId =
+        tool === "pan" ? findClosestLineId(imagePoint) : null;
+      const shouldPrioritizeLineInteraction =
+        selectedLineDirectHit ||
+        [
+          selectedLineAssistHit?.lineId,
+          lineHandleHit?.lineId,
+          lineLabelHitId,
+          lineBodyHitId,
+        ].some(
+          (lineId) =>
+            lineId !== null && lineId !== undefined && !isLineLocked(lineId),
+        );
       const shouldPrioritizeTouchLayer =
         touchLayerHitId !== null &&
-        !shouldPrioritizeSelectedLineInteraction &&
+        !shouldPrioritizeLineInteraction &&
         (mobileCanvasMode === "edit" ||
           selectedCutLayerIdsSet.has(touchLayerHitId));
 
@@ -13983,7 +14000,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      if (tool === "pan" && !shouldPrioritizeSelectedLineInteraction) {
+      if (tool === "pan" && !shouldPrioritizeLineInteraction) {
         const hitFreeLineCurveHandle = findFreeLineCurveHandle(imagePoint);
         if (hitFreeLineCurveHandle) {
           const targetLayer = cutLayers.find(
