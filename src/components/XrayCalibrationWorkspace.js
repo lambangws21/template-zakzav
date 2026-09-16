@@ -3968,10 +3968,14 @@ export default function XrayCalibrationWorkspace({
     const stillExists = lines.some(
       (line) => line.id === mobileHandleAssist.lineId,
     );
-    if (!stillExists || selectedLineId !== mobileHandleAssist.lineId) {
+    if (
+      !stillExists ||
+      selectedLineId !== mobileHandleAssist.lineId ||
+      lockedLineIds.has(mobileHandleAssist.lineId)
+    ) {
       setMobileHandleAssist(null);
     }
-  }, [lines, mobileHandleAssist, selectedLineId]);
+  }, [lines, lockedLineIds, mobileHandleAssist, selectedLineId]);
 
   useEffect(() => {
     if (!mobileAngleHandleAssist) return;
@@ -8769,7 +8773,10 @@ export default function XrayCalibrationWorkspace({
 
   const findFreeLinePointHandle = useCallback(
     (imagePoint) => {
-      if (!isEditableMaskLayer(selectedCutLayer)) {
+      if (
+        !isEditableMaskLayer(selectedCutLayer) ||
+        selectedCutLayer.lockScale
+      ) {
         return null;
       }
       const thresholdInImage =
@@ -8800,6 +8807,7 @@ export default function XrayCalibrationWorkspace({
     (imagePoint) => {
       if (
         !isEditableMaskLayer(selectedCutLayer) ||
+        selectedCutLayer.lockScale ||
         selectedFreeLinePointIndex === null
       ) {
         return null;
@@ -9166,6 +9174,8 @@ export default function XrayCalibrationWorkspace({
         const controlPoints = getLayerControlPoints(layer);
 
         for (const controlPoint of controlPoints) {
+          if (controlPoint.type === "rotate" && layer.lockRotation) continue;
+          if (controlPoint.type !== "rotate" && layer.lockScale) continue;
           const distance = Math.hypot(
             imagePoint.x - controlPoint.x,
             imagePoint.y - controlPoint.y,
@@ -9946,7 +9956,7 @@ export default function XrayCalibrationWorkspace({
         calibrationSaved: isCalibration,
         pulse: isPulsing || (isCalibrationReference && !isCalibration),
         assistHandleKey:
-          mobileHandleAssist?.lineId === line.id
+          !isLocked && mobileHandleAssist?.lineId === line.id
             ? mobileHandleAssist.handleKey
             : null,
       });
@@ -11125,8 +11135,12 @@ export default function XrayCalibrationWorkspace({
         selectionPulse.id === activeCutLayer.id;
       const corners = getLayerCorners(activeCutLayer);
       const controlPoints = getLayerControlPoints(activeCutLayer);
-      const edgePoints = controlPoints.filter((point) => point.type === "edge");
-      const rotatePoint = controlPoints.find((point) => point.key === "rotate");
+      const edgePoints = activeCutLayer.lockScale
+        ? []
+        : controlPoints.filter((point) => point.type === "edge");
+      const rotatePoint = activeCutLayer.lockRotation
+        ? null
+        : controlPoints.find((point) => point.key === "rotate");
       overlayCtx.save();
       if (isPulsingLayer) {
         overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.4)";
@@ -11165,18 +11179,20 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.fillStyle = "#ffffff";
         overlayCtx.strokeStyle = "#a855f7";
         overlayCtx.lineWidth = 1.8;
-        for (const corner of corners) {
-          const screen = imageToScreenPoint(corner.x, corner.y);
-          overlayCtx.beginPath();
-          overlayCtx.arc(
-            screen.x,
-            screen.y,
-            isPulsingLayer ? 8.2 : 7.4,
-            0,
-            Math.PI * 2,
-          );
-          overlayCtx.fill();
-          overlayCtx.stroke();
+        if (!activeCutLayer.lockScale) {
+          for (const corner of corners) {
+            const screen = imageToScreenPoint(corner.x, corner.y);
+            overlayCtx.beginPath();
+            overlayCtx.arc(
+              screen.x,
+              screen.y,
+              isPulsingLayer ? 8.2 : 7.4,
+              0,
+              Math.PI * 2,
+            );
+            overlayCtx.fill();
+            overlayCtx.stroke();
+          }
         }
         for (const edgePoint of edgePoints) {
           const screen = imageToScreenPoint(edgePoint.x, edgePoint.y);
@@ -11239,7 +11255,7 @@ export default function XrayCalibrationWorkspace({
         );
         overlayCtx.stroke();
 
-        if (activeCutLayer.kind === "free-line") {
+        if (activeCutLayer.kind === "free-line" && !activeCutLayer.lockScale) {
           const vertexPoints = getFreeLineVertexPoints(activeCutLayer);
           const curveHandles =
             selectedFreeLinePointIndex !== null
@@ -13648,7 +13664,16 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      if (tool === "pan" && isTouchLikePointer) {
+      const touchLayerHitId =
+        tool === "pan" && isTouchLikePointer
+          ? findCutLayerByPoint(imagePoint)
+          : null;
+      const shouldPrioritizeTouchLayer =
+        touchLayerHitId !== null &&
+        (mobileCanvasMode === "edit" ||
+          selectedCutLayerIdsSet.has(touchLayerHitId));
+
+      if (tool === "pan" && isTouchLikePointer && !shouldPrioritizeTouchLayer) {
         const assistHandleHit = findMobileHandleAssistHit(point);
         if (assistHandleHit) {
           const targetLine = lines.find(
