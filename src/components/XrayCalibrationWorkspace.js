@@ -13668,8 +13668,38 @@ export default function XrayCalibrationWorkspace({
         tool === "pan" && isTouchLikePointer
           ? findCutLayerByPoint(imagePoint)
           : null;
+      const selectedLineForHit =
+        selectedLineId !== null
+          ? lines.find((line) => line.id === selectedLineId) || null
+          : null;
+      const selectedLineHandleThreshold =
+        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
+      const selectedLineBodyThreshold =
+        (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 14) / view.scale;
+      const selectedLineAssistHit =
+        tool === "pan" && isTouchLikePointer
+          ? findMobileHandleAssistHit(point)
+          : null;
+      const shouldPrioritizeSelectedLineInteraction = Boolean(
+        tool === "pan" &&
+          selectedLineForHit &&
+          !isLineLocked(selectedLineForHit.id) &&
+          (selectedLineAssistHit?.lineId === selectedLineForHit.id ||
+            Math.hypot(
+              imagePoint.x - selectedLineForHit.x1,
+              imagePoint.y - selectedLineForHit.y1,
+            ) <= selectedLineHandleThreshold ||
+            Math.hypot(
+              imagePoint.x - selectedLineForHit.x2,
+              imagePoint.y - selectedLineForHit.y2,
+            ) <= selectedLineHandleThreshold ||
+            distancePointToSegment(imagePoint, selectedLineForHit) <=
+              selectedLineBodyThreshold ||
+            findLineLabelByPoint(point) === selectedLineForHit.id),
+      );
       const shouldPrioritizeTouchLayer =
         touchLayerHitId !== null &&
+        !shouldPrioritizeSelectedLineInteraction &&
         (mobileCanvasMode === "edit" ||
           selectedCutLayerIdsSet.has(touchLayerHitId));
 
@@ -13953,7 +13983,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      if (tool === "pan") {
+      if (tool === "pan" && !shouldPrioritizeSelectedLineInteraction) {
         const hitFreeLineCurveHandle = findFreeLineCurveHandle(imagePoint);
         if (hitFreeLineCurveHandle) {
           const targetLayer = cutLayers.find(
@@ -15721,6 +15751,7 @@ export default function XrayCalibrationWorkspace({
       brushStrength,
       brushColor,
       selectedCutLayerId,
+      selectedLineId,
       placingAnnotationPointer,
       setPlacingAnnotationPointer,
       updateAnnotationById,
