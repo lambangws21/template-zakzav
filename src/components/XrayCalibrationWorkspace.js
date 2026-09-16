@@ -3999,12 +3999,13 @@ export default function XrayCalibrationWorkspace({
 
   useEffect(() => {
     if (!mobilePlanningGuideHandleAssist) return;
-    const stillExists = planningGuides.some(
+    const currentGuide = planningGuides.find(
       (guide) => guide.id === mobilePlanningGuideHandleAssist.guideId,
     );
     if (
-      !stillExists ||
-      selectedPlanningGuideId !== mobilePlanningGuideHandleAssist.guideId
+      !currentGuide ||
+      selectedPlanningGuideId !== mobilePlanningGuideHandleAssist.guideId ||
+      currentGuide.locked
     ) {
       setMobilePlanningGuideHandleAssist(null);
     }
@@ -10996,24 +10997,26 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.lineTo(cutB.x, cutB.y);
       overlayCtx.stroke();
 
-      overlayCtx.beginPath();
-      overlayCtx.arc(
-        anchorStart.x,
-        anchorStart.y,
-        isEmphasizedGuide ? 4.8 : 3.8,
-        0,
-        Math.PI * 2,
-      );
-      overlayCtx.arc(
-        anchorEnd.x,
-        anchorEnd.y,
-        isEmphasizedGuide ? 4.8 : 3.8,
-        0,
-        Math.PI * 2,
-      );
-      overlayCtx.fill();
+      if (!guide.locked) {
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          anchorStart.x,
+          anchorStart.y,
+          isEmphasizedGuide ? 4.8 : 3.8,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.arc(
+          anchorEnd.x,
+          anchorEnd.y,
+          isEmphasizedGuide ? 4.8 : 3.8,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.fill();
+      }
       const assistGeometry =
-        mobilePlanningGuideHandleAssist?.guideId === guide.id
+        !guide.locked && mobilePlanningGuideHandleAssist?.guideId === guide.id
           ? getMobilePlanningGuideHandleAssistGeometry(
               guide,
               mobilePlanningGuideHandleAssist.handleKey,
@@ -13456,6 +13459,12 @@ export default function XrayCalibrationWorkspace({
                 selectPlanningGuideForEdit(planningGuideId, {
                   openPanel: false,
                 });
+                if (targetPlanningGuide.locked) {
+                  setNotice(
+                    "Distal Cutting terkunci. Buka lock dari Measurement untuk mengubahnya.",
+                  );
+                  return;
+                }
                 setHistoryPaused(true);
                 interactionRef.current = {
                   mode: "move-planning-guide",
@@ -14344,6 +14353,12 @@ export default function XrayCalibrationWorkspace({
         setSelectedCutLayerId(null);
         triggerSelectionPulse("planning", targetGuide.id);
         clearMobilePlanningGuideHandleAssist();
+        if (targetGuide.locked) {
+          setNotice(
+            "Distal Cutting terkunci. Buka lock dari Measurement untuk mengubahnya.",
+          );
+          return;
+        }
         setHistoryPaused(true);
         interactionRef.current = {
           mode: "move-planning-guide-label",
@@ -14377,6 +14392,12 @@ export default function XrayCalibrationWorkspace({
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
         clearMobilePlanningGuideHandleAssist();
+        if (targetGuide.locked) {
+          setNotice(
+            "Distal Cutting terkunci. Buka lock dari Measurement untuk mengubahnya.",
+          );
+          return;
+        }
         const assistGeometry = getMobilePlanningGuideHandleAssistGeometry(
           targetGuide,
           assistPlanningGuideHandleHit.handleKey,
@@ -14406,6 +14427,16 @@ export default function XrayCalibrationWorkspace({
           (guide) => guide.id === hitPlanningGuideHandle.guideId,
         );
         if (!targetGuide) return;
+        if (targetGuide.locked) {
+          focusPlanningGuideCanvas(targetGuide.id, {
+            openPanel: true,
+            showNotice: false,
+          });
+          setNotice(
+            "Distal Cutting terkunci. Buka lock dari Measurement untuk mengubahnya.",
+          );
+          return;
+        }
         if (isTouchLikePointer) {
           focusPlanningGuideCanvas(targetGuide.id);
           triggerSelectionPulse("planning", targetGuide.id);
@@ -14431,6 +14462,12 @@ export default function XrayCalibrationWorkspace({
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
         clearMobilePlanningGuideHandleAssist();
+        if (targetGuide.locked) {
+          setNotice(
+            "Distal Cutting terkunci. Buka lock dari Measurement untuk mengubahnya.",
+          );
+          return;
+        }
         interactionRef.current = {
           mode: "move-planning-guide-handle",
           guideId: targetGuide.id,
@@ -16580,6 +16617,28 @@ export default function XrayCalibrationWorkspace({
         const dx = nextImagePoint.x - startImageX;
         const dy = nextImagePoint.y - startImageY;
 
+        if (!interactionRef.current.groupLineOrigins) {
+          const groupIds = new Set(
+            cutLayers
+              .filter((layer) => layerIds.includes(layer.id) && layer.groupId)
+              .map((layer) => layer.groupId),
+          );
+          interactionRef.current.groupLineOrigins = lines
+            .filter(
+              (line) =>
+                line.groupId &&
+                groupIds.has(line.groupId) &&
+                !isLineLocked(line.id),
+            )
+            .map((line) => ({
+              lineId: line.id,
+              x1: line.x1,
+              y1: line.y1,
+              x2: line.x2,
+              y2: line.y2,
+            }));
+        }
+
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) => {
             if (!layerIds.includes(layer.id)) return layer;
@@ -16601,6 +16660,25 @@ export default function XrayCalibrationWorkspace({
             };
           }),
         );
+        const groupLineOrigins = interactionRef.current.groupLineOrigins || [];
+        if (groupLineOrigins.length) {
+          scheduleLinesUpdate((prev) =>
+            prev.map((line) => {
+              const origin = groupLineOrigins.find(
+                (item) => item.lineId === line.id,
+              );
+              return origin
+                ? {
+                    ...line,
+                    x1: origin.x1 + dx,
+                    y1: origin.y1 + dy,
+                    x2: origin.x2 + dx,
+                    y2: origin.y2 + dy,
+                  }
+                : line;
+            }),
+          );
+        }
         return;
       }
 
@@ -16652,6 +16730,8 @@ export default function XrayCalibrationWorkspace({
           pointerOffsetX = 0,
           pointerOffsetY = 0,
         } = interactionRef.current;
+        if (planningGuides.find((guide) => guide.id === guideId)?.locked)
+          return;
         const rawAdjustedPoint = clampToImageBounds({
           x: movePoint.x + pointerOffsetX,
           y: movePoint.y + pointerOffsetY,
@@ -16684,6 +16764,8 @@ export default function XrayCalibrationWorkspace({
         clearSnapPreview();
         const { guideId, startImageX, startImageY, origin } =
           interactionRef.current;
+        if (planningGuides.find((guide) => guide.id === guideId)?.locked)
+          return;
         const nextImagePoint = screenToImagePoint(point.x, point.y);
         let dx = nextImagePoint.x - startImageX;
         let dy = nextImagePoint.y - startImageY;
@@ -16714,6 +16796,8 @@ export default function XrayCalibrationWorkspace({
         clearSnapPreview();
         const { guideId, startX, startY, originOffsetX, originOffsetY } =
           interactionRef.current;
+        if (planningGuides.find((guide) => guide.id === guideId)?.locked)
+          return;
         const dx = point.x - startX;
         const dy = point.y - startY;
         schedulePlanningGuidesUpdate((prev) =>
@@ -16987,27 +17071,87 @@ export default function XrayCalibrationWorkspace({
         let dx = nextImagePoint.x - startImageX;
         let dy = nextImagePoint.y - startImageY;
 
-        const minX = Math.min(origin.x1, origin.x2);
-        const maxX = Math.max(origin.x1, origin.x2);
-        const minY = Math.min(origin.y1, origin.y2);
-        const maxY = Math.max(origin.y1, origin.y2);
+        if (!interactionRef.current.groupLineOrigins) {
+          const movingLine = lines.find((line) => line.id === lineId);
+          const groupId = movingLine?.groupId;
+          interactionRef.current.groupLineOrigins = groupId
+            ? lines
+                .filter(
+                  (line) => line.groupId === groupId && !isLineLocked(line.id),
+                )
+                .map((line) => ({
+                  lineId: line.id,
+                  x1: line.x1,
+                  y1: line.y1,
+                  x2: line.x2,
+                  y2: line.y2,
+                }))
+            : [{ lineId, ...origin }];
+          interactionRef.current.groupLayerOrigins = groupId
+            ? cutLayers
+                .filter((layer) => layer.groupId === groupId)
+                .map((layer) => ({
+                  layerId: layer.id,
+                  centerX: Number(layer.centerX || 0),
+                  centerY: Number(layer.centerY || 0),
+                }))
+            : [];
+        }
+
+        const groupLineOrigins = interactionRef.current.groupLineOrigins || [];
+        const movingOrigins = groupLineOrigins.length
+          ? groupLineOrigins
+          : [{ lineId, ...origin }];
+        const minX = Math.min(
+          ...movingOrigins.flatMap((item) => [item.x1, item.x2]),
+        );
+        const maxX = Math.max(
+          ...movingOrigins.flatMap((item) => [item.x1, item.x2]),
+        );
+        const minY = Math.min(
+          ...movingOrigins.flatMap((item) => [item.y1, item.y2]),
+        );
+        const maxY = Math.max(
+          ...movingOrigins.flatMap((item) => [item.y1, item.y2]),
+        );
 
         dx = clamp(dx, -minX, modelWidth - maxX);
         dy = clamp(dy, -minY, modelHeight - maxY);
 
         scheduleLinesUpdate((prev) =>
-          prev.map((line) =>
-            line.id === lineId
+          prev.map((line) => {
+            const lineOrigin = groupLineOrigins.find(
+              (item) => item.lineId === line.id,
+            );
+            return lineOrigin
               ? {
                   ...line,
-                  x1: origin.x1 + dx,
-                  y1: origin.y1 + dy,
-                  x2: origin.x2 + dx,
-                  y2: origin.y2 + dy,
+                  x1: lineOrigin.x1 + dx,
+                  y1: lineOrigin.y1 + dy,
+                  x2: lineOrigin.x2 + dx,
+                  y2: lineOrigin.y2 + dy,
                 }
-              : line,
-          ),
+              : line;
+          }),
         );
+        const groupLayerOrigins =
+          interactionRef.current.groupLayerOrigins || [];
+        if (groupLayerOrigins.length) {
+          scheduleCutLayersUpdate((prev) =>
+            prev.map((layer) => {
+              const layerOrigin = groupLayerOrigins.find(
+                (item) => item.layerId === layer.id,
+              );
+              return layerOrigin
+                ? {
+                    ...layer,
+                    centerX: layerOrigin.centerX + dx,
+                    centerY: layerOrigin.centerY + dy,
+                  }
+                : layer;
+            }),
+          );
+        }
         return;
       }
 
@@ -17250,6 +17394,7 @@ export default function XrayCalibrationWorkspace({
       clampViewport,
       clampToImageBounds,
       circles,
+      cutLayers,
       clearMobileLongPress,
       clearSnapPreview,
       clearTouchHoverDetails,
@@ -17282,6 +17427,7 @@ export default function XrayCalibrationWorkspace({
       setHoveredMeasurementInfo,
       modelHeight,
       modelWidth,
+      planningGuides,
       resolveSnapWithPreview,
       scheduleAnnotationsUpdate,
       scheduleAnglesUpdate,
@@ -18119,6 +18265,12 @@ export default function XrayCalibrationWorkspace({
     }
 
     if (selectedPlanningGuide) {
+      if (selectedPlanningGuide.locked) {
+        setNotice(
+          "Distal Cutting terkunci. Buka lock dari Measurement sebelum dihapus.",
+        );
+        return;
+      }
       setPlanningGuides((prev) =>
         prev.filter((guide) => guide.id !== selectedPlanningGuide.id),
       );
@@ -20072,6 +20224,12 @@ export default function XrayCalibrationWorkspace({
         setNotice("Pilih planning guide dulu.");
         return;
       }
+      if (selectedPlanningGuide.locked) {
+        setNotice(
+          "Distal Cutting terkunci. Buka lock dari Measurement untuk mengubahnya.",
+        );
+        return;
+      }
 
       setPlanningGuides((prev) =>
         prev.map((guide) => {
@@ -20704,11 +20862,21 @@ export default function XrayCalibrationWorkspace({
     );
   }, [activeTkaJointAngles, cropRect, image, mmPerPixel, tkaResectionPlan]);
 
-  const removePlanningGuide = useCallback((guideId) => {
-    setPlanningGuides((prev) => prev.filter((guide) => guide.id !== guideId));
-    setSelectedPlanningGuideId((prev) => (prev === guideId ? null : prev));
-    setNotice("Planning guide dihapus.");
-  }, []);
+  const removePlanningGuide = useCallback(
+    (guideId) => {
+      const guide = planningGuides.find((item) => item.id === guideId);
+      if (guide?.locked) {
+        setNotice(
+          "Distal Cutting terkunci. Buka lock dari Measurement sebelum dihapus.",
+        );
+        return;
+      }
+      setPlanningGuides((prev) => prev.filter((item) => item.id !== guideId));
+      setSelectedPlanningGuideId((prev) => (prev === guideId ? null : prev));
+      setNotice("Planning guide dihapus.");
+    },
+    [planningGuides],
+  );
 
   const togglePlanningGuideHidden = useCallback((guideId) => {
     setPlanningGuides((prev) =>
@@ -22919,6 +23087,10 @@ export default function XrayCalibrationWorkspace({
           : null,
         guideId: guide.id,
         color: guide.color || getPlanningGuideAutoColor(guide),
+        locked: Boolean(guide.locked),
+        angleDeg: Number(guide.angleDeg || 0),
+        offsetPx: Number(guide.offsetPx || 0),
+        lineLengthPx: Number(guide.lineLengthPx || 0),
       });
     });
     hkaSets
@@ -23107,6 +23279,60 @@ export default function XrayCalibrationWorkspace({
       setNotice("Project gagal disimpan. Coba kembali.");
     }
   };
+  const groupPlanningObjects = ({ objectKeys = [], mode = "group" } = {}) => {
+    const selectedKeys = new Set(objectKeys.map(String));
+    const selectedLines = lines.filter((line) =>
+      selectedKeys.has(`line:${line.id}`),
+    );
+    const selectedLayers = cutLayers.filter((layer) =>
+      selectedKeys.has(`layer:${layer.id}`),
+    );
+
+    if (mode === "ungroup") {
+      const groupIds = new Set(
+        [...selectedLines, ...selectedLayers]
+          .map((item) => item.groupId)
+          .filter(Boolean),
+      );
+      setLines((previous) =>
+        previous.map((line) =>
+          selectedKeys.has(`line:${line.id}`) || groupIds.has(line.groupId)
+            ? { ...line, groupId: null }
+            : line,
+        ),
+      );
+      setCutLayers((previous) =>
+        previous.map((layer) =>
+          selectedKeys.has(`layer:${layer.id}`) || groupIds.has(layer.groupId)
+            ? { ...layer, groupId: null }
+            : layer,
+        ),
+      );
+      setNotice("Group objek dilepas.");
+      return true;
+    }
+
+    if (selectedLines.length + selectedLayers.length < 2) {
+      setNotice("Pilih minimal dua line, crop, atau layer untuk dibuat grup.");
+      return false;
+    }
+
+    const groupId = createTemplatingId();
+    setLines((previous) =>
+      previous.map((line) =>
+        selectedKeys.has(`line:${line.id}`) ? { ...line, groupId } : line,
+      ),
+    );
+    setCutLayers((previous) =>
+      previous.map((layer) =>
+        selectedKeys.has(`layer:${layer.id}`) ? { ...layer, groupId } : layer,
+      ),
+    );
+    setNotice(
+      `${selectedLines.length + selectedLayers.length} objek digabung. Drag salah satu objek untuk memindahkan grup.`,
+    );
+    return true;
+  };
   const planningActions = {
     upload: () => mainUploadInputRef.current?.click(),
     addPhoto: () => canvasPhotoUploadInputRef.current?.click(),
@@ -23124,6 +23350,7 @@ export default function XrayCalibrationWorkspace({
     compare: toggleCompareModePreservingWorkspace,
     deleteLayer: removeSelectedCutLayer,
     cases: () => setPatientCaseManagerOpen(true),
+    groupObjects: groupPlanningObjects,
   };
   const planningTools = [
     {
@@ -40127,6 +40354,12 @@ export default function XrayCalibrationWorkspace({
               );
               if (!guide) return;
               handleToolChange("pan");
+              setSelectedLineId(null);
+              setSelectedAngleId(null);
+              setSelectedCircleId(null);
+              setSelectedHkaId(null);
+              setSelectedCutLayerId(null);
+              setSelectedAnnotationId(null);
               selectPlanningGuideForEdit(guide.id);
               triggerSelectionPulse("planning", guide.id);
             }}
@@ -40151,6 +40384,44 @@ export default function XrayCalibrationWorkspace({
                 ),
               );
               setNotice("Warna planning guide diperbarui.");
+            }}
+            onUpdateMeasurement={(measurementId, patch) => {
+              const [kind, ...idParts] = String(measurementId).split(":");
+              if (kind !== "guide") return;
+              const rawId = idParts.join(":");
+              setPlanningGuides((previous) =>
+                previous.map((guide) => {
+                  if (String(guide.id) !== rawId) return guide;
+                  const next = { ...guide, ...patch };
+                  if ("angleDeg" in patch) {
+                    next.angleDeg = clamp(Number(patch.angleDeg) || 0, -45, 45);
+                  }
+                  if ("offsetPx" in patch) {
+                    next.offsetPx = clamp(
+                      Number(patch.offsetPx) || 0,
+                      -500,
+                      500,
+                    );
+                  }
+                  if ("lineLengthPx" in patch) {
+                    next.lineLengthPx = clamp(
+                      Number(patch.lineLengthPx) || 10,
+                      10,
+                      Math.max(modelWidth, modelHeight) * 2,
+                    );
+                  }
+                  return next;
+                }),
+              );
+              if ("locked" in patch) {
+                setNotice(
+                  patch.locked
+                    ? "Distal Cutting dikunci."
+                    : "Lock Distal Cutting dibuka.",
+                );
+              } else {
+                setNotice("Parameter planning guide diperbarui.");
+              }
             }}
           >
             <div

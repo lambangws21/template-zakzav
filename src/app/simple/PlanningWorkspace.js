@@ -17,6 +17,7 @@ import {
   Focus,
   ImagePlus,
   Layers,
+  Link2,
   ListOrdered,
   Lock,
   LockOpen,
@@ -200,6 +201,7 @@ export default function PlanningWorkspace({
   onSelectMeasurement,
   onDeleteMeasurement,
   onUpdateMeasurementColor,
+  onUpdateMeasurement,
   alignmentPlan,
   alignmentSettings,
   onAlignmentSetting,
@@ -220,6 +222,8 @@ export default function PlanningWorkspace({
   const [expanded, setExpanded] = useState(false);
   const [focus, setFocus] = useState(false);
   const [metricEditor, setMetricEditor] = useState(null);
+  const [groupEditorOpen, setGroupEditorOpen] = useState(false);
+  const [groupSelection, setGroupSelection] = useState([]);
   const [logTab, setLogTab] = useState("measurements");
   const [brand, setBrand] = useState("");
   const [system, setSystem] = useState("");
@@ -1294,6 +1298,138 @@ export default function PlanningWorkspace({
                     : null;
                   const displayName =
                     sourceMeasurement?.name || row.name || row.key;
+                  if (guideMeasurementId) {
+                    return (
+                      <div
+                        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
+                        role="presentation"
+                        onPointerDown={(event) => {
+                          if (event.target === event.currentTarget)
+                            setMetricEditor(null);
+                        }}
+                      >
+                        <section
+                          className={`${styles.modalPanel} ${styles.measurementModal}`}
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label={`Edit ${displayName}`}
+                        >
+                          <header>
+                            <div>
+                              <small>Measurement</small>
+                              <h2>{displayName}</h2>
+                            </div>
+                            <Action
+                              icon={X}
+                              aria-label="Tutup"
+                              onClick={() => setMetricEditor(null)}
+                            />
+                          </header>
+                          <div className={styles.measurementModalBody}>
+                            <div className={styles.measurementFieldGrid}>
+                              <label>
+                                Sudut
+                                <input
+                                  type="number"
+                                  step="1"
+                                  value={sourceMeasurement?.angleDeg ?? 0}
+                                  disabled={sourceMeasurement?.locked}
+                                  onChange={(event) =>
+                                    onUpdateMeasurement?.(guideMeasurementId, {
+                                      angleDeg: Number(event.target.value),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                Offset (px)
+                                <input
+                                  type="number"
+                                  step="1"
+                                  value={sourceMeasurement?.offsetPx ?? 0}
+                                  disabled={sourceMeasurement?.locked}
+                                  onChange={(event) =>
+                                    onUpdateMeasurement?.(guideMeasurementId, {
+                                      offsetPx: Number(event.target.value),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                Panjang (px)
+                                <input
+                                  type="number"
+                                  min="10"
+                                  step="1"
+                                  value={sourceMeasurement?.lineLengthPx ?? 10}
+                                  disabled={sourceMeasurement?.locked}
+                                  onChange={(event) =>
+                                    onUpdateMeasurement?.(guideMeasurementId, {
+                                      lineLengthPx: Number(event.target.value),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label className={styles.metricColorControl}>
+                                Warna
+                                <input
+                                  type="color"
+                                  value={sourceMeasurement?.color || "#38bdf8"}
+                                  onChange={(event) =>
+                                    onUpdateMeasurementColor?.(
+                                      guideMeasurementId,
+                                      event.target.value,
+                                    )
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <div className={styles.metricEditorActions}>
+                              <Action
+                                icon={MousePointer2}
+                                onClick={() => {
+                                  onSelectMeasurement?.(guideMeasurementId);
+                                  setMetricEditor(null);
+                                }}
+                              >
+                                Pilih di Canvas
+                              </Action>
+                              <Action
+                                icon={
+                                  sourceMeasurement?.locked ? LockOpen : Lock
+                                }
+                                onClick={() =>
+                                  onUpdateMeasurement?.(guideMeasurementId, {
+                                    locked: !sourceMeasurement?.locked,
+                                  })
+                                }
+                              >
+                                {sourceMeasurement?.locked
+                                  ? "Buka Lock"
+                                  : "Lock Line"}
+                              </Action>
+                              <Action
+                                icon={Trash2}
+                                className={styles.dangerAction}
+                                disabled={sourceMeasurement?.locked}
+                                onClick={() => {
+                                  onDeleteMeasurement?.(guideMeasurementId);
+                                  setMetricEditor(null);
+                                }}
+                              >
+                                Hapus
+                              </Action>
+                            </div>
+                          </div>
+                          <footer>
+                            <Action onClick={() => setMetricEditor(null)}>
+                              Selesai
+                            </Action>
+                          </footer>
+                        </section>
+                      </div>
+                    );
+                  }
                   return (
                     <div className={styles.metricEditor}>
                       <strong>{row.clinical ? row.key : row.name}</strong>
@@ -1318,41 +1454,6 @@ export default function PlanningWorkspace({
                             }}
                           />
                         </label>
-                      )}
-                      {guideMeasurementId && (
-                        <div className={styles.metricEditorActions}>
-                          <Action
-                            icon={MousePointer2}
-                            onClick={() =>
-                              onSelectMeasurement?.(guideMeasurementId)
-                            }
-                          >
-                            Pilih di Canvas
-                          </Action>
-                          <label className={styles.metricColorControl}>
-                            Warna
-                            <input
-                              type="color"
-                              value={sourceMeasurement?.color || "#38bdf8"}
-                              onChange={(event) =>
-                                onUpdateMeasurementColor?.(
-                                  guideMeasurementId,
-                                  event.target.value,
-                                )
-                              }
-                            />
-                          </label>
-                          <Action
-                            icon={Trash2}
-                            className={styles.dangerAction}
-                            onClick={() => {
-                              onDeleteMeasurement?.(guideMeasurementId);
-                              setMetricEditor(null);
-                            }}
-                          >
-                            Hapus
-                          </Action>
-                        </div>
                       )}
                       {row.clinical && (
                         <label>
@@ -1630,6 +1731,20 @@ export default function PlanningWorkspace({
         >
           <Target size={16} />
           HKA
+        </button>
+        <button
+          type="button"
+          disabled={!hasImage || !actions.groupObjects}
+          onClick={() => {
+            setGroupSelection(
+              selectedLayer ? [`layer:${selectedLayer.id}`] : [],
+            );
+            setGroupEditorOpen(true);
+            setMoreOpen(false);
+          }}
+        >
+          <Link2 size={16} />
+          Group Objects
         </button>
         <button type="button" onClick={() => runCalibrated(actions.freeCut)}>
           <SlidersHorizontal size={16} />
@@ -2965,6 +3080,120 @@ export default function PlanningWorkspace({
                 Google Drive
               </Action>
             </div>
+          </section>
+        </div>
+      )}
+      {groupEditorOpen && (
+        <div
+          className={styles.modalBackdrop}
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setGroupEditorOpen(false);
+          }}
+        >
+          <section
+            className={`${styles.modalPanel} ${styles.groupModal}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Group line, crop, dan layer"
+          >
+            <header>
+              <div>
+                <small>Canvas objects</small>
+                <h2>Group Objects</h2>
+              </div>
+              <Action
+                icon={X}
+                aria-label="Tutup"
+                onClick={() => setGroupEditorOpen(false)}
+              />
+            </header>
+            <div className={styles.groupModalBody}>
+              <p>Pilih line, crop, atau layer yang akan bergerak bersama.</p>
+              <section>
+                <strong>Lines</strong>
+                {measurements.filter((item) => /^line:/.test(item.id))
+                  .length ? (
+                  measurements
+                    .filter((item) => /^line:/.test(item.id))
+                    .map((item) => (
+                      <label key={item.id} className={styles.groupObjectRow}>
+                        <input
+                          type="checkbox"
+                          checked={groupSelection.includes(item.id)}
+                          onChange={() =>
+                            setGroupSelection((current) =>
+                              current.includes(item.id)
+                                ? current.filter((key) => key !== item.id)
+                                : [...current, item.id],
+                            )
+                          }
+                        />
+                        <span>{item.name}</span>
+                        <small>Line</small>
+                      </label>
+                    ))
+                ) : (
+                  <p className={styles.empty}>Belum ada line.</p>
+                )}
+              </section>
+              <section>
+                <strong>Layers & Crops</strong>
+                {layers.length ? (
+                  layers.map((item) => {
+                    const key = `layer:${item.id}`;
+                    return (
+                      <label key={key} className={styles.groupObjectRow}>
+                        <input
+                          type="checkbox"
+                          checked={groupSelection.includes(key)}
+                          onChange={() =>
+                            setGroupSelection((current) =>
+                              current.includes(key)
+                                ? current.filter((value) => value !== key)
+                                : [...current, key],
+                            )
+                          }
+                        />
+                        <span>{item.name}</span>
+                        <small>{item.kind}</small>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <p className={styles.empty}>Belum ada layer atau crop.</p>
+                )}
+              </section>
+            </div>
+            <footer>
+              <Action
+                icon={LockOpen}
+                disabled={!groupSelection.length}
+                onClick={() => {
+                  actions.groupObjects?.({
+                    objectKeys: groupSelection,
+                    mode: "ungroup",
+                  });
+                  setGroupEditorOpen(false);
+                }}
+              >
+                Ungroup
+              </Action>
+              <Action
+                icon={Link2}
+                className={styles.primaryAction}
+                disabled={groupSelection.length < 2}
+                onClick={() => {
+                  const grouped = actions.groupObjects?.({
+                    objectKeys: groupSelection,
+                    mode: "group",
+                  });
+                  if (grouped !== false) setGroupEditorOpen(false);
+                }}
+              >
+                Group {groupSelection.length || ""}
+              </Action>
+            </footer>
           </section>
         </div>
       )}

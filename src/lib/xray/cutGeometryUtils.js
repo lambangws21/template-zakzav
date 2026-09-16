@@ -163,7 +163,7 @@ export function buildFreeCutLayerFromPoints({
     height,
   );
 
-  // Buat mask canvas dengan feathering (blur) di tepi polygon
+  // Keep the polygon alpha edge crisp so the cut remains diagnostically clear.
   const maskCanvas = document.createElement("canvas");
   maskCanvas.width = width;
   maskCanvas.height = height;
@@ -171,7 +171,7 @@ export function buildFreeCutLayerFromPoints({
   if (maskCtx) {
     const feather = Number.isFinite(maskFeatherPx)
       ? Math.max(0, maskFeatherPx)
-      : Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
+      : 0;
     if (feather > 0) maskCtx.filter = `blur(${feather}px)`;
     maskCtx.fillStyle = "#ffffff";
     tracePolygonPath(maskCtx, normalizedPoints);
@@ -305,12 +305,9 @@ export function buildFreeCutLayerFromLayerPoints({
   maskCanvas.height = height;
   const maskCtx = maskCanvas.getContext("2d");
   if (maskCtx) {
-    const feather = Math.max(4, Math.min(18, Math.min(width, height) * 0.025));
-    maskCtx.filter = `blur(${feather}px)`;
     maskCtx.fillStyle = "#ffffff";
     tracePolygonPath(maskCtx, normalizedSourcePoints);
     maskCtx.fill();
-    maskCtx.filter = "none";
   }
   ctx.globalCompositeOperation = "destination-in";
   ctx.drawImage(maskCanvas, 0, 0);
