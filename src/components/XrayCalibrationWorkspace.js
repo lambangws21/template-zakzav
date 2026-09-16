@@ -23078,7 +23078,7 @@ export default function XrayCalibrationWorkspace({
             : "Tibial Cutting";
       entries.push({
         id: `guide:${guide.id}`,
-        name: `${guideName} #${index + 1}`,
+        name: guide.name || `${guideName} #${index + 1}`,
         metric: getPlanningGuideLabelText(guide, index),
         type: "planningGuide",
         unit: "deg",
@@ -23287,10 +23287,13 @@ export default function XrayCalibrationWorkspace({
     const selectedLayers = cutLayers.filter((layer) =>
       selectedKeys.has(`layer:${layer.id}`),
     );
+    const selectedGuides = planningGuides.filter((guide) =>
+      selectedKeys.has(`guide:${guide.id}`),
+    );
 
     if (mode === "ungroup") {
       const groupIds = new Set(
-        [...selectedLines, ...selectedLayers]
+        [...selectedLines, ...selectedLayers, ...selectedGuides]
           .map((item) => item.groupId)
           .filter(Boolean),
       );
@@ -23308,12 +23311,24 @@ export default function XrayCalibrationWorkspace({
             : layer,
         ),
       );
+      setPlanningGuides((previous) =>
+        previous.map((guide) =>
+          selectedKeys.has(`guide:${guide.id}`) || groupIds.has(guide.groupId)
+            ? { ...guide, groupId: null }
+            : guide,
+        ),
+      );
       setNotice("Group objek dilepas.");
       return true;
     }
 
-    if (selectedLines.length + selectedLayers.length < 2) {
-      setNotice("Pilih minimal dua line, crop, atau layer untuk dibuat grup.");
+    if (
+      selectedLines.length + selectedLayers.length + selectedGuides.length <
+      2
+    ) {
+      setNotice(
+        "Pilih minimal dua line, correction line, crop, atau layer untuk dibuat grup.",
+      );
       return false;
     }
 
@@ -23328,8 +23343,13 @@ export default function XrayCalibrationWorkspace({
         selectedKeys.has(`layer:${layer.id}`) ? { ...layer, groupId } : layer,
       ),
     );
+    setPlanningGuides((previous) =>
+      previous.map((guide) =>
+        selectedKeys.has(`guide:${guide.id}`) ? { ...guide, groupId } : guide,
+      ),
+    );
     setNotice(
-      `${selectedLines.length + selectedLayers.length} objek digabung. Drag salah satu objek untuk memindahkan grup.`,
+      `${selectedLines.length + selectedLayers.length + selectedGuides.length} objek digabung. Drag salah satu objek untuk memindahkan grup.`,
     );
     return true;
   };
@@ -40275,6 +40295,15 @@ export default function XrayCalibrationWorkspace({
                 normalizedPatch.lockRotation = normalizedPatch.rotationLocked;
                 delete normalizedPatch.rotationLocked;
               }
+              if (
+                layer &&
+                isImageBackedLayerKind(layer.kind) &&
+                ("displayWidth" in normalizedPatch ||
+                  "displayHeight" in normalizedPatch)
+              ) {
+                normalizedPatch.lockScale = true;
+                normalizedPatch.autoScaleFromCalibration = false;
+              }
               updateLayerById(id, normalizedPatch);
             }}
             annotations={annotations}
@@ -40338,6 +40367,12 @@ export default function XrayCalibrationWorkspace({
                 );
               } else if (kind === "circle") {
                 setCircles((previous) =>
+                  previous.map((item) =>
+                    String(item.id) === objectId ? { ...item, name } : item,
+                  ),
+                );
+              } else if (kind === "guide") {
+                setPlanningGuides((previous) =>
                   previous.map((item) =>
                     String(item.id) === objectId ? { ...item, name } : item,
                   ),
