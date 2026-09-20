@@ -19,8 +19,21 @@ async function apiUpdateCase(id, data) {
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "update_patient_case", id, data }),
   });
   const json = await res.json();
-  if (!json?.ok || !json?.remote?.ok) {
+  if (!res.ok || !json?.ok || !json?.remote?.ok) {
     throw new Error(json?.remote?.error || json?.error || "Gagal menyimpan data post-op.");
+  }
+  return json.remote;
+}
+
+async function apiCreateCase(data) {
+  const res = await authenticatedFetch("/api/google-sheet-images", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "create_patient_case", data }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json?.ok || !json?.remote?.ok) {
+    throw new Error(json?.remote?.error || json?.error || "Gagal membuat kasus di cloud.");
   }
   return json.remote;
 }
@@ -291,6 +304,19 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
     setSaving(true);
     setError("");
     try {
+      if (!patientCase._cloud) {
+        await apiCreateCase({
+          ...patientCase,
+          snapshot: undefined,
+          snapshotDataUrl:
+            typeof patientCase.snapshot === "string" && patientCase.snapshot.startsWith("data:")
+              ? patientCase.snapshot
+              : "",
+          hkaSummaryJson: JSON.stringify(patientCase.hkaSummary || []),
+          cupAssessmentJson: patientCase.cupAssessment ? JSON.stringify(patientCase.cupAssessment) : "",
+          postOpPhotosJson: JSON.stringify(patientCase.postOpPhotos || []),
+        });
+      }
       const remote = await apiUpdateCase(patientCase.id, {
         operationDate: operationDate || "",
         actualImplantLabel: buildActualLabel(),
@@ -315,6 +341,7 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
         postOpNotes: postOpNotes.trim(),
         postOpPhotos: savedPhotos,
         postOpUpdatedAt: remote?.postOpUpdatedAt || new Date().toISOString(),
+        _cloud: true,
       });
     } catch (err) {
       setError(err.message || "Gagal menyimpan.");

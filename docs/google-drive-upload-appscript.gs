@@ -2133,6 +2133,21 @@ function createPatientCase_(payload) {
   var data = payload && payload.data && typeof payload.data === "object" ? payload.data : (payload || {});
   var now = isoNow_();
   var id = String(data.id || "").trim() || Utilities.getUuid();
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var existingRowIndex = findRowById_(sheet, id);
+  if (existingRowIndex >= 2) {
+    var existingRow = sheet.getRange(existingRowIndex, 1, 1, PATIENT_CASES_HEADERS.length).getValues()[0];
+    return {
+      ok: true,
+      status: "success",
+      message: "Kasus pasien sudah tersedia.",
+      id: id,
+      createdAt: String(existingRow[1] || now),
+      snapshotDriveId: String(existingRow[10] || ""),
+      snapshotUrl: String(existingRow[11] || ""),
+      existing: true,
+    };
+  }
 
   var snapshotDriveId = "";
   var snapshotUrl = "";
@@ -2154,7 +2169,6 @@ function createPatientCase_(payload) {
     hkaSummaryJson = data.hkaSummaryJson;
   }
 
-  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
   var row = [
     id, now,
     String(data.patientName || ""),

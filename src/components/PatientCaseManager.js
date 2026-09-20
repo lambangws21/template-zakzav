@@ -305,7 +305,7 @@ async function apiCreateCase(data) {
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "create_patient_case", data }),
   });
   const json = await res.json();
-  if (!json?.ok || !json?.remote?.ok) {
+  if (!res.ok || !json?.ok || !json?.remote?.ok) {
     throw new Error(json?.remote?.error || json?.error || "Gagal menyimpan ke cloud.");
   }
   return json.remote;
@@ -319,7 +319,7 @@ async function apiUpdateCase(id, data) {
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "update_patient_case", id, data }),
   });
   const json = await res.json();
-  if (!json?.ok || !json?.remote?.ok) {
+  if (!res.ok || !json?.ok || !json?.remote?.ok) {
     throw new Error(json?.remote?.error || json?.error || "Gagal update data di cloud.");
   }
   return json.remote;
@@ -333,10 +333,84 @@ async function apiDeleteCase(id) {
     body: JSON.stringify({ url: APPS_SCRIPT_URL, action: "delete_patient_case", id }),
   });
   const json = await res.json();
-  if (!json?.ok || !json?.remote?.ok) {
+  if (!res.ok || !json?.ok || !json?.remote?.ok) {
     throw new Error(json?.remote?.error || json?.error || "Gagal menghapus dari cloud.");
   }
   return json.remote;
+}
+
+function buildCloudCreatePayload(caseData) {
+  const snapshotDataUrl =
+    typeof caseData?.snapshot === "string" && caseData.snapshot.startsWith("data:")
+      ? caseData.snapshot
+      : "";
+  return {
+    ...caseData,
+    snapshot: undefined,
+    snapshotDataUrl,
+    hkaSummary: Array.isArray(caseData?.hkaSummary) ? caseData.hkaSummary : [],
+    hkaSummaryJson: JSON.stringify(caseData?.hkaSummary || []),
+    cupAssessmentJson: caseData?.cupAssessment ? JSON.stringify(caseData.cupAssessment) : "",
+    postOpPhotosJson: JSON.stringify(caseData?.postOpPhotos || []),
+  };
+}
+
+function buildCloudUpdatePayload(caseData) {
+  return {
+    patientName: caseData?.patientName || "",
+    procedure: caseData?.procedure || "",
+    notes: caseData?.notes || "",
+    implantLabel: caseData?.implantLabel || "",
+    preOpSizeNum: caseData?.preOpSizeNum ?? null,
+    operationDate: caseData?.operationDate || "",
+    actualImplantLabel: caseData?.actualImplantLabel || "",
+    actualSizeNum: caseData?.actualSizeNum ?? null,
+    postOpHka: caseData?.postOpHka ?? null,
+    postOpNotes: caseData?.postOpNotes || "",
+    postOpPhotos: Array.isArray(caseData?.postOpPhotos) ? caseData.postOpPhotos : [],
+  };
+}
+
+async function syncPendingCases(localCases, remoteCases = []) {
+  const remoteIds = new Set(remoteCases.map((item) => String(item?.id || "")));
+  const nextCases = [];
+  const failures = [];
+  let synced = 0;
+
+  for (const caseData of localCases) {
+    if (!caseData?.id || caseData._cloud) {
+      nextCases.push(caseData);
+      continue;
+    }
+    try {
+      let createResult = null;
+      if (!remoteIds.has(String(caseData.id))) {
+        createResult = await apiCreateCase(buildCloudCreatePayload(caseData));
+        remoteIds.add(String(caseData.id));
+      }
+      if (
+        caseData.operationDate || caseData.actualImplantLabel ||
+        caseData.actualSizeNum != null || caseData.postOpHka != null ||
+        caseData.postOpNotes || caseData.postOpPhotos?.length
+      ) {
+        await apiUpdateCase(caseData.id, buildCloudUpdatePayload(caseData));
+      }
+      nextCases.push({
+        ...caseData,
+        _cloud: true,
+        snapshotUrl: createResult?.snapshotUrl || caseData.snapshotUrl || null,
+        snapshot: createResult?.snapshotUrl || caseData.snapshotUrl || caseData.snapshot,
+      });
+      synced += 1;
+    } catch (error) {
+      nextCases.push(caseData);
+      failures.push({
+        id: caseData.id,
+        error: error instanceof Error ? error.message : "Gagal sinkronisasi.",
+      });
+    }
+  }
+  return { cases: nextCases, synced, failures };
 }
 
 function mapCloudCase(raw) {
@@ -1937,20 +2011,35 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
     // Skip cloud fetch for 60s after a local edit to avoid overwriting unsaved changes
     if (Date.now() - lastLocalEditRef.current < 60_000) return;
 
+    let cancelled = false;
     setLoading(true);
-    apiListCases()
-      .then((items) => {
-        if (items) {
-          const mapped = items.map(mapCloudCase);
-          setCases((current) => {
-            const merged = mergeCloudAndLocalCases(current, mapped);
-            saveCases(merged);
-            return merged;
-          });
+    void (async () => {
+      try {
+        const items = (await apiListCases()) || [];
+        let merged = mergeCloudAndLocalCases(cached, items.map(mapCloudCase));
+        const result = await syncPendingCases(merged, items);
+        merged = result.cases;
+        if (result.synced > 0) {
+          const refreshed = (await apiListCases()) || [];
+          merged = mergeCloudAndLocalCases(merged, refreshed.map(mapCloudCase));
         }
-      })
-      .catch((error) => setCloudError(error.message || "Gagal memuat kasus dari cloud."))
-      .finally(() => setLoading(false));
+        if (result.failures.length > 0) {
+          setCloudError(`${result.failures.length} kasus lokal belum berhasil disinkronkan: ${result.failures[0].error}`);
+        } else if (result.synced > 0) {
+          setSyncOk(true);
+          setTimeout(() => setSyncOk(false), 3000);
+        }
+        if (!cancelled) {
+          setCases(merged);
+          saveCases(merged);
+        }
+      } catch (error) {
+        if (!cancelled) setCloudError(error.message || "Gagal memuat kasus dari cloud.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [isOpen, hasCloud]);
 
   // Unique procedure labels for filter dropdown
@@ -1958,6 +2047,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
 
   // Cases that lack post-op data, grouped by days since templating
   const incompleteCases = cases.filter(c => !c.actualImplantLabel && !c.actualSizeNum);
+  const pendingCloudCases = cases.filter((item) => !item._cloud);
   const incompleteSince7d = incompleteCases.filter(c => {
     const d = (Date.now() - new Date(c.savedAt).getTime()) / 86400000;
     return d >= 7;
@@ -2114,7 +2204,24 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
       // Sync to cloud if configured
       if (hasCloud) {
         try {
-          await apiUpdateCase(id, updatedFields);
+          const targetCase = updated.find((item) => item.id === id);
+          if (targetCase?._cloud) {
+            await apiUpdateCase(id, updatedFields);
+          } else if (targetCase) {
+            await apiCreateCase(buildCloudCreatePayload(targetCase));
+            if (
+              targetCase.operationDate || targetCase.actualImplantLabel ||
+              targetCase.actualSizeNum != null || targetCase.postOpHka != null ||
+              targetCase.postOpNotes || targetCase.postOpPhotos?.length
+            ) {
+              await apiUpdateCase(id, buildCloudUpdatePayload(targetCase));
+            }
+            const cloudUpdated = updated.map((item) =>
+              item.id === id ? { ...item, _cloud: true } : item
+            );
+            setCases(cloudUpdated);
+            saveCases(cloudUpdated);
+          }
           setSyncOk(true);
           setTimeout(() => setSyncOk(false), 2500);
         } catch (err) {
@@ -2172,21 +2279,26 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
     setLoading(true);
     setCloudError("");
     apiListCases()
-      .then((items) => {
-        if (items) {
-          const mapped = items.map(mapCloudCase);
-          setCases((current) => {
-            const merged = mergeCloudAndLocalCases(current, mapped);
-            saveCases(merged);
-            return merged;
-          });
-          setSyncOk(true);
-          setTimeout(() => setSyncOk(false), 2500);
+      .then(async (items) => {
+        const remoteItems = items || [];
+        let merged = mergeCloudAndLocalCases(cases, remoteItems.map(mapCloudCase));
+        const result = await syncPendingCases(merged, remoteItems);
+        merged = result.cases;
+        if (result.synced > 0) {
+          const refreshed = (await apiListCases()) || [];
+          merged = mergeCloudAndLocalCases(merged, refreshed.map(mapCloudCase));
         }
+        setCases(merged);
+        saveCases(merged);
+        if (result.failures.length) {
+          throw new Error(`${result.failures.length} kasus gagal disinkronkan: ${result.failures[0].error}`);
+        }
+        setSyncOk(true);
+        setTimeout(() => setSyncOk(false), 2500);
       })
       .catch((error) => setCloudError(error.message || "Gagal memuat data dari cloud."))
       .finally(() => setLoading(false));
-  }, [hasCloud, loading]);
+  }, [cases, hasCloud, loading]);
 
   if (typeof document === "undefined") return null;
 
@@ -2271,6 +2383,18 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
 
               {/* Action group */}
               <div className="flex items-center gap-1 shrink-0">
+                {hasCloud && pendingCloudCases.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRefresh}
+                    disabled={loading || syncing}
+                    className="flex min-h-9 items-center gap-1.5 rounded-md border border-amber-400/40 bg-amber-500/10 px-2.5 text-[9px] font-black text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-40"
+                    title="Kirim semua kasus lokal yang tertunda ke Google Sheets"
+                  >
+                    {loading || syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                    <span>{pendingCloudCases.length} lokal</span>
+                  </button>
+                )}
                 {/* Utility — hidden on mobile */}
                 <div className="hidden sm:flex items-center gap-1">
                   <ThemeToggle />
@@ -2280,7 +2404,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
                       onClick={handleRefresh}
                       disabled={loading}
                       className="flex h-7 w-7 items-center justify-center rounded-full bg-white/8 text-purple-200 hover:bg-white/15 disabled:opacity-40 transition"
-                      title="Refresh dari cloud"
+                      title="Sinkronkan kasus lokal lalu refresh dari cloud"
                     >
                       <RotateCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
                     </button>
