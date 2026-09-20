@@ -32,7 +32,8 @@ function normalizeFirebasePrivateKey(value) {
   }
 
   privateKey = privateKey
-    .replace(/\\r\\n|\\n|\\r/g, "\n")
+    .replace(/\\+(?:r\\+n|n|r)/g, "\n")
+    .replace(/\\(["'])/g, "$1")
     .replace(/\r\n?/g, "\n")
     .trim();
 
@@ -46,6 +47,18 @@ function normalizeFirebasePrivateKey(value) {
       }
     } catch {
       // Keep the original value so Firebase Admin can report invalid credentials.
+    }
+  }
+
+  const pemMatch = privateKey.match(
+    /-----BEGIN (RSA )?PRIVATE KEY-----([\s\S]*?)-----END \1PRIVATE KEY-----/,
+  );
+  if (pemMatch) {
+    const label = pemMatch[1] ? "RSA PRIVATE KEY" : "PRIVATE KEY";
+    const body = pemMatch[2].replace(/[^A-Za-z0-9+/=]/g, "");
+    if (body) {
+      const lines = body.match(/.{1,64}/g) || [];
+      privateKey = `-----BEGIN ${label}-----\n${lines.join("\n")}\n-----END ${label}-----`;
     }
   }
 

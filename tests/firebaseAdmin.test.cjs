@@ -45,3 +45,22 @@ test("normalizes a base64-encoded Firebase private key", () => {
   const pem = "-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----";
   assert.equal(normalizeFirebasePrivateKey(Buffer.from(pem).toString("base64")), pem);
 });
+
+test("repairs double-escaped and wrapped PEM values", () => {
+  const { normalizeFirebasePrivateKey } = load();
+  const input =
+    '\\"-----BEGIN PRIVATE KEY-----\\\\nYWJjMTIz\\\\n-----END PRIVATE KEY-----\\\\n\\"';
+  assert.equal(
+    normalizeFirebasePrivateKey(input),
+    "-----BEGIN PRIVATE KEY-----\nYWJjMTIz\n-----END PRIVATE KEY-----",
+  );
+});
+
+test("reformats a collapsed PEM body into 64 character lines", () => {
+  const { normalizeFirebasePrivateKey } = load();
+  const body = "a".repeat(80);
+  assert.equal(
+    normalizeFirebasePrivateKey(`prefix -----BEGIN PRIVATE KEY-----${body}-----END PRIVATE KEY----- suffix`),
+    `-----BEGIN PRIVATE KEY-----\n${"a".repeat(64)}\n${"a".repeat(16)}\n-----END PRIVATE KEY-----`,
+  );
+});
