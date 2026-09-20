@@ -33,14 +33,12 @@ import {
   FloatingTextareaField,
 } from "@/components/FloatingFields";
 import {
+  DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT,
   extractDriveFileId,
   normalizeImageUrl,
 } from "@/lib/googleSheetImageUtils";
 
-const GOOGLE_SHEET_ENDPOINT =
-  process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
-  process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL ||
-  "";
+const GOOGLE_SHEET_ENDPOINT = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
 const PROFILE_TYPE_OPTIONS = [
   { key: "instrument", label: "Instrument" },

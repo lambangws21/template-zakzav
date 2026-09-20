@@ -38,13 +38,11 @@ import {
   extractDriveIdFromRecord,
   toSafeImageSrc,
 } from "@/lib/googleDriveImage";
+import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 import Image from "next/image";
 
 // Endpoint Web App Apps Script (yang sudah di-upgrade)
-const GOOGLE_SHEET_ENDPOINT =
-  process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
-  process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL ||
-  "";
+const GOOGLE_SHEET_ENDPOINT = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
 const ACTION_LIST_INSTRUMENT_PROFILE_CANDIDATES = [
   "list_instrument_profiles",

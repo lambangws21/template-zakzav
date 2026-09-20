@@ -9,8 +9,9 @@ import {
   Camera, ImagePlus, Trash2, ZoomIn, Minus,
 } from "lucide-react";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
+const APPS_SCRIPT_URL = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
 async function apiUpdateCase(id, data) {
   const res = await authenticatedFetch("/api/google-sheet-images", {

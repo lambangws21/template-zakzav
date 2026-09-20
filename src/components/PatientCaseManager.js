@@ -49,9 +49,10 @@ import CaseCompareModal from "./CaseCompareModal";
 import ThemeToggle from "./ThemeToggle";
 import UserProfileBadge from "./UserProfileBadge";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 
 const STORAGE_KEY = "zakzav_patient_cases_v1";
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
+const APPS_SCRIPT_URL = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
 // ─── Delete Confirm Modal ──────────────────────────────────────────────────────
 

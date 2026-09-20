@@ -10,8 +10,9 @@ import {
   RefreshCw, ChevronDown, ChevronUp, Activity, Database,
 } from "lucide-react";
 import MLAnnotationMonitor from "./MLAnnotationMonitor";
+import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
+const APPS_SCRIPT_URL = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 const SESSION_KEY = "zakzav_analytics_auth_v1";
 
 // ─── API ───────────────────────────────────────────────────────────────────────

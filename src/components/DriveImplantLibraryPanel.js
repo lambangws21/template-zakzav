@@ -15,8 +15,9 @@ import {
   ImageIcon,
   HardDriveUpload,
 } from "lucide-react";
+import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 
-const ENDPOINT = process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT || "";
+const ENDPOINT = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
 // ─── Konfigurasi folder ───────────────────────────────────────────────────────
 // Folder utama berisi kategori-kategori implant

@@ -7,10 +7,13 @@ import {
   toSafeImageSrc,
 } from "@/lib/googleDriveImage";
 
+const FALLBACK_GOOGLE_SHEET_IMAGE_ENDPOINT =
+  "https://script.google.com/macros/s/AKfycbzuQk2jdWiJT8ANVR3XdoFQiWInwMGnJM9ZtHUHIf6MipXdNs5moRMx4NV-nXzfJ_6q/exec";
+
 export const DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT =
   process.env.NEXT_PUBLIC_GOOGLE_SHEET_IMAGE_ENDPOINT ||
   process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL ||
-  "";
+  FALLBACK_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
 function asText(value) {
   return String(value ?? "").trim();
