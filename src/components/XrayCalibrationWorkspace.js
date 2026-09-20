@@ -786,6 +786,76 @@ const MOBILE_DOUBLE_TAP_MS_RESET = 360;
 const MOBILE_DOUBLE_TAP_DISTANCE_SCREEN = 28;
 const DEFAULT_LINE_STROKE_WIDTH = 2;
 const DEFAULT_LINE_COLOR = "#38bdf8";
+const LINE_MEASUREMENT_MODES = [
+  { value: "length", label: "Length" },
+  { value: "radius", label: "Radius" },
+  { value: "diameter", label: "Diameter" },
+];
+const MEASUREMENT_CIRCLE_COLOR = "#7df58a";
+
+const normalizeLineMeasurementMode = (value) =>
+  LINE_MEASUREMENT_MODES.some((mode) => mode.value === value)
+    ? value
+    : "length";
+
+function LineMeasurementModeControl({
+  mode,
+  valueText,
+  circumferenceText,
+  onChange,
+  compact = false,
+}) {
+  const normalizedMode = normalizeLineMeasurementMode(mode);
+  return (
+    <div
+      className={`${compact ? "rounded-[14px] px-2 py-1.5" : "rounded-2xl px-2.5 py-2"} border border-white/50 bg-white/24`}
+    >
+      <div className="mb-1.5 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+        Measure
+      </div>
+      <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-white/55 bg-slate-200/55 p-0.5">
+        {LINE_MEASUREMENT_MODES.map((item) => {
+          const active = normalizedMode === item.value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChange(item.value)}
+              className={`${compact ? "min-h-7 text-[9px]" : "min-h-8 text-[10px]"} rounded-[10px] px-1 font-black transition ${
+                active
+                  ? "bg-cyan-700 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white/50"
+              }`}
+              aria-pressed={active}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <div className="rounded-xl bg-slate-900/[0.06] px-2 py-1.5">
+          <div className="text-[7px] font-black tracking-wider text-slate-400 uppercase">
+            {normalizedMode}
+          </div>
+          <div className="mt-0.5 font-mono text-[10px] font-black text-slate-700">
+            {valueText}
+          </div>
+        </div>
+        {normalizedMode !== "length" ? (
+          <div className="rounded-xl bg-slate-900/[0.06] px-2 py-1.5">
+            <div className="text-[7px] font-black tracking-wider text-slate-400 uppercase">
+              Circumference
+            </div>
+            <div className="mt-0.5 font-mono text-[10px] font-black text-slate-700">
+              {circumferenceText}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 // Presets that snap to horizontal (y locked to start)
 const HORIZONTAL_LINE_PRESETS = new Set([
@@ -1064,6 +1134,7 @@ export default function XrayCalibrationWorkspace({
   const [mobilePanelPreviewActive, setMobilePanelPreviewActive] =
     useState(false);
   const [mobileHandleAssist, setMobileHandleAssist] = useState(null);
+  const [expandedLineHandle, setExpandedLineHandle] = useState(null);
   const [mobileAngleHandleAssist, setMobileAngleHandleAssist] = useState(null);
   const [mobileHkaHandleAssist, setMobileHkaHandleAssist] = useState(null);
   const [mobilePlanningGuideHandleAssist, setMobilePlanningGuideHandleAssist] =
@@ -2381,6 +2452,9 @@ export default function XrayCalibrationWorkspace({
         ...lineInput,
         id: nextLineIdRef.current,
         side: lineInput.side || canvasAnatomySide,
+        measurementMode: normalizeLineMeasurementMode(
+          lineInput.measurementMode,
+        ),
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -3355,6 +3429,32 @@ export default function XrayCalibrationWorkspace({
   );
 
   const selectedLengthPx = selectedLine ? getLineLength(selectedLine) : 0;
+  const selectedLineMeasurementMode = normalizeLineMeasurementMode(
+    selectedLine?.measurementMode,
+  );
+  const selectedLineSupportsMeasurementMode = Boolean(
+    selectedLine && (!selectedLine.type || selectedLine.type === "normal"),
+  );
+  const selectedLineCircumferencePx =
+    selectedLineMeasurementMode === "radius"
+      ? selectedLengthPx * Math.PI * 2
+      : selectedLineMeasurementMode === "diameter"
+        ? selectedLengthPx * Math.PI
+        : selectedLengthPx;
+  const setSelectedLineMeasurementMode = useCallback(
+    (measurementMode) => {
+      if (!selectedLine) return;
+      const nextMode = normalizeLineMeasurementMode(measurementMode);
+      setLines((prev) =>
+        prev.map((line) =>
+          line.id === selectedLine.id
+            ? { ...line, measurementMode: nextMode }
+            : line,
+        ),
+      );
+    },
+    [selectedLine],
+  );
   const hasCalibration = mmPerPixel !== null;
   const hideSavedCalibrationLine =
     hasCalibration && !simpleCalibrationModalOpen;
@@ -3553,6 +3653,13 @@ export default function XrayCalibrationWorkspace({
     },
     [measurementUnit, mmPerPixel],
   );
+  const selectedLineValueText = selectedLine
+    ? formatMeasurementFromPx(selectedLengthPx) || "Belum dikalibrasi"
+    : "-";
+  const selectedLineCircumferenceText = selectedLine
+    ? formatMeasurementFromPx(selectedLineCircumferencePx) ||
+      "Belum dikalibrasi"
+    : "-";
 
   const lineTypeLabel = useCallback((type) => {
     if (type === "dorrOuter") return "DORR-A";
@@ -3978,6 +4085,16 @@ export default function XrayCalibrationWorkspace({
   }, [lines, lockedLineIds, mobileHandleAssist, selectedLineId]);
 
   useEffect(() => {
+    if (!expandedLineHandle) return;
+    const stillExists = lines.some(
+      (line) => line.id === expandedLineHandle.lineId,
+    );
+    if (!stillExists || selectedLineId !== expandedLineHandle.lineId) {
+      setExpandedLineHandle(null);
+    }
+  }, [expandedLineHandle, lines, selectedLineId]);
+
+  useEffect(() => {
     if (!mobileAngleHandleAssist) return;
     const stillExists = angles.some(
       (angle) => angle.id === mobileAngleHandleAssist.angleId,
@@ -4030,8 +4147,21 @@ export default function XrayCalibrationWorkspace({
           : rulerTargetLabel
             ? `Target ${rulerTargetLabel}`
             : "Kalibrasi belum aktif";
+      const measurementMode = normalizeLineMeasurementMode(
+        line.measurementMode,
+      );
+      const measurementLabel =
+        measurementMode === "radius"
+          ? `R ${baseLabel}`
+          : measurementMode === "diameter"
+            ? `Ø ${baseLabel}`
+            : baseLabel;
       const displayName = String(line.name || "").trim();
-      const taggedLabel = `${displayName || lineTypeLabel(line.type)}: ${baseLabel}`;
+      const defaultName = lineTypeLabel(line.type);
+      const taggedLabel =
+        !displayName && (!line.type || line.type === "normal")
+          ? measurementLabel
+          : `${displayName || defaultName}: ${measurementLabel}`;
       return isLineLocked(line.id) ? `${taggedLabel} [LOCK]` : taggedLabel;
     },
     [formatMeasurementFromPx, isLineLocked, lineTypeLabel, mmPerPixel],
@@ -8390,11 +8520,17 @@ export default function XrayCalibrationWorkspace({
         ];
 
         for (const handle of handles) {
+          const isExpanded =
+            expandedLineHandle?.lineId === line.id &&
+            expandedLineHandle?.handleKey === handle.key;
+          const handleThreshold = isExpanded
+            ? Math.max(thresholdInImage, 26 / view.scale)
+            : thresholdInImage;
           const distance = Math.hypot(
             imagePoint.x - handle.x,
             imagePoint.y - handle.y,
           );
-          if (distance <= thresholdInImage && distance < minDistance) {
+          if (distance <= handleThreshold && distance < minDistance) {
             minDistance = distance;
             pickedHandle = { lineId: line.id, handleKey: handle.key };
           }
@@ -8405,6 +8541,7 @@ export default function XrayCalibrationWorkspace({
     },
     [
       calibrationLineId,
+      expandedLineHandle,
       hideSavedCalibrationLine,
       isCoarsePointer,
       lines,
@@ -9561,6 +9698,18 @@ export default function XrayCalibrationWorkspace({
       orientedSize.height * view.scale,
     );
 
+    const drawCleanHandleRings = (markers, color) => {
+      if (!Array.isArray(markers) || markers.length === 0) return;
+      overlayCtx.save();
+      overlayCtx.setLineDash([]);
+      overlayCtx.fillStyle = "rgba(15, 23, 42, 0.24)";
+      fillCircleMarkers(overlayCtx, markers);
+      overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = 2;
+      strokeCircleMarkers(overlayCtx, markers);
+      overlayCtx.restore();
+    };
+
     const drawLine = (line, opts = {}) => {
       const start = imageToScreenPoint(line.x1, line.y1);
       const end = imageToScreenPoint(line.x2, line.y2);
@@ -9570,7 +9719,7 @@ export default function XrayCalibrationWorkspace({
 
       overlayCtx.save();
       if (assistGeometry) {
-        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.fillStyle = "rgba(15, 23, 42, 0.28)";
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -9580,8 +9729,8 @@ export default function XrayCalibrationWorkspace({
           Math.PI * 2,
         );
         overlayCtx.fill();
-        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
-        overlayCtx.lineWidth = 1.5;
+        overlayCtx.strokeStyle = opts.color;
+        overlayCtx.lineWidth = 2;
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -9636,8 +9785,44 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.lineTo(end.x, end.y);
       overlayCtx.stroke();
 
-      const shouldDrawEndpointCaps =
-        opts.endpointCaps || opts.calibrationReference || line.type === "ruler";
+      const measurementMode = normalizeLineMeasurementMode(
+        line.measurementMode,
+      );
+      const canDrawMeasurementCircle =
+        (!line.type || line.type === "normal") && measurementMode !== "length";
+      if (canDrawMeasurementCircle) {
+        const lineScreenLength = Math.hypot(end.x - start.x, end.y - start.y);
+        const circleRadius =
+          measurementMode === "radius"
+            ? lineScreenLength
+            : lineScreenLength / 2;
+        const circleCenter =
+          measurementMode === "radius"
+            ? start
+            : {
+                x: (start.x + end.x) / 2,
+                y: (start.y + end.y) / 2,
+              };
+        if (circleRadius > 2) {
+          overlayCtx.save();
+          overlayCtx.setLineDash([]);
+          overlayCtx.strokeStyle = MEASUREMENT_CIRCLE_COLOR;
+          overlayCtx.globalAlpha = opts.highlightHandles ? 0.95 : 0.72;
+          overlayCtx.lineWidth = Math.max(1.2, (opts.width || 2) * 0.72);
+          overlayCtx.beginPath();
+          overlayCtx.arc(
+            circleCenter.x,
+            circleCenter.y,
+            circleRadius,
+            0,
+            Math.PI * 2,
+          );
+          overlayCtx.stroke();
+          overlayCtx.restore();
+        }
+      }
+
+      const shouldDrawEndpointCaps = opts.endpointCaps;
       if (shouldDrawEndpointCaps) {
         const dx = end.x - start.x;
         const dy = end.y - start.y;
@@ -9739,50 +9924,30 @@ export default function XrayCalibrationWorkspace({
         }
       }
 
-      if (opts.showTouchHalo) {
-        overlayCtx.fillStyle = "rgba(248, 250, 252, 0.18)";
+      if (opts.showEndpointRings) {
+        const baseRadius = opts.handleRadius || 15;
+        const startRadius =
+          opts.expandedHandleKey === "start"
+            ? Math.max(baseRadius, 24)
+            : baseRadius;
+        const endRadius =
+          opts.expandedHandleKey === "end"
+            ? Math.max(baseRadius, 24)
+            : baseRadius;
+        const markers = [
+          { x: start.x, y: start.y, radius: startRadius },
+          { x: end.x, y: end.y, radius: endRadius },
+        ];
+        overlayCtx.fillStyle = "rgba(15, 23, 42, 0.24)";
+        fillCircleMarkers(overlayCtx, markers);
+        overlayCtx.strokeStyle = opts.color;
+        overlayCtx.lineWidth = Math.max(2, (opts.width || 2) * 0.9);
+        strokeCircleMarkers(overlayCtx, markers);
+      } else if (opts.showLegacyHandles) {
+        overlayCtx.fillStyle = opts.color;
         fillCircleMarkers(overlayCtx, [
-          { x: start.x, y: start.y, radius: 16 },
-          { x: end.x, y: end.y, radius: 16 },
-        ]);
-      }
-
-      overlayCtx.fillStyle = opts.color;
-      fillCircleMarkers(overlayCtx, [
-        {
-          x: start.x,
-          y: start.y,
-          radius:
-            (opts.handleRadius || 3) + (opts.calibrationReference ? 0.7 : 0),
-        },
-        {
-          x: end.x,
-          y: end.y,
-          radius:
-            (opts.handleRadius || 3) + (opts.calibrationReference ? 0.7 : 0),
-        },
-      ]);
-
-      if (opts.highlightHandles) {
-        overlayCtx.strokeStyle = "#f8fafc";
-        overlayCtx.lineWidth = opts.calibrationReference ? 1.9 : 1.5;
-        strokeCircleMarkers(overlayCtx, [
-          {
-            x: start.x,
-            y: start.y,
-            radius:
-              (opts.handleRadius || 3) +
-              1.2 +
-              (opts.calibrationReference ? 0.8 : 0),
-          },
-          {
-            x: end.x,
-            y: end.y,
-            radius:
-              (opts.handleRadius || 3) +
-              1.2 +
-              (opts.calibrationReference ? 0.8 : 0),
-          },
+          { x: start.x, y: start.y, radius: opts.handleRadius || 3 },
+          { x: end.x, y: end.y, radius: opts.handleRadius || 3 },
         ]);
       }
 
@@ -9980,16 +10145,21 @@ export default function XrayCalibrationWorkspace({
         color: style.color,
         width: style.width,
         dashPattern: style.dashPattern,
-        handleRadius:
-          (isSelected || isPulsing) && !isLocked
-            ? isCoarsePointer
-              ? 6.6
-              : 4.9
-            : 3,
+        handleRadius: isCoarsePointer ? 17 : 15,
         highlightHandles: (isSelected || isPulsing) && !isLocked,
         dashed: isLocked,
-        showTouchHalo: isSelected && !isLocked && isCoarsePointer,
-        endpointCaps: (isSelected || isPulsing) && !isLocked,
+        showTouchHalo: false,
+        endpointCaps: false,
+        showEndpointRings: (isSelected || isPulsing) && !isLocked,
+        showLegacyHandles:
+          !isSelected &&
+          !isPulsing &&
+          (isCalibrationReference ||
+            (isCalibration && !hideSavedCalibrationLine)),
+        expandedHandleKey:
+          expandedLineHandle?.lineId === line.id
+            ? expandedLineHandle.handleKey
+            : null,
         calibrationReference: isCalibrationReference,
         calibrationSaved: isCalibration,
         pulse: isPulsing || (isCalibrationReference && !isCalibration),
@@ -10002,50 +10172,53 @@ export default function XrayCalibrationWorkspace({
 
     for (const overlay of lineIntersectionAngleOverlays) {
       const point = imageToScreenPoint(overlay.x, overlay.y);
+      const rayA = imageToScreenPoint(overlay.rayA.x, overlay.rayA.y);
+      const rayB = imageToScreenPoint(overlay.rayB.x, overlay.rayB.y);
       const isLinkedSelection =
         selectedLineId === overlay.lineAId ||
         selectedLineId === overlay.lineBId;
-      const color = isLinkedSelection ? "#ffe600" : "#00ffcc";
+      const color = isLinkedSelection ? "#f4a8ee" : "#e9a2e5";
+      const startAngle = Math.atan2(rayA.y - point.y, rayA.x - point.x);
+      const endAngle = Math.atan2(rayB.y - point.y, rayB.x - point.x);
+      let screenDelta =
+        ((endAngle - startAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      if (Math.abs(screenDelta) > Math.PI / 2 + 0.02) {
+        screenDelta += screenDelta > 0 ? -Math.PI : Math.PI;
+      }
+      const arcRadius = isLinkedSelection ? 29 : 24;
+      const centerRadius = isLinkedSelection ? 16 : 12;
+      const bisector = startAngle + screenDelta / 2;
 
       overlayCtx.save();
-      overlayCtx.lineWidth = isLinkedSelection ? 2 : 1.5;
-      overlayCtx.strokeStyle = "rgba(2, 6, 23, 0.82)";
+      overlayCtx.fillStyle = "rgba(244, 168, 238, 0.2)";
       overlayCtx.beginPath();
-      overlayCtx.arc(
-        point.x,
-        point.y,
-        isLinkedSelection ? 8 : 6,
-        0,
-        Math.PI * 2,
-      );
-      overlayCtx.stroke();
+      overlayCtx.arc(point.x, point.y, centerRadius, 0, Math.PI * 2);
+      overlayCtx.fill();
       overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = isLinkedSelection ? 2.2 : 1.7;
+      overlayCtx.lineCap = "round";
       overlayCtx.beginPath();
       overlayCtx.arc(
         point.x,
         point.y,
-        isLinkedSelection ? 6.5 : 5,
-        0,
-        Math.PI * 2,
+        arcRadius,
+        startAngle,
+        startAngle + screenDelta,
+        screenDelta < 0,
       );
       overlayCtx.stroke();
-      overlayCtx.restore();
-
-      drawTag(
-        overlayCtx,
-        point.x + 18,
-        point.y - 16,
-        `∠ ${overlay.angleDeg.toFixed(1)}°`,
-        color,
-        {
-          bgOpacity: isLinkedSelection ? 0.82 : 0.64,
-          borderOpacity: 0.98,
-          fontSize: 8,
-          paddingX: 4,
-          paddingY: 1.5,
-          radius: 999,
-        },
+      overlayCtx.font = `${isLinkedSelection ? 700 : 600} ${isLinkedSelection ? 12 : 10}px Inter, sans-serif`;
+      overlayCtx.textAlign = "center";
+      overlayCtx.textBaseline = "middle";
+      overlayCtx.fillStyle = color;
+      overlayCtx.shadowColor = "rgba(15, 23, 42, 0.88)";
+      overlayCtx.shadowBlur = 4;
+      overlayCtx.fillText(
+        `${overlay.angleDeg.toFixed(1)}°`,
+        point.x + Math.cos(bisector) * (arcRadius + 20),
+        point.y + Math.sin(bisector) * (arcRadius + 20),
       );
+      overlayCtx.restore();
     }
 
     for (const angle of angles) {
@@ -10086,7 +10259,7 @@ export default function XrayCalibrationWorkspace({
 
       overlayCtx.save();
       if (assistGeometry) {
-        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.fillStyle = "rgba(15, 23, 42, 0.28)";
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -10096,8 +10269,8 @@ export default function XrayCalibrationWorkspace({
           Math.PI * 2,
         );
         overlayCtx.fill();
-        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
-        overlayCtx.lineWidth = 1.5;
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = 2;
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -10145,13 +10318,18 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
       }
 
-      overlayCtx.fillStyle = color;
-      fillCircleMarkers(overlayCtx, [
-        { x: p1.x, y: p1.y, radius: isEmphasized ? 4.4 : 3.8 },
-        { x: p2.x, y: p2.y, radius: isEmphasized ? 5.1 : 4.5 },
-        { x: p3.x, y: p3.y, radius: isEmphasized ? 4.4 : 3.8 },
-      ]);
       overlayCtx.restore();
+
+      if (isEmphasized) {
+        drawCleanHandleRings(
+          [
+            { x: p1.x, y: p1.y, radius: isCoarsePointer ? 17 : 15 },
+            { x: p2.x, y: p2.y, radius: isCoarsePointer ? 18 : 16 },
+            { x: p3.x, y: p3.y, radius: isCoarsePointer ? 17 : 15 },
+          ],
+          color,
+        );
+      }
 
       drawTag(
         overlayCtx,
@@ -10234,53 +10412,37 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.restore();
       overlayCtx.setLineDash([]);
 
-      overlayCtx.fillStyle = color;
-      overlayCtx.beginPath();
-      overlayCtx.arc(
-        center.x,
-        center.y,
-        isEmphasized ? 4.6 : 4,
-        0,
-        Math.PI * 2,
-      );
-      overlayCtx.fill();
+      let circleHandleMarkers = [];
       if (isEmphasized) {
-        // 2 diameter endpoint handles (rotatable) + 2 perpendicular radius handles
+        // Center, diameter endpoints, and perpendicular radius handles.
         const perpCos = Math.cos(dAngleRad + Math.PI / 2);
         const perpSin = Math.sin(dAngleRad + Math.PI / 2);
-        const handles = [
+        circleHandleMarkers = [
+          { x: center.x, y: center.y, radius: isCoarsePointer ? 15 : 12 },
           {
             x: center.x + radiusPx * dCos,
             y: center.y + radiusPx * dSin,
-            isDia: true,
+            radius: isCoarsePointer ? 16 : 13,
           },
           {
             x: center.x - radiusPx * dCos,
             y: center.y - radiusPx * dSin,
-            isDia: true,
+            radius: isCoarsePointer ? 16 : 13,
           },
           {
             x: center.x + radiusPx * perpCos,
             y: center.y + radiusPx * perpSin,
-            isDia: false,
+            radius: isCoarsePointer ? 14 : 11,
           },
           {
             x: center.x - radiusPx * perpCos,
             y: center.y - radiusPx * perpSin,
-            isDia: false,
+            radius: isCoarsePointer ? 14 : 11,
           },
         ];
-        overlayCtx.lineWidth = 1.5;
-        for (const handle of handles) {
-          overlayCtx.fillStyle = handle.isDia ? color : "#f8fafc";
-          overlayCtx.strokeStyle = color;
-          overlayCtx.beginPath();
-          overlayCtx.arc(handle.x, handle.y, 4.8, 0, Math.PI * 2);
-          overlayCtx.fill();
-          overlayCtx.stroke();
-        }
       }
       overlayCtx.restore();
+      drawCleanHandleRings(circleHandleMarkers, color);
 
       const labelAnchorX = center.x;
       const labelAnchorY = center.y - radiusPx - 12;
@@ -10423,17 +10585,18 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.moveTo(tibia4.x, tibia4.y);
         overlayCtx.lineTo(tibia10.x, tibia10.y);
         overlayCtx.stroke();
-        fillCircleMarkers(overlayCtx, [
-          {
-            x: femurShaft.x,
-            y: femurShaft.y,
-            radius: isEmphasized ? 4.2 : 3.6,
-          },
-          { x: notch.x, y: notch.y, radius: isEmphasized ? 4.8 : 4.2 },
-          { x: tibia4.x, y: tibia4.y, radius: isEmphasized ? 4.8 : 4.2 },
-          { x: tibia10.x, y: tibia10.y, radius: isEmphasized ? 4.2 : 3.6 },
-        ]);
         overlayCtx.restore();
+
+        if (isEmphasized) {
+          drawCleanHandleRings(
+            [femurShaft, notch, tibia4, tibia10].map((point) => ({
+              x: point.x,
+              y: point.y,
+              radius: isCoarsePointer ? 16 : 13,
+            })),
+            color,
+          );
+        }
 
         drawTag(
           overlayCtx,
@@ -10646,45 +10809,36 @@ export default function XrayCalibrationWorkspace({
           }
         }
 
-        // Circle markers
-        overlayCtx.fillStyle = "#ffe600";
-        fillCircleMarkers(overlayCtx, [
-          { x: jlaHip.x, y: jlaHip.y, radius: isEmphasized ? 4.2 : 3.6 },
-        ]);
-        overlayCtx.fillStyle = "#f97316";
-        fillCircleMarkers(overlayCtx, [
-          { x: jlaKnee.x, y: jlaKnee.y, radius: isEmphasized ? 5 : 4.4 },
-        ]);
-        overlayCtx.fillStyle = "#00ffcc";
-        fillCircleMarkers(overlayCtx, [
-          { x: jlaAnkle.x, y: jlaAnkle.y, radius: isEmphasized ? 4.2 : 3.6 },
-        ]);
-        if (jlaMFC) {
-          overlayCtx.fillStyle = "#00b7ff";
-          fillCircleMarkers(overlayCtx, [
-            { x: jlaMFC.x, y: jlaMFC.y, radius: 3.0 },
-          ]);
-        }
-        if (jlaLFC) {
-          overlayCtx.fillStyle = "#00b7ff";
-          fillCircleMarkers(overlayCtx, [
-            { x: jlaLFC.x, y: jlaLFC.y, radius: 3.0 },
-          ]);
-        }
-        if (jlaMTP) {
-          overlayCtx.fillStyle = "#00ffcc";
-          fillCircleMarkers(overlayCtx, [
-            { x: jlaMTP.x, y: jlaMTP.y, radius: 3.0 },
-          ]);
-        }
-        if (jlaLTP) {
-          overlayCtx.fillStyle = "#00ffcc";
-          fillCircleMarkers(overlayCtx, [
-            { x: jlaLTP.x, y: jlaLTP.y, radius: 3.0 },
-          ]);
-        }
-
         overlayCtx.restore();
+
+        if (isEmphasized) {
+          const primaryRadius = isCoarsePointer ? 16 : 13;
+          const secondaryRadius = isCoarsePointer ? 14 : 11;
+          drawCleanHandleRings(
+            [{ ...jlaHip, radius: primaryRadius }],
+            "#ffe600",
+          );
+          drawCleanHandleRings(
+            [{ ...jlaKnee, radius: isCoarsePointer ? 18 : 15 }],
+            "#f97316",
+          );
+          drawCleanHandleRings(
+            [{ ...jlaAnkle, radius: primaryRadius }],
+            "#00ffcc",
+          );
+          drawCleanHandleRings(
+            [jlaMFC, jlaLFC]
+              .filter(Boolean)
+              .map((point) => ({ ...point, radius: secondaryRadius })),
+            "#00b7ff",
+          );
+          drawCleanHandleRings(
+            [jlaMTP, jlaLTP]
+              .filter(Boolean)
+              .map((point) => ({ ...point, radius: secondaryRadius })),
+            "#00ffcc",
+          );
+        }
 
         if (!compactForResection) {
           drawTag(
@@ -10757,7 +10911,7 @@ export default function XrayCalibrationWorkspace({
 
       overlayCtx.save();
       if (assistGeometry) {
-        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.fillStyle = "rgba(15, 23, 42, 0.28)";
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -10767,8 +10921,8 @@ export default function XrayCalibrationWorkspace({
           Math.PI * 2,
         );
         overlayCtx.fill();
-        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
-        overlayCtx.lineWidth = 1.5;
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = 2;
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -10855,13 +11009,18 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
         overlayCtx.globalAlpha = 1;
       }
-      overlayCtx.fillStyle = color;
-      fillCircleMarkers(overlayCtx, [
-        { x: hip.x, y: hip.y, radius: isEmphasized ? 4.2 : 3.6 },
-        { x: knee.x, y: knee.y, radius: isEmphasized ? 5 : 4.4 },
-        { x: ankle.x, y: ankle.y, radius: isEmphasized ? 4.2 : 3.6 },
-      ]);
       overlayCtx.restore();
+
+      if (isEmphasized) {
+        drawCleanHandleRings(
+          [
+            { ...hip, radius: isCoarsePointer ? 17 : 14 },
+            { ...knee, radius: isCoarsePointer ? 19 : 16 },
+            { ...ankle, radius: isCoarsePointer ? 17 : 14 },
+          ],
+          color,
+        );
+      }
 
       drawTag(
         overlayCtx,
@@ -10997,24 +11156,6 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.lineTo(cutB.x, cutB.y);
       overlayCtx.stroke();
 
-      if (!guide.locked) {
-        overlayCtx.beginPath();
-        overlayCtx.arc(
-          anchorStart.x,
-          anchorStart.y,
-          isEmphasizedGuide ? 4.8 : 3.8,
-          0,
-          Math.PI * 2,
-        );
-        overlayCtx.arc(
-          anchorEnd.x,
-          anchorEnd.y,
-          isEmphasizedGuide ? 4.8 : 3.8,
-          0,
-          Math.PI * 2,
-        );
-        overlayCtx.fill();
-      }
       const assistGeometry =
         !guide.locked && mobilePlanningGuideHandleAssist?.guideId === guide.id
           ? getMobilePlanningGuideHandleAssistGeometry(
@@ -11023,7 +11164,7 @@ export default function XrayCalibrationWorkspace({
             )
           : null;
       if (assistGeometry) {
-        overlayCtx.fillStyle = "rgba(226, 232, 240, 0.34)";
+        overlayCtx.fillStyle = "rgba(15, 23, 42, 0.28)";
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -11033,8 +11174,8 @@ export default function XrayCalibrationWorkspace({
           Math.PI * 2,
         );
         overlayCtx.fill();
-        overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.65)";
-        overlayCtx.lineWidth = 1.5;
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = 2;
         overlayCtx.beginPath();
         overlayCtx.arc(
           assistGeometry.centerX,
@@ -11047,6 +11188,16 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.fillStyle = color;
       }
       overlayCtx.restore();
+
+      if (!guide.locked && isEmphasizedGuide) {
+        drawCleanHandleRings(
+          [
+            { ...anchorStart, radius: isCoarsePointer ? 17 : 14 },
+            { ...anchorEnd, radius: isCoarsePointer ? 17 : 14 },
+          ],
+          color,
+        );
+      }
 
       drawTag(
         overlayCtx,
@@ -12134,6 +12285,7 @@ export default function XrayCalibrationWorkspace({
     imageToScreenPoint,
     imageWidth,
     isCoarsePointer,
+    expandedLineHandle,
     isPlanningLayout,
     planningGuides,
     level,
@@ -19921,6 +20073,27 @@ export default function XrayCalibrationWorkspace({
         const acuteDeg = rawDeg > 90 ? 180 - rawDeg : rawDeg;
         if (!Number.isFinite(acuteDeg) || acuteDeg < 1) continue;
 
+        const rayAnglesA = [
+          Math.atan2(uyA, uxA),
+          Math.atan2(uyA, uxA) + Math.PI,
+        ];
+        const rayAnglesB = [
+          Math.atan2(uyB, uxB),
+          Math.atan2(uyB, uxB) + Math.PI,
+        ];
+        let arcStart = rayAnglesA[0];
+        let arcDelta = Math.PI;
+        for (const angleA of rayAnglesA) {
+          for (const angleB of rayAnglesB) {
+            const delta =
+              ((angleB - angleA + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+            if (Math.abs(delta) < Math.abs(arcDelta)) {
+              arcStart = angleA;
+              arcDelta = delta;
+            }
+          }
+        }
+
         const signature = `${Math.round(intersection.x / 2)}:${Math.round(intersection.y / 2)}:${Math.round(acuteDeg)}`;
         if (seen.has(signature)) continue;
         seen.add(signature);
@@ -19929,6 +20102,16 @@ export default function XrayCalibrationWorkspace({
           x: intersection.x,
           y: intersection.y,
           angleDeg: acuteDeg,
+          arcStart,
+          arcDelta,
+          rayA: {
+            x: intersection.x + Math.cos(arcStart),
+            y: intersection.y + Math.sin(arcStart),
+          },
+          rayB: {
+            x: intersection.x + Math.cos(arcStart + arcDelta),
+            y: intersection.y + Math.sin(arcStart + arcDelta),
+          },
           lineAId: lineA.id,
           lineBId: lineB.id,
         });
@@ -37951,6 +38134,16 @@ export default function XrayCalibrationWorkspace({
                         placeholder={`Line #${selectedLine.id}`}
                       />
                     </label>
+                    {selectedLineSupportsMeasurementMode ? (
+                      <div className="mt-2">
+                        <LineMeasurementModeControl
+                          mode={selectedLineMeasurementMode}
+                          valueText={selectedLineValueText}
+                          circumferenceText={selectedLineCircumferenceText}
+                          onChange={setSelectedLineMeasurementMode}
+                        />
+                      </div>
+                    ) : null}
                     <div className="mt-2 rounded-2xl border border-emerald-200/60 bg-white/35 px-2 py-2">
                       <div className="mb-1.5 text-[10px] font-black tracking-widest text-emerald-800 uppercase">
                         Warna Line
@@ -44989,6 +45182,15 @@ export default function XrayCalibrationWorkspace({
                               {lineTypeLabel(selectedLine.type || "normal")}
                             </span>
                           </div>
+                          {selectedLineSupportsMeasurementMode ? (
+                            <LineMeasurementModeControl
+                              mode={selectedLineMeasurementMode}
+                              valueText={selectedLineValueText}
+                              circumferenceText={selectedLineCircumferenceText}
+                              onChange={setSelectedLineMeasurementMode}
+                              compact
+                            />
+                          ) : null}
                           <div className="rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
                             <div className="mb-1 flex items-center justify-between gap-2">
                               <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
@@ -45190,6 +45392,15 @@ export default function XrayCalibrationWorkspace({
                               placeholder={`Line #${selectedLine.id}`}
                             />
                           </label>
+                          {selectedLineSupportsMeasurementMode ? (
+                            <LineMeasurementModeControl
+                              mode={selectedLineMeasurementMode}
+                              valueText={selectedLineValueText}
+                              circumferenceText={selectedLineCircumferenceText}
+                              onChange={setSelectedLineMeasurementMode}
+                              compact
+                            />
+                          ) : null}
                           <CompactSliderField
                             label="Line width"
                             valueText={`${Number(selectedLine.strokeWidth || DEFAULT_LINE_STROKE_WIDTH).toFixed(1)}x`}
@@ -46751,9 +46962,36 @@ export default function XrayCalibrationWorkspace({
                   onContextMenu={(event) => event.preventDefault()}
                   onDoubleClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
-                    zoomAtPoint(2.2, {
+                    const screenPoint = {
                       x: event.clientX - rect.left,
                       y: event.clientY - rect.top,
+                    };
+                    const handleHit = findClosestHandle(
+                      screenToImagePoint(screenPoint.x, screenPoint.y),
+                    );
+                    if (handleHit && !isLineLocked(handleHit.lineId)) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSelectedLineId(handleHit.lineId);
+                      setSelectedAngleId(null);
+                      setSelectedCircleId(null);
+                      setSelectedHkaId(null);
+                      setSelectedCutLayerId(null);
+                      setExpandedLineHandle((current) =>
+                        current?.lineId === handleHit.lineId &&
+                        current?.handleKey === handleHit.handleKey
+                          ? null
+                          : handleHit,
+                      );
+                      triggerSelectionPulse("line", handleHit.lineId);
+                      setNotice(
+                        "Handle diperbesar. Drag dari area lingkaran untuk adjust lebih presisi.",
+                      );
+                      return;
+                    }
+                    zoomAtPoint(2.2, {
+                      x: screenPoint.x,
+                      y: screenPoint.y,
                     });
                   }}
                 />
