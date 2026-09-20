@@ -17,17 +17,64 @@ function parseJsonSafe(value) {
   }
 }
 
+function normalizeFirebasePrivateKey(value) {
+  let privateKey = String(value || "").trim();
+  if (!privateKey) return "";
+
+  const jsonDecoded = parseJsonSafe(privateKey);
+  if (typeof jsonDecoded === "string") {
+    privateKey = jsonDecoded.trim();
+  } else if (
+    (privateKey.startsWith('"') && privateKey.endsWith('"')) ||
+    (privateKey.startsWith("'") && privateKey.endsWith("'"))
+  ) {
+    privateKey = privateKey.slice(1, -1).trim();
+  }
+
+  privateKey = privateKey
+    .replace(/\\r\\n|\\n|\\r/g, "\n")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+
+  if (!privateKey.includes("BEGIN PRIVATE KEY")) {
+    try {
+      const decoded = Buffer.from(privateKey.replace(/\s+/g, ""), "base64")
+        .toString("utf8")
+        .trim();
+      if (decoded.includes("BEGIN PRIVATE KEY")) {
+        privateKey = decoded.replace(/\r\n?/g, "\n");
+      }
+    } catch {
+      // Keep the original value so Firebase Admin can report invalid credentials.
+    }
+  }
+
+  return privateKey;
+}
+
+function normalizeServiceAccount(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const privateKey = normalizeFirebasePrivateKey(value.private_key || value.privateKey);
+  return privateKey ? { ...value, private_key: privateKey } : value;
+}
+
+function parseServiceAccountJson(value) {
+  let parsed = parseJsonSafe(value);
+  if (typeof parsed === "string") parsed = parseJsonSafe(parsed);
+  return normalizeServiceAccount(parsed);
+}
+
 function getServiceAccountFromEnv() {
   const directJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON;
   if (directJson) {
-    const parsed = parseJsonSafe(directJson);
+    const parsed = parseServiceAccountJson(directJson);
     if (parsed) return parsed;
   }
 
   const base64Json = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
   if (base64Json) {
     const decoded = Buffer.from(base64Json, "base64").toString("utf8");
-    const parsed = parseJsonSafe(decoded);
+    const parsed = parseServiceAccountJson(decoded);
     if (parsed) return parsed;
   }
 
@@ -38,7 +85,7 @@ function getServiceAccountFromEnv() {
         ? filePath
         : resolve(process.cwd(), filePath);
       const fileContent = readFileSync(absolutePath, "utf8");
-      const parsed = parseJsonSafe(fileContent);
+      const parsed = parseServiceAccountJson(fileContent);
       if (parsed) return parsed;
     } catch {
       // ignore path errors; fallback to field-based env
@@ -51,7 +98,7 @@ function getServiceAccountFromEnv() {
     process.env.VITE_FIREBASE_PROJECT_ID ||
     "";
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || "";
-  const privateKey = String(process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const privateKey = normalizeFirebasePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
   if (projectId && clientEmail && privateKey) {
     return {
       project_id: projectId,
@@ -107,4 +154,5 @@ export {
   getFirebaseAdminApp,
   getFirebaseAdminStorageBucket,
   hasFirebaseAdminConfig,
+  normalizeFirebasePrivateKey,
 };
