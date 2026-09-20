@@ -3758,6 +3758,7 @@ export default function XrayCalibrationWorkspace({
         (normmedFemoralSizerOpen ||
           isNativeMobileSimpleUi ||
           selectedImplantType === "knee") &&
+        hasDimensionOrSizingContext &&
         selectedLineId !== null &&
         line.id === selectedLineId;
       const hasFemoralContext =
@@ -14404,7 +14405,6 @@ export default function XrayCalibrationWorkspace({
           if (
             isSimpleUiMode &&
             isMobileViewport &&
-            isTouchLikePointer &&
             mobileToolMode === "scale"
           ) {
             if (targetLayer.lockScale) {
@@ -14428,7 +14428,6 @@ export default function XrayCalibrationWorkspace({
           if (
             isSimpleUiMode &&
             isMobileViewport &&
-            isTouchLikePointer &&
             mobileToolMode === "rotate"
           ) {
             if (targetLayer.lockRotation) {
@@ -15204,7 +15203,6 @@ export default function XrayCalibrationWorkspace({
           if (
             isSimpleUiMode &&
             isMobileViewport &&
-            isTouchLikePointer &&
             mobileToolMode === "scale"
           ) {
             if (targetLayer.lockScale) {
@@ -15228,7 +15226,6 @@ export default function XrayCalibrationWorkspace({
           if (
             isSimpleUiMode &&
             isMobileViewport &&
-            isTouchLikePointer &&
             mobileToolMode === "rotate"
           ) {
             if (targetLayer.lockRotation) {
@@ -22127,6 +22124,22 @@ export default function XrayCalibrationWorkspace({
       setMobileSheetSnap("collapsed");
     }
   }, [simpleMobilePanel]);
+  const mobileBlockingDialogOpen = Boolean(
+    simpleCalibrationModalOpen ||
+      simpleGuideModalOpen ||
+      templatingWizardOpen ||
+      simplePlanningModal ||
+      planningImplantModalOpen ||
+      normmedFemoralSizerOpen ||
+      simpleColorPanelOpen,
+  );
+  useEffect(() => {
+    if (!isMobileViewport || !mobileBlockingDialogOpen) return;
+    setSimpleMobilePanel(null);
+    setMobileObjectSettingsOpen(false);
+    setMobileMeasureSheetExpanded(false);
+    setMobileSheetSnap("collapsed");
+  }, [isMobileViewport, mobileBlockingDialogOpen]);
   useEffect(() => {
     if (simpleMobilePanel !== "tools") {
       setMobileMeasureSheetExpanded(false);
@@ -23230,6 +23243,9 @@ export default function XrayCalibrationWorkspace({
       value: linear(getLineLength(line)),
       sourceLineIds: [line.id],
       sourceShowLabel: line.showLabel !== false,
+      color: line.color || lineTypeColor(line.type),
+      locked: lockedLineIds.has(line.id),
+      measurementMode: normalizeLineMeasurementMode(line.measurementMode),
     }));
     angles.forEach((angle) =>
       entries.push({
@@ -23239,6 +23255,7 @@ export default function XrayCalibrationWorkspace({
         side: angle.side,
         unit: "deg",
         value: getAngleDegrees(angle.p1, angle.p2, angle.p3),
+        color: angle.color || DEFAULT_ANGLE_COLOR,
       }),
     );
     circles.forEach((circle) =>
@@ -23250,6 +23267,7 @@ export default function XrayCalibrationWorkspace({
         source: circle.source,
         unit: "mm",
         value: linear(circle.radius * 2),
+        color: circle.color || DEFAULT_CIRCLE_COLOR,
       }),
     );
     planningGuides.forEach((guide, index) => {
@@ -23382,6 +23400,8 @@ export default function XrayCalibrationWorkspace({
     hasCalibration,
     mmPerPixel,
     lineTypeLabel,
+    lineTypeColor,
+    lockedLineIds,
     getPlanningGuideAutoColor,
     getPlanningGuideLabelText,
     lineIntersectionAngleOverlays,
@@ -23598,6 +23618,12 @@ export default function XrayCalibrationWorkspace({
         setMobileCanvasMode("edit");
         setMobileToolMode("rotate");
         handleToolChange("pan");
+        setSimpleMobilePanel(null);
+        setNotice(
+          selectedCutLayer
+            ? "Rotate aktif. Drag layer ke kiri atau kanan untuk memutar."
+            : "Rotate aktif. Tap lalu drag layer implant yang ingin diputar.",
+        );
       },
       active:
         tool === "pan" &&
@@ -23612,6 +23638,12 @@ export default function XrayCalibrationWorkspace({
         setMobileCanvasMode("edit");
         setMobileToolMode("scale");
         handleToolChange("pan");
+        setSimpleMobilePanel(null);
+        setNotice(
+          selectedCutLayer
+            ? "Size aktif. Drag layer untuk memperbesar atau memperkecil."
+            : "Size aktif. Tap lalu drag layer implant yang ingin diubah ukurannya.",
+        );
       },
       active:
         tool === "pan" &&
@@ -23619,18 +23651,8 @@ export default function XrayCalibrationWorkspace({
         mobileToolMode === "scale",
     },
     {
-      id: "ruler",
-      label: "Ruler",
-      icon: RulerDimensionLine,
-      action: () => {
-        setLinePreset("ruler");
-        handleToolChange("draw");
-      },
-      active: tool === "draw" && linePreset === "ruler",
-    },
-    {
       id: "line",
-      label: "Lines",
+      label: "Line Measure",
       icon: PencilLine,
       action: () => handleLinePresetChange("normal"),
       active: tool === "draw" && linePreset === "normal",
@@ -29716,7 +29738,7 @@ export default function XrayCalibrationWorkspace({
               role="dialog"
               aria-modal="true"
               aria-labelledby="guide-modal-title"
-              className="max-h-[92vh] w-full max-w-[560px] overflow-hidden rounded-[30px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)]"
+              className="max-h-[64dvh] w-full max-w-[560px] overflow-hidden rounded-[20px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:max-h-[92vh] sm:rounded-[30px]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-white/70 px-5 py-4">
                 <div className="min-w-0">
@@ -29746,7 +29768,7 @@ export default function XrayCalibrationWorkspace({
                   <X className="h-4 w-4" strokeWidth={2.1} />
                 </button>
               </div>
-              <div className="max-h-[calc(92vh-82px)] space-y-3 overflow-y-auto px-5 py-5">
+              <div className="max-h-[calc(64dvh-68px)] space-y-2 overflow-y-auto px-3 py-3 sm:max-h-[calc(92vh-82px)] sm:space-y-3 sm:px-5 sm:py-5">
                 {[
                   {
                     title: "1. Upload & Kalibrasi",
@@ -30241,7 +30263,7 @@ export default function XrayCalibrationWorkspace({
                     transition={PANEL_SPRING}
                     role="dialog"
                     aria-modal="true"
-                    className="templating-wizard-modal relative flex max-h-[90dvh] w-full max-w-[min(100%,600px)] flex-col overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/80 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
+                    className="templating-wizard-modal relative flex max-h-[64dvh] w-full max-w-[min(100%,600px)] flex-col overflow-hidden rounded-t-[20px] border border-white/80 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:max-h-[90dvh] sm:rounded-[30px]"
                   >
                     {/* ══ Header ══ */}
                     <div className="templating-wizard-header flex shrink-0 items-center gap-2 border-b border-white/60 px-4 py-3">
@@ -31387,7 +31409,7 @@ export default function XrayCalibrationWorkspace({
               role="dialog"
               aria-modal="true"
               aria-labelledby="planning-modal-title"
-              className="max-h-[92dvh] w-full max-w-[min(100%,620px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:rounded-[30px]"
+              className="max-h-[62dvh] w-full max-w-[min(100%,620px)] overflow-hidden rounded-t-[20px] border border-white/85 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:max-h-[92dvh] sm:rounded-[30px]"
             >
               {/* Header */}
               <div className="flex items-center justify-between gap-2 border-b border-white/70 px-4 py-3 sm:px-5 sm:py-4">
@@ -31424,7 +31446,7 @@ export default function XrayCalibrationWorkspace({
                 </button>
               </div>
 
-              <div className="max-h-[calc(92dvh-68px)] space-y-3 overflow-y-auto px-4 py-4 sm:max-h-[calc(92vh-82px)] sm:px-5 sm:py-5">
+              <div className="max-h-[calc(62dvh-58px)] space-y-2 overflow-y-auto px-3 py-3 sm:max-h-[calc(92vh-82px)] sm:space-y-3 sm:px-5 sm:py-5">
                 {simplePlanningModal === "tka" ? (
                   <>
                     {/* ── Ringkasan parameter aktif ── */}
@@ -32055,7 +32077,7 @@ export default function XrayCalibrationWorkspace({
               transition={PANEL_SPRING}
               role="dialog"
               aria-modal="true"
-              className="max-h-[92dvh] w-full max-w-[min(100%,540px)] overflow-y-auto rounded-[28px]"
+              className="max-h-[58dvh] w-full max-w-[min(100%,540px)] overflow-y-auto rounded-t-[20px] sm:max-h-[92dvh] sm:rounded-[28px]"
             >
               <NormmedFemoralSizeChecker
                 hasCalibration={hasCalibration}
@@ -40575,8 +40597,47 @@ export default function XrayCalibrationWorkspace({
             }}
             onSelectMeasurement={(measurementId) => {
               const [kind, ...idParts] = String(measurementId).split(":");
-              if (kind !== "guide") return;
               const rawId = idParts.join(":");
+              if (kind === "line") {
+                const line = lines.find((item) => String(item.id) === rawId);
+                if (!line) return;
+                handleToolChange("pan");
+                setSelectedLineId(line.id);
+                setSelectedAngleId(null);
+                setSelectedCircleId(null);
+                setSelectedHkaId(null);
+                setSelectedCutLayerId(null);
+                setSelectedPlanningGuideId(null);
+                triggerSelectionPulse("line", line.id);
+                return;
+              }
+              if (kind === "angle") {
+                const angle = angles.find((item) => String(item.id) === rawId);
+                if (!angle) return;
+                handleToolChange("pan");
+                setSelectedLineId(null);
+                setSelectedAngleId(angle.id);
+                setSelectedCircleId(null);
+                setSelectedCutLayerId(null);
+                setSelectedPlanningGuideId(null);
+                triggerSelectionPulse("angle", angle.id);
+                return;
+              }
+              if (kind === "circle") {
+                const circle = circles.find(
+                  (item) => String(item.id) === rawId,
+                );
+                if (!circle) return;
+                handleToolChange("pan");
+                setSelectedLineId(null);
+                setSelectedAngleId(null);
+                setSelectedCircleId(circle.id);
+                setSelectedCutLayerId(null);
+                setSelectedPlanningGuideId(null);
+                triggerSelectionPulse("circle", circle.id);
+                return;
+              }
+              if (kind !== "guide") return;
               const guide = planningGuides.find(
                 (item) => String(item.id) === rawId,
               );
@@ -40593,8 +40654,33 @@ export default function XrayCalibrationWorkspace({
             }}
             onDeleteMeasurement={(measurementId) => {
               const [kind, ...idParts] = String(measurementId).split(":");
-              if (kind !== "guide") return;
               const rawId = idParts.join(":");
+              if (kind === "line") {
+                const line = lines.find((item) => String(item.id) === rawId);
+                if (!line || lockedLineIds.has(line.id)) return;
+                setLines((previous) =>
+                  previous.filter((item) => item.id !== line.id),
+                );
+                setSelectedLineId((current) =>
+                  current === line.id ? null : current,
+                );
+                return;
+              }
+              if (kind === "angle") {
+                setAngles((previous) =>
+                  previous.filter((item) => String(item.id) !== rawId),
+                );
+                setSelectedAngleId(null);
+                return;
+              }
+              if (kind === "circle") {
+                setCircles((previous) =>
+                  previous.filter((item) => String(item.id) !== rawId),
+                );
+                setSelectedCircleId(null);
+                return;
+              }
+              if (kind !== "guide") return;
               const guide = planningGuides.find(
                 (item) => String(item.id) === rawId,
               );
@@ -40602,8 +40688,32 @@ export default function XrayCalibrationWorkspace({
             }}
             onUpdateMeasurementColor={(measurementId, color) => {
               const [kind, ...idParts] = String(measurementId).split(":");
-              if (kind !== "guide") return;
               const rawId = idParts.join(":");
+              if (kind === "line") {
+                setLines((previous) =>
+                  previous.map((item) =>
+                    String(item.id) === rawId ? { ...item, color } : item,
+                  ),
+                );
+                return;
+              }
+              if (kind === "angle") {
+                setAngles((previous) =>
+                  previous.map((item) =>
+                    String(item.id) === rawId ? { ...item, color } : item,
+                  ),
+                );
+                return;
+              }
+              if (kind === "circle") {
+                setCircles((previous) =>
+                  previous.map((item) =>
+                    String(item.id) === rawId ? { ...item, color } : item,
+                  ),
+                );
+                return;
+              }
+              if (kind !== "guide") return;
               setPlanningGuides((previous) =>
                 previous.map((guide) =>
                   String(guide.id) === rawId
@@ -40615,8 +40725,30 @@ export default function XrayCalibrationWorkspace({
             }}
             onUpdateMeasurement={(measurementId, patch) => {
               const [kind, ...idParts] = String(measurementId).split(":");
-              if (kind !== "guide") return;
               const rawId = idParts.join(":");
+              if (kind === "line") {
+                const line = lines.find((item) => String(item.id) === rawId);
+                if (!line) return;
+                if ("locked" in patch) {
+                  setLockedLineIds((previous) => {
+                    const next = new Set(previous);
+                    if (patch.locked) next.add(line.id);
+                    else next.delete(line.id);
+                    return next;
+                  });
+                }
+                const linePatch = { ...patch };
+                delete linePatch.locked;
+                if (Object.keys(linePatch).length) {
+                  setLines((previous) =>
+                    previous.map((item) =>
+                      item.id === line.id ? { ...item, ...linePatch } : item,
+                    ),
+                  );
+                }
+                return;
+              }
+              if (kind !== "guide") return;
               setPlanningGuides((previous) =>
                 previous.map((guide) => {
                   if (String(guide.id) !== rawId) return guide;
@@ -42072,8 +42204,9 @@ export default function XrayCalibrationWorkspace({
                       transition={{ duration: 0.2 }}
                       className={`fixed inset-0 z-[38] ${
                         isTabletViewport ||
-                        simpleMobilePanel === "implant" ||
-                        simpleMobilePanel === "layer"
+                        ["tools", "implant", "layer", "manager"].includes(
+                          simpleMobilePanel,
+                        )
                           ? "pointer-events-none bg-transparent"
                           : "bg-black/20"
                       }`}
@@ -42127,15 +42260,15 @@ export default function XrayCalibrationWorkspace({
                           ? "top-[calc(env(safe-area-inset-top)+76px)] right-3 max-h-[calc(100dvh-92px)] w-[min(340px,34vw)] min-w-0 bg-transparent shadow-none"
                           : `inset-x-0 bottom-0 rounded-t-[28px] border border-[var(--soft-border)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl [background:var(--soft-float-bg)] ${
                               mobileSheetSnap === "collapsed"
-                                ? "h-[70px]"
+                                ? "h-[58px]"
                                 : mobileSheetSnap === "half"
-                                  ? "h-[30vh]"
-                                  : "h-[72vh]"
+                                  ? "h-[24dvh] min-h-[150px]"
+                                  : "h-[52dvh]"
                             }`
                       }`}
                     >
                       {!isTabletViewport ? (
-                        <div className="flex shrink-0 items-center justify-center px-4 pt-2.5 pb-1.5">
+                        <div className="flex shrink-0 items-center justify-center px-3 pt-1.5 pb-1">
                           <button
                             type="button"
                             onClick={() =>
@@ -42147,10 +42280,10 @@ export default function XrayCalibrationWorkspace({
                                     : "collapsed",
                               )
                             }
-                            className="flex min-h-7 min-w-[116px] items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 text-[9px] font-black tracking-widest text-slate-400 uppercase"
+                            className="flex min-h-6 min-w-[96px] items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2 text-[8px] font-black tracking-widest text-slate-400 uppercase"
                             aria-label={`Ubah panel ke state berikutnya dari ${mobileSheetSnap}`}
                           >
-                            <span className="h-1 w-10 rounded-full bg-slate-300/80" />
+                            <span className="h-1 w-8 rounded-full bg-slate-300/80" />
                             {mobileSheetSnap === "collapsed"
                               ? "Buka"
                               : mobileSheetSnap === "half"
@@ -42177,7 +42310,7 @@ export default function XrayCalibrationWorkspace({
                           </div>
                           <button
                             type="button"
-                            onClick={() => setMobileSheetSnap("full")}
+                            onClick={() => setMobileSheetSnap("half")}
                             className="min-h-8 shrink-0 rounded-lg bg-cyan-600 px-3 text-[8px] font-black text-white"
                           >
                             {simpleMobilePanel === "implant"
@@ -44576,17 +44709,8 @@ export default function XrayCalibrationWorkspace({
                 !mobileCanvasFocusMode &&
                 !simpleMobilePanel ? (
                   <>
-                    {/* backdrop — click outside to close */}
-                    <div
-                      className={`absolute inset-0 z-39 ${
-                        isNativeMobileSimpleUi &&
-                        !selectedCutLayer &&
-                        selectedLine
-                          ? "pointer-events-none"
-                          : "pointer-events-auto"
-                      }`}
-                      onClick={() => setMobileObjectSettingsOpen(false)}
-                    />
+                    {/* Keep the canvas interactive while the compact editor is open. */}
+                    <div className="pointer-events-none absolute inset-0 z-39" />
                     <motion.div
                       initial={{ opacity: 0, y: 18, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -44597,8 +44721,8 @@ export default function XrayCalibrationWorkspace({
                         isNativeMobileSimpleUi &&
                         !selectedCutLayer &&
                         selectedLine
-                          ? "max-h-[min(30vh,220px)] w-[min(72vw,286px)] rounded-[18px] p-1.5"
-                          : "max-h-[min(28vh,220px)] w-[min(74vw,286px)] rounded-[14px] p-1.5"
+                          ? "max-h-[min(24dvh,176px)] w-[min(68vw,260px)] rounded-[16px] p-1.5"
+                          : "max-h-[min(24dvh,176px)] w-[min(70vw,260px)] rounded-[14px] p-1.5"
                       }`}
                       style={{
                         background: isDark
@@ -46096,10 +46220,10 @@ export default function XrayCalibrationWorkspace({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, x: -8, scale: 0.97 }}
                       transition={MOBILE_PANEL_TRANSITION}
-                      className="pointer-events-auto fixed top-[calc(env(safe-area-inset-top)+72px)] left-3 z-[48] w-[min(72vw,286px)] overflow-hidden rounded-[18px] border border-white/10 bg-slate-950/78 text-white shadow-[0_12px_32px_rgba(2,6,23,0.36)] backdrop-blur-xl"
+                      className="pointer-events-auto fixed top-[calc(env(safe-area-inset-top)+58px)] left-2 z-[48] w-[min(64vw,244px)] overflow-hidden rounded-[14px] border border-white/10 bg-slate-950/78 text-white shadow-[0_8px_22px_rgba(2,6,23,0.32)] backdrop-blur-xl"
                     >
                       <div
-                        className="flex items-start gap-2 px-2.5 py-2"
+                        className="flex items-start gap-1.5 px-2 py-1.5"
                         style={{
                           background: `linear-gradient(135deg, ${mobileNativeLineColor}24, rgba(15,23,42,0.14))`,
                           borderBottom: `1px solid ${mobileNativeLineColor}40`,
@@ -46129,7 +46253,7 @@ export default function XrayCalibrationWorkspace({
                           </div>
                           <div className="mt-1 flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="truncate text-[13px] font-black text-white">
+                              <p className="truncate text-[11px] font-black text-white">
                                 {mobileNativeLineTitle}
                               </p>
                               <p className="mt-0.5 truncate text-[9px] font-semibold text-slate-300">
@@ -46140,7 +46264,7 @@ export default function XrayCalibrationWorkspace({
                             </div>
                             <div className="shrink-0 text-right">
                               <p
-                                className="font-mono text-[13px] font-black"
+                                className="font-mono text-[11px] font-black"
                                 style={{ color: mobileNativeLineColor }}
                               >
                                 {mobileNativeFemurSizeLabel ||
@@ -46174,7 +46298,7 @@ export default function XrayCalibrationWorkspace({
                         </button>
                       </div>
 
-                      <div className="px-2.5 py-2">
+                      <div className="px-2 py-1.5">
                         {mobileNativeLineSizing ? (
                           <div className="mb-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5 rounded-[14px] border border-white/10 bg-white/7 px-2 py-1.5">
                             <div className="min-w-0">
@@ -46228,10 +46352,10 @@ export default function XrayCalibrationWorkspace({
                         ) : null}
 
                         <div
-                          className={`grid gap-1.5 ${
+                          className={`grid gap-1 ${
                             mobileNativeLineSizing?.primary
-                              ? "grid-cols-5"
-                              : "grid-cols-4"
+                              ? "grid-cols-4"
+                              : "grid-cols-3"
                           }`}
                         >
                           <button
@@ -46247,7 +46371,7 @@ export default function XrayCalibrationWorkspace({
                               setMobileObjectSettingsOpen(true);
                               clearTouchHoverDetails();
                             }}
-                            className="min-h-8 rounded-[14px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
+                            className="min-h-7 rounded-[10px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
                           >
                             Detail
                           </button>
@@ -46273,7 +46397,7 @@ export default function XrayCalibrationWorkspace({
                                   : "Garis di-lock. Posisi dan ukurannya tidak bisa diubah.",
                               );
                             }}
-                            className="min-h-8 rounded-[14px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
+                            className="min-h-7 rounded-[10px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
                           >
                             {isLineLocked(mobileNativeLineInfoLine.id)
                               ? "Unlock"
@@ -46283,33 +46407,15 @@ export default function XrayCalibrationWorkspace({
                             type="button"
                             onClick={() => {
                               setSelectedLineId(mobileNativeLineInfoLine.id);
-                              triggerSelectionPulse(
-                                "line",
+                              toggleLineLabelById(
                                 mobileNativeLineInfoLine.id,
                               );
-                              clearTouchHoverDetails();
-                              openSimpleCalibrationModal(
-                                "Line ini dipilih sebagai referensi. Isi nilai real lalu Simpan Kalibrasi.",
-                              );
                             }}
-                            className="min-h-8 rounded-[14px] border border-cyan-300/25 bg-cyan-400/14 text-[8px] font-black text-cyan-100"
+                            className="min-h-7 rounded-[10px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
                           >
-                            Calib
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedLineId(mobileNativeLineInfoLine.id);
-                              triggerSelectionPulse(
-                                "line",
-                                mobileNativeLineInfoLine.id,
-                              );
-                              clearTouchHoverDetails();
-                              setNormmedFemoralSizerOpen(true);
-                            }}
-                            className="min-h-8 rounded-[14px] border border-emerald-300/25 bg-emerald-400/14 text-[8px] font-black text-emerald-100"
-                          >
-                            Size
+                            {mobileNativeLineInfoLine.showLabel === false
+                              ? "Show"
+                              : "Hide"}
                           </button>
                           {mobileNativeLineSizing?.primary ? (
                             <button
@@ -46324,7 +46430,7 @@ export default function XrayCalibrationWorkspace({
                                 });
                                 clearTouchHoverDetails();
                               }}
-                              className="min-h-8 rounded-[14px] border border-cyan-300/30 bg-cyan-500/20 text-[8px] font-black text-cyan-100"
+                              className="min-h-7 rounded-[10px] border border-cyan-300/30 bg-cyan-500/20 text-[8px] font-black text-cyan-100"
                             >
                               Gunakan
                             </button>

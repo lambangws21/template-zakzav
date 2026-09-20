@@ -1298,7 +1298,12 @@ export default function PlanningWorkspace({
                     : null;
                   const displayName =
                     sourceMeasurement?.name || row.name || row.key;
-                  if (guideMeasurementId) {
+                  const activeMeasurementId =
+                    guideMeasurementId || editableMeasurementId;
+                  const isLineMeasurement = /^line:/.test(
+                    activeMeasurementId || "",
+                  );
+                  if (activeMeasurementId) {
                     return (
                       <div
                         className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
@@ -1326,50 +1331,123 @@ export default function PlanningWorkspace({
                             />
                           </header>
                           <div className={styles.measurementModalBody}>
+                            <div className={styles.measurementValueSummary}>
+                              <small>Nilai aktif</small>
+                              <strong>
+                                {formatPlanningValue(row.value, row.unit)}
+                              </strong>
+                            </div>
+                            {editableMeasurementId ? (
+                              <label className={styles.measurementNameField}>
+                                Nama info
+                                <input
+                                  key={`${row.key}:${displayName}`}
+                                  type="text"
+                                  defaultValue={displayName}
+                                  maxLength={80}
+                                  onBlur={(event) =>
+                                    onRenameMeasurement?.(
+                                      editableMeasurementId,
+                                      event.target.value.trim() || displayName,
+                                    )
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter")
+                                      event.currentTarget.blur();
+                                  }}
+                                />
+                              </label>
+                            ) : null}
+                            {isLineMeasurement ? (
+                              <div className={styles.measurementModeControl}>
+                                <small>Model pengukuran</small>
+                                <div>
+                                  {[
+                                    ["length", "Length"],
+                                    ["radius", "Radius"],
+                                    ["diameter", "Diameter"],
+                                  ].map(([value, label]) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      data-active={
+                                        (sourceMeasurement?.measurementMode ||
+                                          "length") === value
+                                      }
+                                      onClick={() =>
+                                        onUpdateMeasurement?.(
+                                          activeMeasurementId,
+                                          { measurementMode: value },
+                                        )
+                                      }
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                            {guideMeasurementId ? (
+                              <div className={styles.measurementFieldGrid}>
+                                <label>
+                                  Sudut
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={sourceMeasurement?.angleDeg ?? 0}
+                                    disabled={sourceMeasurement?.locked}
+                                    onChange={(event) =>
+                                      onUpdateMeasurement?.(
+                                        activeMeasurementId,
+                                        {
+                                          angleDeg: Number(event.target.value),
+                                        },
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  Offset (px)
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={sourceMeasurement?.offsetPx ?? 0}
+                                    disabled={sourceMeasurement?.locked}
+                                    onChange={(event) =>
+                                      onUpdateMeasurement?.(
+                                        activeMeasurementId,
+                                        {
+                                          offsetPx: Number(event.target.value),
+                                        },
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  Panjang (px)
+                                  <input
+                                    type="number"
+                                    min="10"
+                                    step="1"
+                                    value={
+                                      sourceMeasurement?.lineLengthPx ?? 10
+                                    }
+                                    disabled={sourceMeasurement?.locked}
+                                    onChange={(event) =>
+                                      onUpdateMeasurement?.(
+                                        activeMeasurementId,
+                                        {
+                                          lineLengthPx: Number(
+                                            event.target.value,
+                                          ),
+                                        },
+                                      )
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            ) : null}
                             <div className={styles.measurementFieldGrid}>
-                              <label>
-                                Sudut
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={sourceMeasurement?.angleDeg ?? 0}
-                                  disabled={sourceMeasurement?.locked}
-                                  onChange={(event) =>
-                                    onUpdateMeasurement?.(guideMeasurementId, {
-                                      angleDeg: Number(event.target.value),
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label>
-                                Offset (px)
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={sourceMeasurement?.offsetPx ?? 0}
-                                  disabled={sourceMeasurement?.locked}
-                                  onChange={(event) =>
-                                    onUpdateMeasurement?.(guideMeasurementId, {
-                                      offsetPx: Number(event.target.value),
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label>
-                                Panjang (px)
-                                <input
-                                  type="number"
-                                  min="10"
-                                  step="1"
-                                  value={sourceMeasurement?.lineLengthPx ?? 10}
-                                  disabled={sourceMeasurement?.locked}
-                                  onChange={(event) =>
-                                    onUpdateMeasurement?.(guideMeasurementId, {
-                                      lineLengthPx: Number(event.target.value),
-                                    })
-                                  }
-                                />
-                              </label>
                               <label className={styles.metricColorControl}>
                                 Warna
                                 <input
@@ -1377,49 +1455,114 @@ export default function PlanningWorkspace({
                                   value={sourceMeasurement?.color || "#38bdf8"}
                                   onChange={(event) =>
                                     onUpdateMeasurementColor?.(
-                                      guideMeasurementId,
+                                      activeMeasurementId,
                                       event.target.value,
                                     )
                                   }
                                 />
                               </label>
                             </div>
+                            {sourceMeasurement?.sourceLineIds?.length ? (
+                              <button
+                                type="button"
+                                className={styles.measurementVisibility}
+                                onClick={() =>
+                                  onToggleMeasurementLabel?.(
+                                    sourceMeasurement.sourceLineIds,
+                                    sourceMeasurement.sourceShowLabel,
+                                  )
+                                }
+                              >
+                                {sourceMeasurement.sourceShowLabel ? (
+                                  <EyeOff size={15} />
+                                ) : (
+                                  <Eye size={15} />
+                                )}
+                                {sourceMeasurement.sourceShowLabel
+                                  ? "Sembunyikan nilai"
+                                  : "Tampilkan nilai"}
+                              </button>
+                            ) : null}
                             <div className={styles.metricEditorActions}>
                               <Action
                                 icon={MousePointer2}
                                 onClick={() => {
-                                  onSelectMeasurement?.(guideMeasurementId);
+                                  onSelectMeasurement?.(activeMeasurementId);
                                   setMetricEditor(null);
                                 }}
                               >
                                 Pilih di Canvas
                               </Action>
-                              <Action
-                                icon={
-                                  sourceMeasurement?.locked ? LockOpen : Lock
-                                }
-                                onClick={() =>
-                                  onUpdateMeasurement?.(guideMeasurementId, {
-                                    locked: !sourceMeasurement?.locked,
-                                  })
-                                }
-                              >
-                                {sourceMeasurement?.locked
-                                  ? "Buka Lock"
-                                  : "Lock Line"}
-                              </Action>
+                              {(guideMeasurementId || isLineMeasurement) && (
+                                <Action
+                                  icon={
+                                    sourceMeasurement?.locked ? LockOpen : Lock
+                                  }
+                                  onClick={() =>
+                                    onUpdateMeasurement?.(
+                                      activeMeasurementId,
+                                      {
+                                        locked: !sourceMeasurement?.locked,
+                                      },
+                                    )
+                                  }
+                                >
+                                  {sourceMeasurement?.locked
+                                    ? "Buka Lock"
+                                    : "Lock"}
+                                </Action>
+                              )}
                               <Action
                                 icon={Trash2}
                                 className={styles.dangerAction}
                                 disabled={sourceMeasurement?.locked}
                                 onClick={() => {
-                                  onDeleteMeasurement?.(guideMeasurementId);
+                                  onDeleteMeasurement?.(activeMeasurementId);
                                   setMetricEditor(null);
                                 }}
                               >
                                 Hapus
                               </Action>
                             </div>
+                          </div>
+                          <footer>
+                            <Action onClick={() => setMetricEditor(null)}>
+                              Selesai
+                            </Action>
+                          </footer>
+                        </section>
+                      </div>
+                    );
+                  }
+                  if (row.unit === "deg") {
+                    return (
+                      <div
+                        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
+                        role="presentation"
+                        onPointerDown={(event) => {
+                          if (event.target === event.currentTarget)
+                            setMetricEditor(null);
+                        }}
+                      >
+                        <section
+                          className={`${styles.modalPanel} ${styles.measurementModal} ${styles.degreeModal}`}
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label={`Nilai ${displayName}`}
+                        >
+                          <header>
+                            <div>
+                              <small>Sudut terpilih</small>
+                              <h2>{displayName}</h2>
+                            </div>
+                            <Action
+                              icon={X}
+                              aria-label="Tutup"
+                              onClick={() => setMetricEditor(null)}
+                            />
+                          </header>
+                          <div className={styles.degreeValue}>
+                            {formatPlanningValue(row.value, row.unit)}
                           </div>
                           <footer>
                             <Action onClick={() => setMetricEditor(null)}>
@@ -2579,7 +2722,7 @@ export default function PlanningWorkspace({
       </div>
       <div
         className={styles.mobileNav}
-        hidden={Boolean(sheet || implantBrowserOpen || exportOpen)}
+        hidden={Boolean(implantBrowserOpen || exportOpen)}
       >
         {quickTools.slice(0, 2).map(({ id, label, icon: Icon }) => {
           const item = toolById(id);
