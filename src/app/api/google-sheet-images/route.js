@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 90;
 
 const REQUEST_TIMEOUT_MS = 90_000;
+const REMOTE_GET_ATTEMPTS = 3;
+const REMOTE_GET_RETRY_DELAYS_MS = [350, 900];
 const HTML_TAG_PATTERN = /^\s*<(?:!doctype\s+html|html)\b/i;
 const READ_ACTIONS = new Set([
   "",
@@ -101,9 +103,16 @@ function appendRemoteQuery(remoteUrl, params) {
     : remoteUrl;
 }
 
-async function forwardGetToRemote(remoteUrl, params = {}) {
-  const target = appendRemoteQuery(remoteUrl, params);
-  const response = await fetch(target, {
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchRemoteGet(target, attempt) {
+  const retryUrl = new URL(target);
+  if (attempt > 0) {
+    retryUrl.searchParams.set("_zakzavRetry", `${Date.now()}-${attempt}`);
+  }
+  return fetch(retryUrl.toString(), {
     cache: "no-store",
     redirect: "follow",
     headers: {
@@ -111,8 +120,26 @@ async function forwardGetToRemote(remoteUrl, params = {}) {
     },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  const rawText = await response.text();
-  const parsed = parseJsonSafe(rawText);
+}
+
+async function forwardGetToRemote(remoteUrl, params = {}) {
+  const target = appendRemoteQuery(remoteUrl, params);
+  let response;
+  let rawText = "";
+  let parsed = null;
+  let attempts = 0;
+
+  for (let attempt = 0; attempt < REMOTE_GET_ATTEMPTS; attempt += 1) {
+    attempts = attempt + 1;
+    response = await fetchRemoteGet(target, attempt);
+    rawText = await response.text();
+    parsed = parseJsonSafe(rawText);
+    if (parsed && typeof parsed === "object") break;
+    if (attempt < REMOTE_GET_ATTEMPTS - 1) {
+      await wait(REMOTE_GET_RETRY_DELAYS_MS[attempt] || 900);
+    }
+  }
+
   if (!parsed || typeof parsed !== "object") {
     return NextResponse.json(
       {
@@ -122,6 +149,8 @@ async function forwardGetToRemote(remoteUrl, params = {}) {
           ok: false,
           status: "error",
           error: "Apps Script GET tidak mengembalikan JSON valid.",
+          attempts,
+          contentType: response?.headers.get("content-type") || "",
           rawPreview: String(rawText || "").slice(0, 500),
         },
       },
@@ -134,6 +163,7 @@ async function forwardGetToRemote(remoteUrl, params = {}) {
     {
       ok: response.ok && remoteOk,
       status: response.status,
+      attempts,
       remote: parsed,
     },
     { status: remoteResponseStatus(response, remoteOk) }

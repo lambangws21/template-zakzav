@@ -1,0 +1,32 @@
+# Local dependencies and generated output
+node_modules
+.next
+out
+build
+coverage
+*.tsbuildinfo
+*.log
+
+# Repository and editor metadata
+.git
+.github
+.vercel
+.idea
+.claude
+.DS_Store
+**/.DS_Store
+
+# Local configuration and credentials
+.env
+.env.*
+*-firebase-adminsdk-*.json
+*service-account*.json
+
+# Development-only documentation and scripts
+docs
+tests
+APPSCRIPT_UPDATE.gs
+AGENTS.md
+CLAUDE.md
+THA.md
+TKA.md
