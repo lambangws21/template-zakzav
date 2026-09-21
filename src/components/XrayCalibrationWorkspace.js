@@ -880,6 +880,7 @@ export default function XrayCalibrationWorkspace({
   const containerRef = useRef(null);
   const brushPanelDragControls = useDragControls();
   const mobileObjectDragControls = useDragControls();
+  const simpleMobileSheetDragControls = useDragControls();
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
@@ -42349,10 +42350,13 @@ export default function XrayCalibrationWorkspace({
                         stiffness: 380,
                       }}
                       drag="y"
+                      dragControls={simpleMobileSheetDragControls}
+                      dragListener={false}
+                      dragMomentum={false}
                       dragConstraints={{ top: -180, bottom: 120 }}
                       dragElastic={0.08}
                       onDragEnd={(_, info) => {
-                        if (info.offset.y > 140 || info.velocity.y > 950) {
+                        if (info.offset.y > 100 || info.velocity.y > 900) {
                           setSimpleMobilePanel(null);
                           return;
                         }
@@ -42379,6 +42383,10 @@ export default function XrayCalibrationWorkspace({
                       <div className="flex shrink-0 items-center justify-center px-3 pt-1.5 pb-1">
                           <button
                             type="button"
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                              simpleMobileSheetDragControls.start(event);
+                            }}
                             onClick={() =>
                               setMobileSheetSnap((current) =>
                                 current === "collapsed"
@@ -42388,7 +42396,7 @@ export default function XrayCalibrationWorkspace({
                                     : "collapsed",
                               )
                             }
-                            className="flex min-h-6 min-w-[96px] items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2 text-[8px] font-black tracking-widest text-slate-400 uppercase"
+                            className="flex min-h-6 min-w-[96px] touch-none cursor-grab items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2 text-[8px] font-black tracking-widest text-slate-400 uppercase active:cursor-grabbing"
                             aria-label={`Ubah panel ke state berikutnya dari ${mobileSheetSnap}`}
                           >
                             <span className="h-1 w-8 rounded-full bg-slate-300/80" />
