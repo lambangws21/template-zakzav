@@ -202,6 +202,21 @@ export default function CalibrationWizard({
     onLineStrokeWidthChange?.(nextValue);
   };
 
+  const updateActualUnit = (nextUnit) => {
+    if (!nextUnit || nextUnit === actualUnit) return;
+    const currentValue = Number(actualValue);
+    if (Number.isFinite(currentValue)) {
+      const convertedValue =
+        actualUnit === "cm" && nextUnit === "mm"
+          ? currentValue * 10
+          : actualUnit === "mm" && nextUnit === "cm"
+            ? currentValue / 10
+            : currentValue;
+      onActualValueChange?.(String(Number(convertedValue.toFixed(4))));
+    }
+    onActualUnitChange?.(nextUnit);
+  };
+
   const applyFemoralHeadEstimate = () => {
     if (!activeFemoralEstimateMm) return;
     onAnatomicalRefSizeMmChange?.(activeFemoralEstimateMm);
@@ -307,17 +322,18 @@ export default function CalibrationWizard({
         animate={isMobile ? { opacity: 1, y: 0 } : { opacity: 1, x: 0, scale: 1 }}
         exit={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, x: -36, scale: 0.96 }}
         transition={isMobile ? { ...SPRING, damping: 32, stiffness: 340 } : SPRING}
-        drag
+        drag="y"
         dragControls={dragControls}
         dragListener={false}
         dragMomentum={false}
         dragElastic={0.04}
+        dragConstraints={isMobile ? { top: -240, bottom: 180 } : { top: -360, bottom: 0 }}
         className={
           isCompactCanvasEdit
             ? "fixed bottom-[calc(env(safe-area-inset-bottom)+74px)] left-2 right-2 z-[95] rounded-[16px] p-2 text-slate-800 cw-card font-sans"
           : isMobile
-            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] left-2 z-[95] max-h-[50dvh] overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
-            : "fixed bottom-4 left-4 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
+            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] left-2 z-[95] max-h-[50dvh] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
+            : "fixed bottom-4 left-4 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] touch-pan-y overscroll-contain overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}
         style={{ scrollbarWidth: "none" }}
@@ -487,7 +503,7 @@ export default function CalibrationWizard({
                   />
                   <select
                     value={actualUnit}
-                    onChange={(event) => onActualUnitChange?.(event.target.value)}
+                    onChange={(event) => updateActualUnit(event.target.value)}
                     className="h-9 appearance-none rounded-[10px] px-1 text-center text-[10px] font-black text-slate-700 outline-none cw-flat"
                     aria-label="Satuan referensi"
                   >
@@ -606,7 +622,7 @@ export default function CalibrationWizard({
                   onKeyDown={handleReferenceKeyDown}
                   placeholder="10"
                   className="min-h-10 min-w-0 rounded-[12px] px-3 text-[15px] font-black text-slate-800 outline-none cw-input" />
-                <select value={actualUnit} onChange={(e) => onActualUnitChange?.(e.target.value)}
+                <select value={actualUnit} onChange={(e) => updateActualUnit(e.target.value)}
                   className="min-h-10 cursor-pointer appearance-none rounded-[12px] px-2 text-center text-[14px] font-black text-slate-700 outline-none cw-flat">
                   <option value="cm">cm</option>
                   <option value="mm">mm</option>
