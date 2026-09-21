@@ -8,12 +8,15 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Lock,
+  LockOpen,
   Minus,
   MousePointer2,
   Plus,
   Ruler,
   Save,
   Scaling,
+  Trash2,
   X,
 } from "lucide-react";
 import femoralHeadCalibrationPresets from "../data/femoralHeadCalibrationPresets.json";
@@ -84,6 +87,11 @@ export default function CalibrationWizard({
   onAutoHeadLine,
   lineStrokeWidth = 2,
   onLineStrokeWidthChange,
+  lineName = "",
+  onLineNameChange,
+  lineLocked = false,
+  onToggleLineLock,
+  onDeleteLine,
   onSave,
   canSave = true,
   hasCalibration = false,
@@ -124,6 +132,8 @@ export default function CalibrationWizard({
   const isLineMode = calibrationMode === "line";
   const isMagMode = calibrationMode === "magnification";
   const strokeValue = Number.isFinite(Number(lineStrokeWidth)) ? Number(lineStrokeWidth) : 2;
+  const referenceMin = actualUnit === "mm" ? 0.1 : 0.01;
+  const referenceStep = actualUnit === "mm" ? 0.1 : 0.01;
 
   const anatomicalSizeNum = Number(anatomicalRefSizeMm);
   const apparentSizeMm =
@@ -306,7 +316,7 @@ export default function CalibrationWizard({
           isCompactCanvasEdit
             ? "fixed bottom-[calc(env(safe-area-inset-bottom)+74px)] left-2 right-2 z-[95] rounded-[16px] p-2 text-slate-800 cw-card font-sans"
           : isMobile
-            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] left-2 z-[95] max-h-[44dvh] overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
+            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] left-2 z-[95] max-h-[50dvh] overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
             : "fixed bottom-4 left-4 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}
@@ -397,7 +407,8 @@ export default function CalibrationWizard({
           </button>
         </div>
 
-        {/* Method tabs */}
+        {/* Desktop and Head Ref navigation. Mobile ruler uses the compact preset row below. */}
+        {!(isMobile && isLineMode) ? <>
         <div className="mb-2 grid grid-cols-2 gap-1 rounded-[12px] p-1 cw-pressed">
           <button type="button" onClick={() => onCalibrationModeChange?.("line")}
             className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isLineMode ? "cw-active" : "text-slate-500"}`}>
@@ -423,8 +434,154 @@ export default function CalibrationWizard({
             Ruler 13 cm
           </button>
         </div>
+        </> : null}
 
-        {isLineMode ? (
+        {isMobile && isLineMode ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-1 rounded-[11px] p-1 cw-pressed" aria-label="Preset kalibrasi">
+              {[
+                { label: "Ruler 13 cm", mm: 130 },
+                { label: "Ruler 10 cm", mm: 100 },
+              ].map((preset) => (
+                <button
+                  key={preset.mm}
+                  type="button"
+                  onClick={() => selectRulerPreset(preset.mm)}
+                  className={`min-h-8 rounded-[9px] px-1 text-[8px] font-black ${
+                    Number(actualValue) * (actualUnit === "cm" ? 10 : 1) === preset.mm
+                      ? "cw-active"
+                      : "text-slate-600 cw-btn"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={selectBallPreset}
+                className="min-h-8 rounded-[9px] px-1 text-[8px] font-black text-blue-600 cw-btn"
+              >
+                Ball 25 mm
+              </button>
+            </div>
+
+            <div className="grid grid-cols-[minmax(0,1fr)_132px] items-end gap-2">
+              <div className="min-w-0">
+                <span className="block text-[8px] font-bold text-slate-500">Reference</span>
+                <strong className="block truncate text-[30px] leading-none font-black text-slate-800">
+                  {actualValue || "-"} <small className="text-[14px] text-slate-500">{actualUnit}</small>
+                </strong>
+              </div>
+              <label className="min-w-0">
+                <span className="mb-1 block text-[8px] font-bold text-slate-500">Reference value</span>
+                <span className="grid grid-cols-[1fr_48px] gap-1">
+                  <input
+                    type="number"
+                    min={referenceMin}
+                    step={referenceStep}
+                    value={actualValue}
+                    onChange={(event) => onActualValueChange?.(event.target.value)}
+                    onKeyDown={handleReferenceKeyDown}
+                    className="h-9 min-w-0 rounded-[10px] px-2 text-[12px] font-black text-slate-800 outline-none cw-input"
+                    aria-label="Nilai referensi kalibrasi"
+                  />
+                  <select
+                    value={actualUnit}
+                    onChange={(event) => onActualUnitChange?.(event.target.value)}
+                    className="h-9 appearance-none rounded-[10px] px-1 text-center text-[10px] font-black text-slate-700 outline-none cw-flat"
+                    aria-label="Satuan referensi"
+                  >
+                    <option value="mm">mm</option>
+                    <option value="cm">cm</option>
+                  </select>
+                </span>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-[8px] font-bold text-slate-500">Measurement line name</span>
+              <input
+                type="text"
+                value={lineName}
+                disabled={!hasLine}
+                onChange={(event) => onLineNameChange?.(event.target.value)}
+                placeholder={calibrationReferenceLine ? `Calibration Line #${calibrationReferenceLine.id}` : "Calibration reference"}
+                className="h-9 w-full rounded-[10px] px-2.5 text-[10px] font-bold text-slate-800 outline-none cw-input disabled:opacity-50"
+              />
+            </label>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between text-[8px] font-bold text-slate-500">
+                <span>Line width</span>
+                <span>{strokeValue.toFixed(1)}x</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="8"
+                step="0.1"
+                value={strokeValue}
+                disabled={lineLocked}
+                onChange={(event) => updateStroke(event.target.value)}
+                className="h-1.5 w-full accent-blue-500 disabled:opacity-40"
+              />
+              <div className="mt-1 grid grid-cols-3 gap-1">
+                {[1, 2, 3].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={lineLocked}
+                    onClick={() => updateStroke(value)}
+                    className={`min-h-7 rounded-[8px] text-[8px] font-black disabled:opacity-40 ${
+                      Math.abs(strokeValue - value) < 0.05
+                        ? "cw-active"
+                        : "text-slate-600 cw-btn"
+                    }`}
+                  >
+                    {value.toFixed(1)}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                disabled={!hasLine}
+                onClick={onToggleLineLock}
+                className="flex min-h-9 items-center justify-center gap-1 rounded-[10px] text-[8px] font-black text-blue-600 cw-btn disabled:opacity-40"
+              >
+                {lineLocked ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                {lineLocked ? "Unlock" : "Lock"}
+              </button>
+              <button
+                type="button"
+                onClick={onCreatePresetFromInput}
+                className="flex min-h-9 items-center justify-center gap-1 rounded-[10px] text-[8px] font-black text-cyan-600 cw-btn"
+              >
+                <Scaling className="h-3.5 w-3.5" />
+                {hasLine ? "Update" : "Calib"}
+              </button>
+              <button
+                type="button"
+                disabled={!hasLine || lineLocked}
+                onClick={onDeleteLine}
+                className="flex min-h-9 items-center justify-center gap-1 rounded-[10px] border border-rose-200 bg-rose-50 text-[8px] font-black text-rose-600 disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            </div>
+
+            {hasLine ? (
+              <div className="flex items-center justify-between gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50/80 px-2 py-1.5">
+                <span className="truncate text-[8px] font-bold text-emerald-700">
+                  {selectedLengthText || "Line referensi siap"}
+                </span>
+                <span className="shrink-0 font-mono text-[7px] text-emerald-600">{factorText}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : isLineMode ? (
           <div className="space-y-2.5">
             {/* Primary custom ruler flow */}
             <motion.div
@@ -444,7 +601,7 @@ export default function CalibrationWizard({
                 </div>
               </div>
               <div className="grid grid-cols-[1fr_64px] gap-1.5">
-                <input type="number" min="0" step="0.01" value={actualValue}
+                <input type="number" min={referenceMin} step={referenceStep} value={actualValue}
                   onChange={(e) => onActualValueChange?.(e.target.value)}
                   onKeyDown={handleReferenceKeyDown}
                   placeholder="10"
@@ -907,7 +1064,7 @@ export default function CalibrationWizard({
         ) : null}
 
         {/* QC row — hidden in magnification mode */}
-        <div className={`mt-2.5${isMagMode ? " hidden" : ""}`}>
+        <div className={`mt-2.5${isMagMode || (isMobile && isLineMode) ? " hidden" : ""}`}>
           <button type="button" onClick={() => setShowQCDetail((v) => !v)}
             className="flex w-full items-center justify-between rounded-[14px] border px-3 py-2 text-[10px] font-black transition-all"
             style={{ background: qcBg, borderColor: `${qcColor}30`, color: qcColor }}>
@@ -932,7 +1089,8 @@ export default function CalibrationWizard({
 
         <button type="button" onClick={applyAndContinue} disabled={!canSave}
           className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-r from-emerald-500 to-teal-600 py-2.5 text-[10px] font-black tracking-widest text-white uppercase shadow-md transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45">
-          <Save className="h-4 w-4" /> Terapkan &amp; Lanjut
+          <Save className="h-4 w-4" />
+          {isMobile && isLineMode ? "Konfirmasi Kalibrasi" : "Terapkan & Lanjut"}
         </button>
           </>
         )}

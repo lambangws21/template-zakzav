@@ -177,6 +177,13 @@
 .measurements th button { padding: 0; display: flex; gap: 3px; align-items: center; text-align: left; border: 0; background: transparent; color: var(--pw-text); }
 .measurements th button svg { flex-shrink: 0; }
 .metricNameCell { display: flex; align-items: center; justify-content: space-between; gap: 3px; }
+.metricTitle { display: grid; min-width: 0; gap: 2px; }
+.metricTitle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.measurementModeBadge { display: inline-flex; width: fit-content; min-height: 16px; align-items: center; padding: 1px 5px; color: #0e7490; background: #cffafe; border: 1px solid #67e8f9; border-radius: 999px; font-size: 7px; font-style: normal; font-weight: 800; line-height: 1; text-transform: uppercase; }
+.measurementModeBadge[data-mode="radius"] { color: #047857; background: #d1fae5; border-color: #6ee7b7; }
+.measurementModeBadge[data-mode="diameter"] { color: #7e22ce; background: #f3e8ff; border-color: #d8b4fe; }
+.measurementModalTitle { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.measurementModalTitle h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .measurements th .metricLabelToggle { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; color: var(--pw-accent); border: 1px solid var(--pw-line); border-radius: 5px; }
 .metricNameCell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .measurements .emptyMeasurement { padding: 18px 6px; text-align: center; color: var(--pw-muted); }
@@ -472,6 +479,29 @@
 .measurementModeControl button { min-height: 36px; color: var(--pw-muted); background: var(--pw-raised); border: 0; border-right: 1px solid var(--pw-line); font-size: 10px; font-weight: 700; }
 .measurementModeControl button:last-child { border-right: 0; }
 .measurementModeControl button[data-active="true"] { color: #fff; background: var(--pw-accent); }
+.objectSettingHeader { position: relative; min-height: 42px; padding-top: 13px !important; }
+.sheetHandle { position: absolute; top: 5px; left: 50%; width: 34px; height: 3px; background: var(--pw-line); border-radius: 999px; transform: translateX(-50%); }
+.lineObjectSetting { display: grid; gap: 7px; }
+.objectNameField { display: block; }
+.objectNameField input { width: 100%; min-height: 32px; padding: 5px 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; font-size: 11px; }
+.lineObjectSetting .measurementModeControl { margin: 0; }
+.lineObjectSetting .measurementModeControl > div { gap: 5px; overflow: visible; border: 0; }
+.lineObjectSetting .measurementModeControl button { min-height: 28px; border: 1px solid var(--pw-line); border-radius: 999px; font-size: 9px; }
+.lineObjectSetting .measurementModeControl button:last-child { border-right: 1px solid var(--pw-line); }
+.lineObjectSetting .measurementModeControl button[data-active="true"] { color: var(--pw-text); background: color-mix(in srgb, var(--pw-accent) 18%, var(--pw-raised)); border-color: var(--pw-accent); }
+.objectValueRow { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 8px; color: var(--pw-muted); font-size: 10px; }
+.objectValueRow strong { margin-left: 3px; color: var(--pw-text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.valueStepper { display: grid; grid-template-columns: repeat(2, 32px); overflow: hidden; border: 1px solid var(--pw-line); border-radius: 6px; }
+.valueStepper button { display: grid; width: 32px; height: 27px; place-items: center; color: var(--pw-text); background: var(--pw-raised); border: 0; }
+.valueStepper button + button { border-left: 1px solid var(--pw-line); }
+.valueStepper button:disabled { opacity: .35; }
+.lineWidthControl { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; color: var(--pw-muted); font-size: 10px; }
+.lineWidthControl input { width: 100%; height: 20px; margin: 0; padding: 0; accent-color: #34d399; }
+.objectSettingActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2px; border-top: 1px solid var(--pw-line); }
+.objectSettingActions .button { min-height: 43px; flex-direction: column; gap: 2px; padding: 4px; background: transparent; border: 0; border-radius: 0; font-size: 8px; }
+.objectSettingActions .button:first-child { color: #6ee7b7; }
+.objectSettingActions .button:nth-child(2) { color: #5eead4; }
+.objectSettingActions .dangerAction { color: #fb7185; }
 .measurementVisibility { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; font-size: 10px; font-weight: 700; }
 .degreeModal { width: min(320px, calc(100% - 24px)); }
 .degreeValue { display: grid; min-height: 96px; place-items: center; color: var(--pw-accent); font-size: 42px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -583,11 +613,62 @@
   .viewTools { top: 6px; right: max(6px, env(safe-area-inset-right)); }
   .modalBackdrop { align-items: end; padding: 0; }
   .modalPanel, .implantBrowser, .exportPanel { width: 100%; max-width: none; max-height: min(62dvh, 560px); border-radius: 14px 14px 0 0; border-bottom: 0; }
-  .measurementModal, .groupModal { width: 100%; max-height: min(56dvh, 480px); }
-  .modalPanel > header { padding: 8px 10px; }
-  .modalPanel > header h2 { font-size: 14px; }
-  .modalPanel > footer { padding: 7px 10px; }
-  .measurementModalBody, .groupModalBody { padding: 10px; }
+  .measurementModal, .groupModal { width: 100%; max-height: min(46dvh, 400px); }
+  .measurementModal:has(.lineObjectSetting) { width: min(360px, calc(100% - 16px)); margin: 0 auto max(6px, env(safe-area-inset-bottom)); border: 1px solid var(--pw-line); border-radius: 15px; }
+  .modalPanel > header { padding: 6px 8px; }
+  .modalPanel > header h2 { font-size: 12px; }
+  .modalPanel > header .button { min-width: 32px; min-height: 32px; padding: 5px; }
+  .modalPanel > footer { padding: 5px 8px; }
+  .modalPanel > footer .button { min-height: 32px; }
+  .measurementModalBody, .groupModalBody { padding: 7px 8px; }
+  .measurementModal:has(.lineObjectSetting) .measurementModalBody { overflow: hidden; padding: 6px 9px 7px; }
+  .measurementModal:has(.lineObjectSetting) .objectSettingHeader { min-height: 38px; padding: 11px 8px 4px !important; border-bottom: 0; }
+  .measurementModal:has(.lineObjectSetting) .objectSettingHeader small { display: none; }
+  .measurementModal:has(.lineObjectSetting) .measurementModalTitle h2 { font-size: 10px; }
+  .measurementModal:has(.lineObjectSetting) .measurementModeBadge { display: none; }
+  .lineObjectSetting { gap: 5px; }
+  .objectNameField input { min-height: 29px; font-size: 10px; }
+  .lineObjectSetting .measurementModeControl button { min-height: 27px; font-size: 8px; }
+  .objectValueRow { min-height: 26px; font-size: 9px; }
+  .objectValueRow strong { font-size: 10px; }
+  .lineWidthControl { font-size: 9px; }
+  .objectSettingActions { margin-top: 1px; }
+  .objectSettingActions .button { min-height: 39px; }
+  .measurementValueSummary { margin-bottom: 6px; padding: 6px 8px; }
+  .measurementValueSummary strong { font-size: 14px; }
+  .measurementNameField { margin-bottom: 6px; }
+  .measurementNameField input, .measurementFieldGrid input { min-height: 32px; margin-top: 2px; padding: 5px 7px; }
+  .measurementModeControl { margin-bottom: 6px; }
+  .measurementModeControl > div { gap: 3px; border: 0; }
+  .measurementModeControl button { min-height: 30px; border: 1px solid var(--pw-line); border-radius: 999px; font-size: 8px; }
+  .measurementModeControl button:last-child { border-right: 1px solid var(--pw-line); }
+  .measurementVisibility { min-height: 30px; margin-top: 5px; }
+  .metricEditorActions { gap: 4px; margin-top: 5px; }
+  .metricEditorActions .button { min-width: 0; min-height: 32px; padding: 4px; font-size: 8px; }
+  .logBody { padding: 6px; }
+  .panelHeading { padding: 7px 8px; }
+  .panelHeading small { margin-bottom: 1px; font-size: 7px; }
+  .panelHeading h2 { font-size: 13px; }
+  .logTabs { margin-bottom: 5px; }
+  .logTabs button { min-height: 32px; padding: 6px 1px; font-size: 9px; }
+  .sectionHeading { margin-bottom: 1px; }
+  .sectionHeading strong { font-size: 10px; }
+  .sectionHeading span { font-size: 8px; }
+  .measurementScroll { max-height: min(132px, 17dvh); margin: 3px 0 5px; }
+  .measurements { margin-bottom: 0; font-size: 9px; }
+  .measurements th, .measurements td { height: 27px; padding: 3px 2px; }
+  .measurements thead { font-size: 8px; }
+  .measurements th:first-child { width: 39%; }
+  .measurements th:last-child, .measurements td:last-child { width: 20%; }
+  .measurements th button { min-height: 28px; }
+  .measurements th .metricLabelToggle { width: 24px; height: 24px; min-width: 24px; min-height: 24px; flex-basis: 24px; }
+  .measurementModeBadge { min-height: 14px; padding: 1px 4px; font-size: 6px; }
+  .metricStatus { min-height: 17px; padding: 1px 3px; font-size: 7px; }
+  .logSection { margin-top: 6px; padding-top: 5px; }
+  .logSection h2 { margin-bottom: 6px; font-size: 11px; }
+  .correctionSection { margin-top: 8px; padding-top: 7px; }
+  .correctionSection h2 { margin-bottom: 7px; }
+  .correctionSection .controls { gap: 7px; }
   .measurementFieldGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .implantGrid { grid-template-columns: 1fr; }
   .implantGrid > button { min-height: 96px; }

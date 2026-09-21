@@ -785,6 +785,7 @@ const MOBILE_LONG_PRESS_MS = 460;
 const MOBILE_DOUBLE_TAP_MS_RESET = 360;
 const MOBILE_DOUBLE_TAP_DISTANCE_SCREEN = 28;
 const DEFAULT_LINE_STROKE_WIDTH = 2;
+const MIN_CALIBRATION_REFERENCE_MM = 0.1;
 const DEFAULT_LINE_COLOR = "#38bdf8";
 const LINE_MEASUREMENT_MODES = [
   { value: "length", label: "Length" },
@@ -1306,6 +1307,7 @@ export default function XrayCalibrationWorkspace({
   const idleTutorialTimerRef = useRef(null);
   const [mobileObjPanelPos, setMobileObjPanelPos] = useState(null);
   const mobileObjPanelDragRef = useRef(null);
+  const pendingMobileLineSettingsRef = useRef(null);
   const [layerBarDragPos, setLayerBarDragPos] = useState(null);
   const layerBarDragRef = useRef(null);
   useEffect(() => {
@@ -6169,6 +6171,10 @@ export default function XrayCalibrationWorkspace({
       return;
     }
     const targetMm = actualUnit === "cm" ? inputValue * 10 : inputValue;
+    if (targetMm < MIN_CALIBRATION_REFERENCE_MM) {
+      setNotice("Nilai kalibrasi minimum adalah 0,1 mm atau 0,01 cm.");
+      return;
+    }
     createCalibrationPresetLine(targetMm);
   }, [actualMmInput, actualUnit, createCalibrationPresetLine]);
 
@@ -13092,8 +13098,9 @@ export default function XrayCalibrationWorkspace({
 
       if (hitLine) {
         const sizingIntent = getSizingLineIntent(hitLine);
-        if (isNativeMobileSimpleUi || sizingIntent) {
-          setSelectedLineId(hitLine.id);
+        setSelectedLineId(hitLine.id);
+        if (hitLine.id !== calibrationLineId) {
+          pendingMobileLineSettingsRef.current = hitLine.id;
         }
         setHoveredMeasurementInfo(null);
         if (sizingIntent) {
@@ -13162,6 +13169,7 @@ export default function XrayCalibrationWorkspace({
       findHkaLabelByPoint,
       findLineLabelByPoint,
       getSizingLineIntent,
+      calibrationLineId,
       isNativeMobileSimpleUi,
       isMobileViewport,
       isSimpleUiMode,
@@ -15856,7 +15864,17 @@ export default function XrayCalibrationWorkspace({
             setNotice("Line terlalu pendek. Tap titik akhir yang lebih jauh.");
             return;
           }
-          appendLineMeasurement(nextLineInput, { mobileHandleAssistEnd: true });
+          const completedLine = appendLineMeasurement(nextLineInput, {
+            mobileHandleAssistEnd: true,
+          });
+          if (
+            completedLine &&
+            isSimpleUiMode &&
+            isMobileViewport &&
+            hasCalibration
+          ) {
+            pendingMobileLineSettingsRef.current = completedLine.id;
+          }
           setDraftLine(null);
           setHistoryPaused(false);
           setTool(getIdleTool());
@@ -17716,6 +17734,9 @@ export default function XrayCalibrationWorkspace({
           nextLineIdRef.current += 1;
           setLines((prev) => [...prev, nextLine]);
           setSelectedLineId(nextLine.id);
+          if (isSimpleUiMode && isMobileViewport && hasCalibration) {
+            pendingMobileLineSettingsRef.current = nextLine.id;
+          }
           if (isCoarsePointer) {
             setMobileHandleAssist({ lineId: nextLine.id, handleKey: "end" });
           }
@@ -17863,17 +17884,35 @@ export default function XrayCalibrationWorkspace({
       setGuideBuilderPreviewPoint(null);
       clearSnapPreview();
       restoreMobilePrecisionView();
+      const pendingLineSettingsId = pendingMobileLineSettingsRef.current;
+      pendingMobileLineSettingsRef.current = null;
+      if (
+        pendingLineSettingsId !== null &&
+        pendingLineSettingsId !== undefined &&
+        isSimpleUiMode &&
+        isMobileViewport &&
+        pendingLineSettingsId !== calibrationLineId
+      ) {
+        setSelectedLineId(pendingLineSettingsId);
+        setMobileCanvasMode("edit");
+        setMobileToolMode("move");
+        setSimpleMobilePanel(null);
+        setMobileObjectSettingsOpen(true);
+        clearTouchHoverDetails();
+      }
     },
     [
       appendCircleMeasurement,
       applyMagnificationCircleCalibration,
       anatomicalRefSizeMm,
       calibrationCircleId,
+      calibrationLineId,
       calibrationMode,
       clampViewToViewport,
       clearMobileGesturePointers,
       clearMobilePinchGesture,
       clearMobileLongPress,
+      clearTouchHoverDetails,
       clearSnapPreview,
       completeDraftFreeLine,
       calibrationDraftStrokeWidth,
@@ -18201,6 +18240,10 @@ export default function XrayCalibrationWorkspace({
     }
 
     const actualMmValue = actualUnit === "cm" ? actualMm * 10 : actualMm;
+    if (actualMmValue < MIN_CALIBRATION_REFERENCE_MM) {
+      setNotice("Nilai kalibrasi minimum adalah 0,1 mm atau 0,01 cm.");
+      return false;
+    }
     const factor = actualMmValue / lengthPx;
     const normalizedAt100 = factor * (zoomPercent / 100);
     const endpointTolerancePx = 2;
@@ -18376,6 +18419,8 @@ export default function XrayCalibrationWorkspace({
       }
 
       setSelectedLineId(null);
+      pendingMobileLineSettingsRef.current = null;
+      setMobileObjectSettingsOpen(false);
       return;
     }
 
@@ -23246,6 +23291,9 @@ export default function XrayCalibrationWorkspace({
       color: line.color || lineTypeColor(line.type),
       locked: lockedLineIds.has(line.id),
       measurementMode: normalizeLineMeasurementMode(line.measurementMode),
+      strokeWidth: Number.isFinite(line.strokeWidth)
+        ? line.strokeWidth
+        : DEFAULT_LINE_STROKE_WIDTH,
     }));
     angles.forEach((angle) =>
       entries.push({
@@ -29566,6 +29614,47 @@ export default function XrayCalibrationWorkspace({
                 : line,
             ),
           );
+        }}
+        lineName={calibrationReferenceLine?.name || ""}
+        onLineNameChange={(nextName) => {
+          if (!calibrationReferenceLine) return;
+          setLines((prev) =>
+            prev.map((line) =>
+              line.id === calibrationReferenceLine.id
+                ? { ...line, name: nextName }
+                : line,
+            ),
+          );
+        }}
+        lineLocked={Boolean(
+          calibrationReferenceLine &&
+            lockedLineIds.has(calibrationReferenceLine.id),
+        )}
+        onToggleLineLock={() => {
+          if (!calibrationReferenceLine) return;
+          setLockedLineIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(calibrationReferenceLine.id))
+              next.delete(calibrationReferenceLine.id);
+            else next.add(calibrationReferenceLine.id);
+            return next;
+          });
+        }}
+        onDeleteLine={() => {
+          if (!calibrationReferenceLine) return;
+          const lineId = calibrationReferenceLine.id;
+          setLines((prev) => prev.filter((line) => line.id !== lineId));
+          setLockedLineIds((prev) => {
+            const next = new Set(prev);
+            next.delete(lineId);
+            return next;
+          });
+          if (selectedLineId === lineId) setSelectedLineId(null);
+          if (calibrationLineId === lineId) {
+            setCalibrationLineId(null);
+            setMmPerPixel(null);
+          }
+          setNotice("Line kalibrasi dihapus.");
         }}
         magnificationFactor={magnificationFactorInput}
         onMagnificationFactorChange={setMagnificationFactorInput}
@@ -40739,6 +40828,22 @@ export default function XrayCalibrationWorkspace({
                 }
                 const linePatch = { ...patch };
                 delete linePatch.locked;
+                if ("lengthDeltaMm" in linePatch) {
+                  const currentLength = getLineLength(line);
+                  const deltaPx = hasCalibration
+                    ? Number(linePatch.lengthDeltaMm) / mmPerPixel
+                    : Number(linePatch.lengthDeltaMm);
+                  const nextLength = Math.max(2, currentLength + deltaPx);
+                  const dx = line.x2 - line.x1;
+                  const dy = line.y2 - line.y1;
+                  if (currentLength > 0) {
+                    linePatch.x2 =
+                      line.x1 + (dx / currentLength) * nextLength;
+                    linePatch.y2 =
+                      line.y1 + (dy / currentLength) * nextLength;
+                  }
+                  delete linePatch.lengthDeltaMm;
+                }
                 if (Object.keys(linePatch).length) {
                   setLines((previous) =>
                     previous.map((item) =>
@@ -44717,12 +44822,10 @@ export default function XrayCalibrationWorkspace({
                       exit={{ opacity: 0, y: 14, scale: 0.98 }}
                       transition={MOBILE_PANEL_TRANSITION}
                       data-mobj=""
-                      className={`pointer-events-auto absolute z-40 overflow-y-auto backdrop-blur-md ${
-                        isNativeMobileSimpleUi &&
-                        !selectedCutLayer &&
-                        selectedLine
-                          ? "max-h-[min(24dvh,176px)] w-[min(68vw,260px)] rounded-[16px] p-1.5"
-                          : "max-h-[min(24dvh,176px)] w-[min(70vw,260px)] rounded-[14px] p-1.5"
+                      className={`pointer-events-auto z-40 overflow-y-auto backdrop-blur-md ${
+                        isMobileViewport && !selectedCutLayer && selectedLine
+                          ? "fixed max-h-[min(30dvh,244px)] w-[min(92vw,360px)] rounded-[18px] p-1.5"
+                          : "absolute max-h-[min(24dvh,176px)] w-[min(70vw,260px)] rounded-[14px] p-1.5"
                       }`}
                       style={{
                         background: isDark
@@ -44735,36 +44838,53 @@ export default function XrayCalibrationWorkspace({
                           ? "0 4px 24px rgba(0,5,20,0.60),0 1px 4px rgba(55,80,140,0.16)"
                           : "2px 2px 8px rgba(148,163,184,0.20)",
                         color: isDark ? "#c8d5e8" : "#1e293b",
-                        ...(mobileObjPanelPos
+                        ...(isMobileViewport && !selectedCutLayer && selectedLine
+                          ? {
+                              left: "50%",
+                              bottom:
+                                "calc(env(safe-area-inset-bottom) + 64px)",
+                              transform: "translateX(-50%)",
+                            }
+                          : mobileObjPanelPos
                           ? {
                               left: mobileObjPanelPos.x,
                               top: mobileObjPanelPos.y,
                               transform: "none",
                             }
-                          : isNativeMobileSimpleUi &&
-                              !selectedCutLayer &&
-                              selectedLine
-                            ? { left: 10, top: 64, transform: "none" }
-                            : {
-                                left: "50%",
-                                bottom:
-                                  "calc(env(safe-area-inset-bottom) + 60px)",
-                                transform: "translateX(-50%)",
-                              }),
+                          : {
+                              left: "50%",
+                              bottom:
+                                "calc(env(safe-area-inset-bottom) + 60px)",
+                              transform: "translateX(-50%)",
+                            }),
                       }}
                     >
                       <div className="mb-1 flex items-center justify-between gap-1.5">
                         {/* Drag handle */}
                         <div
-                          className="flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                            isMobileViewport && !selectedCutLayer && selectedLine
+                              ? "cursor-default"
+                              : "cursor-grab active:cursor-grabbing"
+                          }`}
                           style={{
                             background: isDark
                               ? "rgba(255,255,255,0.07)"
                               : "rgba(148,163,184,0.15)",
                             touchAction: "none",
                           }}
-                          title="Seret untuk pindahkan"
+                          title={
+                            isMobileViewport && !selectedCutLayer && selectedLine
+                              ? "Bottom sheet"
+                              : "Seret untuk pindahkan"
+                          }
                           onPointerDown={(e) => {
+                            if (
+                              isMobileViewport &&
+                              !selectedCutLayer &&
+                              selectedLine
+                            )
+                              return;
                             e.stopPropagation();
                             e.currentTarget.setPointerCapture(e.pointerId);
                             const canvasRect =
@@ -44811,18 +44931,22 @@ export default function XrayCalibrationWorkspace({
                             mobileObjPanelDragRef.current = null;
                           }}
                         >
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 10 10"
-                            fill="currentColor"
-                            opacity="0.55"
-                          >
-                            <circle cx="3" cy="3" r="1" />
-                            <circle cx="7" cy="3" r="1" />
-                            <circle cx="3" cy="7" r="1" />
-                            <circle cx="7" cy="7" r="1" />
-                          </svg>
+                          {isMobileViewport && !selectedCutLayer && selectedLine ? (
+                            <span className="h-1 w-5 rounded-full bg-current opacity-35" />
+                          ) : (
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 10 10"
+                              fill="currentColor"
+                              opacity="0.55"
+                            >
+                              <circle cx="3" cy="3" r="1" />
+                              <circle cx="7" cy="3" r="1" />
+                              <circle cx="3" cy="7" r="1" />
+                              <circle cx="7" cy="7" r="1" />
+                            </svg>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <div className="truncate text-[9px] font-black">
@@ -45276,9 +45400,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
 
-                      {isNativeMobileSimpleUi &&
-                      !selectedCutLayer &&
-                      selectedLine ? (
+                      {isMobileViewport && !selectedCutLayer && selectedLine ? (
                         <div className="space-y-1.5">
                           <div className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
                             <input
@@ -45307,54 +45429,86 @@ export default function XrayCalibrationWorkspace({
                             </span>
                           </div>
                           {selectedLineSupportsMeasurementMode ? (
-                            <LineMeasurementModeControl
-                              mode={selectedLineMeasurementMode}
-                              valueText={selectedLineValueText}
-                              circumferenceText={selectedLineCircumferenceText}
-                              onChange={setSelectedLineMeasurementMode}
-                              compact
-                            />
-                          ) : null}
-                          <div className="rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
-                            <div className="mb-1 flex items-center justify-between gap-2">
-                              <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
-                                Width
-                              </span>
-                              <span className="font-mono text-[10px] font-black text-slate-600">
-                                {Number(
-                                  selectedLine.strokeWidth ||
-                                    DEFAULT_LINE_STROKE_WIDTH,
-                                ).toFixed(1)}
-                                x
-                              </span>
+                            <div className="grid grid-cols-3 gap-1">
+                              {LINE_MEASUREMENT_MODES.map((item) => (
+                                <button
+                                  key={`object-mode-${item.value}`}
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedLineMeasurementMode(item.value)
+                                  }
+                                  aria-pressed={
+                                    selectedLineMeasurementMode === item.value
+                                  }
+                                  className={`min-h-7 rounded-full border px-1 text-[8px] font-black transition ${
+                                    selectedLineMeasurementMode === item.value
+                                      ? "border-cyan-400 bg-cyan-500/18 text-cyan-700"
+                                      : "border-white/45 bg-white/20 text-slate-500"
+                                  }`}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
                             </div>
-                            <div className="grid grid-cols-[28px_1fr_28px] items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setLines((prev) =>
-                                    prev.map((line) =>
-                                      line.id === selectedLine.id
-                                        ? {
-                                            ...line,
-                                            strokeWidth: clamp(
-                                              Number(
-                                                line.strokeWidth ||
-                                                  DEFAULT_LINE_STROKE_WIDTH,
-                                              ) - 0.5,
-                                              0.5,
-                                              8,
-                                            ),
-                                          }
-                                        : line,
-                                    ),
-                                  )
-                                }
-                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/55 bg-[#eef2f7]/62 text-[13px] font-black text-slate-600"
-                                aria-label="Kurangi lebar line"
-                              >
-                                -
-                              </button>
+                          ) : null}
+                          <div className="flex min-h-7 items-center justify-between gap-2 px-1">
+                            <span className="min-w-0 truncate text-[9px] font-bold text-slate-500">
+                              {selectedLineMeasurementMode === "radius"
+                                ? "Radius"
+                                : selectedLineMeasurementMode === "diameter"
+                                  ? "Diameter"
+                                  : "Length"}
+                              :{" "}
+                              <strong className="font-mono text-[10px] text-slate-700">
+                                {selectedLineValueText}
+                              </strong>
+                            </span>
+                            <div className="grid shrink-0 grid-cols-2 overflow-hidden rounded-lg border border-white/50 bg-white/22">
+                              {[-1, 1].map((deltaMm) => (
+                                <button
+                                  key={`line-length-step-${deltaMm}`}
+                                  type="button"
+                                  disabled={isSelectedLineLocked || !hasCalibration}
+                                  onClick={() =>
+                                    setLines((prev) =>
+                                      prev.map((line) => {
+                                        if (line.id !== selectedLine.id)
+                                          return line;
+                                        const dx = line.x2 - line.x1;
+                                        const dy = line.y2 - line.y1;
+                                        const currentLength = Math.hypot(dx, dy);
+                                        if (!currentLength || !mmPerPixel)
+                                          return line;
+                                        const nextLength = Math.max(
+                                          2,
+                                          currentLength + deltaMm / mmPerPixel,
+                                        );
+                                        return {
+                                          ...line,
+                                          x2:
+                                            line.x1 +
+                                            (dx / currentLength) * nextLength,
+                                          y2:
+                                            line.y1 +
+                                            (dy / currentLength) * nextLength,
+                                        };
+                                      }),
+                                    )
+                                  }
+                                  className="grid h-7 w-8 place-items-center border-white/40 bg-white/24 text-slate-600 first:border-r disabled:opacity-35"
+                                  aria-label={`${deltaMm < 0 ? "Kurangi" : "Tambah"} panjang 1 mm`}
+                                >
+                                  {deltaMm < 0 ? (
+                                    <Minus className="h-3 w-3" />
+                                  ) : (
+                                    <Plus className="h-3 w-3" />
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <label className="grid min-h-7 grid-cols-[auto_1fr_auto] items-center gap-2 px-1 text-[8px] font-bold text-slate-500">
+                            <span>Line width</span>
                               <input
                                 type="range"
                                 min={0.5}
@@ -45378,122 +45532,100 @@ export default function XrayCalibrationWorkspace({
                                     ),
                                   )
                                 }
-                                className="h-2 w-full accent-cyan-700"
+                                disabled={isSelectedLineLocked}
+                                className="h-1.5 w-full accent-emerald-500 disabled:opacity-35"
                               />
+                            <span className="font-mono text-[9px] text-slate-600">
+                              {Number(
+                                selectedLine.strokeWidth ||
+                                  DEFAULT_LINE_STROKE_WIDTH,
+                              ).toFixed(1)}
+                            </span>
+                          </label>
+                          {selectedLineSizing?.available &&
+                          selectedLineSizing.primary ? (
+                            <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5 rounded-xl border border-cyan-300/25 bg-cyan-500/8 px-2 py-1">
+                              <div className="min-w-0">
+                                <span className="block truncate text-[7px] font-black tracking-wider text-cyan-700 uppercase">
+                                  {selectedLineSizing.kind === "tibial"
+                                    ? "Tibial recommendation"
+                                    : "Femoral recommendation"}
+                                </span>
+                                <span className="block truncate text-[8px] font-semibold text-slate-500">
+                                  {(selectedLineSizing.inferredDimension || "width").toUpperCase()} · {selectedLineSizing.sourceText}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {selectedLineSizing.dimensionItems
+                                  ?.filter(
+                                    (item) =>
+                                      item.key === "width" ||
+                                      item.key === "length",
+                                  )
+                                  .map((item) => (
+                                    <span
+                                      key={`object-setting-size-${item.key}`}
+                                      className={`rounded-lg border px-1.5 py-0.5 text-center ${
+                                        item.active
+                                          ? "border-cyan-400/45 bg-cyan-400/18"
+                                          : "border-white/40 bg-white/20"
+                                      }`}
+                                    >
+                                      <span className="block text-[6px] font-black text-slate-400 uppercase">
+                                        {item.key === "width" ? "ML" : "AP"}
+                                      </span>
+                                      <span className="block text-[8px] font-black text-cyan-700">
+                                        S{item.match.size}
+                                      </span>
+                                    </span>
+                                  ))}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setLines((prev) =>
-                                    prev.map((line) =>
-                                      line.id === selectedLine.id
-                                        ? {
-                                            ...line,
-                                            strokeWidth: clamp(
-                                              Number(
-                                                line.strokeWidth ||
-                                                  DEFAULT_LINE_STROKE_WIDTH,
-                                              ) + 0.5,
-                                              0.5,
-                                              8,
-                                            ),
-                                          }
-                                        : line,
-                                    ),
-                                  )
+                                  useRecommendedNormmedTemplate({
+                                    size: selectedLineSizing.primary.size,
+                                    dimension:
+                                      selectedLineSizing.inferredDimension,
+                                    component: selectedLineSizing.kind,
+                                  })
                                 }
-                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/55 bg-[#eef2f7]/62 text-[13px] font-black text-slate-600"
-                                aria-label="Tambah lebar line"
+                                className="min-h-7 rounded-lg bg-cyan-700 px-2 text-[7px] font-black text-white"
                               >
-                                +
+                                Gunakan
                               </button>
                             </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-2 rounded-[14px] border border-white/40 bg-white/18 px-2 py-1.5">
-                            <div className="flex min-w-0 flex-wrap items-center gap-1">
-                              {LINE_COLOR_OPTIONS.slice(0, 7).map((color) => (
-                                <button
-                                  key={`native-line-color-${color}`}
-                                  type="button"
-                                  onClick={() =>
-                                    setLines((prev) =>
-                                      prev.map((line) =>
-                                        line.id === selectedLine.id
-                                          ? { ...line, color }
-                                          : line,
-                                      ),
-                                    )
-                                  }
-                                  className={`h-6 w-6 rounded-full border transition ${
-                                    (selectedLine.color ||
-                                      lineTypeColor(
-                                        selectedLine.type || "normal",
-                                      )) === color
-                                      ? "border-white ring-2 ring-cyan-300"
-                                      : "border-white/55"
-                                  }`}
-                                  style={{ background: color }}
-                                  aria-label={`Warna line ${color}`}
-                                />
-                              ))}
-                              <label className="relative inline-flex h-6 w-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70">
-                                <span
-                                  className="h-4 w-4 rounded-full"
-                                  style={{
-                                    background:
-                                      "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
-                                  }}
-                                />
-                                <input
-                                  type="color"
-                                  value={
-                                    selectedLine.color ||
-                                    lineTypeColor(selectedLine.type || "normal")
-                                  }
-                                  onChange={(event) =>
-                                    setLines((prev) =>
-                                      prev.map((line) =>
-                                        line.id === selectedLine.id
-                                          ? {
-                                              ...line,
-                                              color: event.target.value,
-                                            }
-                                          : line,
-                                      ),
-                                    )
-                                  }
-                                  className="absolute inset-0 cursor-pointer opacity-0"
-                                  aria-label="Custom line color"
-                                />
-                              </label>
-                            </div>
-                          </div>
+                          ) : null}
                           <div className="grid grid-cols-3 gap-1.5">
                             <button
                               type="button"
                               onClick={toggleSelectedLineLock}
-                              className="min-h-8 rounded-[14px] border border-white/50 bg-[#eef2f7]/62 text-[9px] font-black text-slate-700"
+                              className="flex min-h-9 flex-col items-center justify-center gap-0.5 rounded-xl border border-emerald-300/45 bg-emerald-500/8 text-[7px] font-black text-emerald-600"
                             >
+                              {isSelectedLineLocked ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
                               {isSelectedLineLocked ? "Unlock" : "Lock"}
                             </button>
                             <button
                               type="button"
                               onClick={() => openSimpleCalibrationModal()}
-                              className="min-h-8 rounded-[14px] border border-cyan-200/60 bg-cyan-50/80 text-[9px] font-black text-cyan-800"
+                              className="flex min-h-9 flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/45 bg-cyan-500/8 text-[7px] font-black text-cyan-600"
                             >
-                              Calib
+                              <RulerDimensionLine className="h-3.5 w-3.5" />
+                              Calibrate
                             </button>
                             <button
                               type="button"
                               onClick={removeSelectedLine}
-                              className="min-h-8 rounded-[14px] border border-rose-200 bg-rose-50/90 text-[9px] font-black text-rose-600"
+                              className="flex min-h-9 flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-300/45 bg-rose-500/8 text-[7px] font-black text-rose-500"
                             >
+                              <Trash2 className="h-3.5 w-3.5" />
                               Delete
                             </button>
                           </div>
                         </div>
                       ) : null}
 
-                      {!isNativeMobileSimpleUi &&
+                      {!isMobileViewport &&
                       !selectedCutLayer &&
                       selectedLine ? (
                         <div className="space-y-2">
@@ -46211,6 +46343,7 @@ export default function XrayCalibrationWorkspace({
                 <AnimatePresence>
                   {isNativeMobileSimpleUi &&
                   mobileNativeLineInfoLine &&
+                  !selectedLine &&
                   !simpleMobilePanel &&
                   !mobileCanvasFocusMode &&
                   !mobileObjectSettingsOpen ? (

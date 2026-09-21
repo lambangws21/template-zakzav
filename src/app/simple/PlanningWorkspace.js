@@ -23,6 +23,7 @@ import {
   LockOpen,
   Maximize2,
   Menu,
+  Minus,
   MoreHorizontal,
   MousePointer2,
   Move,
@@ -278,7 +279,16 @@ export default function PlanningWorkspace({
         type: item.type || null,
         clinical: false,
       }));
-    return [...clinicalRows, ...supplementalRows];
+    return [...clinicalRows, ...supplementalRows].map((row) => {
+      const sourceMeasurement = measurements.find(
+        (item) => item.id === row.sourceId,
+      );
+      return {
+        ...row,
+        measurementMode: sourceMeasurement?.measurementMode || null,
+        sourceKind: String(sourceMeasurement?.id || "").split(":")[0] || null,
+      };
+    });
   }, [measurements, rows]);
   const getPlannedValue = (row) => {
     const planned = alignmentPlan?.plannedMetrics?.[row.key];
@@ -1213,7 +1223,25 @@ export default function PlanningWorkspace({
                                   }
                                   aria-expanded={metricEditor === row.key}
                                 >
-                                  {row.clinical ? row.key : row.name}
+                                  <span className={styles.metricTitle}>
+                                    <span>
+                                      {row.clinical ? row.key : row.name}
+                                    </span>
+                                    {row.sourceKind === "line" ? (
+                                      <em
+                                        className={styles.measurementModeBadge}
+                                        data-mode={
+                                          row.measurementMode || "length"
+                                        }
+                                      >
+                                        {row.measurementMode === "radius"
+                                          ? "Radius"
+                                          : row.measurementMode === "diameter"
+                                            ? "Diameter"
+                                            : "Length"}
+                                      </em>
+                                    ) : null}
+                                  </span>
                                   <ChevronDown size={12} />
                                 </button>
                                 {row.sourceLineIds.length > 0 && (
@@ -1319,10 +1347,30 @@ export default function PlanningWorkspace({
                           aria-modal="true"
                           aria-label={`Edit ${displayName}`}
                         >
-                          <header>
+                          <header className={isLineMeasurement ? styles.objectSettingHeader : undefined}>
+                            {isLineMeasurement ? <span className={styles.sheetHandle} aria-hidden="true" /> : null}
                             <div>
-                              <small>Measurement</small>
-                              <h2>{displayName}</h2>
+                              <small>{isLineMeasurement ? "Object setting" : "Measurement"}</small>
+                              <div className={styles.measurementModalTitle}>
+                                <h2>{displayName}</h2>
+                                {isLineMeasurement ? (
+                                  <em
+                                    className={styles.measurementModeBadge}
+                                    data-mode={
+                                      sourceMeasurement?.measurementMode ||
+                                      "length"
+                                    }
+                                  >
+                                    {sourceMeasurement?.measurementMode ===
+                                    "radius"
+                                      ? "Radius"
+                                      : sourceMeasurement?.measurementMode ===
+                                          "diameter"
+                                        ? "Diameter"
+                                        : "Length"}
+                                  </em>
+                                ) : null}
+                              </div>
                             </div>
                             <Action
                               icon={X}
@@ -1331,13 +1379,110 @@ export default function PlanningWorkspace({
                             />
                           </header>
                           <div className={styles.measurementModalBody}>
-                            <div className={styles.measurementValueSummary}>
-                              <small>Nilai aktif</small>
-                              <strong>
-                                {formatPlanningValue(row.value, row.unit)}
-                              </strong>
-                            </div>
-                            {editableMeasurementId ? (
+                            {isLineMeasurement ? (
+                              <div className={styles.lineObjectSetting}>
+                                <label className={styles.objectNameField}>
+                                  <input
+                                    key={`${row.key}:${displayName}`}
+                                    type="text"
+                                    aria-label="Nama line"
+                                    defaultValue={displayName}
+                                    maxLength={80}
+                                    onBlur={(event) =>
+                                      onRenameMeasurement?.(
+                                        editableMeasurementId,
+                                        event.target.value.trim() || displayName,
+                                      )
+                                    }
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") event.currentTarget.blur();
+                                    }}
+                                  />
+                                </label>
+                                <div className={styles.measurementModeControl}>
+                                  <div>
+                                    {[
+                                      ["length", "Length"],
+                                      ["radius", "Radius"],
+                                      ["diameter", "Diameter"],
+                                    ].map(([value, label]) => (
+                                      <button
+                                        key={value}
+                                        type="button"
+                                        data-active={
+                                          (sourceMeasurement?.measurementMode || "length") === value
+                                        }
+                                        onClick={() =>
+                                          onUpdateMeasurement?.(activeMeasurementId, {
+                                            measurementMode: value,
+                                          })
+                                        }
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className={styles.objectValueRow}>
+                                  <span>
+                                    {(sourceMeasurement?.measurementMode || "length") === "radius"
+                                      ? "Radius"
+                                      : sourceMeasurement?.measurementMode === "diameter"
+                                        ? "Diameter"
+                                        : "Length"}
+                                    : <strong>{formatPlanningValue(row.value, row.unit)}</strong>
+                                  </span>
+                                  <div className={styles.valueStepper}>
+                                    <button
+                                      type="button"
+                                      aria-label="Kurangi panjang 1 mm"
+                                      disabled={sourceMeasurement?.locked || !calibrated}
+                                      onClick={() =>
+                                        onUpdateMeasurement?.(activeMeasurementId, {
+                                          lengthDeltaMm: -1,
+                                        })
+                                      }
+                                    >
+                                      <Minus size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="Tambah panjang 1 mm"
+                                      disabled={sourceMeasurement?.locked || !calibrated}
+                                      onClick={() =>
+                                        onUpdateMeasurement?.(activeMeasurementId, {
+                                          lengthDeltaMm: 1,
+                                        })
+                                      }
+                                    >
+                                      <Plus size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                                <label className={styles.lineWidthControl}>
+                                  <span>Line width</span>
+                                  <input
+                                    type="range"
+                                    min="1"
+                                    max="8"
+                                    step="0.25"
+                                    value={sourceMeasurement?.strokeWidth || 2}
+                                    disabled={sourceMeasurement?.locked}
+                                    onChange={(event) =>
+                                      onUpdateMeasurement?.(activeMeasurementId, {
+                                        strokeWidth: Number(event.target.value),
+                                      })
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            ) : (
+                              <div className={styles.measurementValueSummary}>
+                                <small>Nilai aktif</small>
+                                <strong>{formatPlanningValue(row.value, row.unit)}</strong>
+                              </div>
+                            )}
+                            {editableMeasurementId && !isLineMeasurement ? (
                               <label className={styles.measurementNameField}>
                                 Nama info
                                 <input
@@ -1357,35 +1502,6 @@ export default function PlanningWorkspace({
                                   }}
                                 />
                               </label>
-                            ) : null}
-                            {isLineMeasurement ? (
-                              <div className={styles.measurementModeControl}>
-                                <small>Model pengukuran</small>
-                                <div>
-                                  {[
-                                    ["length", "Length"],
-                                    ["radius", "Radius"],
-                                    ["diameter", "Diameter"],
-                                  ].map(([value, label]) => (
-                                    <button
-                                      key={value}
-                                      type="button"
-                                      data-active={
-                                        (sourceMeasurement?.measurementMode ||
-                                          "length") === value
-                                      }
-                                      onClick={() =>
-                                        onUpdateMeasurement?.(
-                                          activeMeasurementId,
-                                          { measurementMode: value },
-                                        )
-                                      }
-                                    >
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
                             ) : null}
                             {guideMeasurementId ? (
                               <div className={styles.measurementFieldGrid}>
@@ -1447,7 +1563,7 @@ export default function PlanningWorkspace({
                                 </label>
                               </div>
                             ) : null}
-                            <div className={styles.measurementFieldGrid}>
+                            {!isLineMeasurement ? <div className={styles.measurementFieldGrid}>
                               <label className={styles.metricColorControl}>
                                 Warna
                                 <input
@@ -1461,8 +1577,8 @@ export default function PlanningWorkspace({
                                   }
                                 />
                               </label>
-                            </div>
-                            {sourceMeasurement?.sourceLineIds?.length ? (
+                            </div> : null}
+                            {sourceMeasurement?.sourceLineIds?.length && !isLineMeasurement ? (
                               <button
                                 type="button"
                                 className={styles.measurementVisibility}
@@ -1483,16 +1599,16 @@ export default function PlanningWorkspace({
                                   : "Tampilkan nilai"}
                               </button>
                             ) : null}
-                            <div className={styles.metricEditorActions}>
-                              <Action
-                                icon={MousePointer2}
-                                onClick={() => {
-                                  onSelectMeasurement?.(activeMeasurementId);
-                                  setMetricEditor(null);
-                                }}
-                              >
-                                Pilih di Canvas
-                              </Action>
+                            <div className={`${styles.metricEditorActions} ${isLineMeasurement ? styles.objectSettingActions : ""}`}>
+                              {!isLineMeasurement ? <Action
+                                  icon={MousePointer2}
+                                  onClick={() => {
+                                    onSelectMeasurement?.(activeMeasurementId);
+                                    setMetricEditor(null);
+                                  }}
+                                >
+                                  Pilih di Canvas
+                                </Action> : null}
                               {(guideMeasurementId || isLineMeasurement) && (
                                 <Action
                                   icon={
@@ -1512,6 +1628,17 @@ export default function PlanningWorkspace({
                                     : "Lock"}
                                 </Action>
                               )}
+                              {isLineMeasurement ? (
+                                <Action
+                                  icon={Target}
+                                  onClick={() => {
+                                    setMetricEditor(null);
+                                    activate(actions.calibrate);
+                                  }}
+                                >
+                                  Calibrate
+                                </Action>
+                              ) : null}
                               <Action
                                 icon={Trash2}
                                 className={styles.dangerAction}
@@ -1525,11 +1652,11 @@ export default function PlanningWorkspace({
                               </Action>
                             </div>
                           </div>
-                          <footer>
+                          {!isLineMeasurement ? <footer>
                             <Action onClick={() => setMetricEditor(null)}>
                               Selesai
                             </Action>
-                          </footer>
+                          </footer> : null}
                         </section>
                       </div>
                     );
