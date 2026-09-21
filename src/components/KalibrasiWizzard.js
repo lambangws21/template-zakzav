@@ -315,7 +315,7 @@ export default function CalibrationWizard({
         aria-hidden="true"
       />
 
-      {/* Panel — bottom sheet on mobile, left-side float on desktop */}
+      {/* Panel — phone and tablet share the same compact bottom sheet. */}
       <motion.div
         key="cw-panel"
         initial={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, x: -48, scale: 0.94 }}
@@ -330,9 +330,9 @@ export default function CalibrationWizard({
         dragConstraints={isMobile ? { top: -240, bottom: 180 } : { top: -360, bottom: 0 }}
         className={
           isCompactCanvasEdit
-            ? "fixed bottom-[calc(env(safe-area-inset-bottom)+74px)] left-2 right-2 z-[95] rounded-[16px] p-2 text-slate-800 cw-card font-sans"
+            ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+74px)] z-[95] mx-auto w-[min(430px,calc(100vw-16px))] rounded-[16px] p-2 text-slate-800 cw-card font-sans"
           : isMobile
-            ? "fixed right-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] left-2 z-[95] max-h-[50dvh] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
+            ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] z-[95] mx-auto max-h-[50dvh] w-[min(430px,calc(100vw-16px))] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
             : "fixed bottom-4 left-4 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] touch-pan-y overscroll-contain overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}

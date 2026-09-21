@@ -132,7 +132,7 @@ export function PlanningCorrectionControls({
       </label>
       <div className={styles.fieldGrid}>
         {fields.map((field) => (
-          <label key={field.label}>
+          <label key={field.label} title={field.label}>
             {field.label}
             {field.options ? (
               <select

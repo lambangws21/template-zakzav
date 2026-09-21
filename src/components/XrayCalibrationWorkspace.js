@@ -879,6 +879,7 @@ export default function XrayCalibrationWorkspace({
   const { isDark, toggle: toggleDarkMode } = useTheme();
   const containerRef = useRef(null);
   const brushPanelDragControls = useDragControls();
+  const mobileObjectDragControls = useDragControls();
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
@@ -1746,7 +1747,7 @@ export default function XrayCalibrationWorkspace({
 
     const phoneQuery = window.matchMedia("(max-width: 767px)");
     const tabletQuery = window.matchMedia(
-      "(pointer: coarse) and (min-width: 768px) and (max-width: 1180px)",
+      "(pointer: coarse) and (min-width: 768px) and (max-width: 1366px)",
     );
     const coarseQuery = window.matchMedia("(pointer: coarse)");
     const updateMobileState = () => {
@@ -22166,7 +22167,9 @@ export default function XrayCalibrationWorkspace({
     if (simpleMobilePanel) {
       setMobileObjectSettingsOpen(false);
       setMobileCanvasFocusMode(false);
-      setMobileSheetSnap("collapsed");
+      setMobileSheetSnap(
+        simpleMobilePanel === "implant" ? "full" : "half",
+      );
     }
   }, [simpleMobilePanel]);
   const mobileBlockingDialogOpen = Boolean(
@@ -23480,9 +23483,25 @@ export default function XrayCalibrationWorkspace({
     }
   };
   const openPlanningProperties = () => {
-    if (selectedCutLayer) openLayerSettingsModal(selectedCutLayer.id);
-    else if (hasMobileObjectSelection) openSimpleColorPanel();
-    else openImageProcessingModal();
+    if (selectedCutLayer) {
+      if (isMobileViewport) {
+        setSimpleColorPanelOpen(false);
+        setSimpleMobilePanel(null);
+        setMobileObjectSettingsOpen(true);
+      } else {
+        openLayerSettingsModal(selectedCutLayer.id);
+      }
+    } else if (hasMobileObjectSelection) {
+      if (isMobileViewport) {
+        setSimpleColorPanelOpen(false);
+        setSimpleMobilePanel(null);
+        setMobileObjectSettingsOpen(true);
+      } else {
+        openSimpleColorPanel();
+      }
+    } else {
+      openImageProcessingModal();
+    }
   };
   const savePlanningLocally = async () => {
     try {
@@ -26544,7 +26563,11 @@ export default function XrayCalibrationWorkspace({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/18 p-4 backdrop-blur-[2px]"
+            className={`fixed inset-0 z-[97] flex justify-center ${
+              isMobileViewport
+                ? "pointer-events-none items-end bg-transparent px-2 pb-[calc(env(safe-area-inset-bottom)+62px)]"
+                : "items-center bg-slate-950/18 p-4 backdrop-blur-[2px]"
+            }`}
             onClick={(event) => {
               if (
                 event.target === event.currentTarget &&
@@ -26788,9 +26811,13 @@ export default function XrayCalibrationWorkspace({
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={MOBILE_PANEL_TRANSITION}
               role="dialog"
-              aria-modal="true"
+              aria-modal={!isMobileViewport}
               aria-labelledby="color-panel-title"
-              className="w-full max-w-sm rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.26),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+              className={`pointer-events-auto w-full max-w-sm overflow-y-auto border border-white/75 bg-[#eef2f7]/96 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.26),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl ${
+                isMobileViewport
+                  ? "max-h-[42dvh] touch-pan-y overscroll-contain rounded-t-[22px] p-3"
+                  : "rounded-[26px] p-4"
+              }`}
             >
               <div className="mb-3 flex items-start justify-between gap-3 border-b border-slate-300/20 pb-3">
                 <div>
@@ -42307,43 +42334,24 @@ export default function XrayCalibrationWorkspace({
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.2 }}
-                      className={`fixed inset-0 z-[38] ${
-                        isTabletViewport ||
-                        ["tools", "implant", "layer", "manager"].includes(
-                          simpleMobilePanel,
-                        )
-                          ? "pointer-events-none bg-transparent"
-                          : "bg-black/20"
-                      }`}
-                      onClick={() => setSimpleMobilePanel(null)}
+                      className="pointer-events-none fixed inset-0 z-[38] bg-transparent"
                     />
                   )}
                   {isSimpleUiMode && isMobileViewport && simpleMobilePanel && (
                     <motion.div
                       key={`simple-mobile-panel-${simpleMobilePanel}`}
-                      initial={
-                        isTabletViewport
-                          ? { x: "112%", opacity: 0 }
-                          : { y: "100%" }
-                      }
-                      animate={
-                        isTabletViewport ? { x: 0, opacity: 1 } : { y: 0 }
-                      }
-                      exit={
-                        isTabletViewport
-                          ? { x: "112%", opacity: 0 }
-                          : { y: "100%" }
-                      }
+                      initial={{ y: "100%", opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: "100%", opacity: 0 }}
                       transition={{
                         type: "spring",
                         damping: 32,
                         stiffness: 380,
                       }}
-                      drag={isTabletViewport ? false : "y"}
-                      dragConstraints={{ top: -180, bottom: 180 }}
+                      drag="y"
+                      dragConstraints={{ top: -180, bottom: 120 }}
                       dragElastic={0.08}
                       onDragEnd={(_, info) => {
-                        if (isTabletViewport) return;
                         if (info.offset.y > 140 || info.velocity.y > 950) {
                           setSimpleMobilePanel(null);
                           return;
@@ -42360,20 +42368,15 @@ export default function XrayCalibrationWorkspace({
                           );
                         }
                       }}
-                      className={`fixed z-40 flex flex-col overflow-hidden ${
-                        isTabletViewport
-                          ? "top-[calc(env(safe-area-inset-top)+76px)] right-3 max-h-[calc(100dvh-92px)] w-[min(340px,34vw)] min-w-0 bg-transparent shadow-none"
-                          : `inset-x-0 bottom-0 rounded-t-[28px] border border-[var(--soft-border)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl [background:var(--soft-float-bg)] ${
-                              mobileSheetSnap === "collapsed"
-                                ? "h-[58px]"
-                                : mobileSheetSnap === "half"
-                                  ? "h-[24dvh] min-h-[150px]"
-                                  : "h-[52dvh]"
-                            }`
+                      className={`fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+62px)] z-40 mx-auto flex w-[min(430px,calc(100vw-16px))] flex-col overflow-hidden rounded-t-[22px] border border-[var(--soft-border)] shadow-[0_-8px_32px_rgba(15,23,42,0.22)] backdrop-blur-xl [background:var(--soft-float-bg)] ${
+                        mobileSheetSnap === "collapsed"
+                          ? "h-[58px]"
+                          : mobileSheetSnap === "half"
+                            ? "h-[38dvh] min-h-[220px] max-h-[360px]"
+                            : "h-[76dvh] max-h-[680px]"
                       }`}
                     >
-                      {!isTabletViewport ? (
-                        <div className="flex shrink-0 items-center justify-center px-3 pt-1.5 pb-1">
+                      <div className="flex shrink-0 items-center justify-center px-3 pt-1.5 pb-1">
                           <button
                             type="button"
                             onClick={() =>
@@ -42396,8 +42399,7 @@ export default function XrayCalibrationWorkspace({
                                 : "Ciutkan"}
                           </button>
                         </div>
-                      ) : null}
-                      {!isTabletViewport && mobileSheetSnap === "collapsed" ? (
+                      {mobileSheetSnap === "collapsed" ? (
                         <div className="flex min-h-0 flex-1 items-center gap-2 px-3 pb-2">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-[9px] font-black text-[var(--soft-text-hi)]">
@@ -42425,7 +42427,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
                       <div
-                        className={`min-h-0 overflow-y-auto ${mobileSheetSnap === "collapsed" && !isTabletViewport ? "hidden" : ""}`}
+                        className={`min-h-0 touch-pan-y overscroll-contain overflow-y-auto ${mobileSheetSnap === "collapsed" ? "hidden" : ""}`}
                         style={{
                           paddingBottom: `calc(env(safe-area-inset-bottom) + var(--mobile-keyboard-offset,0px) + ${
                             simpleMobilePanel === "tools" ? 20 : 24
@@ -44821,10 +44823,22 @@ export default function XrayCalibrationWorkspace({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 14, scale: 0.98 }}
                       transition={MOBILE_PANEL_TRANSITION}
+                      drag={isMobileViewport ? "y" : false}
+                      dragControls={mobileObjectDragControls}
+                      dragListener={false}
+                      dragMomentum={false}
+                      dragElastic={0.04}
+                      dragConstraints={
+                        isMobileViewport
+                          ? { top: -240, bottom: 150 }
+                          : undefined
+                      }
                       data-mobj=""
-                      className={`pointer-events-auto z-40 overflow-y-auto backdrop-blur-md ${
+                      className={`pointer-events-auto z-40 touch-pan-y overscroll-contain overflow-y-auto backdrop-blur-md ${
                         isMobileViewport && !selectedCutLayer && selectedLine
-                          ? "fixed max-h-[min(30dvh,244px)] w-[min(92vw,360px)] rounded-[18px] p-1.5"
+                          ? "fixed right-2 left-2 mx-auto max-h-[min(26dvh,220px)] w-auto max-w-[360px] rounded-[16px] p-1.5"
+                          : isMobileViewport
+                            ? "fixed right-2 left-2 mx-auto max-h-[min(34dvh,280px)] w-auto max-w-[380px] rounded-[18px] p-1.5"
                           : "absolute max-h-[min(24dvh,176px)] w-[min(70vw,260px)] rounded-[14px] p-1.5"
                       }`}
                       style={{
@@ -44838,12 +44852,10 @@ export default function XrayCalibrationWorkspace({
                           ? "0 4px 24px rgba(0,5,20,0.60),0 1px 4px rgba(55,80,140,0.16)"
                           : "2px 2px 8px rgba(148,163,184,0.20)",
                         color: isDark ? "#c8d5e8" : "#1e293b",
-                        ...(isMobileViewport && !selectedCutLayer && selectedLine
+                        ...(isMobileViewport
                           ? {
-                              left: "50%",
                               bottom:
                                 "calc(env(safe-area-inset-bottom) + 64px)",
-                              transform: "translateX(-50%)",
                             }
                           : mobileObjPanelPos
                           ? {
@@ -44861,11 +44873,11 @@ export default function XrayCalibrationWorkspace({
                     >
                       <div className="mb-1 flex items-center justify-between gap-1.5">
                         {/* Drag handle */}
-                        <div
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                            isMobileViewport && !selectedCutLayer && selectedLine
-                              ? "cursor-default"
-                              : "cursor-grab active:cursor-grabbing"
+                        <button
+                          type="button"
+                          aria-label="Geser Object Setting"
+                          className={`flex shrink-0 items-center justify-center rounded-full cursor-grab active:cursor-grabbing ${
+                            isMobileViewport ? "h-6 w-16" : "h-7 w-7"
                           }`}
                           style={{
                             background: isDark
@@ -44874,17 +44886,16 @@ export default function XrayCalibrationWorkspace({
                             touchAction: "none",
                           }}
                           title={
-                            isMobileViewport && !selectedCutLayer && selectedLine
-                              ? "Bottom sheet"
+                            isMobileViewport
+                              ? "Geser panel"
                               : "Seret untuk pindahkan"
                           }
                           onPointerDown={(e) => {
-                            if (
-                              isMobileViewport &&
-                              !selectedCutLayer &&
-                              selectedLine
-                            )
+                            if (isMobileViewport) {
+                              e.stopPropagation();
+                              mobileObjectDragControls.start(e);
                               return;
+                            }
                             e.stopPropagation();
                             e.currentTarget.setPointerCapture(e.pointerId);
                             const canvasRect =
@@ -44931,8 +44942,8 @@ export default function XrayCalibrationWorkspace({
                             mobileObjPanelDragRef.current = null;
                           }}
                         >
-                          {isMobileViewport && !selectedCutLayer && selectedLine ? (
-                            <span className="h-1 w-5 rounded-full bg-current opacity-35" />
+                          {isMobileViewport ? (
+                            <span className="h-1 w-8 rounded-full bg-current opacity-35" />
                           ) : (
                             <svg
                               width="10"
@@ -44947,7 +44958,7 @@ export default function XrayCalibrationWorkspace({
                               <circle cx="7" cy="7" r="1" />
                             </svg>
                           )}
-                        </div>
+                        </button>
                         <div className="min-w-0">
                           <div className="truncate text-[9px] font-black">
                             {mobileObjectSheetTitle}
@@ -46574,10 +46585,7 @@ export default function XrayCalibrationWorkspace({
                   ) : null}
                 </AnimatePresence>
 
-                {isMobileViewport &&
-                (isSimpleUiMode
-                  ? !simpleMobilePanel && !isTabletViewport
-                  : true)
+                {isMobileViewport
                   ? !isPlanningLayout && (
                       <MobileNavigation
                         className={`fixed inset-x-0 z-50 px-2 ${

@@ -666,9 +666,17 @@
   .metricStatus { min-height: 17px; padding: 1px 3px; font-size: 7px; }
   .logSection { margin-top: 6px; padding-top: 5px; }
   .logSection h2 { margin-bottom: 6px; font-size: 11px; }
-  .correctionSection { margin-top: 8px; padding-top: 7px; }
-  .correctionSection h2 { margin-bottom: 7px; }
-  .correctionSection .controls { gap: 7px; }
+  .correctionSection { margin-top: 4px; padding-top: 4px; border-top-width: 1px; }
+  .correctionSection h2 { margin-bottom: 4px; font-size: 10px; line-height: 1.2; }
+  .correctionSection .controls { gap: 4px; }
+  .correctionSection .controls > label { font-size: 8px; font-weight: 700; }
+  .correctionSection .controls > label select { min-height: 30px; margin-top: 2px; padding: 3px 7px; font-size: 10px; }
+  .correctionSection .fieldGrid { gap: 4px; }
+  .correctionSection .fieldGrid label { min-width: 0; overflow: hidden; font-size: 7px; font-weight: 700; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+  .correctionSection .fieldGrid input,
+  .correctionSection .fieldGrid select { min-height: 28px; margin-top: 2px; padding: 3px 5px; font-size: 10px; }
+  .correctionSection .button { min-height: 31px; padding: 4px 7px; font-size: 9px; }
+  .correctionSection .button svg { width: 13px; height: 13px; }
   .measurementFieldGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .implantGrid { grid-template-columns: 1fr; }
   .implantGrid > button { min-height: 96px; }
@@ -683,4 +691,22 @@
   .sheetContent[data-section="tools"] .buttonGrid .button { min-width: 0; min-height: 48px; flex-direction: column; justify-content: center; gap: 3px; padding: 4px 2px; text-align: center; font-size: 8px; line-height: 1.1; }
   .sheetContent[data-section="tools"] .buttonGrid .button svg { width: 15px; height: 15px; }
   .canvasGuide { max-height: 34%; }
+}
+
+@media (min-width: 360px) and (max-width: 699px) {
+  .correctionSection .fieldGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (pointer: coarse) and (min-width: 700px) and (max-width: 1366px) {
+  .correctionSection { margin-top: 4px; padding-top: 4px; border-top-width: 1px; }
+  .correctionSection h2 { margin-bottom: 4px; font-size: 10px; line-height: 1.2; }
+  .correctionSection .controls { gap: 4px; }
+  .correctionSection .controls > label { font-size: 8px; font-weight: 700; }
+  .correctionSection .controls > label select { min-height: 30px; margin-top: 2px; padding: 3px 7px; font-size: 10px; }
+  .correctionSection .fieldGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .correctionSection .fieldGrid label { min-width: 0; overflow: hidden; font-size: 7px; font-weight: 700; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+  .correctionSection .fieldGrid input,
+  .correctionSection .fieldGrid select { min-height: 28px; margin-top: 2px; padding: 3px 5px; font-size: 10px; }
+  .correctionSection .button { min-height: 31px; padding: 4px 7px; font-size: 9px; }
+  .correctionSection .button svg { width: 13px; height: 13px; }
 }
