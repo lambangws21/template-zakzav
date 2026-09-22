@@ -333,7 +333,7 @@ export default function CalibrationWizard({
             ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+74px)] z-[95] mx-auto w-[min(430px,calc(100vw-16px))] rounded-[16px] p-2 text-slate-800 cw-card font-sans"
           : isMobile
             ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] z-[95] mx-auto max-h-[50dvh] w-[min(430px,calc(100vw-16px))] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
-            : "fixed bottom-4 left-4 z-[95] w-[min(430px,calc(100vw-32px))] max-h-[min(62vh,520px)] touch-pan-y overscroll-contain overflow-y-auto rounded-[18px] p-3 text-slate-800 cw-card font-sans"
+            : "fixed bottom-3 left-3 z-[95] w-[min(360px,calc(100vw-24px))] max-h-[min(58vh,480px)] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}
         style={{ scrollbarWidth: "none" }}
@@ -423,8 +423,8 @@ export default function CalibrationWizard({
           </button>
         </div>
 
-        {/* Desktop and Head Ref navigation. Mobile ruler uses the compact preset row below. */}
-        {!(isMobile && isLineMode) ? <>
+        {/* Head Ref keeps the full navigation. Line calibration uses one compact flow on every viewport. */}
+        {!isLineMode ? <>
         <div className="mb-2 grid grid-cols-2 gap-1 rounded-[12px] p-1 cw-pressed">
           <button type="button" onClick={() => onCalibrationModeChange?.("line")}
             className={`rounded-[12px] py-2 text-[10px] font-black transition-all ${isLineMode ? "cw-active" : "text-slate-500"}`}>
@@ -452,7 +452,7 @@ export default function CalibrationWizard({
         </div>
         </> : null}
 
-        {isMobile && isLineMode ? (
+        {isLineMode ? (
           <div className="space-y-2">
             <div className="grid grid-cols-3 gap-1 rounded-[11px] p-1 cw-pressed" aria-label="Preset kalibrasi">
               {[
@@ -481,15 +481,26 @@ export default function CalibrationWizard({
               </button>
             </div>
 
-            <div className="grid grid-cols-[minmax(0,1fr)_132px] items-end gap-2">
+            <div
+              className={`grid items-end gap-2 ${
+                isMobile
+                  ? "grid-cols-[minmax(0,1fr)_132px]"
+                  : "grid-cols-[minmax(0,1fr)_118px]"
+              }`}
+            >
               <div className="min-w-0">
-                <span className="block text-[8px] font-bold text-slate-500">Reference</span>
-                <strong className="block truncate text-[30px] leading-none font-black text-slate-800">
-                  {actualValue || "-"} <small className="text-[14px] text-slate-500">{actualUnit}</small>
+                <span className="block text-[8px] font-bold text-slate-500">Referensi</span>
+                <strong
+                  className={`block truncate leading-none font-black text-slate-800 ${
+                    isMobile ? "text-[30px]" : "text-[25px]"
+                  }`}
+                >
+                  {actualValue || "-"}{" "}
+                  <small className="text-[13px] text-slate-500">{actualUnit}</small>
                 </strong>
               </div>
               <label className="min-w-0">
-                <span className="mb-1 block text-[8px] font-bold text-slate-500">Reference value</span>
+                <span className="mb-1 block text-[8px] font-bold text-slate-500">Nilai referensi</span>
                 <span className="grid grid-cols-[1fr_48px] gap-1">
                   <input
                     type="number"
@@ -515,7 +526,7 @@ export default function CalibrationWizard({
             </div>
 
             <label className="block">
-              <span className="mb-1 block text-[8px] font-bold text-slate-500">Measurement line name</span>
+              <span className="mb-1 block text-[8px] font-bold text-slate-500">Nama garis pengukuran</span>
               <input
                 type="text"
                 value={lineName}
@@ -528,7 +539,7 @@ export default function CalibrationWizard({
 
             <div>
               <div className="mb-1 flex items-center justify-between text-[8px] font-bold text-slate-500">
-                <span>Line width</span>
+                <span>Ketebalan garis</span>
                 <span>{strokeValue.toFixed(1)}x</span>
               </div>
               <input
@@ -576,7 +587,7 @@ export default function CalibrationWizard({
                 className="flex min-h-9 items-center justify-center gap-1 rounded-[10px] text-[8px] font-black text-cyan-600 cw-btn"
               >
                 <Scaling className="h-3.5 w-3.5" />
-                {hasLine ? "Update" : "Calib"}
+                {hasLine ? "Perbarui" : "Kalibrasi"}
               </button>
               <button
                 type="button"
@@ -1080,7 +1091,7 @@ export default function CalibrationWizard({
         ) : null}
 
         {/* QC row — hidden in magnification mode */}
-        <div className={`mt-2.5${isMagMode || (isMobile && isLineMode) ? " hidden" : ""}`}>
+        <div className={`mt-2.5${isMagMode || isLineMode ? " hidden" : ""}`}>
           <button type="button" onClick={() => setShowQCDetail((v) => !v)}
             className="flex w-full items-center justify-between rounded-[14px] border px-3 py-2 text-[10px] font-black transition-all"
             style={{ background: qcBg, borderColor: `${qcColor}30`, color: qcColor }}>
@@ -1106,7 +1117,7 @@ export default function CalibrationWizard({
         <button type="button" onClick={applyAndContinue} disabled={!canSave}
           className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-r from-emerald-500 to-teal-600 py-2.5 text-[10px] font-black tracking-widest text-white uppercase shadow-md transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45">
           <Save className="h-4 w-4" />
-          {isMobile && isLineMode ? "Konfirmasi Kalibrasi" : "Terapkan & Lanjut"}
+          {isLineMode ? "Konfirmasi Kalibrasi" : "Terapkan & Lanjut"}
         </button>
           </>
         )}

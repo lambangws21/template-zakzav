@@ -165,6 +165,18 @@
 .inlineLandmarkSteps li[data-state="active"] { color: var(--pw-accent); font-weight: 700; }.inlineLandmarkSteps li[data-state="active"] > span { color: #fff; background: var(--pw-accent); border-color: var(--pw-accent); }
 .analysisBypass { display: grid; gap: 6px; padding: 8px; color: var(--pw-muted); background: var(--pw-bg); border: 1px dashed var(--pw-line); border-radius: 6px; font-size: 9px; line-height: 1.4; }
 .analysisBypass .button { width: 100%; color: #fff; background: #007f91; border-color: #0095a8; }
+.tkaPlanSummary { display: grid; gap: 8px; padding: 9px; background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 7px; }
+.tkaPlanSummary header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tkaPlanSummary header span { color: var(--pw-muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.tkaPlanSummary header strong { color: var(--pw-accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tkaPlanSummary p { margin: 0; color: var(--pw-muted); font-size: 9px; line-height: 1.4; }
+.tkaCutGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tkaCutGrid > div { min-width: 0; padding: 7px; background: var(--pw-raised); border-radius: 5px; }
+.tkaCutGrid span, .tkaCutGrid strong { display: block; }
+.tkaCutGrid span { margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; }
+.tkaCutGrid strong { overflow-wrap: anywhere; font-size: 9px; font-variant-numeric: tabular-nums; }
+.tkaPlanSummary .tkaCutPreviewAction { width: 100%; min-height: 36px; justify-content: center; color: #fff; background: #087f94; border-color: #0b91a8; font-size: 9px; font-weight: 750; }
+.tkaPreviewHint { color: var(--pw-muted); font-size: 8px; line-height: 1.35; }
 .logBody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; scrollbar-width: thin; }
 .measurementScroll { max-height: min(250px, 28dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; margin: 8px 0 12px; border-block: 1px solid var(--pw-line); }
 .measurementScroll:focus-visible { outline: 2px solid var(--pw-accent); outline-offset: 2px; }
@@ -181,7 +193,7 @@
 .metricTitle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .measurementModeBadge { display: inline-flex; width: fit-content; min-height: 16px; align-items: center; padding: 1px 5px; color: #0e7490; background: #cffafe; border: 1px solid #67e8f9; border-radius: 999px; font-size: 7px; font-style: normal; font-weight: 800; line-height: 1; text-transform: uppercase; }
 .measurementModeBadge[data-mode="radius"] { color: #047857; background: #d1fae5; border-color: #6ee7b7; }
-.measurementModeBadge[data-mode="diameter"] { color: #7e22ce; background: #f3e8ff; border-color: #d8b4fe; }
+.measurementModeBadge[data-mode="diameter"] { color: #b45309; background: #fef3c7; border-color: #fbbf24; }
 .measurementModalTitle { display: flex; min-width: 0; align-items: center; gap: 7px; }
 .measurementModalTitle h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .measurements th .metricLabelToggle { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; color: var(--pw-accent); border: 1px solid var(--pw-line); border-radius: 5px; }
@@ -218,6 +230,22 @@
 .implantPreview img { width: 76px; height: 110px; object-fit: contain; background: #fff; }
 .implantPreview span { min-width: 0; overflow-wrap: anywhere; }.implantPreview strong { display: block; margin-top: 8px; }
 .canvas { min-height: 0; min-width: 0; position: relative; overflow: hidden; background: #101317; }
+.planningStartCard { position: absolute; z-index: 42; top: 12px; left: 12px; display: grid; width: min(286px, calc(100% - 24px)); gap: 8px; padding: 10px; color: var(--pw-text); background: color-mix(in srgb, var(--pw-panel) 94%, transparent); border: 1px solid var(--pw-procedure-border); border-radius: 8px; box-shadow: 0 8px 24px #0006; backdrop-filter: blur(12px); }
+.planningStartCard header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.planningStartCard header span { font-size: 12px; font-weight: 800; }
+.planningStartCard header strong { color: var(--pw-accent); font-size: 8px; text-transform: uppercase; }
+.planningStartCard ol { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.planningStartCard li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 7px; min-height: 34px; padding: 5px 6px; background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 6px; }
+.planningStartCard li > span { display: grid; width: 22px; height: 22px; place-items: center; color: var(--pw-muted); border: 1px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 800; }
+.planningStartCard li strong, .planningStartCard li small { display: block; }
+.planningStartCard li strong { font-size: 10px; }
+.planningStartCard li small { margin-top: 2px; color: var(--pw-muted); font-size: 8px; line-height: 1.3; }
+.planningStartCard li[data-complete="true"] > span { color: #fff; background: #16825d; border-color: #16825d; }
+.startSideButtons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.startSideButtons button { min-height: 34px; color: var(--pw-muted); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; font-size: 10px; font-weight: 750; }
+.startSideButtons button[data-active="true"] { color: #fff; background: var(--pw-accent); border-color: var(--pw-accent); }
+.planningStartCard .startPrimaryAction { width: 100%; min-height: 38px; justify-content: center; color: #fff; background: #087f94; border-color: #0b91a8; font-weight: 750; }
+.startHint { color: var(--pw-muted); font-size: 8px; line-height: 1.35; text-align: center; }
 .resectionSummary {
   position: absolute; z-index: 38; top: 12px; right: 12px; width: min(310px, calc(100% - 32px));
   padding: 10px; color: var(--pw-text); pointer-events: none;
@@ -255,7 +283,7 @@
   border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 5px 18px #0005;
   backdrop-filter: blur(10px); scrollbar-width: thin;
 }
-.canvasGuide[data-minimized="true"] { width: min(230px, calc(100% - 24px)); overflow: hidden; padding-block: 7px; }
+.canvasGuide[data-minimized="true"] { width: min(264px, calc(100% - 24px)); overflow: hidden; padding-block: 7px; }
 .canvasGuideHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .canvasGuideHeader > span { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--pw-accent); }
 .canvasGuideHeader > span > span { min-width: 0; }
@@ -268,6 +296,18 @@
 .guideProgress { position: relative; height: 4px; margin-top: 7px; overflow: visible; background: var(--pw-raised); border-radius: 4px; }
 .guideProgress > span { display: block; height: 100%; min-width: 3px; background: var(--pw-accent); border-radius: inherit; transition: width 160ms ease-out; }
 .guideProgress > small { position: absolute; right: 0; top: 6px; color: var(--pw-muted); font-size: 8px; }
+.guidePurpose { display: grid; gap: 4px; margin-top: 9px; padding: 8px; background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 6px; }
+.guidePurpose p { margin: 0; color: var(--pw-text); font-size: 9px; line-height: 1.4; }
+.guidePurpose strong { color: var(--pw-accent); font-size: 8px; text-transform: uppercase; }
+.guidePurpose[data-compact="false"] { margin-bottom: 2px; }
+.compactGuideSequence { display: flex; gap: 4px; margin-top: 7px; }
+.compactGuideSequence > span { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; color: var(--pw-muted); font-size: 8px; }
+.compactGuideSequence > span::first-letter { font-weight: 800; }
+.compactGuideSequence > span[data-active="true"] { color: var(--pw-accent); font-weight: 750; }
+.compactGuideSequence > span[data-done="true"] { color: #16825d; }
+.compactGuideSequence small { overflow: hidden; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.compactGuideActive { display: flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; margin-top: 7px; color: #fff; background: #087f94; border-radius: 6px; font-size: 9px; font-weight: 700; }
+.canvasGuide .compactGuideStart { width: 100%; min-height: 32px; justify-content: center; margin-top: 7px; color: #fff; background: #087f94; border-color: #0b91a8; font-size: 9px; }
 .guideProgress + .guideVisual { margin-top: 20px; }
 .guideVisual { height: 180px; margin-top: 8px; overflow: hidden; background: #080b0e; border: 1px solid var(--pw-line); border-radius: 6px; }
 .guideVisual > div { height: 100%; }
@@ -353,6 +393,10 @@
   .viewTools > span { max-width: 44px; }
   .canvasGuide { left: 8px; right: auto; width: min(258px, calc(100% - 16px)); max-height: min(52%, 420px); padding: 8px; }
   .canvasGuide[data-minimized="true"] { width: min(210px, calc(100% - 16px)); }
+  .planningStartCard { top: 7px; left: 7px; width: min(238px, calc(100% - 66px)); gap: 6px; padding: 8px; }
+  .planningStartCard li { min-height: 30px; padding-block: 4px; }
+  .planningStartCard .startPrimaryAction { min-height: 36px; }
+  .startHint { display: none; }
   .resectionSummary { top: 8px; right: 8px; bottom: auto; left: auto; width: min(280px, calc(100% - 16px)); }
   .guideVisual { height: 132px; }
   .guidePoints { gap: 4px; }
@@ -458,12 +502,15 @@
 
 .modalBackdrop { position: absolute; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #02060999; backdrop-filter: blur(3px); }
 .measurementModalBackdrop { position: fixed; }
+.objectSettingBackdrop { display: block; padding: 0; background: transparent; backdrop-filter: none; pointer-events: none; }
 .modalPanel { display: flex; width: min(680px, calc(100% - 24px)); max-height: min(760px, calc(100dvh - 40px)); flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 18px 50px #0009; }
 .modalPanel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--pw-line); }
 .modalPanel > header small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
 .modalPanel > header .button { border: 0; background: transparent; }
 .modalPanel > footer { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--pw-line); }
 .measurementModal, .groupModal { width: min(440px, calc(100% - 24px)); }
+.objectSettingModal { position: fixed; right: 14px; bottom: 34px; width: min(310px, calc(100% - 16px)); max-height: min(320px, calc(100dvh - 80px)); pointer-events: auto; background: color-mix(in srgb, var(--pw-panel) 82%, transparent); box-shadow: 0 10px 28px #0007; }
+.objectSettingModal .measurementModalBody { padding: 8px 9px; }
 .measurementModalBody, .groupModalBody { min-height: 0; overflow-y: auto; padding: 14px; }
 .measurementFieldGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .measurementFieldGrid label { color: var(--pw-muted); font-size: 10px; }
@@ -479,16 +526,17 @@
 .measurementModeControl button { min-height: 36px; color: var(--pw-muted); background: var(--pw-raised); border: 0; border-right: 1px solid var(--pw-line); font-size: 10px; font-weight: 700; }
 .measurementModeControl button:last-child { border-right: 0; }
 .measurementModeControl button[data-active="true"] { color: #fff; background: var(--pw-accent); }
-.objectSettingHeader { position: relative; min-height: 42px; padding-top: 13px !important; }
+.objectSettingHeader { position: relative; min-height: 38px; padding: 11px 9px 6px !important; cursor: grab; touch-action: none; user-select: none; }
+.objectSettingHeader:active { cursor: grabbing; }
 .sheetHandle { position: absolute; top: 5px; left: 50%; width: 34px; height: 3px; background: var(--pw-line); border-radius: 999px; transform: translateX(-50%); }
 .lineObjectSetting { display: grid; gap: 7px; }
 .objectNameField { display: block; }
 .objectNameField input { width: 100%; min-height: 32px; padding: 5px 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; font-size: 11px; }
 .lineObjectSetting .measurementModeControl { margin: 0; }
 .lineObjectSetting .measurementModeControl > div { gap: 5px; overflow: visible; border: 0; }
-.lineObjectSetting .measurementModeControl button { min-height: 28px; border: 1px solid var(--pw-line); border-radius: 999px; font-size: 9px; }
+.lineObjectSetting .measurementModeControl button { min-height: 28px; color: var(--measurement-mode-color); background: color-mix(in srgb, var(--measurement-mode-color) 10%, var(--pw-raised)); border: 1px solid color-mix(in srgb, var(--measurement-mode-color) 55%, var(--pw-line)); border-radius: 999px; font-size: 9px; }
 .lineObjectSetting .measurementModeControl button:last-child { border-right: 1px solid var(--pw-line); }
-.lineObjectSetting .measurementModeControl button[data-active="true"] { color: var(--pw-text); background: color-mix(in srgb, var(--pw-accent) 18%, var(--pw-raised)); border-color: var(--pw-accent); }
+.lineObjectSetting .measurementModeControl button[data-active="true"] { color: #fff; background: var(--measurement-mode-color); border-color: var(--measurement-mode-color); }
 .objectValueRow { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 8px; color: var(--pw-muted); font-size: 10px; }
 .objectValueRow strong { margin-left: 3px; color: var(--pw-text); font-size: 11px; font-variant-numeric: tabular-nums; }
 .valueStepper { display: grid; grid-template-columns: repeat(2, 32px); overflow: hidden; border: 1px solid var(--pw-line); border-radius: 6px; }
@@ -497,6 +545,8 @@
 .valueStepper button:disabled { opacity: .35; }
 .lineWidthControl { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; color: var(--pw-muted); font-size: 10px; }
 .lineWidthControl input { width: 100%; height: 20px; margin: 0; padding: 0; accent-color: #34d399; }
+.lineColorControl { display: flex; min-height: 25px; align-items: center; justify-content: space-between; gap: 8px; color: var(--pw-muted); font-size: 9px; }
+.lineColorControl input { width: 38px; height: 22px; padding: 1px; background: transparent; border: 1px solid var(--pw-line); border-radius: 6px; cursor: pointer; }
 .objectSettingActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2px; border-top: 1px solid var(--pw-line); }
 .objectSettingActions .button { min-height: 43px; flex-direction: column; gap: 2px; padding: 4px; background: transparent; border: 0; border-radius: 0; font-size: 8px; }
 .objectSettingActions .button:first-child { color: #6ee7b7; }
@@ -615,13 +665,14 @@
   .modalPanel, .implantBrowser, .exportPanel { width: 100%; max-width: none; max-height: min(62dvh, 560px); border-radius: 14px 14px 0 0; border-bottom: 0; }
   .measurementModal, .groupModal { width: 100%; max-height: min(46dvh, 400px); }
   .measurementModal:has(.lineObjectSetting) { width: min(360px, calc(100% - 16px)); margin: 0 auto max(6px, env(safe-area-inset-bottom)); border: 1px solid var(--pw-line); border-radius: 15px; }
+  .objectSettingModal { right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); left: auto; width: min(320px, calc(100% - 16px)); max-height: min(236px, 34dvh); margin: 0; background: color-mix(in srgb, var(--pw-panel) 84%, transparent); border-bottom: 1px solid var(--pw-line); border-radius: 14px; }
   .modalPanel > header { padding: 6px 8px; }
   .modalPanel > header h2 { font-size: 12px; }
   .modalPanel > header .button { min-width: 32px; min-height: 32px; padding: 5px; }
   .modalPanel > footer { padding: 5px 8px; }
   .modalPanel > footer .button { min-height: 32px; }
   .measurementModalBody, .groupModalBody { padding: 7px 8px; }
-  .measurementModal:has(.lineObjectSetting) .measurementModalBody { overflow: hidden; padding: 6px 9px 7px; }
+  .measurementModal:has(.lineObjectSetting) .measurementModalBody { overflow-y: auto; padding: 6px 9px 7px; }
   .measurementModal:has(.lineObjectSetting) .objectSettingHeader { min-height: 38px; padding: 11px 8px 4px !important; border-bottom: 0; }
   .measurementModal:has(.lineObjectSetting) .objectSettingHeader small { display: none; }
   .measurementModal:has(.lineObjectSetting) .measurementModalTitle h2 { font-size: 10px; }

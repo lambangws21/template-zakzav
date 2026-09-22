@@ -530,6 +530,8 @@ const DEFAULT_HKA_LABEL_OFFSET_Y = -16;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
+const RESECTION_GUIDE_STROKE_WIDTH = 1.25;
+const RESECTION_PREVIEW_STROKE_WIDTH = 1.35;
 
 const HKA_POINT_HINTS = {
   hip: {
@@ -788,16 +790,20 @@ const DEFAULT_LINE_STROKE_WIDTH = 2;
 const MIN_CALIBRATION_REFERENCE_MM = 0.1;
 const DEFAULT_LINE_COLOR = "#38bdf8";
 const LINE_MEASUREMENT_MODES = [
-  { value: "length", label: "Length" },
-  { value: "radius", label: "Radius" },
-  { value: "diameter", label: "Diameter" },
+  { value: "length", label: "Length", color: "#06b6d4" },
+  { value: "radius", label: "Radius", color: "#22c55e" },
+  { value: "diameter", label: "Diameter", color: "#f59e0b" },
 ];
-const MEASUREMENT_CIRCLE_COLOR = "#7df58a";
 
 const normalizeLineMeasurementMode = (value) =>
   LINE_MEASUREMENT_MODES.some((mode) => mode.value === value)
     ? value
     : "length";
+
+const getLineMeasurementModeColor = (value) =>
+  LINE_MEASUREMENT_MODES.find(
+    (mode) => mode.value === normalizeLineMeasurementMode(value),
+  )?.color || DEFAULT_LINE_COLOR;
 
 function LineMeasurementModeControl({
   mode,
@@ -822,11 +828,12 @@ function LineMeasurementModeControl({
               key={item.value}
               type="button"
               onClick={() => onChange(item.value)}
-              className={`${compact ? "min-h-7 text-[9px]" : "min-h-8 text-[10px]"} rounded-[10px] px-1 font-black transition ${
-                active
-                  ? "bg-cyan-700 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-white/50"
-              }`}
+              className={`${compact ? "min-h-7 text-[9px]" : "min-h-8 text-[10px]"} rounded-[10px] border px-1 font-black transition ${active ? "text-white shadow-sm" : "hover:brightness-110"}`}
+              style={{
+                background: active ? item.color : `${item.color}14`,
+                borderColor: active ? item.color : `${item.color}66`,
+                color: active ? "#ffffff" : item.color,
+              }}
               aria-pressed={active}
             >
               {item.label}
@@ -881,6 +888,7 @@ export default function XrayCalibrationWorkspace({
   const brushPanelDragControls = useDragControls();
   const mobileObjectDragControls = useDragControls();
   const simpleMobileSheetDragControls = useDragControls();
+  const zakVisorDragControls = useDragControls();
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
@@ -1072,6 +1080,12 @@ export default function XrayCalibrationWorkspace({
   const [addAnchorPointMode, setAddAnchorPointMode] = useState(false);
   const [showPresetPicker, setShowPresetPicker] = useState(false);
   const [selectedLineId, setSelectedLineId] = useState(null);
+  const [activeIntersectionAngleKey, setActiveIntersectionAngleKey] =
+    useState(null);
+  const [intersectionAngleQuadrants, setIntersectionAngleQuadrants] = useState(
+    {},
+  );
+  const lineIntersectionAngleOverlaysRef = useRef([]);
   const [selectedAngleId, setSelectedAngleId] = useState(null);
   const [selectedCircleId, setSelectedCircleId] = useState(null);
   const [selectedHkaId, setSelectedHkaId] = useState(null);
@@ -2577,6 +2591,7 @@ export default function XrayCalibrationWorkspace({
   const clearActiveCanvasSelection = useCallback(() => {
     setSelectedFreeLinePointIndex(null);
     setSelectedLineId(null);
+    setActiveIntersectionAngleKey(null);
     setSelectedAngleId(null);
     setSelectedCircleId(null);
     setSelectedHkaId(null);
@@ -3452,7 +3467,11 @@ export default function XrayCalibrationWorkspace({
       setLines((prev) =>
         prev.map((line) =>
           line.id === selectedLine.id
-            ? { ...line, measurementMode: nextMode }
+            ? {
+                ...line,
+                measurementMode: nextMode,
+                color: getLineMeasurementModeColor(nextMode),
+              }
             : line,
         ),
       );
@@ -3460,6 +3479,30 @@ export default function XrayCalibrationWorkspace({
     [selectedLine],
   );
   const hasCalibration = mmPerPixel !== null;
+  const adjustSelectedLineLengthByMm = useCallback(
+    (deltaMm) => {
+      if (!selectedLine || isSelectedLineLocked || !mmPerPixel) return;
+      setLines((prev) =>
+        prev.map((line) => {
+          if (line.id !== selectedLine.id) return line;
+          const dx = line.x2 - line.x1;
+          const dy = line.y2 - line.y1;
+          const currentLength = Math.hypot(dx, dy);
+          if (!currentLength) return line;
+          const nextLength = Math.max(
+            2,
+            currentLength + Number(deltaMm) / mmPerPixel,
+          );
+          return {
+            ...line,
+            x2: line.x1 + (dx / currentLength) * nextLength,
+            y2: line.y1 + (dy / currentLength) * nextLength,
+          };
+        }),
+      );
+    },
+    [isSelectedLineLocked, mmPerPixel, selectedLine],
+  );
   const hideSavedCalibrationLine =
     hasCalibration && !simpleCalibrationModalOpen;
   const calibrationReferenceLine = useMemo(
@@ -3986,12 +4029,15 @@ export default function XrayCalibrationWorkspace({
         isCalibrationReference = false,
       } = {},
     ) => {
-      const baseStrokeWidth = Math.max(
+      const configuredStrokeWidth = Math.max(
         1.2,
         Number.isFinite(line?.strokeWidth)
           ? line.strokeWidth
           : DEFAULT_LINE_STROKE_WIDTH,
       );
+      const baseStrokeWidth = line?.alignmentSimulation
+        ? Math.min(configuredStrokeWidth, RESECTION_PREVIEW_STROKE_WIDTH)
+        : configuredStrokeWidth;
       const type = line?.type || "normal";
       let color = lineTypeColor(type);
       let dashPattern = [];
@@ -9707,14 +9753,18 @@ export default function XrayCalibrationWorkspace({
       orientedSize.height * view.scale,
     );
 
-    const drawCleanHandleRings = (markers, color) => {
+    const drawCleanHandleRings = (
+      markers,
+      color,
+      { strokeWidth = 2 } = {},
+    ) => {
       if (!Array.isArray(markers) || markers.length === 0) return;
       overlayCtx.save();
       overlayCtx.setLineDash([]);
       overlayCtx.fillStyle = "rgba(15, 23, 42, 0.24)";
       fillCircleMarkers(overlayCtx, markers);
       overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = 2;
+      overlayCtx.lineWidth = strokeWidth;
       strokeCircleMarkers(overlayCtx, markers);
       overlayCtx.restore();
     };
@@ -9815,7 +9865,7 @@ export default function XrayCalibrationWorkspace({
         if (circleRadius > 2) {
           overlayCtx.save();
           overlayCtx.setLineDash([]);
-          overlayCtx.strokeStyle = MEASUREMENT_CIRCLE_COLOR;
+          overlayCtx.strokeStyle = opts.color;
           overlayCtx.globalAlpha = opts.highlightHandles ? 0.95 : 0.72;
           overlayCtx.lineWidth = Math.max(1.2, (opts.width || 2) * 0.72);
           overlayCtx.beginPath();
@@ -10142,6 +10192,7 @@ export default function XrayCalibrationWorkspace({
       const isCalibrationReference =
         calibrationMode === "line" && calibrationReferenceLine?.id === line.id;
       const isLocked = isLineLocked(line.id);
+      const isResectionPreview = Boolean(line.alignmentSimulation);
       const style = getLineVisualStyle(line, {
         isSelected,
         isPulsing,
@@ -10154,7 +10205,13 @@ export default function XrayCalibrationWorkspace({
         color: style.color,
         width: style.width,
         dashPattern: style.dashPattern,
-        handleRadius: isCoarsePointer ? 17 : 15,
+        handleRadius: isResectionPreview
+          ? isCoarsePointer
+            ? 13
+            : 10
+          : isCoarsePointer
+            ? 17
+            : 15,
         highlightHandles: (isSelected || isPulsing) && !isLocked,
         dashed: isLocked,
         showTouchHalo: false,
@@ -10181,30 +10238,117 @@ export default function XrayCalibrationWorkspace({
 
     for (const overlay of lineIntersectionAngleOverlays) {
       const point = imageToScreenPoint(overlay.x, overlay.y);
-      const rayA = imageToScreenPoint(overlay.rayA.x, overlay.rayA.y);
-      const rayB = imageToScreenPoint(overlay.rayB.x, overlay.rayB.y);
+      const selectedQuadrantIndex =
+        intersectionAngleQuadrants[overlay.key] ??
+        overlay.defaultQuadrantIndex;
+      const selectedQuadrant =
+        overlay.quadrants.find(
+          (quadrant) => quadrant.index === selectedQuadrantIndex,
+        ) || overlay.quadrants[0];
+      const rayA = imageToScreenPoint(
+        selectedQuadrant.rayA.x,
+        selectedQuadrant.rayA.y,
+      );
+      const rayB = imageToScreenPoint(
+        selectedQuadrant.rayB.x,
+        selectedQuadrant.rayB.y,
+      );
+      const isActiveIntersection = activeIntersectionAngleKey === overlay.key;
       const isLinkedSelection =
         selectedLineId === overlay.lineAId ||
         selectedLineId === overlay.lineBId;
-      const color = isLinkedSelection ? "#f4a8ee" : "#e9a2e5";
+      const color = isActiveIntersection
+        ? "#fb7185"
+        : isLinkedSelection
+          ? "#f4a8ee"
+          : "#e9a2e5";
       const startAngle = Math.atan2(rayA.y - point.y, rayA.x - point.x);
       const endAngle = Math.atan2(rayB.y - point.y, rayB.x - point.x);
       let screenDelta =
         ((endAngle - startAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      if (Math.abs(screenDelta) > Math.PI / 2 + 0.02) {
-        screenDelta += screenDelta > 0 ? -Math.PI : Math.PI;
+      const selectedIsObtuse = selectedQuadrant.angleDeg > 90;
+      if (
+        (selectedIsObtuse && Math.abs(screenDelta) < Math.PI / 2) ||
+        (!selectedIsObtuse && Math.abs(screenDelta) > Math.PI / 2)
+      ) {
+        screenDelta += screenDelta > 0 ? -Math.PI * 2 : Math.PI * 2;
       }
-      const arcRadius = isLinkedSelection ? 29 : 24;
-      const centerRadius = isLinkedSelection ? 16 : 12;
+      const arcRadius = isActiveIntersection
+        ? isCoarsePointer
+          ? 42
+          : 36
+        : isLinkedSelection
+          ? 29
+          : 24;
+      const centerRadius = isActiveIntersection
+        ? isCoarsePointer
+          ? 24
+          : 19
+        : isLinkedSelection
+          ? 16
+          : 12;
       const bisector = startAngle + screenDelta / 2;
 
       overlayCtx.save();
-      overlayCtx.fillStyle = "rgba(244, 168, 238, 0.2)";
+      if (isActiveIntersection) {
+        for (const quadrant of overlay.quadrants) {
+          const quadrantRayA = imageToScreenPoint(
+            quadrant.rayA.x,
+            quadrant.rayA.y,
+          );
+          const quadrantRayB = imageToScreenPoint(
+            quadrant.rayB.x,
+            quadrant.rayB.y,
+          );
+          const quadrantStart = Math.atan2(
+            quadrantRayA.y - point.y,
+            quadrantRayA.x - point.x,
+          );
+          const quadrantEnd = Math.atan2(
+            quadrantRayB.y - point.y,
+            quadrantRayB.x - point.x,
+          );
+          let quadrantDelta =
+            ((quadrantEnd - quadrantStart + Math.PI * 3) %
+              (Math.PI * 2)) -
+            Math.PI;
+          const quadrantIsObtuse = quadrant.angleDeg > 90;
+          if (
+            (quadrantIsObtuse && Math.abs(quadrantDelta) < Math.PI / 2) ||
+            (!quadrantIsObtuse && Math.abs(quadrantDelta) > Math.PI / 2)
+          ) {
+            quadrantDelta +=
+              quadrantDelta > 0 ? -Math.PI * 2 : Math.PI * 2;
+          }
+          overlayCtx.strokeStyle =
+            quadrant.index === selectedQuadrant.index
+              ? "rgba(251,113,133,0.22)"
+              : "rgba(226,232,240,0.22)";
+          overlayCtx.lineWidth = 9;
+          overlayCtx.beginPath();
+          overlayCtx.arc(
+            point.x,
+            point.y,
+            arcRadius,
+            quadrantStart,
+            quadrantStart + quadrantDelta,
+            quadrantDelta < 0,
+          );
+          overlayCtx.stroke();
+        }
+      }
+      overlayCtx.fillStyle = isActiveIntersection
+        ? "rgba(251,113,133,0.18)"
+        : "rgba(244,168,238,0.2)";
       overlayCtx.beginPath();
       overlayCtx.arc(point.x, point.y, centerRadius, 0, Math.PI * 2);
       overlayCtx.fill();
       overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = isLinkedSelection ? 2.2 : 1.7;
+      overlayCtx.lineWidth = isActiveIntersection
+        ? 4.5
+        : isLinkedSelection
+          ? 2.2
+          : 1.7;
       overlayCtx.lineCap = "round";
       overlayCtx.beginPath();
       overlayCtx.arc(
@@ -10216,16 +10360,34 @@ export default function XrayCalibrationWorkspace({
         screenDelta < 0,
       );
       overlayCtx.stroke();
-      overlayCtx.font = `${isLinkedSelection ? 700 : 600} ${isLinkedSelection ? 12 : 10}px Inter, sans-serif`;
+      if (isActiveIntersection) {
+        overlayCtx.strokeStyle = "rgba(251,113,133,0.58)";
+        overlayCtx.lineWidth = 1.3;
+        overlayCtx.setLineDash([4, 4]);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(point.x, point.y);
+        overlayCtx.lineTo(
+          point.x + Math.cos(startAngle) * (arcRadius + 15),
+          point.y + Math.sin(startAngle) * (arcRadius + 15),
+        );
+        overlayCtx.moveTo(point.x, point.y);
+        overlayCtx.lineTo(
+          point.x + Math.cos(startAngle + screenDelta) * (arcRadius + 15),
+          point.y + Math.sin(startAngle + screenDelta) * (arcRadius + 15),
+        );
+        overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+      }
+      overlayCtx.font = `${isActiveIntersection || isLinkedSelection ? 700 : 600} ${isActiveIntersection ? 13 : isLinkedSelection ? 12 : 10}px Inter, sans-serif`;
       overlayCtx.textAlign = "center";
       overlayCtx.textBaseline = "middle";
       overlayCtx.fillStyle = color;
       overlayCtx.shadowColor = "rgba(15, 23, 42, 0.88)";
       overlayCtx.shadowBlur = 4;
       overlayCtx.fillText(
-        `${overlay.angleDeg.toFixed(1)}°`,
-        point.x + Math.cos(bisector) * (arcRadius + 20),
-        point.y + Math.sin(bisector) * (arcRadius + 20),
+        `${selectedQuadrant.angleDeg.toFixed(1)}°`,
+        point.x + Math.cos(bisector) * (arcRadius + 22),
+        point.y + Math.sin(bisector) * (arcRadius + 22),
       );
       overlayCtx.restore();
     }
@@ -11201,10 +11363,11 @@ export default function XrayCalibrationWorkspace({
       if (!guide.locked && isEmphasizedGuide) {
         drawCleanHandleRings(
           [
-            { ...anchorStart, radius: isCoarsePointer ? 17 : 14 },
-            { ...anchorEnd, radius: isCoarsePointer ? 17 : 14 },
+            { ...anchorStart, radius: isCoarsePointer ? 13 : 10 },
+            { ...anchorEnd, radius: isCoarsePointer ? 13 : 10 },
           ],
           color,
+          { strokeWidth: 1.4 },
         );
       }
 
@@ -12261,6 +12424,7 @@ export default function XrayCalibrationWorkspace({
     }
   }, [
     activeSnapTarget,
+    activeIntersectionAngleKey,
     annotations,
     angles,
     calibrationMode,
@@ -12293,6 +12457,7 @@ export default function XrayCalibrationWorkspace({
     imageProcessingMode,
     imageToScreenPoint,
     imageWidth,
+    intersectionAngleQuadrants,
     isCoarsePointer,
     expandedLineHandle,
     isPlanningLayout,
@@ -13893,6 +14058,69 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      if (tool === "pan") {
+        const intersectionHit = lineIntersectionAngleOverlaysRef.current
+          .map((overlay) => {
+            const center = imageToScreenPoint(overlay.x, overlay.y);
+            return {
+              overlay,
+              distance: Math.hypot(point.x - center.x, point.y - center.y),
+            };
+          })
+          .filter((entry) => entry.distance <= (isCoarsePointer ? 58 : 44))
+          .sort((first, second) => first.distance - second.distance)[0];
+
+        if (intersectionHit) {
+          const { overlay, distance } = intersectionHit;
+          const tapAngle =
+            distance <= 10
+              ? null
+              : ((Math.atan2(
+                  imagePoint.y - overlay.y,
+                  imagePoint.x - overlay.x,
+                ) %
+                  (Math.PI * 2)) +
+                  Math.PI * 2) %
+                (Math.PI * 2);
+          const currentIndex =
+            intersectionAngleQuadrants[overlay.key] ??
+            overlay.defaultQuadrantIndex;
+          const selectedQuadrant =
+            tapAngle === null
+              ? overlay.quadrants.find(
+                  (quadrant) =>
+                    quadrant.index ===
+                    (activeIntersectionAngleKey === overlay.key
+                      ? (currentIndex + 1) % overlay.quadrants.length
+                      : currentIndex),
+                )
+              : overlay.quadrants.find((quadrant) => {
+                  const offset =
+                    ((tapAngle - quadrant.startAngle) % (Math.PI * 2) +
+                      Math.PI * 2) %
+                    (Math.PI * 2);
+                  return offset <= quadrant.delta + 0.0001;
+                });
+          const nextQuadrant =
+            selectedQuadrant || overlay.quadrants[currentIndex];
+          setIntersectionAngleQuadrants((previous) => ({
+            ...previous,
+            [overlay.key]: nextQuadrant.index,
+          }));
+          setActiveIntersectionAngleKey(overlay.key);
+          setSelectedLineId(null);
+          setSelectedAngleId(null);
+          setSelectedCircleId(null);
+          setSelectedHkaId(null);
+          setSelectedCutLayerId(null);
+          setSelectedPlanningGuideId(null);
+          setNotice(
+            `Interline ${nextQuadrant.angleDeg.toFixed(1)}°. Tap kuadran lain di sekitar titik potong untuk mengganti sudut.`,
+          );
+          return;
+        }
+      }
+
       const touchLayerHitId =
         tool === "pan" && isTouchLikePointer
           ? findCutLayerByPoint(imagePoint)
@@ -14414,7 +14642,6 @@ export default function XrayCalibrationWorkspace({
           }
           if (
             isSimpleUiMode &&
-            isMobileViewport &&
             mobileToolMode === "scale"
           ) {
             if (targetLayer.lockScale) {
@@ -14437,7 +14664,6 @@ export default function XrayCalibrationWorkspace({
           }
           if (
             isSimpleUiMode &&
-            isMobileViewport &&
             mobileToolMode === "rotate"
           ) {
             if (targetLayer.lockRotation) {
@@ -15212,7 +15438,6 @@ export default function XrayCalibrationWorkspace({
         if (tool === "pan") {
           if (
             isSimpleUiMode &&
-            isMobileViewport &&
             mobileToolMode === "scale"
           ) {
             if (targetLayer.lockScale) {
@@ -15235,7 +15460,6 @@ export default function XrayCalibrationWorkspace({
           }
           if (
             isSimpleUiMode &&
-            isMobileViewport &&
             mobileToolMode === "rotate"
           ) {
             if (targetLayer.lockRotation) {
@@ -16008,6 +16232,8 @@ export default function XrayCalibrationWorkspace({
       isMobileViewport,
       isSimpleUiMode,
       isLineLocked,
+      activeIntersectionAngleKey,
+      intersectionAngleQuadrants,
       isRepeatedMobileLineTap,
       cutLayers,
       lines,
@@ -20112,31 +20338,46 @@ export default function XrayCalibrationWorkspace({
         const uyA = (lineA.y2 - lineA.y1) / lenA;
         const uxB = (lineB.x2 - lineB.x1) / lenB;
         const uyB = (lineB.y2 - lineB.y1) / lenB;
-        const dot = clamp(uxA * uxB + uyA * uyB, -1, 1);
-        const rawDeg = (Math.acos(dot) * 180) / Math.PI;
-        const acuteDeg = rawDeg > 90 ? 180 - rawDeg : rawDeg;
-        if (!Number.isFinite(acuteDeg) || acuteDeg < 1) continue;
-
-        const rayAnglesA = [
+        const normalizeRadians = (value) => {
+          const fullTurn = Math.PI * 2;
+          return ((value % fullTurn) + fullTurn) % fullTurn;
+        };
+        const rayAngles = [
           Math.atan2(uyA, uxA),
-          Math.atan2(uyA, uxA) + Math.PI,
-        ];
-        const rayAnglesB = [
           Math.atan2(uyB, uxB),
+          Math.atan2(uyA, uxA) + Math.PI,
           Math.atan2(uyB, uxB) + Math.PI,
-        ];
-        let arcStart = rayAnglesA[0];
-        let arcDelta = Math.PI;
-        for (const angleA of rayAnglesA) {
-          for (const angleB of rayAnglesB) {
-            const delta =
-              ((angleB - angleA + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-            if (Math.abs(delta) < Math.abs(arcDelta)) {
-              arcStart = angleA;
-              arcDelta = delta;
-            }
-          }
-        }
+        ]
+          .map(normalizeRadians)
+          .sort((first, second) => first - second);
+        const quadrants = rayAngles.map((startAngle, index) => {
+          const nextAngle =
+            index === rayAngles.length - 1
+              ? rayAngles[0] + Math.PI * 2
+              : rayAngles[index + 1];
+          const delta = nextAngle - startAngle;
+          return {
+            index,
+            startAngle,
+            delta,
+            angleDeg: (delta * 180) / Math.PI,
+            rayA: {
+              x: intersection.x + Math.cos(startAngle),
+              y: intersection.y + Math.sin(startAngle),
+            },
+            rayB: {
+              x: intersection.x + Math.cos(startAngle + delta),
+              y: intersection.y + Math.sin(startAngle + delta),
+            },
+          };
+        });
+        const defaultQuadrant = quadrants.reduce(
+          (smallest, quadrant) =>
+            quadrant.delta < smallest.delta ? quadrant : smallest,
+          quadrants[0],
+        );
+        const acuteDeg = defaultQuadrant.angleDeg;
+        if (!Number.isFinite(acuteDeg) || acuteDeg < 1) continue;
 
         const signature = `${Math.round(intersection.x / 2)}:${Math.round(intersection.y / 2)}:${Math.round(acuteDeg)}`;
         if (seen.has(signature)) continue;
@@ -20146,16 +20387,10 @@ export default function XrayCalibrationWorkspace({
           x: intersection.x,
           y: intersection.y,
           angleDeg: acuteDeg,
-          arcStart,
-          arcDelta,
-          rayA: {
-            x: intersection.x + Math.cos(arcStart),
-            y: intersection.y + Math.sin(arcStart),
-          },
-          rayB: {
-            x: intersection.x + Math.cos(arcStart + arcDelta),
-            y: intersection.y + Math.sin(arcStart + arcDelta),
-          },
+          defaultQuadrantIndex: defaultQuadrant.index,
+          quadrants,
+          rayA: defaultQuadrant.rayA,
+          rayB: defaultQuadrant.rayB,
           lineAId: lineA.id,
           lineBId: lineB.id,
         });
@@ -20164,6 +20399,7 @@ export default function XrayCalibrationWorkspace({
 
     return overlays.slice(0, 12);
   }, [calibrationLineId, lines]);
+  lineIntersectionAngleOverlaysRef.current = lineIntersectionAngleOverlays;
 
   const liveMeasurementSummary = useMemo(() => {
     const activeHka = selectedHka || hkaSets[hkaSets.length - 1] || null;
@@ -20629,7 +20865,7 @@ export default function XrayCalibrationWorkspace({
         lineLengthPx: valgusCutLineLengthPx,
         offsetPx: valgusCutOffsetPx,
         side: valgusCutSide,
-        strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
+        strokeWidth: RESECTION_GUIDE_STROKE_WIDTH,
         labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -20653,7 +20889,7 @@ export default function XrayCalibrationWorkspace({
         lineLengthPx: tibialSlopeLineLengthPx,
         offsetPx: tibialSlopeOffsetPx,
         posteriorSide: tibialPosteriorSide,
-        strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
+        strokeWidth: RESECTION_GUIDE_STROKE_WIDTH,
         labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -20676,7 +20912,7 @@ export default function XrayCalibrationWorkspace({
       hidden: false,
       lineLengthPx: tibialCutLineLengthPx,
       offsetPx: tibialCutOffsetPx,
-      strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
+      strokeWidth: RESECTION_GUIDE_STROKE_WIDTH,
       labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
       labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
       labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -20725,7 +20961,7 @@ export default function XrayCalibrationWorkspace({
       anchorStart: { ...anchorStart },
       anchorEnd: { ...anchorEnd },
       hidden: false,
-      strokeWidth: DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
+      strokeWidth: RESECTION_GUIDE_STROKE_WIDTH,
       labelOffsetX: DEFAULT_GUIDE_LABEL_OFFSET_X,
       labelOffsetY: DEFAULT_GUIDE_LABEL_OFFSET_Y,
       labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -21052,7 +21288,7 @@ export default function XrayCalibrationWorkspace({
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
-        strokeWidth: 2.4,
+        strokeWidth: RESECTION_PREVIEW_STROKE_WIDTH,
       },
       {
         id: tibialLineId,
@@ -21069,7 +21305,7 @@ export default function XrayCalibrationWorkspace({
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
-        strokeWidth: 2.4,
+        strokeWidth: RESECTION_PREVIEW_STROKE_WIDTH,
       },
     ];
 
@@ -23364,9 +23600,12 @@ export default function XrayCalibrationWorkspace({
           add("mLDFA", result.jla.LDFA);
           add("mMPTA", result.jla.MPTA);
           add("JLCA", result.jla.JLCA);
+          add("mTFA", result.jla.cpakHKA);
         }
-        if (result.mode === "full" && result.signedDeviation !== null)
+        if (result.mode === "full" && result.signedDeviation !== null) {
           add("mFA-mTA", result.signedDeviation);
+          add("mTFA", result.signedDeviation);
+        }
         if (hka.hip && hka.knee && hka.ankle && hasCalibration) {
           const dx = hka.ankle.x - hka.hip.x;
           const dy = hka.ankle.y - hka.hip.y;
@@ -23386,15 +23625,21 @@ export default function XrayCalibrationWorkspace({
             });
         }
       });
-    lineIntersectionAngleOverlays.forEach((entry) =>
+    lineIntersectionAngleOverlays.forEach((entry) => {
+      const selectedQuadrantIndex =
+        intersectionAngleQuadrants[entry.key] ?? entry.defaultQuadrantIndex;
+      const selectedQuadrant =
+        entry.quadrants.find(
+          (quadrant) => quadrant.index === selectedQuadrantIndex,
+        ) || entry.quadrants[0];
       entries.push({
         id: `intersection:${entry.key}`,
         name: `Interline ${entry.lineAId} / ${entry.lineBId}`,
         metric: null,
         unit: "deg",
-        value: entry.angleDeg,
-      }),
-    );
+        value: selectedQuadrant.angleDeg,
+      });
+    });
     if (canvasCup?.a > 0) {
       const raw = ((((canvasCup.angle * 180) / Math.PI) % 180) + 180) % 180;
       entries.push({
@@ -23440,6 +23685,34 @@ export default function XrayCalibrationWorkspace({
           rightLengthLine.showLabel !== false &&
           leftLengthLine.showLabel !== false,
       });
+    const amaMeasurement = entries.find(
+      (entry) => entry.metric === "AMA" && Number.isFinite(entry.value),
+    );
+    if (amaMeasurement && !entries.some((entry) => entry.metric === "FVA")) {
+      entries.push({
+        ...amaMeasurement,
+        id: `derived:fva:${amaMeasurement.id}`,
+        name: `FVA / ${amaMeasurement.name}`,
+        metric: "FVA",
+      });
+    }
+    if (planningProcedure === "tka" && tkaResectionPlan) {
+      [
+        ["mFCL", "Medial femoral cut", tkaResectionPlan.femoral.medialMm],
+        ["lFCL", "Lateral femoral cut", tkaResectionPlan.femoral.lateralMm],
+        ["mTCL", "Medial tibial cut", tkaResectionPlan.tibial.medialMm],
+        ["lTCL", "Lateral tibial cut", tkaResectionPlan.tibial.lateralMm],
+      ].forEach(([metric, name, value]) =>
+        entries.push({
+          id: `tka-plan:${metric}`,
+          metric,
+          name,
+          unit: "mm",
+          value,
+          side: planningSession.side,
+        }),
+      );
+    }
     return entries;
   }, [
     isPlanningLayout,
@@ -23457,8 +23730,11 @@ export default function XrayCalibrationWorkspace({
     getPlanningGuideAutoColor,
     getPlanningGuideLabelText,
     lineIntersectionAngleOverlays,
+    intersectionAngleQuadrants,
     canvasCup,
+    planningProcedure,
     planningSession.side,
+    tkaResectionPlan,
   ]);
   const updatePlanningSession = (next) => {
     setPlanningSessions((current) => ({
@@ -23838,11 +24114,6 @@ export default function XrayCalibrationWorkspace({
   const sideLines = lines.filter(matchesPlanningSide);
   const sideAngles = angles.filter(matchesPlanningSide);
   const sideCircles = circles.filter(matchesPlanningSide);
-  const planningSideKey = planningSession.side === "left" ? "kiri" : "kanan";
-  const planningTkaGuideImage =
-    planningSession.side === "left"
-      ? "/tka/ap-view-kiri.svg"
-      : "/tka/ap-view-kanan.svg";
   const planningGuideProgress = (count, total) => ({
     current: Math.min(count, total),
     label: `${Math.min(count, total)}/${total} titik`,
@@ -23921,7 +24192,8 @@ export default function XrayCalibrationWorkspace({
             ),
             instruction:
               "Pilih Femoral Head Center, Knee Center, lalu Ankle Center.",
-            guideImage: planningTkaGuideImage,
+            guideView: "ap_tka_planning",
+            guideSide: planningSession.side,
             points: [
               "Pusat kepala femur",
               "Pusat lutut / intercondylar notch",
@@ -23936,8 +24208,9 @@ export default function XrayCalibrationWorkspace({
             ...planningHkaGuideState("jla"),
             complete: sideHkaSets.some((item) => item.mode === "jla"),
             instruction: "Tentukan landmark LDFA, MPTA, dan joint line.",
-            guideView: "ap_knee",
-            highlightId: `kondilus_medial_femur_${planningSideKey}`,
+            guideView: "ap_tka_planning",
+            guideSide: planningSession.side,
+            highlightId: "femCondyleMedial",
             points: [
               "Kondilus femur medial dan lateral",
               "Plateau tibia medial dan lateral",
@@ -23946,13 +24219,15 @@ export default function XrayCalibrationWorkspace({
           },
           {
             id: "fta",
+            required: false,
             label: "FTA",
             icon: PencilLine,
             action: () => startPlanningHka("fta"),
             ...planningHkaGuideState("fta"),
             complete: sideHkaSets.some((item) => item.mode === "fta"),
             instruction: "Buat anatomical femoral dan tibial axis untuk FTA.",
-            guideImage: planningTkaGuideImage,
+            guideView: "ap_tka_planning",
+            guideSide: planningSession.side,
             points: [
               "Dua titik pada sumbu anatomi femur",
               "Pusat sendi lutut",
@@ -23961,6 +24236,7 @@ export default function XrayCalibrationWorkspace({
           },
           {
             id: "axis",
+            required: false,
             label: "Anatomical Axis",
             icon: Target,
             action: () => handleToolChange("axisBuilder"),
@@ -26583,23 +26859,71 @@ export default function XrayCalibrationWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={MOBILE_PANEL_TRANSITION}
+              drag={isMobileViewport ? "y" : false}
+              dragControls={zakVisorDragControls}
+              dragListener={false}
+              dragMomentum={false}
+              dragElastic={0.04}
+              dragConstraints={
+                isMobileViewport ? { top: 0, bottom: 120 } : undefined
+              }
+              onDragEnd={(_, info) => {
+                if (
+                  isMobileViewport &&
+                  !imageProcessingBusy &&
+                  (info.offset.y > 88 || info.velocity.y > 850)
+                ) {
+                  setImageProcessingModalOpen(false);
+                }
+              }}
               role="dialog"
-              aria-modal="true"
+              aria-modal={!isMobileViewport}
               aria-labelledby="zakvisor-modal-title"
-              className="w-full max-w-md rounded-[26px] border border-white/75 bg-[#eef2f7]/96 p-4 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.25),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl"
+              className={`pointer-events-auto w-full max-w-md overflow-y-auto border border-white/75 bg-[#eef2f7]/96 text-slate-800 shadow-[5px_5px_16px_rgba(148,163,184,0.25),-5px_-5px_16px_rgba(255,255,255,0.82)] backdrop-blur-xl ${
+                isMobileViewport
+                  ? "max-h-[min(44dvh,350px)] touch-pan-y overscroll-contain rounded-t-[18px] p-2.5"
+                  : "rounded-[26px] p-4"
+              }`}
             >
-              <div className="mb-3 flex items-start justify-between gap-3 border-b border-slate-300/20 pb-3">
+              {isMobileViewport ? (
+                <button
+                  type="button"
+                  aria-label="Geser panel ZakVisor"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    zakVisorDragControls.start(event);
+                  }}
+                  className="mx-auto mb-1 flex h-4 w-20 touch-none cursor-grab items-center justify-center active:cursor-grabbing"
+                >
+                  <span className="h-1 w-8 rounded-full bg-slate-400/70" />
+                </button>
+              ) : null}
+              <div
+                className={`flex items-start justify-between gap-3 border-b border-slate-300/20 ${
+                  isMobileViewport ? "mb-1.5 pb-1.5" : "mb-3 pb-3"
+                }`}
+              >
                 <div>
-                  <div className="text-[10px] font-black tracking-widest text-cyan-700 uppercase">
+                  <div
+                    className={`font-black tracking-widest text-cyan-700 uppercase ${
+                      isMobileViewport ? "text-[8px]" : "text-[10px]"
+                    }`}
+                  >
                     ZakZav · ZakVisor
                   </div>
                   <h2
                     id="zakvisor-modal-title"
-                    className="mt-1 text-base font-black text-slate-950"
+                    className={`font-black text-slate-950 ${
+                      isMobileViewport ? "text-sm" : "mt-1 text-base"
+                    }`}
                   >
                     X-Ray Visual Filter
                   </h2>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                  <p
+                    className={`mt-1 text-xs font-semibold text-slate-500 ${
+                      isMobileViewport ? "hidden" : ""
+                    }`}
+                  >
                     Filter visual untuk memperjelas marker dan kontur X-ray
                     templating.
                   </p>
@@ -26608,14 +26932,20 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setImageProcessingModalOpen(false)}
                   disabled={imageProcessingBusy}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45"
+                  className={`flex shrink-0 items-center justify-center rounded-full border border-white/70 bg-[#eef2f7] text-slate-600 shadow-[2px_2px_6px_rgba(148,163,184,0.24),-2px_-2px_6px_rgba(255,255,255,0.78)] disabled:opacity-45 ${
+                    isMobileViewport ? "h-8 w-8" : "h-9 w-9"
+                  }`}
                   aria-label="Tutup ZakVisor"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div
+                className={`grid ${
+                  isMobileViewport ? "grid-cols-4 gap-1" : "grid-cols-2 gap-2"
+                }`}
+              >
                 {IMAGE_PROCESSING_MODES.map((mode) => {
                   const isDetect = mode.key === "detectMarker";
                   const isActive = imageProcessingMode === mode.key;
@@ -26629,7 +26959,11 @@ export default function XrayCalibrationWorkspace({
                           : selectImageProcessingMode(mode.key)
                       }
                       disabled={!image || imageProcessingBusy}
-                      className={`min-h-14 rounded-2xl border px-3 py-2 text-left text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                      className={`border font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                        isMobileViewport
+                          ? "min-h-10 rounded-lg px-1 py-1.5 text-center text-[8px]"
+                          : "min-h-14 rounded-2xl px-3 py-2 text-left text-[11px]"
+                      } ${
                         isActive
                           ? "border-cyan-300 bg-white/76 text-cyan-800 shadow-[inset_2px_2px_5px_rgba(34,211,238,0.12),2px_2px_6px_rgba(148,163,184,0.18)]"
                           : isDetect
@@ -26638,7 +26972,11 @@ export default function XrayCalibrationWorkspace({
                       }`}
                     >
                       <span className="block">{mode.label}</span>
-                      <span className="mt-0.5 block text-[9px] font-semibold text-slate-500">
+                      <span
+                        className={`mt-0.5 text-[9px] font-semibold text-slate-500 ${
+                          isMobileViewport ? "hidden" : "block"
+                        }`}
+                      >
                         {imageProcessingBusy && !isDetect && isActive
                           ? "Memproses..."
                           : isDetect && imageProcessingBusy
@@ -26652,7 +26990,13 @@ export default function XrayCalibrationWorkspace({
 
               {imageProcessingMode !== "normal" &&
               imageProcessingMode !== "detectMarker" ? (
-                <div className="mt-3 space-y-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-3">
+                <div
+                  className={`border border-white/65 bg-white/35 ${
+                    isMobileViewport
+                      ? "mt-1.5 space-y-1 rounded-xl px-2 py-1.5"
+                      : "mt-3 space-y-2 rounded-2xl px-3 py-3"
+                  }`}
+                >
                   <div className="text-[9px] font-black tracking-widest text-cyan-700 uppercase">
                     Parameter —{" "}
                     {IMAGE_PROCESSING_MODE_LABELS[imageProcessingMode]}
@@ -26773,7 +27117,11 @@ export default function XrayCalibrationWorkspace({
                 </div>
               ) : null}
 
-              <div className="mt-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[11px] font-semibold text-slate-500">
+              <div
+                className={`mt-2 rounded-2xl border border-white/65 bg-white/35 px-3 py-2 text-[11px] font-semibold text-slate-500 ${
+                  isMobileViewport ? "hidden" : ""
+                }`}
+              >
                 Aktif:{" "}
                 <span className="font-black text-slate-700">
                   {IMAGE_PROCESSING_MODE_LABELS[imageProcessingMode] ||
@@ -34194,18 +34542,7 @@ export default function XrayCalibrationWorkspace({
               </div>
             ) : null}
 
-            {isSimpleUiMode && typeof onOpenAdvancedUi === "function" ? (
-              <>
-                <div className="h-5 w-px bg-slate-200/80" />
-                <button
-                  type="button"
-                  onClick={onOpenAdvancedUi}
-                  className="flex items-center gap-1.5 rounded-full border border-slate-300/60 bg-slate-900 px-3 py-1.5 text-[10px] font-bold text-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
-                >
-                  Advanced UI
-                </button>
-              </>
-            ) : typeof onOpenSimpleUi === "function" ? (
+            {!isSimpleUiMode && typeof onOpenSimpleUi === "function" ? (
               <>
                 <div className="h-5 w-px bg-slate-200/80" />
                 <button
@@ -44842,17 +45179,19 @@ export default function XrayCalibrationWorkspace({
                           : undefined
                       }
                       data-mobj=""
-                      className={`pointer-events-auto z-40 touch-pan-y overscroll-contain overflow-y-auto backdrop-blur-md ${
+                      className={`pointer-events-auto z-40 touch-pan-y overscroll-contain overflow-y-auto backdrop-blur-none ${
                         isMobileViewport && !selectedCutLayer && selectedLine
                           ? "fixed right-2 left-2 mx-auto max-h-[min(26dvh,220px)] w-auto max-w-[360px] rounded-[16px] p-1.5"
                           : isMobileViewport
                             ? "fixed right-2 left-2 mx-auto max-h-[min(34dvh,280px)] w-auto max-w-[380px] rounded-[18px] p-1.5"
-                          : "absolute max-h-[min(24dvh,176px)] w-[min(70vw,260px)] rounded-[14px] p-1.5"
+                            : !selectedCutLayer && selectedLine
+                              ? "absolute max-h-[min(46dvh,340px)] w-[min(78vw,340px)] rounded-[14px] p-1.5"
+                              : "absolute max-h-[min(24dvh,176px)] w-[min(70vw,260px)] rounded-[14px] p-1.5"
                       }`}
                       style={{
                         background: isDark
-                          ? "rgba(15,23,42,0.92)"
-                          : "rgba(235,240,247,0.94)",
+                          ? "rgba(15,23,42,0.68)"
+                          : "rgba(235,240,247,0.72)",
                         border: isDark
                           ? "1px solid rgba(255,255,255,0.12)"
                           : "1px solid rgba(255,255,255,0.45)",
@@ -44872,10 +45211,10 @@ export default function XrayCalibrationWorkspace({
                               transform: "none",
                             }
                           : {
-                              left: "50%",
-                              bottom:
-                                "calc(env(safe-area-inset-bottom) + 60px)",
-                              transform: "translateX(-50%)",
+                              right: 12,
+                              bottom: 12,
+                              left: "auto",
+                              transform: "none",
                             }),
                       }}
                     >
@@ -44884,8 +45223,8 @@ export default function XrayCalibrationWorkspace({
                         <button
                           type="button"
                           aria-label="Geser Object Setting"
-                          className={`flex shrink-0 items-center justify-center rounded-full cursor-grab active:cursor-grabbing ${
-                            isMobileViewport ? "h-6 w-16" : "h-7 w-7"
+                          className={`flex shrink-0 cursor-grab items-center justify-center gap-1 rounded-full px-2 text-[7px] font-black tracking-wide active:cursor-grabbing ${
+                            isMobileViewport ? "h-6 w-20" : "h-7 w-16"
                           }`}
                           style={{
                             background: isDark
@@ -44919,25 +45258,36 @@ export default function XrayCalibrationWorkspace({
                               offsetY: panelRect
                                 ? e.clientY - panelRect.top
                                 : 0,
+                              panelWidth: panelRect?.width || 260,
+                              panelHeight: panelRect?.height || 176,
                               canvasRect,
                             };
                           }}
                           onPointerMove={(e) => {
                             if (!mobileObjPanelDragRef.current) return;
-                            const { offsetX, offsetY, canvasRect } =
+                            const {
+                              offsetX,
+                              offsetY,
+                              panelWidth,
+                              panelHeight,
+                              canvasRect,
+                            } =
                               mobileObjPanelDragRef.current;
                             if (!canvasRect) return;
                             const newX = Math.max(
                               4,
                               Math.min(
-                                canvasRect.width - 60,
+                                Math.max(4, canvasRect.width - panelWidth - 4),
                                 e.clientX - canvasRect.left - offsetX,
                               ),
                             );
                             const newY = Math.max(
                               4,
                               Math.min(
-                                canvasRect.height - 60,
+                                Math.max(
+                                  4,
+                                  canvasRect.height - panelHeight - 4,
+                                ),
                                 e.clientY - canvasRect.top - offsetY,
                               ),
                             );
@@ -44950,22 +45300,8 @@ export default function XrayCalibrationWorkspace({
                             mobileObjPanelDragRef.current = null;
                           }}
                         >
-                          {isMobileViewport ? (
-                            <span className="h-1 w-8 rounded-full bg-current opacity-35" />
-                          ) : (
-                            <svg
-                              width="10"
-                              height="10"
-                              viewBox="0 0 10 10"
-                              fill="currentColor"
-                              opacity="0.55"
-                            >
-                              <circle cx="3" cy="3" r="1" />
-                              <circle cx="7" cy="3" r="1" />
-                              <circle cx="3" cy="7" r="1" />
-                              <circle cx="7" cy="7" r="1" />
-                            </svg>
-                          )}
+                          <span className="h-1 w-8 rounded-full bg-current opacity-45" />
+                          {!isMobileViewport ? <span>DRAG</span> : null}
                         </button>
                         <div className="min-w-0">
                           <div className="truncate text-[9px] font-black">
@@ -45459,11 +45795,21 @@ export default function XrayCalibrationWorkspace({
                                   aria-pressed={
                                     selectedLineMeasurementMode === item.value
                                   }
-                                  className={`min-h-7 rounded-full border px-1 text-[8px] font-black transition ${
-                                    selectedLineMeasurementMode === item.value
-                                      ? "border-cyan-400 bg-cyan-500/18 text-cyan-700"
-                                      : "border-white/45 bg-white/20 text-slate-500"
-                                  }`}
+                                  className="min-h-7 rounded-full border px-1 text-[8px] font-black transition"
+                                  style={{
+                                    background:
+                                      selectedLineMeasurementMode === item.value
+                                        ? item.color
+                                        : `${item.color}14`,
+                                    borderColor:
+                                      selectedLineMeasurementMode === item.value
+                                        ? item.color
+                                        : `${item.color}66`,
+                                    color:
+                                      selectedLineMeasurementMode === item.value
+                                        ? "#ffffff"
+                                        : item.color,
+                                  }}
                                 >
                                   {item.label}
                                 </button>
@@ -45489,30 +45835,7 @@ export default function XrayCalibrationWorkspace({
                                   type="button"
                                   disabled={isSelectedLineLocked || !hasCalibration}
                                   onClick={() =>
-                                    setLines((prev) =>
-                                      prev.map((line) => {
-                                        if (line.id !== selectedLine.id)
-                                          return line;
-                                        const dx = line.x2 - line.x1;
-                                        const dy = line.y2 - line.y1;
-                                        const currentLength = Math.hypot(dx, dy);
-                                        if (!currentLength || !mmPerPixel)
-                                          return line;
-                                        const nextLength = Math.max(
-                                          2,
-                                          currentLength + deltaMm / mmPerPixel,
-                                        );
-                                        return {
-                                          ...line,
-                                          x2:
-                                            line.x1 +
-                                            (dx / currentLength) * nextLength,
-                                          y2:
-                                            line.y1 +
-                                            (dy / currentLength) * nextLength,
-                                        };
-                                      }),
-                                    )
+                                    adjustSelectedLineLengthByMm(deltaMm)
                                   }
                                   className="grid h-7 w-8 place-items-center border-white/40 bg-white/24 text-slate-600 first:border-r disabled:opacity-35"
                                   aria-label={`${deltaMm < 0 ? "Kurangi" : "Tambah"} panjang 1 mm`}
@@ -45668,13 +45991,82 @@ export default function XrayCalibrationWorkspace({
                             />
                           </label>
                           {selectedLineSupportsMeasurementMode ? (
-                            <LineMeasurementModeControl
-                              mode={selectedLineMeasurementMode}
-                              valueText={selectedLineValueText}
-                              circumferenceText={selectedLineCircumferenceText}
-                              onChange={setSelectedLineMeasurementMode}
-                              compact
-                            />
+                            <div className="space-y-1.5">
+                              <div className="grid grid-cols-3 gap-1">
+                                {LINE_MEASUREMENT_MODES.map((item) => (
+                                  <button
+                                    key={`desktop-object-mode-${item.value}`}
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedLineMeasurementMode(item.value)
+                                    }
+                                    aria-pressed={
+                                      selectedLineMeasurementMode === item.value
+                                    }
+                                    className="min-h-8 rounded-lg border px-1 text-[9px] font-black shadow-sm transition"
+                                    style={{
+                                      background:
+                                        selectedLineMeasurementMode ===
+                                        item.value
+                                          ? item.color
+                                          : `${item.color}14`,
+                                      borderColor:
+                                        selectedLineMeasurementMode ===
+                                        item.value
+                                          ? item.color
+                                          : `${item.color}66`,
+                                      color:
+                                        selectedLineMeasurementMode ===
+                                        item.value
+                                          ? "#ffffff"
+                                          : item.color,
+                                    }}
+                                  >
+                                    {item.label}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex min-h-8 items-center justify-between gap-2 rounded-xl border border-white/50 bg-white/24 px-2">
+                                <span className="min-w-0 truncate text-[9px] font-bold text-slate-500">
+                                  {selectedLineMeasurementMode === "radius"
+                                    ? "Radius"
+                                    : selectedLineMeasurementMode === "diameter"
+                                      ? "Diameter"
+                                      : "Length"}
+                                  :{" "}
+                                  <strong className="font-mono text-[10px] text-slate-700">
+                                    {selectedLineValueText}
+                                  </strong>
+                                </span>
+                                <div className="grid shrink-0 grid-cols-2 overflow-hidden rounded-lg border border-white/55 bg-white/24">
+                                  {[-1, 1].map((deltaMm) => (
+                                    <button
+                                      key={`desktop-line-length-step-${deltaMm}`}
+                                      type="button"
+                                      disabled={
+                                        isSelectedLineLocked || !hasCalibration
+                                      }
+                                      onClick={() =>
+                                        adjustSelectedLineLengthByMm(deltaMm)
+                                      }
+                                      className="grid h-7 w-8 place-items-center border-white/45 text-slate-600 first:border-r disabled:opacity-35"
+                                      aria-label={`${deltaMm < 0 ? "Kurangi" : "Tambah"} panjang 1 mm`}
+                                    >
+                                      {deltaMm < 0 ? (
+                                        <Minus className="h-3 w-3" />
+                                      ) : (
+                                        <Plus className="h-3 w-3" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              {selectedLineMeasurementMode !== "length" ? (
+                                <div className="px-1 text-[8px] font-bold text-slate-400">
+                                  Circumference: {selectedLineCircumferenceText}
+                                </div>
+                              ) : null}
+                            </div>
                           ) : null}
                           <CompactSliderField
                             label="Line width"
@@ -45738,6 +46130,60 @@ export default function XrayCalibrationWorkspace({
                               )
                             }
                           />
+                          {selectedLineSizing?.available &&
+                          selectedLineSizing.primary ? (
+                            <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5 rounded-xl border border-cyan-300/30 bg-cyan-500/8 px-2 py-1">
+                              <div className="min-w-0">
+                                <span className="block truncate text-[7px] font-black tracking-wider text-cyan-700 uppercase">
+                                  {selectedLineSizing.kind === "tibial"
+                                    ? "Tibial recommendation"
+                                    : "Femoral recommendation"}
+                                </span>
+                                <span className="block truncate text-[8px] font-semibold text-slate-500">
+                                  {(selectedLineSizing.inferredDimension || "width").toUpperCase()} · {selectedLineSizing.sourceText}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {selectedLineSizing.dimensionItems
+                                  ?.filter(
+                                    (item) =>
+                                      item.key === "width" ||
+                                      item.key === "length",
+                                  )
+                                  .map((item) => (
+                                    <span
+                                      key={`desktop-object-setting-size-${item.key}`}
+                                      className={`rounded-md border px-1.5 py-0.5 text-center ${
+                                        item.active
+                                          ? "border-cyan-400/50 bg-cyan-400/18"
+                                          : "border-white/45 bg-white/20"
+                                      }`}
+                                    >
+                                      <span className="block text-[6px] font-black text-slate-400 uppercase">
+                                        {item.key === "width" ? "ML" : "AP"}
+                                      </span>
+                                      <span className="block text-[8px] font-black text-cyan-700">
+                                        S{item.match.size}
+                                      </span>
+                                    </span>
+                                  ))}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  useRecommendedNormmedTemplate({
+                                    size: selectedLineSizing.primary.size,
+                                    dimension:
+                                      selectedLineSizing.inferredDimension,
+                                    component: selectedLineSizing.kind,
+                                  })
+                                }
+                                className="min-h-7 rounded-lg bg-cyan-700 px-2 text-[7px] font-black text-white"
+                              >
+                                Gunakan
+                              </button>
+                            </div>
+                          ) : null}
                           <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
                             <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
                               Line Color
@@ -45831,6 +46277,46 @@ export default function XrayCalibrationWorkspace({
                         <div className="space-y-2">
                           <div className="rounded-2xl border border-white/60 bg-white/35 px-3 py-2 text-xs font-black">
                             {selectedAngleMetrics.valueDeg.toFixed(1)}°
+                          </div>
+                          <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
+                            <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                              Angle Color
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {ANGLE_COLOR_OPTIONS.map((color) => (
+                                <ColorSwatchButton
+                                  key={`object-angle-color-${color}`}
+                                  color={color}
+                                  active={selectedAngleMetrics.color === color}
+                                  label={`Warna angle ${color}`}
+                                  onClick={() =>
+                                    updateAngleById(selectedAngle.id, { color })
+                                  }
+                                />
+                              ))}
+                              <label
+                                className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/55 bg-[#eef2f7]/70"
+                                title="Custom angle color"
+                              >
+                                <span
+                                  className="h-4 w-4 rounded-full"
+                                  style={{
+                                    background:
+                                      "conic-gradient(#ef4444,#f59e0b,#22c55e,#06b6d4,#8b5cf6,#ef4444)",
+                                  }}
+                                />
+                                <input
+                                  type="color"
+                                  value={selectedAngleMetrics.color}
+                                  onChange={(event) =>
+                                    updateAngleById(selectedAngle.id, {
+                                      color: event.target.value,
+                                    })
+                                  }
+                                  className="absolute inset-0 cursor-pointer opacity-0"
+                                />
+                              </label>
+                            </div>
                           </div>
                           <CompactSliderField
                             label="Angle width"

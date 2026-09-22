@@ -1,12 +1,12 @@
 export const TKA_PLANNING_REFERENCE = {
   fullLabel: "Bicondylar Knee Planning",
   workflow: [
-    { title: "Select Body Side" },
-    { title: "Knee Axis Analysis" },
-    { title: "Axis Correction & Resection" },
-    { title: "Insert Implants" },
+    { title: "Setup & Body Side" },
+    { title: "Landmarks & Axis Analysis" },
+    { title: "Resection Planning" },
+    { title: "Femoral & Tibial Components" },
     { title: "Implant Kit" },
-    { title: "Surgical Technique" },
+    { title: "Final Alignment & Report" },
   ],
 };
 

@@ -121,6 +121,30 @@ const APKNEE_HL = {
   patella_distal:           { x: 75,  y: 95,  c: "#ec4899" },
 };
 
+const TKA_PLANNING_COLORS = {
+  hip: "#facc15",
+  knee: "#f97316",
+  ankle: "#22c55e",
+  femCondyleMedial: "#38bdf8",
+  femCondyleLateral: "#60a5fa",
+  tibPlateauMedial: "#14b8a6",
+  tibPlateauLateral: "#2dd4bf",
+};
+
+function getTkaPlanningPoints(side = "right") {
+  const medialX = side === "left" ? 142 : 98;
+  const lateralX = side === "left" ? 98 : 142;
+  return {
+    hip: { x: side === "left" ? 148 : 92, y: 66 },
+    knee: { x: 120, y: 344 },
+    ankle: { x: 120, y: 624 },
+    femCondyleMedial: { x: medialX, y: 337 },
+    femCondyleLateral: { x: lateralX, y: 337 },
+    tibPlateauMedial: { x: medialX, y: 365 },
+    tibPlateauLateral: { x: lateralX, y: 365 },
+  };
+}
+
 const APTHRTHR_HL = {
   head_center:           { x: 98,  y: 82,  c: "#ef4444" },
   cup_rim_superolateral: { x: 63,  y: 29,  c: "#f97316" },
@@ -425,6 +449,110 @@ function ApKneeGuide({ highlightId, side = null }) {
       ))}
 
       {(() => { const h = APKNEE_HL[highlightId]; return h ? <HighlightRing cx={h.x} cy={h.y} color={h.c} /> : null; })()}
+    </svg>
+  );
+}
+
+// Full AP limb used by the TKA flow. This is a placement guide, not a
+// calibrated implant drawing; landmarks must still follow the patient's X-ray.
+function ApTkaPlanningGuide({ highlightId, side = "right" }) {
+  const normalizedSide = side === "left" ? "left" : "right";
+  const points = getTkaPlanningPoints(normalizedSide);
+  const direction = normalizedSide === "left" ? -1 : 1;
+  const head = points.hip;
+  const lateralX = normalizedSide === "left" ? 92 : 148;
+  const pointRows = [
+    ["hip", "CFH", "right"],
+    ["knee", "CK", "left"],
+    ["ankle", "CA", "left"],
+    ["femCondyleMedial", "MFC", "left"],
+    ["femCondyleLateral", "LFC", "right"],
+    ["tibPlateauMedial", "MTP", "left"],
+    ["tibPlateauLateral", "LTP", "right"],
+  ];
+  const active = points[highlightId];
+
+  return (
+    <svg
+      viewBox="0 0 240 680"
+      className="w-full"
+      style={{ maxHeight: 430, display: "block" }}
+      role="img"
+      aria-label={`Panduan landmark TKA tungkai ${normalizedSide === "left" ? "kiri" : "kanan"}`}
+    >
+      <rect width={240} height={680} rx={10} fill="#080e18" />
+      <defs>
+        <linearGradient id="tka_bone_fill" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#25364a" />
+          <stop offset="48%" stopColor="#6f829b" />
+          <stop offset="100%" stopColor="#26384d" />
+        </linearGradient>
+      </defs>
+
+      <g opacity={0.96}>
+        <circle cx={head.x} cy={head.y} r={34} fill="url(#tka_bone_fill)" stroke="#9fb0c5" strokeWidth={2} />
+        <path
+          d={`M ${head.x + direction * 22},82 C ${head.x + direction * 42},92 ${120 + direction * 12},107 124,132 L 132,160 L 108,160 L 111,130 C 108,111 ${head.x + direction * 10},101 ${head.x + direction * 4},96 Z`}
+          fill="url(#tka_bone_fill)"
+          stroke="#8fa2b9"
+          strokeWidth={2}
+        />
+        <path
+          d="M108 145 C105 205 101 270 94 315 C90 327 88 340 94 350 C102 360 113 358 120 348 C127 359 140 360 148 349 C154 339 149 325 145 315 C138 267 135 205 132 145 Z"
+          fill="url(#tka_bone_fill)"
+          stroke="#8fa2b9"
+          strokeWidth={2}
+        />
+        <ellipse cx={99} cy={338} rx={22} ry={18} fill="#41566f" stroke="#aebed0" strokeWidth={2} />
+        <ellipse cx={141} cy={338} rx={22} ry={18} fill="#41566f" stroke="#aebed0" strokeWidth={2} />
+        <path d="M112 339 Q120 350 128 339" fill="#080e18" stroke="#71859d" strokeWidth={1.2} />
+
+        <path
+          d="M91 366 Q120 356 149 366 L145 386 C139 410 136 476 134 548 L132 612 Q120 624 108 612 L106 548 C104 476 101 410 95 386 Z"
+          fill="url(#tka_bone_fill)"
+          stroke="#8fa2b9"
+          strokeWidth={2}
+        />
+        <path
+          d={`M ${lateralX},382 C ${lateralX + direction * 7},430 ${lateralX + direction * 8},505 ${lateralX + direction * 5},589 C ${lateralX + direction * 2},606 ${lateralX - direction * 2},611 ${lateralX - direction * 7},597 C ${lateralX - direction * 2},500 ${lateralX - direction * 4},432 ${lateralX - direction * 7},390 Z`}
+          fill="#30445b"
+          stroke="#7f93aa"
+          strokeWidth={1.6}
+        />
+        <path d="M103 613 Q120 631 137 613 L143 633 Q120 646 97 633 Z" fill="#41566f" stroke="#9fb0c5" strokeWidth={2} />
+      </g>
+
+      <line x1={head.x} y1={head.y} x2={120} y2={344} stroke="#facc15" strokeWidth={1.2} strokeDasharray="5 5" opacity={0.55} />
+      <line x1={120} y1={344} x2={120} y2={624} stroke="#22c55e" strokeWidth={1.2} strokeDasharray="5 5" opacity={0.55} />
+      <line x1={82} y1={348} x2={158} y2={348} stroke="#38bdf8" strokeWidth={1} opacity={0.35} />
+      <line x1={82} y1={365} x2={158} y2={365} stroke="#14b8a6" strokeWidth={1} opacity={0.35} />
+
+      <g pointerEvents="none">
+        <rect x={12} y={12} width={75} height={24} rx={12} fill="#111c2b" stroke="#334155" />
+        <text x={49.5} y={28} textAnchor="middle" fill="#cbd5e1" fontSize={10} fontWeight="700" fontFamily="sans-serif">
+          {normalizedSide === "left" ? "LEFT / KIRI" : "RIGHT / KANAN"}
+        </text>
+      </g>
+
+      {pointRows.map(([key, label, labelPos]) => (
+        <LmDot
+          key={key}
+          cx={points[key].x}
+          cy={points[key].y}
+          color={TKA_PLANNING_COLORS[key]}
+          label={label}
+          labelPos={labelPos}
+          r={4.5}
+          fontSize={7.5}
+        />
+      ))}
+      {active ? (
+        <HighlightRing
+          cx={active.x}
+          cy={active.y}
+          color={TKA_PLANNING_COLORS[highlightId] || "#22d3ee"}
+        />
+      ) : null}
     </svg>
   );
 }
@@ -748,6 +876,7 @@ const GUIDE_REGISTRY = {
   pelvic_marked:            { label: "AP Pelvis — Marked Landmarks", Component: MarkedPelvicGuide, needsSide: false },
   ap_hip:                  { label: "AP Hip / Pelvis",            Component: ApHipGuide,          needsSide: "full"   },
   ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: "simple" },
+  ap_tka_planning:         { label: "AP TKA — Femur & Tibia",     Component: ApTkaPlanningGuide,  needsSide: "simple" },
   ap_femur:                { label: "AP Femur",                   Component: ApProxFemurGuide,    needsSide: false    },
   ap_proximal_femur:       { label: "AP Proksimal Femur",         Component: ApProxFemurGuide,    needsSide: false    },
   ap_ankle:                { label: "AP Ankle",                   Component: ApKneeGuide,         needsSide: false    },
@@ -771,14 +900,14 @@ function deriveSide(sideConditions) {
   return null;
 }
 
-export function GuideContent({ viewId, sideConditions, highlightId }) {
+export function GuideContent({ viewId, sideConditions, highlightId, side = null }) {
   const guide = GUIDE_REGISTRY[viewId];
   if (!guide) return null;
   const { Component, needsSide } = guide;
   if (needsSide === "full")
     return <Component sideConditions={sideConditions} highlightId={highlightId} />;
   if (needsSide === "simple")
-    return <Component side={deriveSide(sideConditions)} highlightId={highlightId} />;
+    return <Component side={side || deriveSide(sideConditions)} highlightId={highlightId} />;
   return <Component highlightId={highlightId} />;
 }
 

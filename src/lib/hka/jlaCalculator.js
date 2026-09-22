@@ -260,15 +260,21 @@ export function computeTkaResectionPlan({
       ? "Custom alignment target"
       : "Mechanical alignment";
   const plannedMetrics = normalizedAlignmentMode === "mechanical"
-    ? { "mFA-mTA": 0, MAD: 0, mLDFA: 90, mMPTA: 90, JLCA: 0 }
+    ? { "mFA-mTA": 0, mTFA: 0, MAD: 0, mLDFA: 90, mMPTA: 90, JLCA: 0 }
     : normalizedAlignmentMode === "preserve"
       ? {
           "mFA-mTA": jla.cpakHKA,
+          mTFA: jla.cpakHKA,
           mLDFA: jla.LDFA,
           mMPTA: jla.MPTA,
           JLCA: jla.JLCA,
         }
-      : { "mFA-mTA": targetHkaDeg };
+      : { "mFA-mTA": targetHkaDeg, mTFA: targetHkaDeg };
+
+  plannedMetrics.mFCL = femoral.depthA;
+  plannedMetrics.lFCL = femoral.depthB;
+  plannedMetrics.mTCL = tibial.depthA;
+  plannedMetrics.lTCL = tibial.depthB;
 
   return {
     alignmentMode: normalizedAlignmentMode,

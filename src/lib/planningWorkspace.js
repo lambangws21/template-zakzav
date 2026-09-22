@@ -26,6 +26,8 @@ export function completePlanningStep(session, step, nextStep = step + 1) {
 
 export const PLANNING_METRICS = {
   tka: [
+    ["mTFA", "deg", "Mechanical tibiofemoral angle (mFA-mTA)"],
+    ["FVA", "deg", "Femoral valgus angle between anatomical and mechanical axes"],
     ["mLPFA", "deg", "Mechanical lateral proximal femoral angle"],
     ["AMA", "deg", "Anatomical-mechanical angle"],
     ["Mikulicz", "mm", "Panjang mechanical axis line"],
@@ -37,6 +39,10 @@ export const PLANNING_METRICS = {
     ["mMPTA", "deg", "Mechanical medial proximal tibial angle"],
     ["mLDTA", "deg", "Mechanical lateral distal tibial angle"],
     ["IAA", "deg", "Interline angle"],
+    ["mFCL", "mm", "Medial distal femoral cut length"],
+    ["lFCL", "mm", "Lateral distal femoral cut length"],
+    ["mTCL", "mm", "Medial proximal tibial cut length"],
+    ["lTCL", "mm", "Lateral proximal tibial cut length"],
   ],
   hip: [
     ["LLD", "mm", "Selisih absolut Hip Length kanan dan kiri. Hip Length adalah jarak tegak lurus lesser trochanter ke interteardrop line."],

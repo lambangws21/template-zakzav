@@ -67,6 +67,34 @@ const KNEE_COMPONENTS = [
   },
 ];
 
+const MEASUREMENT_MODE_COLORS = {
+  length: "#06b6d4",
+  radius: "#22c55e",
+  diameter: "#f59e0b",
+};
+
+const ANALYSIS_GUIDE_SUMMARIES = {
+  hka: {
+    purpose:
+      "Hubungkan pusat hip, lutut, dan ankle untuk membaca alignment tungkai.",
+    result: "Hasil: mTFA dan MAD",
+  },
+  jla: {
+    purpose:
+      "Tentukan garis sendi femur dan tibia untuk merencanakan reseksi TKA.",
+    result: "Hasil: mLDFA, mMPTA, dan JLCA",
+  },
+  fta: {
+    purpose:
+      "Bandingkan anatomical axis femur dan tibia pada radiografi AP.",
+    result: "Hasil: femorotibial angle",
+  },
+  axis: {
+    purpose: "Buat sumbu anatomi dari pusat kanal proksimal dan distal.",
+    result: "Hasil: anatomical axis",
+  },
+};
+
 function getKneeComponent(item) {
   const signature =
     `${item?.id || ""} ${item?.label || ""} ${item?.system || ""}`.toLowerCase();
@@ -242,9 +270,15 @@ export default function PlanningWorkspace({
   const [implantBrowserOpen, setImplantBrowserOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [implantSearch, setImplantSearch] = useState("");
+  const [objectEditorPosition, setObjectEditorPosition] = useState(null);
   const drag = useRef(null);
   const sheetRef = useRef(null);
+  const objectEditorDragRef = useRef(null);
   const previousAnalysisRef = useRef({ procedure, signature: "" });
+  useEffect(() => {
+    setObjectEditorPosition(null);
+    objectEditorDragRef.current = null;
+  }, [metricEditor]);
   const rows = useMemo(
     () => resolvePlanningRows(procedure, session, measurements),
     [procedure, session, measurements],
@@ -399,7 +433,10 @@ export default function PlanningWorkspace({
     firstIncompleteAnalysis < 0
       ? analysisTools.length - 1
       : firstIncompleteAnalysis;
-  const analysisDoneCount = analysisTools.filter(
+  const requiredAnalysisTools = analysisTools.filter(
+    (item) => item.required !== false,
+  );
+  const requiredAnalysisDoneCount = requiredAnalysisTools.filter(
     (item) => item.complete,
   ).length;
   const activeAnalysisItem = analysisTools[activeAnalysisIndex] || null;
@@ -411,6 +448,10 @@ export default function PlanningWorkspace({
   const guideStep =
     guideSteps[Math.min(guideStepIndex, Math.max(0, guideSteps.length - 1))] ||
     null;
+  const guideSummary = ANALYSIS_GUIDE_SUMMARIES[guideItem?.id] || {
+    purpose: guideItem?.instruction || "Ikuti landmark pada gambar X-ray.",
+    result: "Hasil tersimpan ke Planning Log",
+  };
   const liveGuideStep = guideItem?.liveProgress?.current;
   const prerequisites = !hasImage
     ? "Upload X-ray terlebih dahulu."
@@ -498,8 +539,8 @@ export default function PlanningWorkspace({
     if (
       !enabled ||
       session.step !== 1 ||
-      analysisTools.length === 0 ||
-      analysisDoneCount !== analysisTools.length ||
+      requiredAnalysisTools.length === 0 ||
+      requiredAnalysisDoneCount !== requiredAnalysisTools.length ||
       session.completedSteps?.includes(1)
     )
       return;
@@ -511,8 +552,8 @@ export default function PlanningWorkspace({
     setGuideItemId(null);
     if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
   }, [
-    analysisDoneCount,
-    analysisTools.length,
+    requiredAnalysisDoneCount,
+    requiredAnalysisTools.length,
     enabled,
     onSession,
     rows,
@@ -786,7 +827,7 @@ export default function PlanningWorkspace({
                         </span>
                         <strong>
                           {session.side === "left" ? "L / Left" : "R / Right"} ·{" "}
-                          {analysisDoneCount}/{analysisTools.length}
+                          {requiredAnalysisDoneCount}/{requiredAnalysisTools.length} utama
                         </strong>
                       </div>
                       <ol className={styles.analysisSteps}>
@@ -824,7 +865,11 @@ export default function PlanningWorkspace({
                                   <strong>{item.label}</strong>
                                   <small>{item.instruction}</small>
                                 </span>
-                                {item.progress && <em>{item.progress}</em>}
+                                {(item.progress || item.required === false) && (
+                                  <em>
+                                    {item.progress || "Opsional"}
+                                  </em>
+                                )}
                                 {!available && <Lock size={13} />}
                                 {current && !item.complete && (
                                   <ArrowRight size={14} />
@@ -922,6 +967,57 @@ export default function PlanningWorkspace({
                   )}
                   {session.step === 2 && (
                     <>
+                      {procedure === "tka" && (
+                        <section className={styles.tkaPlanSummary}>
+                          <header>
+                            <span>TKA planning snapshot</span>
+                            <strong>
+                              {alignmentPlan
+                                ? `mTFA ${alignmentPlan.jla.cpakHKA.toFixed(1)}°`
+                                : "Landmark belum lengkap"}
+                            </strong>
+                          </header>
+                          {alignmentPlan ? (
+                            <>
+                              <div className={styles.tkaCutGrid}>
+                                <div>
+                                  <span>Distal femur</span>
+                                  <strong>
+                                    M {alignmentPlan.femoral.medialMm.toFixed(1)} · L{" "}
+                                    {alignmentPlan.femoral.lateralMm.toFixed(1)} mm
+                                  </strong>
+                                </div>
+                                <div>
+                                  <span>Proximal tibia</span>
+                                  <strong>
+                                    M {alignmentPlan.tibial.medialMm.toFixed(1)} · L{" "}
+                                    {alignmentPlan.tibial.lateralMm.toFixed(1)} mm
+                                  </strong>
+                                </div>
+                              </div>
+                              <Action
+                                icon={Layers}
+                                className={styles.tkaCutPreviewAction}
+                                onClick={() => {
+                                  onCreateAlignmentPreview?.();
+                                  setResectionExpanded(false);
+                                }}
+                              >
+                                Preview potongan femur & tibia
+                              </Action>
+                              <small className={styles.tkaPreviewHint}>
+                                Membuat fragmen simulasi yang dapat dipindah untuk
+                                memeriksa alignment sebelum implant dipasang.
+                              </small>
+                            </>
+                          ) : (
+                            <p>
+                              Lengkapi Mechanical Axis dan Kine Line untuk
+                              menghitung mTFA serta panjang resection.
+                            </p>
+                          )}
+                        </section>
+                      )}
                       <Action
                         icon={SlidersHorizontal}
                         onClick={() => {
@@ -956,6 +1052,42 @@ export default function PlanningWorkspace({
                   )}
                   {session.step === 3 && (
                     <div className={styles.controls}>
+                      {procedure === "tka" && (
+                        <div
+                          className={styles.kneeComponentTabs}
+                          role="tablist"
+                          aria-label="Knee implant component"
+                        >
+                          {KNEE_COMPONENTS.map((item) => (
+                            <button
+                              type="button"
+                              key={item.key}
+                              data-active={kneeComponent === item.key}
+                              role="tab"
+                              aria-selected={kneeComponent === item.key}
+                              onClick={() => {
+                                setKneeComponent(item.key);
+                                setBrand("");
+                                setSystem("");
+                                const firstItem = available.find(
+                                  (implant) =>
+                                    getKneeComponent(implant) === item.key,
+                                );
+                                if (firstItem)
+                                  selectImplantTemplate(firstItem.id);
+                              }}
+                            >
+                              <img src={item.icon} alt="" />
+                              <span>
+                                <strong>{item.label}</strong>
+                                <small>
+                                  {kneeComponentCounts[item.key] || 0} template
+                                </small>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <label>
                         Manufacturer
                         <select
@@ -1334,7 +1466,7 @@ export default function PlanningWorkspace({
                   if (activeMeasurementId) {
                     return (
                       <div
-                        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
+                        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop} ${isLineMeasurement ? styles.objectSettingBackdrop : ""}`}
                         role="presentation"
                         onPointerDown={(event) => {
                           if (event.target === event.currentTarget)
@@ -1342,12 +1474,92 @@ export default function PlanningWorkspace({
                         }}
                       >
                         <section
-                          className={`${styles.modalPanel} ${styles.measurementModal}`}
+                          className={`${styles.modalPanel} ${styles.measurementModal} ${isLineMeasurement ? styles.objectSettingModal : ""}`}
                           role="dialog"
-                          aria-modal="true"
+                          aria-modal={isLineMeasurement ? "false" : "true"}
                           aria-label={`Edit ${displayName}`}
+                          style={
+                            isLineMeasurement && objectEditorPosition
+                              ? {
+                                  left: objectEditorPosition.x,
+                                  top: objectEditorPosition.y,
+                                  right: "auto",
+                                  bottom: "auto",
+                                }
+                              : undefined
+                          }
                         >
-                          <header className={isLineMeasurement ? styles.objectSettingHeader : undefined}>
+                          <header
+                            className={
+                              isLineMeasurement
+                                ? styles.objectSettingHeader
+                                : undefined
+                            }
+                            onPointerDown={(event) => {
+                              if (!isLineMeasurement) return;
+                              if (
+                                event.target.closest(
+                                  "button, input, textarea, select",
+                                )
+                              )
+                                return;
+                              const panel = event.currentTarget.closest(
+                                `.${styles.objectSettingModal}`,
+                              );
+                              const rect = panel?.getBoundingClientRect();
+                              if (!rect) return;
+                              event.preventDefault();
+                              event.currentTarget.setPointerCapture(
+                                event.pointerId,
+                              );
+                              objectEditorDragRef.current = {
+                                startX: event.clientX,
+                                startY: event.clientY,
+                                panelX: rect.left,
+                                panelY: rect.top,
+                                width: rect.width,
+                                height: rect.height,
+                              };
+                            }}
+                            onPointerMove={(event) => {
+                              const current = objectEditorDragRef.current;
+                              if (!current) return;
+                              const maxX = Math.max(
+                                8,
+                                window.innerWidth - current.width - 8,
+                              );
+                              const maxY = Math.max(
+                                8,
+                                window.innerHeight - current.height - 8,
+                              );
+                              setObjectEditorPosition({
+                                x: Math.max(
+                                  8,
+                                  Math.min(
+                                    maxX,
+                                    current.panelX +
+                                      event.clientX -
+                                      current.startX,
+                                  ),
+                                ),
+                                y: Math.max(
+                                  8,
+                                  Math.min(
+                                    maxY,
+                                    current.panelY +
+                                      event.clientY -
+                                      current.startY,
+                                  ),
+                                ),
+                              });
+                            }}
+                            onPointerUp={() => {
+                              objectEditorDragRef.current = null;
+                            }}
+                            onPointerCancel={() => {
+                              objectEditorDragRef.current = null;
+                            }}
+                          >
                             {isLineMeasurement ? <span className={styles.sheetHandle} aria-hidden="true" /> : null}
                             <div>
                               <small>{isLineMeasurement ? "Object setting" : "Measurement"}</small>
@@ -1415,8 +1627,14 @@ export default function PlanningWorkspace({
                                         onClick={() =>
                                           onUpdateMeasurement?.(activeMeasurementId, {
                                             measurementMode: value,
+                                            color:
+                                              MEASUREMENT_MODE_COLORS[value],
                                           })
                                         }
+                                        style={{
+                                          "--measurement-mode-color":
+                                            MEASUREMENT_MODE_COLORS[value],
+                                        }}
                                       >
                                         {label}
                                       </button>
@@ -1472,6 +1690,25 @@ export default function PlanningWorkspace({
                                       onUpdateMeasurement?.(activeMeasurementId, {
                                         strokeWidth: Number(event.target.value),
                                       })
+                                    }
+                                  />
+                                </label>
+                                <label className={styles.lineColorControl}>
+                                  <span>Line color</span>
+                                  <input
+                                    type="color"
+                                    value={
+                                      sourceMeasurement?.color ||
+                                      MEASUREMENT_MODE_COLORS[
+                                        sourceMeasurement?.measurementMode ||
+                                          "length"
+                                      ]
+                                    }
+                                    onChange={(event) =>
+                                      onUpdateMeasurementColor?.(
+                                        activeMeasurementId,
+                                        event.target.value,
+                                      )
                                     }
                                   />
                                 </label>
@@ -2163,15 +2400,6 @@ export default function PlanningWorkspace({
             disabled={toolById("redo")?.disabled}
             onClick={() => runTool("redo")}
           />
-          {onOpenAdvancedUi && (
-            <Action
-              icon={Menu}
-              className={styles.advancedAction}
-              onClick={onOpenAdvancedUi}
-            >
-              Advanced
-            </Action>
-          )}
           <Action
             icon={Save}
             className={styles.saveAction}
@@ -2226,7 +2454,9 @@ export default function PlanningWorkspace({
           <button
             type="button"
             data-active={sheet === "tools"}
+            disabled={!hasImage}
             onClick={openTools}
+            title="Measurements"
           >
             <Ruler size={20} />
             <span>Measure</span>
@@ -2242,6 +2472,67 @@ export default function PlanningWorkspace({
         </nav>
         <div className={styles.canvas}>
           {children}
+          {procedure === "tka" && hasImage && !canProceed && (
+            <aside className={styles.planningStartCard} aria-label="Mulai TKA planning">
+              <header>
+                <span>Mulai TKA Planning</span>
+                <strong>2 langkah awal</strong>
+              </header>
+              <ol>
+                <li data-complete={Boolean(session.side)}>
+                  <span>{session.side ? <Check size={12} /> : "1"}</span>
+                  <div>
+                    <strong>Pilih sisi lutut</strong>
+                    <small>
+                      {session.side
+                        ? session.side === "left"
+                          ? "Left / kiri dipilih"
+                          : "Right / kanan dipilih"
+                        : "Tentukan sisi sebelum membuat landmark"}
+                    </small>
+                  </div>
+                </li>
+                <li data-complete={calibrated}>
+                  <span>{calibrated ? <Check size={12} /> : "2"}</span>
+                  <div>
+                    <strong>Kalibrasi skala</strong>
+                    <small>
+                      {calibrated
+                        ? "Skala pengukuran sudah aktif"
+                        : "Gunakan ruler atau marker pada X-ray"}
+                    </small>
+                  </div>
+                </li>
+              </ol>
+              <div className={styles.startSideButtons} aria-label="Pilih sisi lutut">
+                <button
+                  type="button"
+                  data-active={session.side === "left"}
+                  onClick={() => selectBodySide("left")}
+                >
+                  L · Left
+                </button>
+                <button
+                  type="button"
+                  data-active={session.side === "right"}
+                  onClick={() => selectBodySide("right")}
+                >
+                  R · Right
+                </button>
+              </div>
+              <Action
+                icon={Ruler}
+                className={styles.startPrimaryAction}
+                disabled={!session.side}
+                onClick={() => activate(actions.calibrate)}
+              >
+                {session.side ? "Kalibrasi & lanjut" : "Pilih sisi dahulu"}
+              </Action>
+              <small className={styles.startHint}>
+                Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis.
+              </small>
+            </aside>
+          )}
           {session.side && (
             <span className={styles.sideMarker}>
               {session.side === "left" ? "L" : "R"}
@@ -2385,7 +2676,7 @@ export default function PlanningWorkspace({
                       setResectionExpanded(false);
                     }}
                   >
-                    Terapkan cutting preview
+                    Preview potongan femur & tibia
                   </Action>
                   <small>
                     Simulasi planning. Verifikasi landmark dan hasil secara
@@ -2438,6 +2729,50 @@ export default function PlanningWorkspace({
                   <small>{guideItem.liveProgress.label}</small>
                 </div>
               )}
+              <div
+                className={styles.guidePurpose}
+                data-compact={guideMinimized}
+              >
+                <p>{guideSummary.purpose}</p>
+                <strong>{guideSummary.result}</strong>
+              </div>
+              {guideMinimized && (
+                <>
+                  <div
+                    className={styles.compactGuideSequence}
+                    aria-label="Titik landmark"
+                  >
+                    {guideSteps.slice(0, 4).map((step, index) => (
+                      <span
+                        key={`compact-${step.id}-${index}`}
+                        data-active={index === guideStepIndex}
+                        data-done={index < guideStepIndex}
+                      >
+                        {index < guideStepIndex ? (
+                          <Check size={9} />
+                        ) : (
+                          index + 1
+                        )}
+                        <small>{step.shortLabel || step.label}</small>
+                      </span>
+                    ))}
+                  </div>
+                  {guideItem.liveProgress ? (
+                    <div className={styles.compactGuideActive}>
+                      <Target size={12} />
+                      Tap {guideStep?.shortLabel || guideStep?.label || "titik berikutnya"} di canvas
+                    </div>
+                  ) : (
+                    <Action
+                      icon={Play}
+                      className={styles.compactGuideStart}
+                      onClick={() => startAnalysisTool(guideItem)}
+                    >
+                      Mulai {guideSteps.length || ""} titik
+                    </Action>
+                  )}
+                </>
+              )}
               {!guideMinimized && (
                 <>
                   <button
@@ -2457,6 +2792,7 @@ export default function PlanningWorkspace({
                           viewId={guideItem.guideView}
                           sideConditions={{ kanan: "native", kiri: "native" }}
                           highlightId={guideStep?.id || guideItem.highlightId}
+                          side={guideItem.guideSide || session.side}
                         />
                       ) : guideItem.guideImage ? (
                         <img
