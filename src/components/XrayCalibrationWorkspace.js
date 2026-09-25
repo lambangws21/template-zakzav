@@ -125,6 +125,12 @@ import {
   buildPelvicAnalysisMeasurements,
   PELVIC_ANALYSIS_LANDMARKS,
 } from "../lib/xray/pelvicAnalysis";
+import {
+  buildHalluxValgusMeasurements,
+  HALLUX_VALGUS_LANDMARKS,
+  HALLUX_VALGUS_METRICS,
+  isHalluxValgusLineRelevant,
+} from "../lib/xray/halluxValgusAnalysis";
 import LayerManager from "./LayerManager";
 import LineManager from "./LineManager";
 import DorrClassificationPanel from "./DorrClassificationPanel";
@@ -151,6 +157,7 @@ import PlanningWorkspace, {
 } from "@/app/simple/PlanningWorkspace";
 import planningStyles from "@/app/simple/PlanningWorkspace.module.css";
 import {
+  HALLUX_PLANNING_REFERENCE,
   TKA_PLANNING_REFERENCE,
   THA_PLANNING_REFERENCE,
 } from "@/app/simple/planningReference";
@@ -241,8 +248,8 @@ import {
   projectPointOnSegment,
   getLineLength,
   getDistance,
-  getAngleDegrees,
   getAngleArcGeometry,
+  getAngleDegrees,
   degToRad,
   rotateVector,
   normalizeRotationDegrees,
@@ -1021,6 +1028,7 @@ export default function XrayCalibrationWorkspace({
   const [lines, setLines] = useState([]);
   const [draftLine, setDraftLine] = useState(null);
   const [angles, setAngles] = useState([]);
+  const [focusedHalluxMetric, setFocusedHalluxMetric] = useState(null);
   const [draftAnglePoints, setDraftAnglePoints] = useState([]);
   const [circles, setCircles] = useState([]);
   const circlesRef = useRef([]);
@@ -1032,6 +1040,9 @@ export default function XrayCalibrationWorkspace({
     [],
   );
   const pelvicAnalysisCompletionRef = useRef(false);
+  const [draftHalluxValgusPoints, setDraftHalluxValgusPoints] = useState([]);
+  const halluxValgusCompletionRef = useRef(false);
+  const halluxCorrectionFreeCutRef = useRef(null);
   const [guideBuilderMode, setGuideBuilderMode] = useState("parallel");
   const [guideBuilderPreviewPoint, setGuideBuilderPreviewPoint] =
     useState(null);
@@ -1279,9 +1290,39 @@ export default function XrayCalibrationWorkspace({
   const [planningImplantModalOpen, setPlanningImplantModalOpen] =
     useState(false);
   const [planningProcedure, setPlanningProcedure] = useState("tka");
+  const halluxResults = useMemo(() => {
+    const currentAnalysisId = [...angles]
+      .reverse()
+      .find((angle) => angle.halluxValgusAnalysisId)
+      ?.halluxValgusAnalysisId;
+    if (!currentAnalysisId) return [];
+    return Object.entries(HALLUX_VALGUS_METRICS)
+      .map(([metric, metadata]) => {
+        const angle = angles.find(
+          (item) =>
+            item.halluxValgusAnalysisId === currentAnalysisId &&
+            item.metric === metric,
+        );
+        if (!angle) return null;
+        return {
+          metric,
+          label: metadata.label,
+          value: getAngleDegrees(angle.p1, angle.p2, angle.p3),
+          color: angle.color || metadata.color,
+        };
+      })
+      .filter(Boolean);
+  }, [angles]);
+  const activeHalluxFocus =
+    isPlanningLayout &&
+    planningProcedure === "foot" &&
+    halluxResults.some((item) => item.metric === focusedHalluxMetric)
+      ? focusedHalluxMetric
+      : null;
   const [planningSessions, setPlanningSessions] = useState(() => ({
     tka: createPlanningSession(),
     hip: createPlanningSession(),
+    foot: createPlanningSession(),
   }));
   const [simpleGuideModalOpen, setSimpleGuideModalOpen] = useState(false);
   const [templatingWizardOpen, setTemplatingWizardOpen] = useState(false);
@@ -2473,8 +2514,12 @@ export default function XrayCalibrationWorkspace({
         measurementMode: normalizeLineMeasurementMode(
           lineInput.measurementMode,
         ),
-        labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
-        labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
+        labelOffsetX: Number.isFinite(lineInput.labelOffsetX)
+          ? lineInput.labelOffsetX
+          : DEFAULT_LINE_LABEL_OFFSET_X,
+        labelOffsetY: Number.isFinite(lineInput.labelOffsetY)
+          ? lineInput.labelOffsetY
+          : DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
         strokeWidth: Number.isFinite(lineInput.strokeWidth)
           ? lineInput.strokeWidth
@@ -3069,14 +3114,37 @@ export default function XrayCalibrationWorkspace({
   }, []);
 
   const updateHkaById = useCallback((hkaId, updater) => {
-    setHkaSets((prev) =>
-      prev.map((item) => {
-        if (item.id !== hkaId) return item;
-        return typeof updater === "function"
-          ? updater(item)
-          : { ...item, ...updater };
-      }),
-    );
+    setHkaSets((previous) => {
+      const current = previous.find((item) => item.id === hkaId);
+      if (!current) return previous;
+      const updated =
+        typeof updater === "function"
+          ? updater(current)
+          : { ...current, ...updater };
+      const updatedMode = updated.mode || "full";
+      const canShareAxisLandmarks =
+        (updatedMode === "full" || updatedMode === "jla") &&
+        updated.hip &&
+        updated.knee &&
+        updated.ankle;
+      const updatedSide = normalizeHkaSide(updated.side);
+
+      return previous.map((item) => {
+        if (item.id === hkaId) return updated;
+        const itemMode = item.mode || "full";
+        const isSharedTkaAnalysis =
+          canShareAxisLandmarks &&
+          (itemMode === "full" || itemMode === "jla") &&
+          normalizeHkaSide(item.side) === updatedSide;
+        if (!isSharedTkaAnalysis) return item;
+        return {
+          ...item,
+          hip: { ...updated.hip },
+          knee: { ...updated.knee },
+          ankle: { ...updated.ankle },
+        };
+      });
+    });
   }, []);
 
   const nudgeMobileActiveTarget = useCallback(
@@ -4030,14 +4098,16 @@ export default function XrayCalibrationWorkspace({
       } = {},
     ) => {
       const configuredStrokeWidth = Math.max(
-        1.2,
+        line?.halluxValgusAnalysisId ? 0.5 : 1.2,
         Number.isFinite(line?.strokeWidth)
           ? line.strokeWidth
           : DEFAULT_LINE_STROKE_WIDTH,
       );
       const baseStrokeWidth = line?.alignmentSimulation
         ? Math.min(configuredStrokeWidth, RESECTION_PREVIEW_STROKE_WIDTH)
-        : configuredStrokeWidth;
+        : line?.halluxValgusAnalysisId
+          ? Math.max(1.35, configuredStrokeWidth)
+          : configuredStrokeWidth;
       const type = line?.type || "normal";
       let color = lineTypeColor(type);
       let dashPattern = [];
@@ -4076,9 +4146,15 @@ export default function XrayCalibrationWorkspace({
         dashPattern = [6, 3];
       }
 
+      if (line?.halluxValgusAnalysisId) {
+        dashPattern = [];
+      }
+
       if (isLocked) {
-        color = "#a855f7";
-        dashPattern = [6, 4];
+        if (!line?.halluxValgusAnalysisId) {
+          color = "#a855f7";
+          dashPattern = [6, 4];
+        }
       } else if (isCalibration) {
         color = "#16a34a";
         dashPattern = [];
@@ -4090,7 +4166,13 @@ export default function XrayCalibrationWorkspace({
       return {
         color,
         dashPattern,
-        width: baseStrokeWidth + (isSelected || isPulsing ? 0.45 : 0),
+        width:
+          baseStrokeWidth +
+          (line?.halluxValgusAnalysisId
+            ? 0
+            : isSelected || isPulsing
+              ? 0.45
+              : 0),
       };
     },
     [lineTypeColor],
@@ -6568,7 +6650,8 @@ export default function XrayCalibrationWorkspace({
         nextTool === "angle" ||
         nextTool === "circle" ||
         nextTool === "hkaAuto" ||
-        nextTool === "pelvicAnalysis";
+        nextTool === "pelvicAnalysis" ||
+        nextTool === "halluxValgus";
       const allowMagnificationCircle =
         nextTool === "circle" && calibrationModeRef.current === "magnification";
       if (requiresCalibration && !hasCalibration && !allowMagnificationCircle) {
@@ -6624,6 +6707,10 @@ export default function XrayCalibrationWorkspace({
         setDraftPelvicAnalysisPoints([]);
         pelvicAnalysisCompletionRef.current = false;
       }
+      if (nextTool !== "halluxValgus") {
+        setDraftHalluxValgusPoints([]);
+        halluxValgusCompletionRef.current = false;
+      }
       if (nextTool !== "guideBuilder") {
         setGuideBuilderPreviewPoint(null);
       }
@@ -6631,14 +6718,19 @@ export default function XrayCalibrationWorkspace({
         nextTool !== "centerFinder" &&
         nextTool !== "axisBuilder" &&
         nextTool !== "pelvicAnalysis" &&
+        nextTool !== "halluxValgus" &&
         nextTool !== "guideBuilder"
       ) {
         setToolConfigModal(null);
       }
       setTool(nextTool);
       if (nextTool === "hkaAuto") {
-        setDraftHkaPoints([]);
-        setNotice(getHkaDraftNotice(hkaInputMode, 0));
+        const initialPoints = Array.isArray(options?.initialHkaPoints)
+          ? options.initialHkaPoints.map((point) => ({ ...point }))
+          : [];
+        const activeMode = options?.hkaMode || hkaInputMode;
+        setDraftHkaPoints(initialPoints);
+        setNotice(getHkaDraftNotice(activeMode, initialPoints.length));
       } else if (nextTool === "centerFinder") {
         setNotice(
           "Center Finder aktif. Klik 3 titik di tepi kepala femur atau lingkaran target untuk menghitung center.",
@@ -6653,6 +6745,13 @@ export default function XrayCalibrationWorkspace({
         const first = PELVIC_ANALYSIS_LANDMARKS[0];
         setNotice(
           `Pelvic Analysis 1/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${first.label}.`,
+        );
+      } else if (nextTool === "halluxValgus") {
+        setDraftHalluxValgusPoints([]);
+        halluxValgusCompletionRef.current = false;
+        const first = HALLUX_VALGUS_LANDMARKS[0];
+        setNotice(
+          `Hallux Valgus 1/${HALLUX_VALGUS_LANDMARKS.length}: pilih ${first.label}.`,
         );
       } else if (nextTool === "guideBuilder") {
         setNotice(
@@ -6839,6 +6938,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      halluxCorrectionFreeCutRef.current = null;
       setFreeCutMode(requestedMode);
       setFreeCutModePickerOpen(false);
       setDraftCut(null);
@@ -6858,6 +6958,74 @@ export default function XrayCalibrationWorkspace({
     },
     [handleToolChange, image],
   );
+
+  const activateHalluxCorrectionFreeCut = useCallback(() => {
+    const selectedTarget = selectedLine?.correctionTarget
+      ? selectedLine
+      : [...lines].reverse().find((line) => line.correctionTarget);
+    if (!selectedTarget) {
+      setNotice(
+        "Selesaikan 5 check Hallux atau pilih garis Target sebelum membuat Free Cut koreksi.",
+      );
+      return;
+    }
+
+    const metric = String(selectedTarget.metric || "")
+      .replace(/\s+Target$/i, "")
+      .trim();
+    const sourceAngle = [...angles]
+      .reverse()
+      .find(
+        (angle) =>
+          angle.metric === metric &&
+          angle.halluxValgusAnalysisId ===
+            selectedTarget.halluxValgusAnalysisId,
+      );
+    if (!sourceAngle) {
+      setNotice(`Sudut sumber ${metric || "Hallux"} tidak ditemukan.`);
+      return;
+    }
+
+    const measuredDeg = getAngleDegrees(
+      sourceAngle.p1,
+      sourceAngle.p2,
+      sourceAngle.p3,
+    );
+    const targetDeg = Number(sourceAngle.normalTargetDeg);
+    if (!Number.isFinite(measuredDeg) || !Number.isFinite(targetDeg)) {
+      setNotice("Nilai sudut atau target koreksi tidak valid.");
+      return;
+    }
+
+    const firstRay = Math.atan2(
+      sourceAngle.p1.y - sourceAngle.p2.y,
+      sourceAngle.p1.x - sourceAngle.p2.x,
+    );
+    const secondRay = Math.atan2(
+      sourceAngle.p3.y - sourceAngle.p2.y,
+      sourceAngle.p3.x - sourceAngle.p2.x,
+    );
+    let signedMeasuredDeg = ((secondRay - firstRay) * 180) / Math.PI;
+    while (signedMeasuredDeg > 180) signedMeasuredDeg -= 360;
+    while (signedMeasuredDeg < -180) signedMeasuredDeg += 360;
+    if (Math.abs(signedMeasuredDeg) > 90) {
+      signedMeasuredDeg -= Math.sign(signedMeasuredDeg) * 180;
+    }
+    const signedTargetDeg = Math.sign(signedMeasuredDeg || 1) * targetDeg;
+    const rotationDeg = signedTargetDeg - signedMeasuredDeg;
+
+    activateCanvasFreeCut("copy");
+    halluxCorrectionFreeCutRef.current = {
+      metric,
+      measuredDeg,
+      targetDeg,
+      rotationDeg,
+      analysisId: sourceAngle.halluxValgusAnalysisId,
+    };
+    setNotice(
+      `${metric}: ${measuredDeg.toFixed(1)}° → target ${targetDeg.toFixed(1)}°. Tandai fragmen minimal 3 titik; hasil Free Cut akan diputar ${Math.abs(rotationDeg).toFixed(1)}° secara otomatis.`,
+    );
+  }, [activateCanvasFreeCut, angles, lines, selectedLine]);
 
   useEffect(() => {
     if (!freeCutModePickerOpen) return undefined;
@@ -6910,6 +7078,22 @@ export default function XrayCalibrationWorkspace({
     }
 
     nextLayer.cutMode = freeCutMode;
+    const halluxCorrection = halluxCorrectionFreeCutRef.current;
+    if (halluxCorrection) {
+      nextLayer.name = `${halluxCorrection.metric} Correction ${Math.abs(halluxCorrection.rotationDeg).toFixed(1)}°`;
+      nextLayer.rotation = normalizeRotationDegrees(
+        Number(nextLayer.rotation || 0) + halluxCorrection.rotationDeg,
+      );
+      nextLayer.halluxCorrection = {
+        metric: halluxCorrection.metric,
+        measuredDeg: halluxCorrection.measuredDeg,
+        targetDeg: halluxCorrection.targetDeg,
+        correctionDeg: Math.abs(halluxCorrection.rotationDeg),
+        analysisId: halluxCorrection.analysisId,
+      };
+      nextLayer.lockScale = true;
+      nextLayer.lockRotation = false;
+    }
     if (freeCutMode === "real") {
       if (canCutTargetLayer) {
         nextLayer.sourceCutoutPoints = draftCut.points.map((point) =>
@@ -6932,8 +7116,11 @@ export default function XrayCalibrationWorkspace({
     setSelectedHkaId(null);
     setDraftCut(null);
     setHistoryPaused(false);
+    halluxCorrectionFreeCutRef.current = null;
     setNotice(
-      nextLayer.imageSrc
+      halluxCorrection
+        ? `${halluxCorrection.metric} Free Cut dibuat dan diputar ${Math.abs(halluxCorrection.rotationDeg).toFixed(1)}° menuju target ${halluxCorrection.targetDeg.toFixed(1)}°. Verifikasi posisi fragmen sebelum menyimpan planning.`
+        : nextLayer.imageSrc
         ? canCutTargetLayer
           ? `${freeCutMode === "real" ? "Real cut" : "Copy cut"} dari ${targetLayer.name || `Layer #${targetLayer.id}`} berhasil dibuat sebagai layer baru.`
           : `${freeCutMode === "real" ? "Real cut" : "Copy cut"} berhasil dibuat sebagai layer baru.`
@@ -7636,11 +7823,14 @@ export default function XrayCalibrationWorkspace({
         setShowRightSidebar(payload.showRightSidebar ?? false);
         setPlanNote(payload.planNote || "");
         setPlanningProcedure(
-          payload.planningProcedure === "hip" ? "hip" : "tka",
+          ["tka", "hip", "foot"].includes(payload.planningProcedure)
+            ? payload.planningProcedure
+            : "tka",
         );
         setPlanningSessions({
           tka: { ...createPlanningSession(), ...payload.planningSessions?.tka },
           hip: { ...createPlanningSession(), ...payload.planningSessions?.hip },
+          foot: { ...createPlanningSession(), ...payload.planningSessions?.foot },
         });
         setPlanSteps(
           Array.isArray(payload.planSteps) ? payload.planSteps.slice(-60) : [],
@@ -9829,6 +10019,16 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.lineTo(end.x, end.y);
         overlayCtx.stroke();
       }
+      if (opts.contrastOutline) {
+        overlayCtx.strokeStyle = "rgba(5, 8, 12, 0.7)";
+        overlayCtx.lineWidth = opts.width + 1.4;
+        overlayCtx.lineCap = "round";
+        overlayCtx.setLineDash([]);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.stroke();
+      }
       overlayCtx.strokeStyle = opts.color;
       overlayCtx.lineWidth = opts.width || 2;
       overlayCtx.lineCap = "round";
@@ -9843,6 +10043,42 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.moveTo(start.x, start.y);
       overlayCtx.lineTo(end.x, end.y);
       overlayCtx.stroke();
+
+      if (opts.directionArrow) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.hypot(dx, dy);
+        if (length > 18) {
+          const ux = dx / length;
+          const uy = dy / length;
+          const arrowLength = opts.compactArrow
+            ? 7
+            : opts.highlightHandles
+              ? 13
+              : 10;
+          const arrowWidth = opts.compactArrow
+            ? 3.5
+            : opts.highlightHandles
+              ? 6
+              : 5;
+          overlayCtx.save();
+          overlayCtx.setLineDash([]);
+          overlayCtx.fillStyle = opts.color;
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(end.x, end.y);
+          overlayCtx.lineTo(
+            end.x - ux * arrowLength - uy * arrowWidth,
+            end.y - uy * arrowLength + ux * arrowWidth,
+          );
+          overlayCtx.lineTo(
+            end.x - ux * arrowLength + uy * arrowWidth,
+            end.y - uy * arrowLength - ux * arrowWidth,
+          );
+          overlayCtx.closePath();
+          overlayCtx.fill();
+          overlayCtx.restore();
+        }
+      }
 
       const measurementMode = normalizeLineMeasurementMode(
         line.measurementMode,
@@ -10135,6 +10371,7 @@ export default function XrayCalibrationWorkspace({
       const offsetY = line.labelOffsetY ?? DEFAULT_LINE_LABEL_OFFSET_Y;
       if (
         line.showLabel !== false &&
+        !line.halluxValgusAnalysisId &&
         (Math.abs(offsetX) > 2 || Math.abs(offsetY) > 2)
       ) {
         overlayCtx.save();
@@ -10150,7 +10387,7 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (line.showLabel !== false)
-        drawTag(overlayCtx, midX, midY, label, opts.color, {
+        drawTag(overlayCtx, midX, midY, line.halluxValgusAnalysisId ? line.name : label, opts.color, {
           bgOpacity: Math.max(
             0.2,
             Math.min(
@@ -10185,6 +10422,12 @@ export default function XrayCalibrationWorkspace({
 
     for (const line of lines) {
       const isSelected = line.id === selectedLineId;
+      const isHalluxLine = Boolean(line.halluxValgusAnalysisId);
+      const isFocusedHalluxTarget =
+        activeHalluxFocus && line.metric === `${activeHalluxFocus} Target`;
+      if (line.correctionTarget && isHalluxLine && !isSelected && !isFocusedHalluxTarget) {
+        continue;
+      }
       const isPulsing =
         selectionPulse?.type === "line" && selectionPulse.id === line.id;
       const isCalibration = line.id === calibrationLineId;
@@ -10201,10 +10444,17 @@ export default function XrayCalibrationWorkspace({
         isCalibrationReference,
       });
 
+      overlayCtx.save();
+      if (isHalluxLine && activeHalluxFocus) {
+        overlayCtx.globalAlpha = isHalluxValgusLineRelevant(line, activeHalluxFocus)
+          ? line.correctionTarget ? 0.75 : 1
+          : 0.12;
+      }
       drawLine(line, {
         color: style.color,
         width: style.width,
-        dashPattern: style.dashPattern,
+        dashPattern: isFocusedHalluxTarget ? [5, 4] : style.dashPattern,
+        contrastOutline: false,
         handleRadius: isResectionPreview
           ? isCoarsePointer
             ? 13
@@ -10233,7 +10483,11 @@ export default function XrayCalibrationWorkspace({
           !isLocked && mobileHandleAssist?.lineId === line.id
             ? mobileHandleAssist.handleKey
             : null,
+        directionArrow:
+          !isHalluxLine && Boolean(line.directional),
+        compactArrow: false,
       });
+      overlayCtx.restore();
     }
 
     for (const overlay of lineIntersectionAngleOverlays) {
@@ -10404,6 +10658,9 @@ export default function XrayCalibrationWorkspace({
       const isPulsing =
         selectionPulse?.type === "angle" && selectionPulse.id === angle.id;
       const isEmphasized = isSelected || isPulsing;
+      const isHalluxAngle = Boolean(angle.halluxValgusAnalysisId);
+      const isDimmedHalluxAngle =
+        isHalluxAngle && activeHalluxFocus && angle.metric !== activeHalluxFocus;
       const showExpandedInfo = isSelected || isHovered;
       const color = angle.color || DEFAULT_ANGLE_COLOR;
       const strokeWidth = Math.max(
@@ -10429,6 +10686,7 @@ export default function XrayCalibrationWorkspace({
           : null;
 
       overlayCtx.save();
+      if (isDimmedHalluxAngle) overlayCtx.globalAlpha = 0.12;
       if (assistGeometry) {
         overlayCtx.fillStyle = "rgba(15, 23, 42, 0.28)";
         overlayCtx.beginPath();
@@ -10464,19 +10722,25 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.lineTo(p3.x, p3.y);
         overlayCtx.stroke();
       }
-      overlayCtx.strokeStyle = color;
-      overlayCtx.lineWidth = strokeWidth + (isEmphasized ? 0.35 : 0);
-      overlayCtx.lineCap = "round";
-      overlayCtx.lineJoin = "round";
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(p2.x, p2.y);
-      overlayCtx.lineTo(p1.x, p1.y);
-      overlayCtx.moveTo(p2.x, p2.y);
-      overlayCtx.lineTo(p3.x, p3.y);
-      overlayCtx.stroke();
+      if (!isHalluxAngle || ["DMAA", "TMT"].includes(angle.metric)) {
+        overlayCtx.save();
+        if (isHalluxAngle) overlayCtx.globalAlpha *= 0.55;
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = isHalluxAngle ? 1.2 : strokeWidth + (isEmphasized ? 0.35 : 0);
+        overlayCtx.lineCap = "round";
+        overlayCtx.lineJoin = "round";
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(p2.x, p2.y);
+        overlayCtx.lineTo(p1.x, p1.y);
+        overlayCtx.moveTo(p2.x, p2.y);
+        overlayCtx.lineTo(p3.x, p3.y);
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
 
       if (arcGeometry) {
         overlayCtx.beginPath();
+        overlayCtx.strokeStyle = color;
         overlayCtx.lineWidth = Math.max(1.2, strokeWidth - 0.35);
         overlayCtx.arc(
           p2.x,
@@ -10491,7 +10755,7 @@ export default function XrayCalibrationWorkspace({
 
       overlayCtx.restore();
 
-      if (isEmphasized) {
+      if (isEmphasized && !isDimmedHalluxAngle) {
         drawCleanHandleRings(
           [
             { x: p1.x, y: p1.y, radius: isCoarsePointer ? 17 : 15 },
@@ -10502,32 +10766,47 @@ export default function XrayCalibrationWorkspace({
         );
       }
 
-      drawTag(
-        overlayCtx,
-        p2.x + labelOffsetX,
-        p2.y + labelOffsetY,
-        getAngleCanvasLabelText(angle, showExpandedInfo),
-        color,
-        {
-          bgOpacity: Math.max(
-            0.08,
-            Math.min(1, resultOpacity + (showExpandedInfo ? 0.14 : 0)),
-          ),
-          borderOpacity: Math.max(
-            0.42,
-            Math.min(
-              0.96,
-              resultOpacity +
-                (isEmphasized ? 0.28 : 0.2) +
-                (isHovered ? 0.08 : 0),
+      if (isHalluxAngle) {
+        overlayCtx.save();
+        if (isDimmedHalluxAngle) overlayCtx.globalAlpha = 0.16;
+        overlayCtx.font = "700 11px Arial";
+        overlayCtx.textAlign = "center";
+        overlayCtx.lineJoin = "round";
+        overlayCtx.lineWidth = 3;
+        overlayCtx.strokeStyle = "rgba(4, 7, 12, 0.9)";
+        overlayCtx.fillStyle = color;
+        const text = `${value.toFixed(1)}°`;
+        overlayCtx.strokeText(text, p2.x + labelOffsetX, p2.y + labelOffsetY);
+        overlayCtx.fillText(text, p2.x + labelOffsetX, p2.y + labelOffsetY);
+        overlayCtx.restore();
+      } else {
+        drawTag(
+          overlayCtx,
+          p2.x + labelOffsetX,
+          p2.y + labelOffsetY,
+          getAngleCanvasLabelText(angle, showExpandedInfo),
+          color,
+          {
+            bgOpacity: Math.max(
+              0.08,
+              Math.min(1, resultOpacity + (showExpandedInfo ? 0.14 : 0)),
             ),
-          ),
-          fontSize: 9,
-          paddingX: 4,
-          paddingY: 2,
-          radius: 4,
-        },
-      );
+            borderOpacity: Math.max(
+              0.42,
+              Math.min(
+                0.96,
+                resultOpacity +
+                  (isEmphasized ? 0.28 : 0.2) +
+                  (isHovered ? 0.08 : 0),
+              ),
+            ),
+            fontSize: 9,
+            paddingX: 4,
+            paddingY: 2,
+            radius: 4,
+          },
+        );
+      }
     }
 
     for (const circle of circles) {
@@ -12098,6 +12377,69 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.restore();
     }
 
+    if (draftHalluxValgusPoints.length > 0) {
+      overlayCtx.save();
+      overlayCtx.setLineDash([]);
+      const axisPairs = [
+        [0, 1, "#a3e635"],
+        [2, 3, "#22d3ee"],
+        [4, 5, "#3b82f6"],
+        [6, 7, "#fbbf24"],
+        [8, 9, "#f472b6"],
+        [10, 11, "#f97316"],
+      ];
+      axisPairs.forEach(([startIndex, endIndex, color]) => {
+        if (!draftHalluxValgusPoints[endIndex]) return;
+        const start = imageToScreenPoint(
+          draftHalluxValgusPoints[startIndex].x,
+          draftHalluxValgusPoints[startIndex].y,
+        );
+        const end = imageToScreenPoint(
+          draftHalluxValgusPoints[endIndex].x,
+          draftHalluxValgusPoints[endIndex].y,
+        );
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(start.x, start.y);
+        overlayCtx.lineTo(end.x, end.y);
+        overlayCtx.strokeStyle = "rgba(5, 8, 12, 0.7)";
+        overlayCtx.lineWidth = 3;
+        overlayCtx.stroke();
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = 1.7;
+        overlayCtx.stroke();
+      });
+      draftHalluxValgusPoints.forEach((point, index) => {
+        const screenPoint = imageToScreenPoint(point.x, point.y);
+        const definition = HALLUX_VALGUS_LANDMARKS[index];
+        const color = axisPairs.find(
+          ([startIndex, endIndex]) => index === startIndex || index === endIndex,
+        )?.[2] || "#22d3ee";
+        overlayCtx.fillStyle = color;
+        overlayCtx.strokeStyle = "rgba(2,6,23,0.9)";
+        overlayCtx.lineWidth = 2;
+        overlayCtx.beginPath();
+        overlayCtx.arc(
+          screenPoint.x,
+          screenPoint.y,
+          isCoarsePointer ? 7 : 5,
+          0,
+          Math.PI * 2,
+        );
+        overlayCtx.fill();
+        overlayCtx.stroke();
+        if (index >= draftHalluxValgusPoints.length - 2) {
+          drawTag(
+            overlayCtx,
+            screenPoint.x,
+            screenPoint.y - 15,
+            definition.shortLabel,
+            color,
+          );
+        }
+      });
+      overlayCtx.restore();
+    }
+
     if (draftHkaPoints.length > 0) {
       const draftDef = getHkaModeDefinition(hkaInputMode);
       overlayCtx.save();
@@ -12425,6 +12767,7 @@ export default function XrayCalibrationWorkspace({
   }, [
     activeSnapTarget,
     activeIntersectionAngleKey,
+    activeHalluxFocus,
     annotations,
     angles,
     calibrationMode,
@@ -12437,12 +12780,14 @@ export default function XrayCalibrationWorkspace({
     invertImage,
     draftAnglePoints,
     draftAxisBuilderPoints,
+    draftHalluxValgusPoints,
     draftPelvicAnalysisPoints,
     draftCenterFinderPoints,
     draftCirclePoints,
     draftCut,
     draftFreeLine,
     draftHkaPoints,
+    draftHalluxValgusPoints,
     draftLine,
     freeLineMode,
     guideBuilderMode,
@@ -12662,6 +13007,8 @@ export default function XrayCalibrationWorkspace({
       setDraftAxisBuilderPoints([]);
       setDraftPelvicAnalysisPoints([]);
       pelvicAnalysisCompletionRef.current = false;
+      setDraftHalluxValgusPoints([]);
+      halluxValgusCompletionRef.current = false;
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
       setDraftFreeLineTargetLayerId(null);
@@ -12701,6 +13048,7 @@ export default function XrayCalibrationWorkspace({
       setPlanningSessions({
         tka: createPlanningSession(),
         hip: createPlanningSession(),
+        foot: createPlanningSession(),
       });
       setPlanSteps([]);
       setPlanningGuides([]);
@@ -13384,6 +13732,34 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      const draftPointSets = {
+        hkaAuto: draftHkaPoints,
+        axisBuilder: draftAxisBuilderPoints,
+        pelvicAnalysis: draftPelvicAnalysisPoints,
+        halluxValgus: draftHalluxValgusPoints,
+        angle: draftAnglePoints,
+      };
+      const activeDraftPoints = draftPointSets[tool];
+      if (activeDraftPoints?.length) {
+        const hitRadius = isTouchLikePointer ? 18 : 11;
+        const firstDraggableIndex = tool === "hkaAuto" && hkaInputMode === "jla" ? 3 : 0;
+        for (let index = activeDraftPoints.length - 1; index >= firstDraggableIndex; index -= 1) {
+          const draftPoint = imageToScreenPoint(
+            activeDraftPoints[index].x,
+            activeDraftPoints[index].y,
+          );
+          if (Math.hypot(point.x - draftPoint.x, point.y - draftPoint.y) <= hitRadius) {
+            interactionRef.current = {
+              mode: "move-guide-draft-point",
+              tool,
+              index,
+            };
+            setNotice("Geser titik landmark, lalu lepas untuk melanjutkan wizard.");
+            return;
+          }
+        }
+      }
 
       // ── Cup Assessment canvas drag ──────────────────────────────────────────
       if (showCupAssessment && canvasCup) {
@@ -15554,7 +15930,8 @@ export default function XrayCalibrationWorkspace({
           (tool === "circle" &&
             calibrationModeRef.current !== "magnification") ||
           tool === "hkaAuto" ||
-          tool === "pelvicAnalysis")
+          tool === "pelvicAnalysis" ||
+          tool === "halluxValgus")
       ) {
         focusCalibrationStep(
           "Kalibrasi wajib sebelum memakai Angle/Circle/HKA.",
@@ -15590,7 +15967,9 @@ export default function XrayCalibrationWorkspace({
           labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
           labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
           resultOpacity: DEFAULT_LABEL_OPACITY,
-          strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
+          strokeWidth: Number.isFinite(angle.strokeWidth)
+            ? angle.strokeWidth
+            : DEFAULT_ANGLE_STROKE_WIDTH,
         }));
         const generatedCircles = generated.circles.map((circle) => ({
           ...circle,
@@ -15606,6 +15985,59 @@ export default function XrayCalibrationWorkspace({
         setDraftPelvicAnalysisPoints([]);
         setNotice(
           `Pelvic Analysis selesai. ${generated.lines.length} line, CCD kanan/kiri, dan diameter head kanan/kiri dibuat sekaligus.`,
+        );
+        setTool(getIdleTool());
+        if (shouldUseMobileOneShotTool) setMobileControlsOpen(false);
+        return;
+      }
+
+      if (tool === "halluxValgus") {
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setSelectedHkaId(null);
+        setSelectedCutLayerId(null);
+        setSelectedPlanningGuideId(null);
+        const next = [...draftHalluxValgusPoints, snappedPlacementPoint];
+        if (next.length < HALLUX_VALGUS_LANDMARKS.length) {
+          const landmark = HALLUX_VALGUS_LANDMARKS[next.length];
+          setDraftHalluxValgusPoints(next);
+          setNotice(
+            `Hallux Valgus ${next.length + 1}/${HALLUX_VALGUS_LANDMARKS.length}: pilih ${landmark.label}.`,
+          );
+          return;
+        }
+        if (halluxValgusCompletionRef.current) return;
+        halluxValgusCompletionRef.current = true;
+        const analysisId = `hallux-${Date.now()}`;
+        const generated = buildHalluxValgusMeasurements(next, analysisId);
+        setLines((previous) =>
+          previous.filter((line) => !line.halluxValgusAnalysisId),
+        );
+        generated.lines.forEach((line) => appendLineMeasurement(line));
+        const generatedAngles = generated.angles.map((angle) => ({
+          ...angle,
+          id: nextAngleIdRef.current++,
+          color: angle.color || DEFAULT_ANGLE_COLOR,
+          labelOffsetX: Number.isFinite(angle.labelOffsetX)
+            ? angle.labelOffsetX
+            : DEFAULT_ANGLE_LABEL_OFFSET_X,
+          labelOffsetY: Number.isFinite(angle.labelOffsetY)
+            ? angle.labelOffsetY
+            : DEFAULT_ANGLE_LABEL_OFFSET_Y,
+          resultOpacity: DEFAULT_LABEL_OPACITY,
+          strokeWidth: Number.isFinite(angle.strokeWidth)
+            ? angle.strokeWidth
+            : DEFAULT_ANGLE_STROKE_WIDTH,
+        }));
+        setAngles((previous) => [
+          ...previous.filter((angle) => !angle.halluxValgusAnalysisId),
+          ...generatedAngles,
+        ]);
+        setSelectedLineId(null);
+        setDraftHalluxValgusPoints([]);
+        setNotice(
+          "Analisis Hallux Valgus selesai. Lima pemeriksaan, garis target normal, dan derajat koreksi sudah dibuat. Gunakan Free Cut untuk simulasi fragmen.",
         );
         setTool(getIdleTool());
         if (shouldUseMobileOneShotTool) setMobileControlsOpen(false);
@@ -15937,7 +16369,11 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (tool === "hkaAuto") {
-        const hitHkaHandle = findClosestHkaHandle(boundedPoint);
+        const isRedrawingExistingHka =
+          pendingHkaUpdateIdRef.current !== null;
+        const hitHkaHandle = isRedrawingExistingHka
+          ? findClosestHkaHandle(boundedPoint)
+          : null;
         if (hitHkaHandle) {
           setSelectedHkaId(hitHkaHandle.hkaId);
           setSelectedLineId(null);
@@ -16172,6 +16608,10 @@ export default function XrayCalibrationWorkspace({
       draftCirclePoints,
       draftFreeLine,
       draftLine,
+      draftHkaPoints,
+      draftAxisBuilderPoints,
+      draftAnglePoints,
+      draftHalluxValgusPoints,
       draftPelvicAnalysisPoints,
       angles,
       appendCenterFinderCircle,
@@ -16227,6 +16667,7 @@ export default function XrayCalibrationWorkspace({
       guideBuilderReference,
       hasCalibration,
       hkaSide,
+      hkaInputMode,
       calibrationDraftStrokeWidth,
       isCoarsePointer,
       isMobileViewport,
@@ -16283,6 +16724,21 @@ export default function XrayCalibrationWorkspace({
   const handlePointerMove = useCallback(
     (event) => {
       if (!image) return;
+
+      if (interactionRef.current?.mode === "move-guide-draft-point") {
+        event.preventDefault();
+        const { tool: draftTool, index } = interactionRef.current;
+        const point = getLocalPoint(event);
+        const nextPoint = clampToImageBounds(screenToImagePoint(point.x, point.y));
+        const updatePoint = (points) =>
+          points.map((item, itemIndex) => itemIndex === index ? nextPoint : item);
+        if (draftTool === "hkaAuto") setDraftHkaPoints(updatePoint);
+        if (draftTool === "axisBuilder") setDraftAxisBuilderPoints(updatePoint);
+        if (draftTool === "pelvicAnalysis") setDraftPelvicAnalysisPoints(updatePoint);
+        if (draftTool === "halluxValgus") setDraftHalluxValgusPoints(updatePoint);
+        if (draftTool === "angle") setDraftAnglePoints(updatePoint);
+        return;
+      }
 
       if (
         interactionRef.current?.mode &&
@@ -16695,6 +17151,7 @@ export default function XrayCalibrationWorkspace({
           tool === "centerFinder" ||
           tool === "axisBuilder" ||
           tool === "pelvicAnalysis" ||
+          tool === "halluxValgus" ||
           tool === "angle" ||
           tool === "circle" ||
           tool === "hkaAuto" ||
@@ -17760,25 +18217,42 @@ export default function XrayCalibrationWorkspace({
             excludeRefs: [`hka:${hkaId}`],
           },
         );
-        scheduleHkaUpdate((prev) =>
-          prev.map((item) => {
-            if (item.id !== hkaId) return item;
-            const nextItem = {
-              ...item,
+        scheduleHkaUpdate((prev) => {
+            const source = prev.find((item) => item.id === hkaId);
+            if (!source) return prev;
+            const nextSource = {
+              ...source,
               [handleKey]: { x: adjustedPoint.x, y: adjustedPoint.y },
             };
-            if (nextItem.mode === "full") {
-              nextItem.direction = inferHkaDirectionFromPoints(
-                nextItem.hip,
-                nextItem.knee,
-                nextItem.ankle,
-                nextItem.side,
-                nextItem.direction || "varus",
+            if ((nextSource.mode || "full") === "full") {
+              nextSource.direction = inferHkaDirectionFromPoints(
+                nextSource.hip,
+                nextSource.knee,
+                nextSource.ankle,
+                nextSource.side,
+                nextSource.direction || "varus",
               );
             }
-            return nextItem;
-          }),
-        );
+            const sharesAxisLandmark = ["hip", "knee", "ankle"].includes(
+              handleKey,
+            );
+            const sourceSide = normalizeHkaSide(nextSource.side);
+            return prev.map((item) => {
+              if (item.id === hkaId) return nextSource;
+              const itemMode = item.mode || "full";
+              if (
+                !sharesAxisLandmark ||
+                (itemMode !== "full" && itemMode !== "jla") ||
+                normalizeHkaSide(item.side) !== sourceSide
+              ) {
+                return item;
+              }
+              return {
+                ...item,
+                [handleKey]: { x: adjustedPoint.x, y: adjustedPoint.y },
+              };
+            });
+        });
         return;
       }
     },
@@ -17845,6 +18319,7 @@ export default function XrayCalibrationWorkspace({
       brushSize,
       brushStrength,
       brushColor,
+      clampToImageBounds,
     ],
   );
 
@@ -17853,6 +18328,16 @@ export default function XrayCalibrationWorkspace({
       removeMobileGesturePointer(event?.pointerId);
       clearMobileLongPress();
       const completedInteractionMode = interactionRef.current.mode;
+
+      if (completedInteractionMode === "move-guide-draft-point") {
+        interactionRef.current = { mode: null, startX: 0, startY: 0 };
+        interactionStartedAtRef.current = 0;
+        interactionCanvasRectRef.current = null;
+        releaseActivePointerCapture();
+        restoreMobilePrecisionView();
+        setNotice("Titik landmark diperbarui. Lanjutkan titik berikutnya di canvas.");
+        return;
+      }
 
       // ── Cup Assessment drag end ──────────────────────────────────────────────
       if (completedInteractionMode === "cupDrag") {
@@ -19405,6 +19890,7 @@ export default function XrayCalibrationWorkspace({
       setPlanningSessions({
         tka: createPlanningSession(),
         hip: createPlanningSession(),
+        foot: createPlanningSession(),
       });
       if (clearImage && objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
@@ -19429,6 +19915,8 @@ export default function XrayCalibrationWorkspace({
       setDraftAxisBuilderPoints([]);
       setDraftPelvicAnalysisPoints([]);
       pelvicAnalysisCompletionRef.current = false;
+      setDraftHalluxValgusPoints([]);
+      halluxValgusCompletionRef.current = false;
       setDraftHkaPoints([]);
       setDraftFreeLine(null);
       setDraftFreeLineTargetLayerId(null);
@@ -20268,7 +20756,7 @@ export default function XrayCalibrationWorkspace({
     }
     for (const angle of angles) {
       rows.push({
-        type: "ANGLE",
+        type: angle.metric || angle.name || "ANGLE",
         value: `${getAngleDegrees(angle.p1, angle.p2, angle.p3).toFixed(2)}°`,
       });
     }
@@ -20314,6 +20802,7 @@ export default function XrayCalibrationWorkspace({
     const sourceLines = lines.filter(
       (line) =>
         line.id !== calibrationLineId &&
+        !line.halluxValgusAnalysisId &&
         getLineLength(line) > 4 &&
         Number.isFinite(line.x1) &&
         Number.isFinite(line.y1) &&
@@ -21963,7 +22452,8 @@ export default function XrayCalibrationWorkspace({
           draftFreeLine?.points?.length ||
           draftCenterFinderPoints.length ||
           draftAxisBuilderPoints.length ||
-          draftPelvicAnalysisPoints.length)
+          draftPelvicAnalysisPoints.length ||
+          draftHalluxValgusPoints.length)
       ) {
         event.preventDefault();
         const cancelMessage = draftLine
@@ -21982,6 +22472,8 @@ export default function XrayCalibrationWorkspace({
                       ? "Axis Builder dibatalkan."
                       : draftPelvicAnalysisPoints.length
                         ? "Pelvic Analysis dibatalkan."
+                        : draftHalluxValgusPoints.length
+                          ? "Hallux Valgus dibatalkan."
                         : "Free cut dibatalkan.";
         setDraftLine(null);
         setDraftAnglePoints([]);
@@ -21993,6 +22485,8 @@ export default function XrayCalibrationWorkspace({
         setDraftAxisBuilderPoints([]);
         setDraftPelvicAnalysisPoints([]);
         pelvicAnalysisCompletionRef.current = false;
+        setDraftHalluxValgusPoints([]);
+        halluxValgusCompletionRef.current = false;
         setGuideBuilderPreviewPoint(null);
         setHistoryPaused(false);
         setNotice(cancelMessage);
@@ -22268,6 +22762,8 @@ export default function XrayCalibrationWorkspace({
                 ? "Axis"
                 : tool === "pelvicAnalysis"
                   ? "Pelvic"
+                  : tool === "halluxValgus"
+                    ? "Hallux"
                   : tool === "guideBuilder"
                     ? "Guide"
                     : tool === "angle"
@@ -22293,6 +22789,8 @@ export default function XrayCalibrationWorkspace({
               ? "Mode: HKA"
               : tool === "pelvicAnalysis"
                 ? `Mode: Pelvic ${draftPelvicAnalysisPoints.length}/${PELVIC_ANALYSIS_LANDMARKS.length}`
+                : tool === "halluxValgus"
+                  ? `Mode: Hallux ${draftHalluxValgusPoints.length}/${HALLUX_VALGUS_LANDMARKS.length}`
                 : tool === "freeLine"
                   ? freeLineMode === "point"
                     ? "Mode: Point Shape"
@@ -22546,6 +23044,8 @@ export default function XrayCalibrationWorkspace({
     if (tool === "hkaAuto") return `HKA ${draftHkaPoints.length}`;
     if (tool === "pelvicAnalysis")
       return `Pelvic ${draftPelvicAnalysisPoints.length}/${PELVIC_ANALYSIS_LANDMARKS.length}`;
+    if (tool === "halluxValgus")
+      return `Hallux ${draftHalluxValgusPoints.length}/${HALLUX_VALGUS_LANDMARKS.length}`;
     if (tool === "annotation") return "Text";
     if (tool === "freeLine") return "Free Line";
     if (tool === "pan")
@@ -22662,7 +23162,18 @@ export default function XrayCalibrationWorkspace({
     ? getHkaMeasurementResult(selectedHka)
     : null;
   const activeOrthoBuilderMeta =
-    tool === "centerFinder"
+    tool === "halluxValgus"
+      ? {
+          key: "halluxValgus",
+          title: "Hallux Valgus",
+          icon: "angle",
+          status: `${draftHalluxValgusPoints.length}/${HALLUX_VALGUS_LANDMARKS.length} titik`,
+          info:
+            draftHalluxValgusPoints.length < HALLUX_VALGUS_LANDMARKS.length
+              ? `Titik berikutnya: ${HALLUX_VALGUS_LANDMARKS[draftHalluxValgusPoints.length]?.shortLabel || "Selesai"} · ${HALLUX_VALGUS_LANDMARKS[draftHalluxValgusPoints.length]?.label || "semua landmark lengkap"}.`
+              : "Landmark lengkap. Membuat lima check dan target koreksi normal.",
+        }
+      : tool === "centerFinder"
       ? {
           key: "centerFinder",
           title: "Center Finder",
@@ -23019,6 +23530,13 @@ export default function XrayCalibrationWorkspace({
       planningGroup: "hip",
     },
     {
+      icon: "angle",
+      label: "Hallux Valgus",
+      desc: "Wizard HVA, IMA, DMAA, HIA, dan TMT dengan target koreksi normal.",
+      key: "halluxValgus",
+      planningGroup: "foot",
+    },
+    {
       icon: "brush",
       label: "Brush",
       desc: "Gunakan brush untuk hapus/blur area tertentu pada gambar atau layer.",
@@ -23070,6 +23588,13 @@ export default function XrayCalibrationWorkspace({
         ["cupAssessment", "zakAceta", "dorr"].includes(item.key),
       ),
     },
+    {
+      key: "planningFoot",
+      label: "Foot Planning",
+      items: simpleToolMenuItems.filter((item) =>
+        ["halluxValgus"].includes(item.key),
+      ),
+    },
   ].filter((group) => group.items.length > 0);
   const getSimpleActionToolIconName = (item) => {
     if (item.freeLineMode === "point") return "layers";
@@ -23080,6 +23605,7 @@ export default function XrayCalibrationWorkspace({
     if (item.key === "angle") return "angle";
     if (item.key === "circle") return "circle";
     if (item.key === "annotation") return "annotation";
+    if (item.key === "halluxValgus") return "angle";
     if (item.key === "hkaAuto") return "target";
     if (item.key === "guideBuilder") return "guideBuilder";
     if (item.key === "cupAssessment") return "circle";
@@ -23275,6 +23801,21 @@ export default function XrayCalibrationWorkspace({
         },
       ],
     },
+    {
+      key: "foot",
+      label: "Foot & Ankle",
+      items: [
+        {
+          key: "halluxValgus",
+          title: "Hallux Valgus Correction",
+          description:
+            "Wizard axis M1, M2, phalanx, permukaan artikular, dan TMT dengan garis target koreksi.",
+          hint: "12 titik pusat terpandu",
+          icon: DraftingCompass,
+          tool: "halluxValgus",
+        },
+      ],
+    },
   ];
   const mobileMeasurementQuickItems = [
     mobileMeasurementCategories[0].items[0],
@@ -23344,6 +23885,7 @@ export default function XrayCalibrationWorkspace({
     "centerFinder",
     "axisBuilder",
     "pelvicAnalysis",
+    "halluxValgus",
     "guideBuilder",
   ].includes(tool);
   const hasActiveMeasurementDraft = Boolean(
@@ -23353,7 +23895,8 @@ export default function XrayCalibrationWorkspace({
       draftHkaPoints.length ||
       draftCenterFinderPoints.length ||
       draftAxisBuilderPoints.length ||
-      draftPelvicAnalysisPoints.length,
+      draftPelvicAnalysisPoints.length ||
+      draftHalluxValgusPoints.length,
   );
   const clearActiveMeasurementDraft = () => {
     setDraftLine(null);
@@ -23363,6 +23906,8 @@ export default function XrayCalibrationWorkspace({
     setDraftCenterFinderPoints([]);
     setDraftAxisBuilderPoints([]);
     setDraftPelvicAnalysisPoints([]);
+    setDraftHalluxValgusPoints([]);
+    halluxValgusCompletionRef.current = false;
     pelvicAnalysisCompletionRef.current = false;
     setGuideBuilderPreviewPoint(null);
     setNotice("Draft measurement dibersihkan.");
@@ -23544,6 +24089,9 @@ export default function XrayCalibrationWorkspace({
         unit: "deg",
         value: getAngleDegrees(angle.p1, angle.p2, angle.p3),
         color: angle.color || DEFAULT_ANGLE_COLOR,
+        strokeWidth: Number.isFinite(angle.strokeWidth)
+          ? angle.strokeWidth
+          : DEFAULT_ANGLE_STROKE_WIDTH,
       }),
     );
     circles.forEach((circle) =>
@@ -23556,6 +24104,9 @@ export default function XrayCalibrationWorkspace({
         unit: "mm",
         value: linear(circle.radius * 2),
         color: circle.color || DEFAULT_CIRCLE_COLOR,
+        strokeWidth: Number.isFinite(circle.strokeWidth)
+          ? circle.strokeWidth
+          : DEFAULT_CIRCLE_STROKE_WIDTH,
       }),
     );
     planningGuides.forEach((guide, index) => {
@@ -23576,6 +24127,9 @@ export default function XrayCalibrationWorkspace({
           : null,
         guideId: guide.id,
         color: guide.color || getPlanningGuideAutoColor(guide),
+        strokeWidth: Number.isFinite(guide.strokeWidth)
+          ? guide.strokeWidth
+          : DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
         locked: Boolean(guide.locked),
         angleDeg: Number(guide.angleDeg || 0),
         offsetPx: Number(guide.offsetPx || 0),
@@ -23750,7 +24304,9 @@ export default function XrayCalibrationWorkspace({
   };
   const selectPlanningProcedure = (next) => {
     setPlanningProcedure(next);
-    setMeasureAnatomyTab(next === "hip" ? "hip" : "knee");
+    setMeasureAnatomyTab(
+      next === "hip" ? "hip" : next === "foot" ? "basic" : "knee",
+    );
     handleToolChange("pan");
     const side = planningSessions[next].side;
     if (side) {
@@ -24033,6 +24589,13 @@ export default function XrayCalibrationWorkspace({
       active: tool === "circle",
     },
     {
+      id: "hallux",
+      label: "Hallux Valgus",
+      icon: DraftingCompass,
+      action: () => handleToolChange("halluxValgus"),
+      active: tool === "halluxValgus",
+    },
+    {
       id: "cut",
       label: "Free Cut",
       icon: Slice,
@@ -24103,10 +24666,61 @@ export default function XrayCalibrationWorkspace({
     disabled: item.disabled || (!image && item.id !== "upload"),
   }));
   const startPlanningHka = (mode) => {
+    const side = normalizeHkaSide(planningSession.side);
+    const sameSideAnalyses = hkaSets.filter(
+      (item) => normalizeHkaSide(item.side) === side,
+    );
+    const existingAnalysis = [...sameSideAnalyses]
+      .reverse()
+      .find((item) => (item.mode || "full") === mode);
+    if (existingAnalysis) {
+      pendingHkaUpdateIdRef.current = null;
+      handleToolChange("pan");
+      setSelectedHkaId(existingAnalysis.id);
+      triggerSelectionPulse("hka", existingAnalysis.id);
+      setNotice(
+        `${getHkaModeDefinition(mode).label} dipilih. Drag handle landmark untuk menyesuaikan, lalu lanjutkan planning.`,
+      );
+      return;
+    }
+
+    const mechanicalAxis = [...sameSideAnalyses]
+      .reverse()
+      .find(
+        (item) =>
+          (item.mode || "full") === "full" &&
+          item.hip &&
+          item.knee &&
+          item.ankle,
+      );
+    if (mode === "jla" && !mechanicalAxis) {
+      setNotice(
+        "Selesaikan Mechanical Axis terlebih dahulu. Kine Line memakai ulang CFH, CK, dan CA.",
+      );
+      return;
+    }
+
+    const initialHkaPoints =
+      mode === "jla"
+        ? [mechanicalAxis.hip, mechanicalAxis.knee, mechanicalAxis.ankle]
+        : [];
+    pendingHkaUpdateIdRef.current = null;
+    setHkaSide(side);
     setHkaInputMode(mode);
+    setSelectedHkaId(null);
+    clearMobileHkaHandleAssist();
     handleToolChange("hkaAuto", {
       skipHkaSidePrompt: Boolean(planningSession.side),
+      hkaMode: mode,
+      initialHkaPoints,
     });
+    const definition = getHkaModeDefinition(mode);
+    const nextPoint = definition.points[initialHkaPoints.length];
+    setNotice(
+      mode === "jla"
+        ? `CFH, CK, dan CA digunakan dari Mechanical Axis. Lanjutkan ${nextPoint?.shortLabel || "landmark sendi"}: ${nextPoint?.promptLabel || "pilih titik berikutnya"}.`
+        : `${definition.label} baru aktif. ${getHkaDraftNotice(mode, 0)}`,
+    );
   };
   const matchesPlanningSide = (item) =>
     !item?.side || String(item.side).toLowerCase() === planningSession.side;
@@ -24114,11 +24728,46 @@ export default function XrayCalibrationWorkspace({
   const sideLines = lines.filter(matchesPlanningSide);
   const sideAngles = angles.filter(matchesPlanningSide);
   const sideCircles = circles.filter(matchesPlanningSide);
+  const completedMechanicalAxis = sideHkaSets.find(
+    (item) =>
+      (item.mode || "full") === "full" &&
+      item.hip &&
+      item.knee &&
+      item.ankle,
+  );
   const planningGuideProgress = (count, total) => ({
     current: Math.min(count, total),
     label: `${Math.min(count, total)}/${total} titik`,
     percent: Math.min(100, (Math.min(count, total) / Math.max(1, total)) * 100),
   });
+  const backPlanningDraftPoint = (kind) => {
+    if (kind === "hka") {
+      const minimum = hkaInputMode === "jla" ? 3 : 0;
+      if (draftHkaPoints.length <= minimum) return;
+      setDraftHkaPoints((points) => points.slice(0, -1));
+      setNotice(getHkaDraftNotice(hkaInputMode, draftHkaPoints.length - 1));
+    } else if (kind === "axis") {
+      if (!draftAxisBuilderPoints.length) return;
+      setDraftAxisBuilderPoints((points) => points.slice(0, -1));
+      setNotice("Titik axis terakhir dibatalkan. Pilih ulang titik di canvas.");
+    } else if (kind === "pelvic") {
+      if (!draftPelvicAnalysisPoints.length) return;
+      setDraftPelvicAnalysisPoints((points) => points.slice(0, -1));
+      setNotice("Titik pelvic terakhir dibatalkan. Pilih ulang landmark di canvas.");
+    } else if (kind === "hallux") {
+      if (!draftHalluxValgusPoints.length) return;
+      setDraftHalluxValgusPoints((points) => points.slice(0, -1));
+      setNotice("Titik Hallux terakhir dibatalkan. Pilih ulang landmark di canvas.");
+    } else if (kind === "angle") {
+      if (!draftAnglePoints.length) return;
+      setDraftAnglePoints((points) => points.slice(0, -1));
+      setNotice("Titik sudut terakhir dibatalkan. Pilih ulang titik di canvas.");
+    } else if (kind === "circle") {
+      if (!draftCirclePoints.length) return;
+      setDraftCirclePoints((points) => points.slice(0, -1));
+      setNotice("Titik diameter terakhir dibatalkan. Pilih ulang titik di canvas.");
+    }
+  };
   const planningHkaGuideState = (mode) => {
     const definition = getHkaModeDefinition(mode);
     const isActive = tool === "hkaAuto" && hkaInputMode === mode;
@@ -24135,9 +24784,11 @@ export default function XrayCalibrationWorkspace({
       })),
       ...(isActive
         ? {
+            pointCount: Math.max(0, draftHkaPoints.length - (mode === "jla" ? 3 : 0)),
+            backPoint: () => backPlanningDraftPoint("hka"),
             activePoint: nextPoint
-              ? `Titik berikutnya: ${nextPoint.shortLabel} · ${nextPoint.promptLabel}`
-              : "Landmark selesai",
+              ? `${nextPoint.shortLabel}: ${nextPoint.promptLabel}`
+              : "Titik lengkap",
             liveProgress: planningGuideProgress(
               draftHkaPoints.length,
               definition.points.length,
@@ -24191,8 +24842,8 @@ export default function XrayCalibrationWorkspace({
               (item) => (item.mode || "full") === "full",
             ),
             instruction:
-              "Pilih Femoral Head Center, Knee Center, lalu Ankle Center.",
-            guideView: "ap_tka_planning",
+              "Tandai CFH, CK, lalu CA.",
+            guideView: "ap_tka_long_leg",
             guideSide: planningSession.side,
             points: [
               "Pusat kepala femur",
@@ -24205,10 +24856,15 @@ export default function XrayCalibrationWorkspace({
             label: "Kine Line",
             icon: DraftingCompass,
             action: () => startPlanningHka("jla"),
+            available: Boolean(completedMechanicalAxis),
+            progress: completedMechanicalAxis
+              ? "3 axis point digunakan ulang"
+              : "Selesaikan Mechanical Axis",
             ...planningHkaGuideState("jla"),
             complete: sideHkaSets.some((item) => item.mode === "jla"),
-            instruction: "Tentukan landmark LDFA, MPTA, dan joint line.",
-            guideView: "ap_tka_planning",
+            instruction:
+              "Gunakan CFH/CK/CA; tambah MFC, LFC, MTP, LTP.",
+            guideView: "ap_tka_long_leg",
             guideSide: planningSession.side,
             highlightId: "femCondyleMedial",
             points: [
@@ -24225,8 +24881,8 @@ export default function XrayCalibrationWorkspace({
             action: () => startPlanningHka("fta"),
             ...planningHkaGuideState("fta"),
             complete: sideHkaSets.some((item) => item.mode === "fta"),
-            instruction: "Buat anatomical femoral dan tibial axis untuk FTA.",
-            guideView: "ap_tka_planning",
+            instruction: "Tandai Fem2, notch, Tib1 4 cm, dan Tib1 10 cm.",
+            guideView: "ap_tka_long_leg",
             guideSide: planningSession.side,
             points: [
               "Dua titik pada sumbu anatomi femur",
@@ -24243,6 +24899,8 @@ export default function XrayCalibrationWorkspace({
             ...(tool === "axisBuilder"
               ? {
                   active: true,
+                  pointCount: draftAxisBuilderPoints.length,
+                  backPoint: () => backPlanningDraftPoint("axis"),
                   activePoint:
                     draftAxisBuilderPoints.length < 2
                       ? `Segmen proksimal: titik ${draftAxisBuilderPoints.length + 1} dari 2`
@@ -24255,7 +24913,7 @@ export default function XrayCalibrationWorkspace({
               : {}),
             complete: sideLines.some((item) => item.type === "axis"),
             instruction:
-              "Tap dua titik proximal dan dua titik distal pada shaft.",
+              "Tandai 2 titik kanal proksimal dan 2 distal.",
             guideSteps: [
               {
                 id: "axis-proximal-1",
@@ -24278,7 +24936,7 @@ export default function XrayCalibrationWorkspace({
                 label: "Titik kanal distal kedua",
               },
             ],
-            guideView: "ap_femur",
+            guideView: "ap_tka_long_leg",
             highlightId: "femoral_neck_center",
             points: [
               "Titik tengah kanal pada bagian proksimal",
@@ -24287,7 +24945,45 @@ export default function XrayCalibrationWorkspace({
             ],
           },
         ]
-      : [
+      : planningProcedure === "foot"
+        ? [
+            {
+              id: "hallux-valgus",
+              label: "Hallux Valgus Angles",
+              icon: DraftingCompass,
+              guideView: "ap_hallux_valgus",
+              action: () => handleToolChange("halluxValgus"),
+              ...(tool === "halluxValgus"
+                ? {
+                    active: true,
+                    pointCount: draftHalluxValgusPoints.length,
+                    backPoint: () => backPlanningDraftPoint("hallux"),
+                    activePoint: HALLUX_VALGUS_LANDMARKS[draftHalluxValgusPoints.length]?.shortLabel || "Titik lengkap",
+                    liveProgress: planningGuideProgress(
+                      draftHalluxValgusPoints.length,
+                      HALLUX_VALGUS_LANDMARKS.length,
+                    ),
+                  }
+                : {}),
+              complete: ["HVA", "IMA", "DMAA", "HIA", "TMT"].every((metric) =>
+                angles.some((item) => item.metric === metric),
+              ),
+              instruction:
+                "Tandai 12 titik: sumbu M1/M2, falang, rim M1, dan TMT I.",
+              guideSteps: HALLUX_VALGUS_LANDMARKS.map((item) => ({
+                id: item.key,
+                label: item.label,
+                shortLabel: item.shortLabel,
+                side: planningSession.side,
+              })),
+              points: [
+                "Axis metatarsal I dan proximal phalanx",
+                "Axis metatarsal II dan distal articular surface",
+                "Axis distal phalanx dan orientasi sendi TMT I",
+              ],
+            },
+          ]
+        : [
           {
             id: "pelvic",
             label: "Pelvic Mechanical Analysis",
@@ -24295,7 +24991,10 @@ export default function XrayCalibrationWorkspace({
             action: () => handleToolChange("pelvicAnalysis"),
             ...(tool === "pelvicAnalysis"
               ? {
-                  activePoint: `Titik berikutnya: ${PELVIC_ANALYSIS_LANDMARKS[draftPelvicAnalysisPoints.length]?.shortLabel || "Selesai"} · ${PELVIC_ANALYSIS_LANDMARKS[draftPelvicAnalysisPoints.length]?.label || "semua landmark lengkap"}`,
+                  active: true,
+                  pointCount: draftPelvicAnalysisPoints.length,
+                  backPoint: () => backPlanningDraftPoint("pelvic"),
+                  activePoint: PELVIC_ANALYSIS_LANDMARKS[draftPelvicAnalysisPoints.length]?.shortLabel || "Titik lengkap",
                   liveProgress: planningGuideProgress(
                     draftPelvicAnalysisPoints.length,
                     PELVIC_ANALYSIS_LANDMARKS.length,
@@ -24304,7 +25003,7 @@ export default function XrayCalibrationWorkspace({
               : {}),
             complete: lines.some((item) => Boolean(item.pelvicAnalysisId)),
             instruction:
-              "Tap 16 landmark secara berurutan. Setelah titik terakhir, garis mekanis, CCD, dan diameter head kanan/kiri dibuat sekaligus.",
+              "Tandai 16 titik pelvis dan femur kanan/kiri.",
             guideImage:
               "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
             guideSteps: PELVIC_ANALYSIS_LANDMARKS.map((item) =>
@@ -24321,6 +25020,9 @@ export default function XrayCalibrationWorkspace({
             action: () => startBilateralHipAngle("right"),
             ...(tool === "angle" && planningAngleMetricRef.current === "CCD R"
               ? {
+                  active: true,
+                  pointCount: draftAnglePoints.length,
+                  backPoint: () => backPlanningDraftPoint("angle"),
                   activePoint: `Titik sudut ${Math.min(3, draftAnglePoints.length + 1)} dari 3`,
                   liveProgress: planningGuideProgress(
                     draftAnglePoints.length,
@@ -24330,7 +25032,7 @@ export default function XrayCalibrationWorkspace({
               : {}),
             complete: angles.some((item) => item.metric === "CCD R"),
             instruction:
-              "Kanan: tap pusat head, vertex neck-shaft, lalu sumbu shaft distal.",
+              "Kanan: pusat head, vertex neck-shaft, shaft distal.",
             guideView: "pelvic_marked",
             highlightId: pelvicLandmarkId("femoral_head_center", "right"),
             guideSteps: [
@@ -24363,6 +25065,9 @@ export default function XrayCalibrationWorkspace({
             action: () => startBilateralHipAngle("left"),
             ...(tool === "angle" && planningAngleMetricRef.current === "CCD L"
               ? {
+                  active: true,
+                  pointCount: draftAnglePoints.length,
+                  backPoint: () => backPlanningDraftPoint("angle"),
                   activePoint: `Titik sudut ${Math.min(3, draftAnglePoints.length + 1)} dari 3`,
                   liveProgress: planningGuideProgress(
                     draftAnglePoints.length,
@@ -24372,7 +25077,7 @@ export default function XrayCalibrationWorkspace({
               : {}),
             complete: angles.some((item) => item.metric === "CCD L"),
             instruction:
-              "Kiri: tap pusat head, vertex neck-shaft, lalu sumbu shaft distal.",
+              "Kiri: pusat head, vertex neck-shaft, shaft distal.",
             guideView: "pelvic_marked",
             highlightId: pelvicLandmarkId("femoral_head_center", "left"),
             guideSteps: [
@@ -24405,6 +25110,9 @@ export default function XrayCalibrationWorkspace({
             action: () => startBilateralHeadDiameter("right"),
             ...(tool === "circle" && planningCircleMetricRef.current === "FHD R"
               ? {
+                  active: true,
+                  pointCount: draftCirclePoints.length,
+                  backPoint: () => backPlanningDraftPoint("circle"),
                   activePoint: draftCirclePoints.length
                     ? "Titik berikutnya: tepi femoral head"
                     : "Titik berikutnya: pusat femoral head",
@@ -24415,7 +25123,7 @@ export default function XrayCalibrationWorkspace({
                 }
               : {}),
             complete: circles.some((item) => item.metric === "FHD R"),
-            instruction: "Kanan: tap pusat lalu tepi korteks femoral head.",
+            instruction: "Kanan: pusat head, lalu tepi korteks.",
             guideView: "pelvic_marked",
             highlightId: pelvicLandmarkId("femoral_head_center", "right"),
             guideSteps: [
@@ -24443,6 +25151,9 @@ export default function XrayCalibrationWorkspace({
             action: () => startBilateralHeadDiameter("left"),
             ...(tool === "circle" && planningCircleMetricRef.current === "FHD L"
               ? {
+                  active: true,
+                  pointCount: draftCirclePoints.length,
+                  backPoint: () => backPlanningDraftPoint("circle"),
                   activePoint: draftCirclePoints.length
                     ? "Titik berikutnya: tepi femoral head"
                     : "Titik berikutnya: pusat femoral head",
@@ -24453,7 +25164,7 @@ export default function XrayCalibrationWorkspace({
                 }
               : {}),
             complete: circles.some((item) => item.metric === "FHD L"),
-            instruction: "Kiri: tap pusat lalu tepi korteks femoral head.",
+            instruction: "Kiri: pusat head, lalu tepi korteks.",
             guideView: "pelvic_marked",
             highlightId: pelvicLandmarkId("femoral_head_center", "left"),
             guideSteps: [
@@ -24479,11 +25190,12 @@ export default function XrayCalibrationWorkspace({
             label: "Cup Assessment",
             icon: CircleDot,
             action: () => setShowCupAssessment((open) => !open),
+            active: showCupAssessment,
             complete: Boolean(
               savedCupAssessment && matchesPlanningSide(savedCupAssessment),
             ),
             instruction:
-              "Sesuaikan elips pada rim cup lalu simpan inclination dan anteversion.",
+              "Sesuaikan elips rim cup; simpan inklinasi dan anteversi.",
             guideView: "pelvic_marked",
             highlightId: pelvicLandmarkId(
               "acetabular_inferomedial_rim",
@@ -26589,6 +27301,14 @@ export default function XrayCalibrationWorkspace({
                     ? "Memuat data dari Drive..."
                     : "Belum ada data di library. Simpan kasus terlebih dahulu."}
                 </div>
+              ) : planningProcedure === "foot" ? (
+                <button
+                  type="button"
+                  className="planning-inline-action"
+                  onClick={() => handleToolChange("halluxValgus")}
+                >
+                  Buat ulang 5 check Hallux
+                </button>
               ) : (
                 (() => {
                   // Kelompokkan berdasarkan tag pertama
@@ -32994,7 +33714,9 @@ export default function XrayCalibrationWorkspace({
                   <div className="truncate text-[8px] font-bold tracking-wider text-slate-400 uppercase">
                     {planningProcedure === "hip"
                       ? "THA Planning"
-                      : "TKA Planning"}
+                      : planningProcedure === "foot"
+                        ? "Hallux Valgus"
+                        : "TKA Planning"}
                   </div>
                 </div>
                 <select
@@ -33007,6 +33729,7 @@ export default function XrayCalibrationWorkspace({
                 >
                   <option value="tka">TKA / Knee</option>
                   <option value="hip">THA / Hip</option>
+                  <option value="foot">Hallux Valgus / Foot</option>
                 </select>
                 <button
                   type="button"
@@ -38673,8 +39396,8 @@ export default function XrayCalibrationWorkspace({
                         valueText={`${(Number.isFinite(selectedLine.strokeWidth)
                           ? selectedLine.strokeWidth
                           : DEFAULT_LINE_STROKE_WIDTH
-                        ).toFixed(1)}x`}
-                        min={1}
+                        ).toFixed(1)} px`}
+                        min={0.5}
                         max={8}
                         step={0.1}
                         value={
@@ -38701,7 +39424,7 @@ export default function XrayCalibrationWorkspace({
                                     strokeWidth: clamp(
                                       (Number(line.strokeWidth) ||
                                         DEFAULT_LINE_STROKE_WIDTH) - 0.2,
-                                      1,
+                                      0.5,
                                       8,
                                     ),
                                   }
@@ -40866,7 +41589,9 @@ export default function XrayCalibrationWorkspace({
             reference={
               planningProcedure === "tka"
                 ? TKA_PLANNING_REFERENCE
-                : THA_PLANNING_REFERENCE
+                : planningProcedure === "foot"
+                  ? HALLUX_PLANNING_REFERENCE
+                  : THA_PLANNING_REFERENCE
             }
             session={planningSession}
             onSession={updatePlanningSession}
@@ -40877,6 +41602,13 @@ export default function XrayCalibrationWorkspace({
             tools={planningTools}
             actions={planningActions}
             analysisTools={planningAnalysisTools}
+            halluxResults={halluxResults}
+            focusedHalluxMetric={activeHalluxFocus}
+            onFocusHalluxMetric={(metric) => {
+              setFocusedHalluxMetric((current) => current === metric ? null : metric);
+              setSelectedLineId(null);
+              setSelectedAngleId(null);
+            }}
             correctionControls={
               planningProcedure === "tka" ? (
                 <PlanningCorrectionControls
@@ -40905,6 +41637,23 @@ export default function XrayCalibrationWorkspace({
                         : addPlanningGuideFromJointAngles
                   }
                 />
+              ) : planningProcedure === "foot" ? (
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    onClick={() => handleToolChange("halluxValgus")}
+                  >
+                    Buat / ulangi 5 check Hallux
+                  </button>
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    onClick={activateHalluxCorrectionFreeCut}
+                  >
+                    Free Cut garis target terpilih
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -41091,6 +41840,42 @@ export default function XrayCalibrationWorkspace({
                 triggerSelectionPulse("circle", circle.id);
                 return;
               }
+              if (kind === "angle") {
+                setAngles((previous) =>
+                  previous.map((angle) =>
+                    String(angle.id) === rawId
+                      ? {
+                          ...angle,
+                          ...patch,
+                          strokeWidth:
+                            "strokeWidth" in patch
+                              ? clamp(Number(patch.strokeWidth) || 1, 1, 8)
+                              : angle.strokeWidth,
+                        }
+                      : angle,
+                  ),
+                );
+                setNotice("Tampilan angle diperbarui.");
+                return;
+              }
+              if (kind === "circle") {
+                setCircles((previous) =>
+                  previous.map((circle) =>
+                    String(circle.id) === rawId
+                      ? {
+                          ...circle,
+                          ...patch,
+                          strokeWidth:
+                            "strokeWidth" in patch
+                              ? clamp(Number(patch.strokeWidth) || 1, 1, 8)
+                              : circle.strokeWidth,
+                        }
+                      : circle,
+                  ),
+                );
+                setNotice("Tampilan circle diperbarui.");
+                return;
+              }
               if (kind !== "guide") return;
               const guide = planningGuides.find(
                 (item) => String(item.id) === rawId,
@@ -41193,6 +41978,13 @@ export default function XrayCalibrationWorkspace({
                 }
                 const linePatch = { ...patch };
                 delete linePatch.locked;
+                if ("strokeWidth" in linePatch) {
+                  linePatch.strokeWidth = clamp(
+                    Number(linePatch.strokeWidth) || 0.5,
+                    0.5,
+                    8,
+                  );
+                }
                 if ("lengthDeltaMm" in linePatch) {
                   const currentLength = getLineLength(line);
                   const deltaPx = hasCalibration
@@ -41218,6 +42010,17 @@ export default function XrayCalibrationWorkspace({
                 }
                 return;
               }
+              if (kind === "angle" || kind === "circle") {
+                if (!("strokeWidth" in patch)) return;
+                const strokeWidth = clamp(Number(patch.strokeWidth) || 1, 1, 8);
+                const updateItems = (previous) =>
+                  previous.map((item) =>
+                    String(item.id) === rawId ? { ...item, strokeWidth } : item,
+                  );
+                if (kind === "angle") setAngles(updateItems);
+                else setCircles(updateItems);
+                return;
+              }
               if (kind !== "guide") return;
               setPlanningGuides((previous) =>
                 previous.map((guide) => {
@@ -41238,6 +42041,13 @@ export default function XrayCalibrationWorkspace({
                       Number(patch.lineLengthPx) || 10,
                       10,
                       Math.max(modelWidth, modelHeight) * 2,
+                    );
+                  }
+                  if ("strokeWidth" in patch) {
+                    next.strokeWidth = clamp(
+                      Number(patch.strokeWidth) || 1,
+                      1,
+                      8,
                     );
                   }
                   return next;
@@ -45884,6 +46694,51 @@ export default function XrayCalibrationWorkspace({
                               ).toFixed(1)}
                             </span>
                           </label>
+                          <div className="flex min-h-7 items-center gap-2 px-1">
+                            <span className="shrink-0 text-[8px] font-bold text-slate-500">
+                              Line color
+                            </span>
+                            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-0.5">
+                              {LINE_COLOR_OPTIONS.map((color) => (
+                                <ColorSwatchButton
+                                  key={`mobile-object-line-color-${color}`}
+                                  color={color}
+                                  active={
+                                    (selectedLine.color ||
+                                      lineTypeColor(selectedLine.type || "normal")) === color
+                                  }
+                                  label={`Warna line ${color}`}
+                                  onClick={() =>
+                                    setLines((prev) =>
+                                      prev.map((line) =>
+                                        line.id === selectedLine.id
+                                          ? { ...line, color }
+                                          : line,
+                                      ),
+                                    )
+                                  }
+                                />
+                              ))}
+                              <input
+                                type="color"
+                                value={
+                                  selectedLine.color ||
+                                  lineTypeColor(selectedLine.type || "normal")
+                                }
+                                onChange={(event) =>
+                                  setLines((prev) =>
+                                    prev.map((line) =>
+                                      line.id === selectedLine.id
+                                        ? { ...line, color: event.target.value }
+                                        : line,
+                                    ),
+                                  )
+                                }
+                                className="h-7 w-7 shrink-0 cursor-pointer rounded-full border border-white/60 bg-transparent"
+                                aria-label="Warna line kustom"
+                              />
+                            </div>
+                          </div>
                           {selectedLineSizing?.available &&
                           selectedLineSizing.primary ? (
                             <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5 rounded-xl border border-cyan-300/25 bg-cyan-500/8 px-2 py-1">

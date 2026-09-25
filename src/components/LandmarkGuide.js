@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { PELVIC_LANDMARK_BY_ID, PELVIC_LANDMARK_IMAGE } from "@/data/pelvicLandmarks";
+import halluxGuidePoints from "../../public/Hallux_Landmark_Guides/Landmark_Guide_Points.json";
 
 // ── Shared SVG primitives ─────────────────────────────────────────────────────
 
@@ -870,6 +871,130 @@ function MarkedPelvicGuide({ highlightId }) {
   );
 }
 
+const HALLUX_GUIDE_BASE = "/Hallux_Landmark_Guides/";
+const HALLUX_GUIDE_GROUPS = {
+  m1Proximal: ["01_HVA_Cartoon.svg", "HVA"],
+  m1Distal: ["01_HVA_Cartoon.svg", "HVA"],
+  p1Proximal: ["01_HVA_Cartoon.svg", "HVA"],
+  p1Distal: ["01_HVA_Cartoon.svg", "HVA"],
+  m2Proximal: ["02_IMA_Cartoon.svg", "IMA"],
+  m2Distal: ["02_IMA_Cartoon.svg", "IMA"],
+  articularMedial: ["03_DMAA_Cartoon.svg", "DMAA"],
+  articularLateral: ["03_DMAA_Cartoon.svg", "DMAA"],
+  distalPhalanxProximal: ["04_HIA_Cartoon.svg", "HIA"],
+  distalPhalanxDistal: ["04_HIA_Cartoon.svg", "HIA"],
+  tmtJointMedial: ["05_TMT1_Cartoon.svg", "TMT I"],
+  tmtJointLateral: ["05_TMT1_Cartoon.svg", "TMT I"],
+};
+
+const sectionCenter = ([first, second]) => ({
+  x: (first[0] + second[0]) / 2,
+  y: (first[1] + second[1]) / 2,
+});
+
+const HALLUX_ACTIVE_POINTS = {
+  m1Proximal: sectionCenter(halluxGuidePoints.axes.mt1.sections[1]),
+  m1Distal: sectionCenter(halluxGuidePoints.axes.mt1.sections[0]),
+  p1Proximal: sectionCenter(halluxGuidePoints.axes.prox.sections[1]),
+  p1Distal: sectionCenter(halluxGuidePoints.axes.prox.sections[0]),
+  m2Proximal: sectionCenter(halluxGuidePoints.axes.mt2.sections[1]),
+  m2Distal: sectionCenter(halluxGuidePoints.axes.mt2.sections[0]),
+  articularMedial: {
+    x: halluxGuidePoints.dmaa_articular_chord[0][0],
+    y: halluxGuidePoints.dmaa_articular_chord[0][1],
+  },
+  articularLateral: {
+    x: halluxGuidePoints.dmaa_articular_chord[1][0],
+    y: halluxGuidePoints.dmaa_articular_chord[1][1],
+  },
+  distalPhalanxProximal: sectionCenter(halluxGuidePoints.axes.dist.sections[1]),
+  distalPhalanxDistal: sectionCenter(halluxGuidePoints.axes.dist.sections[0]),
+  tmtJointMedial: { x: 360, y: 780 },
+  tmtJointLateral: { x: 441, y: 765 },
+};
+
+function HalluxValgusGuide({ highlightId, side }) {
+  const [file, metric] = HALLUX_GUIDE_GROUPS[highlightId] || HALLUX_GUIDE_GROUPS.m1Proximal;
+  const point = HALLUX_ACTIVE_POINTS[highlightId];
+  const sideLabel = side === "left" ? "Kiri" : side === "right" ? "Kanan" : "";
+
+  return (
+    <svg
+      viewBox="0 0 1000 1573"
+      className="w-full"
+      style={{ display: "block", background: "#12212d" }}
+      role="img"
+      aria-label={`Panduan ${metric} pada ilustrasi kaki. ${sideLabel ? `Sisi pasien ${sideLabel}.` : ""} Ikuti landmark yang disorot pada X-ray pasien.`}
+    >
+      <image href={`${HALLUX_GUIDE_BASE}${file}`} width="1000" height="1573" />
+      {point && (
+        <g>
+          <circle cx={point.x} cy={point.y} r="36" fill="none" stroke="#ffffff" strokeWidth="6">
+            <animate attributeName="r" values="34;65;34" dur="1.5s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="1;0.2;1" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={point.x} cy={point.y} r="25" fill="#111827" stroke="#ffffff" strokeWidth="5" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+const LONG_LEG_GUIDE_BASE = "/Long_Leg_Kanan_Kiri_Cartoon_3D/";
+const LONG_LEG_POINTS = {
+  right: {
+    hip: [522, 209], knee: [515, 769], ankle: [528, 1402],
+    femCondyleMedial: [550, 779], femCondyleLateral: [479, 779],
+    tibPlateauMedial: [550, 804], tibPlateauLateral: [479, 804],
+    femurMidshaft10cm: [494, 539], femoralNotch: [515, 769],
+    tibiaMidshaft4cm: [518, 908], tibiaMidshaft10cm: [522, 1070],
+    "axis-proximal-1": [469, 480], "axis-proximal-2": [516, 480],
+    "axis-distal-1": [486, 642], "axis-distal-2": [533, 642],
+  },
+  left: {
+    hip: [512, 227], knee: [548, 774], ankle: [527, 1405],
+    femCondyleMedial: [505, 782], femCondyleLateral: [581, 782],
+    tibPlateauMedial: [506, 809], tibPlateauLateral: [580, 809],
+    femurMidshaft10cm: [560, 541], femoralNotch: [548, 774],
+    tibiaMidshaft4cm: [540, 916], tibiaMidshaft10cm: [534, 1075],
+    "axis-proximal-1": [537, 480], "axis-proximal-2": [584, 480],
+    "axis-distal-1": [521, 643], "axis-distal-2": [568, 643],
+  },
+};
+
+function LongLegTkaGuide({ highlightId, side }) {
+  if (side !== "left" && side !== "right") {
+    return <div role="img" aria-label="Pilih sisi pasien untuk panduan TKA">Pilih sisi pasien</div>;
+  }
+  const point = LONG_LEG_POINTS[side][highlightId];
+  const cropWidth = point ? 480 : 1024;
+  const cropHeight = point ? 720 : 1536;
+  const cropX = point ? Math.max(0, Math.min(1024 - cropWidth, point[0] - cropWidth / 2)) : 0;
+  const cropY = point ? Math.max(0, Math.min(1536 - cropHeight, point[1] - cropHeight / 2)) : 0;
+  const file = side === "left"
+    ? "Long_Leg_Kiri_Cartoon_3D.svg"
+    : "Long_Leg_Kanan_Cartoon_3D.svg";
+
+  return (
+    <svg
+      viewBox={`${cropX} ${cropY} ${cropWidth} ${cropHeight}`}
+      role="img"
+      aria-label={`Ilustrasi tungkai ${side === "left" ? "kiri" : "kanan"}; landmark aktif ${highlightId || "belum dipilih"}`}
+    >
+      <rect width="1024" height="1536" fill="#101820" />
+      <image href={`${LONG_LEG_GUIDE_BASE}${file}`} width="1024" height="1536" />
+      {point && (
+        <g>
+          <circle cx={point[0]} cy={point[1]} r="41" fill="none" stroke="#ffffff" strokeWidth="8">
+            <animate attributeName="r" values="34;49;34" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={point[0]} cy={point[1]} r="18" fill="#06b6d4" stroke="#ffffff" strokeWidth="6" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const GUIDE_REGISTRY = {
@@ -877,6 +1002,7 @@ const GUIDE_REGISTRY = {
   ap_hip:                  { label: "AP Hip / Pelvis",            Component: ApHipGuide,          needsSide: "full"   },
   ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: "simple" },
   ap_tka_planning:         { label: "AP TKA — Femur & Tibia",     Component: ApTkaPlanningGuide,  needsSide: "simple" },
+  ap_tka_long_leg:         { label: "TKA Long Leg — Kanan/Kiri", Component: LongLegTkaGuide,     needsSide: "simple" },
   ap_femur:                { label: "AP Femur",                   Component: ApProxFemurGuide,    needsSide: false    },
   ap_proximal_femur:       { label: "AP Proksimal Femur",         Component: ApProxFemurGuide,    needsSide: false    },
   ap_ankle:                { label: "AP Ankle",                   Component: ApKneeGuide,         needsSide: false    },
@@ -886,6 +1012,7 @@ const GUIDE_REGISTRY = {
   ap_proximal_femur_thr:   { label: "AP Proksimal Femur — THR",   Component: ApProxFemurThrGuide, needsSide: false    },
   lateral_patella:         { label: "Lateral Patella",            Component: LateralPatellaGuide, needsSide: false    },
   sky_patella:             { label: "Skyline Patella",            Component: SkylinePatellaGuide, needsSide: false    },
+  ap_hallux_valgus:        { label: "AP Foot — Hallux Valgus",     Component: HalluxValgusGuide,   needsSide: "simple" },
 };
 
 // ── GuideContent — embeddable (no modal wrapper) ─────────────────────────────

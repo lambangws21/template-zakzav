@@ -15,6 +15,8 @@ import {
   EyeOff,
   FileText,
   Focus,
+  Footprints,
+  GripVertical,
   ImagePlus,
   Layers,
   Link2,
@@ -29,6 +31,7 @@ import {
   Move,
   PanelLeftClose,
   PanelRightClose,
+  PencilLine,
   Play,
   Plus,
   RotateCw,
@@ -75,23 +78,48 @@ const MEASUREMENT_MODE_COLORS = {
 
 const ANALYSIS_GUIDE_SUMMARIES = {
   hka: {
-    purpose:
-      "Hubungkan pusat hip, lutut, dan ankle untuk membaca alignment tungkai.",
+    purpose: "Tandai pusat head femur, lutut, dan talus.",
     result: "Hasil: mTFA dan MAD",
   },
   jla: {
-    purpose:
-      "Tentukan garis sendi femur dan tibia untuk merencanakan reseksi TKA.",
+    purpose: "Tandai kondilus femur dan plateau tibia.",
     result: "Hasil: mLDFA, mMPTA, dan JLCA",
   },
   fta: {
-    purpose:
-      "Bandingkan anatomical axis femur dan tibia pada radiografi AP.",
+    purpose: "Tandai sumbu anatomi femur dan tibia pada AP.",
     result: "Hasil: femorotibial angle",
   },
+  "hallux-valgus": {
+    purpose: "Tandai sumbu M1/M2, falang, rim M1, dan TMT I.",
+    result: "Hasil: HVA, IMA, DMAA, HIA, TMT, dan target koreksi",
+  },
   axis: {
-    purpose: "Buat sumbu anatomi dari pusat kanal proksimal dan distal.",
+    purpose: "Tandai kanal proksimal dan distal.",
     result: "Hasil: anatomical axis",
+  },
+  pelvic: {
+    purpose: "Tandai 16 titik pelvis dan femur bilateral.",
+    result: "Hasil: garis pelvis, CCD, dan diameter head",
+  },
+  "ccd-right": {
+    purpose: "Tandai pusat head, vertex neck-shaft, dan shaft kanan.",
+    result: "Hasil: sudut CCD kanan",
+  },
+  "ccd-left": {
+    purpose: "Tandai pusat head, vertex neck-shaft, dan shaft kiri.",
+    result: "Hasil: sudut CCD kiri",
+  },
+  "fhd-right": {
+    purpose: "Tandai pusat dan korteks head kanan.",
+    result: "Hasil: diameter head kanan",
+  },
+  "fhd-left": {
+    purpose: "Tandai pusat dan korteks head kiri.",
+    result: "Hasil: diameter head kiri",
+  },
+  cup: {
+    purpose: "Sesuaikan elips ke rim cup.",
+    result: "Hasil: inklinasi dan anteversi",
   },
 };
 
@@ -209,6 +237,9 @@ export default function PlanningWorkspace({
   tools,
   actions,
   analysisTools,
+  halluxResults,
+  focusedHalluxMetric,
+  onFocusHalluxMetric,
   correctionControls,
   catalog,
   selectedImplantId,
@@ -262,9 +293,11 @@ export default function PlanningWorkspace({
   const [zimmerStemFamily, setZimmerStemFamily] = useState("");
   const [cupType, setCupType] = useState("");
   const [guideItemId, setGuideItemId] = useState(null);
+  const [dismissedGuideId, setDismissedGuideId] = useState(null);
   const [guideMinimized, setGuideMinimized] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
   const [guideVisualOpen, setGuideVisualOpen] = useState(false);
+  const [splitGuideTop, setSplitGuideTop] = useState(null);
   const [resectionExpanded, setResectionExpanded] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [implantBrowserOpen, setImplantBrowserOpen] = useState(false);
@@ -272,6 +305,7 @@ export default function PlanningWorkspace({
   const [implantSearch, setImplantSearch] = useState("");
   const [objectEditorPosition, setObjectEditorPosition] = useState(null);
   const drag = useRef(null);
+  const splitGuideDragRef = useRef(null);
   const sheetRef = useRef(null);
   const objectEditorDragRef = useRef(null);
   const previousAnalysisRef = useRef({ procedure, signature: "" });
@@ -340,7 +374,11 @@ export default function PlanningWorkspace({
       : { label: "Review", tone: "review" };
   };
   const available = catalog.filter((item) =>
-    procedure === "tka" ? item.type === "knee" : item.type !== "knee",
+    procedure === "tka"
+      ? item.type === "knee"
+      : procedure === "foot"
+        ? false
+        : item.type !== "knee",
   );
   const kneeComponentCounts = available.reduce(
     (result, item) => {
@@ -444,6 +482,16 @@ export default function PlanningWorkspace({
   const activeAnalysisItemComplete = Boolean(activeAnalysisItem?.complete);
   const guideItem =
     analysisTools.find((item) => item.id === guideItemId) || null;
+  const isSplitGuide = Boolean(
+    guideItem?.guideView &&
+    (guideItem.id === "hallux-valgus" || guideItem.guideView === "ap_tka_long_leg"),
+  );
+  const dismissedGuideItem =
+    analysisTools.find((item) => item.id === dismissedGuideId) || null;
+  const resumeGuideItem =
+    dismissedGuideItem ||
+    analysisTools.find((item) => item.active && !item.complete) ||
+    activeAnalysisItem;
   const guideSteps = guideItem?.guideSteps || [];
   const guideStep =
     guideSteps[Math.min(guideStepIndex, Math.max(0, guideSteps.length - 1))] ||
@@ -471,7 +519,9 @@ export default function PlanningWorkspace({
     setMetricEditor(null);
     setStepExpanded(true);
     setGuideItemId(null);
+    setDismissedGuideId(null);
     setGuideVisualOpen(false);
+    setSplitGuideTop(null);
   }, [procedure]);
   useEffect(() => {
     if (procedure !== "tka" || !selectedImplantId) return;
@@ -491,8 +541,12 @@ export default function PlanningWorkspace({
     )
       return;
     setGuideItemId(activeAnalysisItem.id);
-    setGuideMinimized(true);
+    const splitGuide = activeAnalysisItem.id === "hallux-valgus" ||
+      activeAnalysisItem.guideView === "ap_tka_long_leg";
+    setGuideMinimized(!splitGuide);
+    setGuideVisualOpen(splitGuide);
     setGuideStepIndex(0);
+    if (splitGuide) setSheet(null);
   }, [activeAnalysisItem?.id, enabled, procedure, session.step]);
   useEffect(() => {
     if (!Number.isFinite(liveGuideStep) || guideSteps.length === 0) return;
@@ -508,11 +562,18 @@ export default function PlanningWorkspace({
     if (!enabled || session.step !== 1 || !analysisAdvanced) return;
     setStepExpanded(true);
     setWorkflowOpen(true);
+    const splitGuide = activeAnalysisItemId === "hallux-valgus" ||
+      (procedure === "tka" && Boolean(activeAnalysisItemId));
     if (activeAnalysisItemId && !activeAnalysisItemComplete) {
       setGuideItemId(activeAnalysisItemId);
-      setGuideMinimized(true);
+      setGuideMinimized(!splitGuide);
+      setGuideVisualOpen(splitGuide);
     }
-    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
+    if (!splitGuide && window.matchMedia("(max-width: 1199px)").matches) {
+      setSheet("workflow");
+    } else if (splitGuide) {
+      setSheet(null);
+    }
   }, [
     activeAnalysisItemComplete,
     activeAnalysisItemId,
@@ -533,7 +594,9 @@ export default function PlanningWorkspace({
     onSession(next);
     setStepExpanded(true);
     setWorkflowOpen(true);
-    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("workflow");
+    if (procedure !== "foot" && window.matchMedia("(max-width: 1199px)").matches) {
+      setSheet("workflow");
+    }
   }, [canProceed, enabled, onSession, session]);
   useEffect(() => {
     if (
@@ -599,10 +662,69 @@ export default function PlanningWorkspace({
     return runCalibrated(() => {
       if (session.step !== 1) onSession({ ...session, step: 1 });
       setGuideItemId(item.id);
+      setDismissedGuideId(null);
       setGuideMinimized(false);
+      setGuideVisualOpen(Boolean(item.guideView));
+      setSplitGuideTop(null);
       setGuideStepIndex(0);
       item.action?.();
     });
+  };
+  const openAnalysisGuide = (item) => {
+    if (!item) return;
+    if (!item.active) {
+      startAnalysisTool(item);
+      return;
+    }
+    setSheet(null);
+    setGuideItemId(item.id);
+    setDismissedGuideId(null);
+    setGuideMinimized(false);
+    setGuideVisualOpen(Boolean(item.guideView));
+    setGuideStepIndex(item.liveProgress?.current || 0);
+  };
+  const resumeAnalysisGuide = () => {
+    if (!resumeGuideItem) return;
+    if (!dismissedGuideItem) {
+      openAnalysisGuide(resumeGuideItem);
+      return;
+    }
+    setSheet(null);
+    setGuideItemId(resumeGuideItem.id);
+    setDismissedGuideId(null);
+    setGuideMinimized(false);
+    setGuideVisualOpen(Boolean(resumeGuideItem.guideView));
+    setGuideStepIndex(resumeGuideItem.liveProgress?.current || 0);
+  };
+  const startSplitGuideDrag = (event) => {
+    if (event.button !== 0) return;
+    const guide = event.currentTarget.closest("aside");
+    const canvas = guide?.parentElement;
+    if (!guide || !canvas) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const guideRect = guide.getBoundingClientRect();
+    const figure = canvas.querySelector("[data-landmark-figure]");
+    const guideHeight = Math.max(guideRect.height, figure?.getBoundingClientRect().height || 0);
+    splitGuideDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startTop: guideRect.top - canvasRect.top,
+      maxTop: Math.max(0, canvasRect.height - guideHeight),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+  const moveSplitGuideDrag = (event) => {
+    const current = splitGuideDragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    setSplitGuideTop(
+      Math.max(0, Math.min(current.maxTop, current.startTop + event.clientY - current.startY)),
+    );
+  };
+  const endSplitGuideDrag = (event) => {
+    if (splitGuideDragRef.current?.pointerId === event.pointerId) {
+      splitGuideDragRef.current = null;
+    }
   };
   const revealWorkflow = () => {
     setWorkflowOpen(true);
@@ -681,7 +803,9 @@ export default function PlanningWorkspace({
           <small>
             {procedure === "tka"
               ? "TOTAL KNEE ARTHROPLASTY"
-              : "TOTAL HIP ARTHROPLASTY"}
+              : procedure === "foot"
+                ? "HALLUX VALGUS"
+                : "TOTAL HIP ARTHROPLASTY"}
           </small>
           <h2>{reference.fullLabel}</h2>
         </div>
@@ -823,7 +947,9 @@ export default function PlanningWorkspace({
                         <span>
                           {procedure === "tka"
                             ? "Knee Axis Analysis"
-                            : "Pelvic Analysis"}
+                            : procedure === "foot"
+                              ? "Hallux Angle Analysis"
+                              : "Pelvic Analysis"}
                         </span>
                         <strong>
                           {session.side === "left" ? "L / Left" : "R / Right"} ·{" "}
@@ -834,7 +960,10 @@ export default function PlanningWorkspace({
                         {analysisTools.map((item, index) => {
                           const current =
                             Boolean(item.active) || guideItemId === item.id;
-                          const available = hasImage && Boolean(session.side);
+                          const available =
+                            hasImage &&
+                            Boolean(session.side) &&
+                            item.available !== false;
                           const itemGuideSteps = item.guideSteps || [];
                           const completedLandmarks =
                             item.liveProgress?.current ??
@@ -852,7 +981,7 @@ export default function PlanningWorkspace({
                                 type="button"
                                 disabled={!available}
                                 aria-current={current ? "step" : undefined}
-                                onClick={() => startAnalysisTool(item)}
+                                onClick={() => openAnalysisGuide(item)}
                               >
                                 <span className={styles.analysisNumber}>
                                   {item.complete ? (
@@ -1050,7 +1179,28 @@ export default function PlanningWorkspace({
                       ))}
                     </>
                   )}
-                  {session.step === 3 && (
+                  {session.step === 3 &&
+                    (procedure === "foot" ? (
+                      <div className={styles.controls}>
+                        <p>
+                          Pilih Hallux Valgus Angles untuk membuat ulang correction
+                          lines. Setiap axis dan sudut dapat diedit langsung dari
+                          canvas atau Planning Log.
+                        </p>
+                        <Action
+                          icon={Target}
+                          onClick={() => startAnalysisTool(analysisTools[0])}
+                        >
+                          Buat ulang correction lines
+                        </Action>
+                        <Action
+                          icon={SlidersHorizontal}
+                          onClick={() => activate(actions.properties)}
+                        >
+                          Object settings
+                        </Action>
+                      </div>
+                    ) : (
                     <div className={styles.controls}>
                       {procedure === "tka" && (
                         <div
@@ -1170,8 +1320,20 @@ export default function PlanningWorkspace({
                         Library & layer settings
                       </Action>
                     </div>
-                  )}
-                  {session.step === 4 && implantList}
+                    ))}
+                  {session.step === 4 &&
+                    (procedure === "foot" ? (
+                      <label className={styles.fieldLabel}>
+                        Catatan correction planning
+                        <textarea
+                          rows={4}
+                          value={note}
+                          onChange={(e) => onNote(e.target.value)}
+                        />
+                      </label>
+                    ) : (
+                      implantList
+                    ))}
                   {session.step === 5 && (
                     <>
                       <label className={styles.fieldLabel}>
@@ -1678,10 +1840,18 @@ export default function PlanningWorkspace({
                                   </div>
                                 </div>
                                 <label className={styles.lineWidthControl}>
-                                  <span>Line width</span>
+                                  <span>
+                                    Line width
+                                    <strong>
+                                      {Number(
+                                        sourceMeasurement?.strokeWidth || 2,
+                                      ).toFixed(2)}
+                                      px
+                                    </strong>
+                                  </span>
                                   <input
                                     type="range"
-                                    min="1"
+                                    min="0.5"
                                     max="8"
                                     step="0.25"
                                     value={sourceMeasurement?.strokeWidth || 2}
@@ -1693,6 +1863,19 @@ export default function PlanningWorkspace({
                                     }
                                   />
                                 </label>
+                                <button
+                                  type="button"
+                                  className={styles.measurementVisibility}
+                                  onClick={() =>
+                                    onToggleMeasurementLabel?.(
+                                      sourceMeasurement?.sourceLineIds,
+                                      sourceMeasurement?.sourceShowLabel,
+                                    )
+                                  }
+                                >
+                                  {sourceMeasurement?.sourceShowLabel ? <EyeOff size={14} /> : <Eye size={14} />}
+                                  {sourceMeasurement?.sourceShowLabel ? "Sembunyikan nama" : "Tampilkan nama"}
+                                </button>
                                 <label className={styles.lineColorControl}>
                                   <span>Line color</span>
                                   <input
@@ -1800,21 +1983,53 @@ export default function PlanningWorkspace({
                                 </label>
                               </div>
                             ) : null}
-                            {!isLineMeasurement ? <div className={styles.measurementFieldGrid}>
-                              <label className={styles.metricColorControl}>
-                                Warna
-                                <input
-                                  type="color"
-                                  value={sourceMeasurement?.color || "#38bdf8"}
-                                  onChange={(event) =>
-                                    onUpdateMeasurementColor?.(
-                                      activeMeasurementId,
-                                      event.target.value,
-                                    )
-                                  }
-                                />
-                              </label>
-                            </div> : null}
+                            {!isLineMeasurement ? (
+                              <div className={styles.measurementAppearanceControls}>
+                                <label className={styles.lineWidthControl}>
+                                  <span>
+                                    Ketebalan line
+                                    <strong>
+                                      {Number(
+                                        sourceMeasurement?.strokeWidth || 2,
+                                      ).toFixed(2)}
+                                      px
+                                    </strong>
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min="1"
+                                    max="8"
+                                    step="0.25"
+                                    value={sourceMeasurement?.strokeWidth || 2}
+                                    disabled={sourceMeasurement?.locked}
+                                    onChange={(event) =>
+                                      onUpdateMeasurement?.(
+                                        activeMeasurementId,
+                                        {
+                                          strokeWidth: Number(
+                                            event.target.value,
+                                          ),
+                                        },
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label className={styles.lineColorControl}>
+                                  <span>Warna line</span>
+                                  <input
+                                    type="color"
+                                    value={sourceMeasurement?.color || "#38bdf8"}
+                                    disabled={sourceMeasurement?.locked}
+                                    onChange={(event) =>
+                                      onUpdateMeasurementColor?.(
+                                        activeMeasurementId,
+                                        event.target.value,
+                                      )
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            ) : null}
                             {sourceMeasurement?.sourceLineIds?.length && !isLineMeasurement ? (
                               <button
                                 type="button"
@@ -2014,7 +2229,9 @@ export default function PlanningWorkspace({
                 <h2>
                   {procedure === "tka"
                     ? "Correction Settings"
-                    : "Femoral Resection"}
+                    : procedure === "foot"
+                      ? "Hallux Correction Lines"
+                      : "Femoral Resection"}
                 </h2>
                 {correctionControls}
               </section>
@@ -2108,6 +2325,7 @@ export default function PlanningWorkspace({
     "angle",
     "interline",
     "circle",
+    "hallux",
     "cut",
   ]);
   const runTool = (id) => {
@@ -2192,7 +2410,7 @@ export default function PlanningWorkspace({
     { id: "move", label: "Select", icon: MousePointer2 },
     { id: "pan", label: "Move", icon: Move },
     { id: "rotate", label: "Rotate", icon: RotateCw },
-    { id: "size", label: "Size", icon: Maximize2 },
+    { id: "line", label: "Line", icon: PencilLine },
   ];
 
   const moreMenu = (
@@ -2233,7 +2451,7 @@ export default function PlanningWorkspace({
           type="button"
           disabled={!analysisTools.some((item) => item.id === "hka")}
           onClick={() =>
-            startAnalysisTool(analysisTools.find((item) => item.id === "hka"))
+            openAnalysisGuide(analysisTools.find((item) => item.id === "hka"))
           }
         >
           <Target size={16} />
@@ -2335,10 +2553,14 @@ export default function PlanningWorkspace({
           <em>Simple</em>
         </div>
         <label className={styles.procedure}>
-          <img
-            src={`/images/quick-panel/${procedure === "tka" ? "tka" : "hip"}-icon.png`}
-            alt=""
-          />
+          {procedure === "foot" ? (
+            <Footprints size={24} aria-hidden="true" />
+          ) : (
+            <img
+              src={`/images/quick-panel/${procedure === "tka" ? "tka" : "hip"}-icon.png`}
+              alt=""
+            />
+          )}
           <select
             aria-label="Planning procedure"
             value={procedure}
@@ -2346,6 +2568,7 @@ export default function PlanningWorkspace({
           >
             <option value="tka">Bicondylar Knee / TKA</option>
             <option value="hip">Hip Planning / THA</option>
+            <option value="foot">Hallux Valgus / Foot</option>
           </select>
           <ChevronDown
             size={18}
@@ -2472,17 +2695,60 @@ export default function PlanningWorkspace({
         </nav>
         <div className={styles.canvas}>
           {children}
-          {procedure === "tka" && hasImage && !canProceed && (
-            <aside className={styles.planningStartCard} aria-label="Mulai TKA planning">
+          {procedure === "foot" && halluxResults?.length > 0 && !guideItem && (
+            <div className={styles.halluxResultRail} aria-label="Hasil sudut Hallux Valgus">
+              {halluxResults.map((result) => (
+                <button
+                  key={result.metric}
+                  type="button"
+                  className={styles.halluxResultBadge}
+                  style={{ "--result-color": result.color }}
+                  data-muted={Boolean(focusedHalluxMetric && focusedHalluxMetric !== result.metric)}
+                  aria-pressed={focusedHalluxMetric === result.metric}
+                  title={`${result.label}: ${result.value.toFixed(1)} derajat`}
+                  onClick={() => onFocusHalluxMetric?.(result.metric)}
+                >
+                  <span><strong>{result.metric}</strong><b>{result.value.toFixed(1)}°</b></span>
+                  <small>{result.label}</small>
+                </button>
+              ))}
+              {focusedHalluxMetric && (
+                <button
+                  type="button"
+                  className={styles.halluxShowAll}
+                  onClick={() => onFocusHalluxMetric?.(null)}
+                >
+                  Tampilkan semua
+                </button>
+              )}
+            </div>
+          )}
+          {(procedure === "tka" || procedure === "foot") &&
+            hasImage &&
+            !canProceed && (
+            <aside
+              className={styles.planningStartCard}
+              aria-label={
+                procedure === "foot"
+                  ? "Mulai Hallux Valgus planning"
+                  : "Mulai TKA planning"
+              }
+            >
               <header>
-                <span>Mulai TKA Planning</span>
+                <span>
+                  {procedure === "foot"
+                    ? "Mulai Hallux Valgus"
+                    : "Mulai TKA Planning"}
+                </span>
                 <strong>2 langkah awal</strong>
               </header>
               <ol>
                 <li data-complete={Boolean(session.side)}>
                   <span>{session.side ? <Check size={12} /> : "1"}</span>
                   <div>
-                    <strong>Pilih sisi lutut</strong>
+                    <strong>
+                      {procedure === "foot" ? "Pilih sisi kaki" : "Pilih sisi lutut"}
+                    </strong>
                     <small>
                       {session.side
                         ? session.side === "left"
@@ -2504,7 +2770,12 @@ export default function PlanningWorkspace({
                   </div>
                 </li>
               </ol>
-              <div className={styles.startSideButtons} aria-label="Pilih sisi lutut">
+              <div
+                className={styles.startSideButtons}
+                aria-label={
+                  procedure === "foot" ? "Pilih sisi kaki" : "Pilih sisi lutut"
+                }
+              >
                 <button
                   type="button"
                   data-active={session.side === "left"}
@@ -2529,7 +2800,9 @@ export default function PlanningWorkspace({
                 {session.side ? "Kalibrasi & lanjut" : "Pilih sisi dahulu"}
               </Action>
               <small className={styles.startHint}>
-                Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis.
+                {procedure === "foot"
+                  ? "Setelah kalibrasi, wizard 12 titik Hallux terbuka pada langkah analisis."
+                  : "Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis."}
               </small>
             </aside>
           )}
@@ -2686,11 +2959,44 @@ export default function PlanningWorkspace({
               )}
             </aside>
           )}
+          {!guideItem && hasImage && resumeGuideItem && (dismissedGuideItem || (session.step === 1 && canProceed && !resumeGuideItem.complete)) && (
+            <Action
+              icon={ListOrdered}
+              className={styles.resumeGuideButton}
+              onClick={resumeAnalysisGuide}
+            >
+              Kembali ke wizard
+            </Action>
+          )}
           {guideItem && (
+            <>
+            {isSplitGuide && !guideMinimized && guideVisualOpen && (
+              <aside
+                className={styles.splitFigureWindow}
+                data-landmark-figure
+                aria-label={`Ilustrasi landmark ${guideItem.label}`}
+                style={splitGuideTop === null ? undefined : { top: splitGuideTop }}
+              >
+                {(guideItem.guideSide || session.side) && (
+                  <span className={styles.figureSideBadge}>
+                    {(guideItem.guideSide || session.side) === "left" ? "L / KIRI" : "R / KANAN"}
+                  </span>
+                )}
+                <GuideContent
+                  viewId={guideItem.guideView}
+                  highlightId={guideStep?.id || guideItem.highlightId}
+                  side={guideItem.guideSide || session.side}
+                />
+              </aside>
+            )}
             <aside
               className={styles.canvasGuide}
               data-minimized={guideMinimized}
+              data-guide-id={guideItem.id}
+              data-split-guide={isSplitGuide}
+              data-visual-open={guideVisualOpen}
               aria-label={`Petunjuk ${guideItem.label}`}
+              style={isSplitGuide && splitGuideTop !== null ? { top: splitGuideTop } : undefined}
             >
               <div className={styles.canvasGuideHeader}>
                 <span>
@@ -2703,6 +3009,20 @@ export default function PlanningWorkspace({
                   </span>
                 </span>
                 <div>
+                  {isSplitGuide && (
+                    <button
+                      type="button"
+                      className={styles.splitGuideDragHandle}
+                      aria-label="Geser panduan landmark"
+                      title="Geser panduan"
+                      onPointerDown={startSplitGuideDrag}
+                      onPointerMove={moveSplitGuideDrag}
+                      onPointerUp={endSplitGuideDrag}
+                      onPointerCancel={endSplitGuideDrag}
+                    >
+                      <GripVertical size={14} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setGuideMinimized((value) => !value)}
@@ -2714,7 +3034,10 @@ export default function PlanningWorkspace({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setGuideItemId(null)}
+                    onClick={() => {
+                      setDismissedGuideId(guideItem.id);
+                      setGuideItemId(null);
+                    }}
                     aria-label="Tutup petunjuk"
                   >
                     <X size={14} />
@@ -2728,6 +3051,21 @@ export default function PlanningWorkspace({
                   />
                   <small>{guideItem.liveProgress.label}</small>
                 </div>
+              )}
+              {guideItem.active && guideItem.pointCount > 0 && guideItem.backPoint && (
+                <button
+                  type="button"
+                  className={styles.guideBackButton}
+                  onClick={() => {
+                    guideItem.backPoint();
+                    setGuideStepIndex(
+                      Math.max(0, (guideItem.liveProgress?.current || guideItem.pointCount) - 1),
+                    );
+                  }}
+                >
+                  <Undo2 size={13} />
+                  Ulang titik terakhir
+                </button>
               )}
               <div
                 className={styles.guidePurpose}
@@ -2766,7 +3104,7 @@ export default function PlanningWorkspace({
                     <Action
                       icon={Play}
                       className={styles.compactGuideStart}
-                      onClick={() => startAnalysisTool(guideItem)}
+                      onClick={() => openAnalysisGuide(guideItem)}
                     >
                       Mulai {guideSteps.length || ""} titik
                     </Action>
@@ -2785,7 +3123,7 @@ export default function PlanningWorkspace({
                       ? "Sembunyikan gambar landmark"
                       : "Lihat gambar landmark"}
                   </button>
-                  {guideVisualOpen && (
+                  {guideVisualOpen && !isSplitGuide && (
                     <div className={styles.guideVisual}>
                       {guideItem.guideView ? (
                         <GuideContent
@@ -2848,11 +3186,6 @@ export default function PlanningWorkspace({
                           : ""}
                         {guideStep.label}
                       </strong>
-                      <p>
-                        Tap tepat pada landmark ini di gambar X-ray pasien.
-                        Setelah dipilih, wizard otomatis lanjut ke titik
-                        berikutnya.
-                      </p>
                     </div>
                   )}
                   {guideSteps.length > 1 && (
@@ -2883,17 +3216,6 @@ export default function PlanningWorkspace({
                       ))}
                     </ol>
                   )}
-                  <p>{guideItem.instruction}</p>
-                  {guideItem.points?.length > 0 && (
-                    <ol className={styles.guidePoints}>
-                      {guideItem.points.map((point, index) => (
-                        <li key={point}>
-                          <span>{index + 1}</span>
-                          {point}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
                   {guideItem.liveProgress ? (
                     <div className={styles.guideActiveNotice}>
                       <Target size={14} />
@@ -2911,12 +3233,14 @@ export default function PlanningWorkspace({
                     </Action>
                   )}
                   <small>
-                    Diagram bersifat panduan. Sesuaikan titik dengan anatomi
-                    pada X-ray pasien.
+                    {guideItem.id === "hallux-valgus"
+                      ? "Cocokkan sisi dan anatomi pada X-ray pasien."
+                      : "Cocokkan titik dengan X-ray pasien."}
                   </small>
                 </>
               )}
             </aside>
+            </>
           )}
           {!hasImage && (
             <div className={styles.emptyCanvas}>
@@ -3332,17 +3656,35 @@ export default function PlanningWorkspace({
                       </Action>
                     ))}
                 </div>
+                <h2>Foot Planning</h2>
+                <div className={styles.buttonGrid}>
+                  {tools
+                    .filter((item) => item.id === "hallux")
+                    .map((item) => (
+                      <Action
+                        key={item.id}
+                        icon={item.icon}
+                        active={item.active}
+                        disabled={item.disabled}
+                        onClick={() => runTool(item.id)}
+                      >
+                        {item.label}
+                      </Action>
+                    ))}
+                </div>
                 <h2>
                   {procedure === "tka"
                     ? "Knee Axis Analysis"
-                    : "Pelvic Analysis"}
+                    : procedure === "foot"
+                      ? "Hallux Angle Analysis"
+                      : "Pelvic Analysis"}
                 </h2>
                 <div className={styles.buttonGrid}>
                   {analysisTools.map((item) => (
                     <Action
                       key={item.id}
                       icon={item.icon}
-                      onClick={() => startAnalysisTool(item)}
+                      onClick={() => openAnalysisGuide(item)}
                     >
                       {item.label}
                     </Action>

@@ -1,0 +1,152 @@
+{
+  "viewBox": [
+    0,
+    0,
+    1000,
+    1573
+  ],
+  "image_asset": "Foot_Cartoon_3D",
+  "points_are": "illustrative guide coordinates, not patient landmarks",
+  "axes": {
+    "mt1": {
+      "label": "Metatarsal I",
+      "sections": [
+        [
+          [
+            298,
+            548
+          ],
+          [
+            364,
+            548
+          ]
+        ],
+        [
+          [
+            339,
+            655
+          ],
+          [
+            417,
+            655
+          ]
+        ]
+      ]
+    },
+    "mt2": {
+      "label": "Metatarsal II",
+      "sections": [
+        [
+          [
+            458,
+            545
+          ],
+          [
+            491,
+            545
+          ]
+        ],
+        [
+          [
+            460,
+            660
+          ],
+          [
+            496,
+            660
+          ]
+        ]
+      ]
+    },
+    "prox": {
+      "label": "Falang proksimal hallux",
+      "sections": [
+        [
+          [
+            299,
+            285
+          ],
+          [
+            373,
+            285
+          ]
+        ],
+        [
+          [
+            287,
+            355
+          ],
+          [
+            367,
+            355
+          ]
+        ]
+      ]
+    },
+    "dist": {
+      "label": "Falang distal hallux",
+      "sections": [
+        [
+          [
+            338,
+            135
+          ],
+          [
+            388,
+            135
+          ]
+        ],
+        [
+          [
+            318,
+            183
+          ],
+          [
+            386,
+            183
+          ]
+        ]
+      ]
+    }
+  },
+  "dmaa_articular_chord": [
+    [
+      272,
+      438
+    ],
+    [
+      369,
+      443
+    ]
+  ],
+  "tmt1_curve_svg_d": "M360 780 C379 763 409 754 441 765",
+  "no_measured_angles": true,
+  "source_video": "Hallux Valgus.mp4",
+  "chapters": [
+    {
+      "file_prefix": "01_HVA",
+      "name": "Hallux valgus angle",
+      "approx_time": "00:12–00:24"
+    },
+    {
+      "file_prefix": "02_IMA",
+      "name": "Intermetatarsal angle",
+      "approx_time": "00:27–00:37"
+    },
+    {
+      "file_prefix": "03_DMAA",
+      "name": "Distal metatarsal articular angle",
+      "approx_time": "00:41–01:00"
+    },
+    {
+      "file_prefix": "04_HIA",
+      "name": "Hallux interphalangeal angle",
+      "approx_time": "01:03–01:17"
+    },
+    {
+      "file_prefix": "05_TMT1",
+      "name": "Metatarsocuneiform joint",
+      "approx_time": "01:20–01:32"
+    }
+  ]
+}

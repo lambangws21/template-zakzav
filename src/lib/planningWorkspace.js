@@ -55,11 +55,18 @@ export const PLANNING_METRICS = {
     ["Cup Inclination", "deg", "Inklinasi cup"],
     ["Cup Anteversion", "deg", "Anteversi cup"],
   ],
+  foot: [
+    ["HVA", "deg", "Hallux valgus angle antara axis metatarsal I dan proximal phalanx."],
+    ["IMA", "deg", "Intermetatarsal angle antara axis metatarsal I dan II."],
+    ["DMAA", "deg", "Distal metatarsal articular angle pada metatarsal I."],
+    ["HIA", "deg", "Hallux interphalangeal angle antara proximal dan distal phalanx."],
+    ["TMT", "deg", "Obliquity sendi tarsometatarsal I terhadap garis tegak lurus axis metatarsal I."],
+  ],
 };
 
 // Only explicitly assigned or identified measurements enter the clinical log.
 export function resolvePlanningRows(procedure, session, measurements) {
-  return PLANNING_METRICS[procedure].map(([key, unit, detail]) => {
+  return (PLANNING_METRICS[procedure] || []).map(([key, unit, detail]) => {
     const binding = session.bindings?.[key];
     const hasExplicitMetricSide = /\s[LR]$/.test(key);
     const source = binding

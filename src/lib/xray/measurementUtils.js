@@ -340,10 +340,14 @@ export function getAngleCanvasLabelText(angle, expanded = false) {
   if (!angle) return "ANGLE";
   const value = getAngleDegrees(angle.p1, angle.p2, angle.p3);
   if (!Number.isFinite(value)) return "ANGLE";
+  const metric = String(angle.metric || "").trim();
+  const target = Number(angle.normalTargetDeg);
+  const hasTarget = Number.isFinite(target);
+  const correction = hasTarget ? Math.max(0, value - target) : null;
   if (expanded) {
-    return `ANGLE: ${value.toFixed(1)}°`;
+    return `${metric || "ANGLE"}: ${value.toFixed(1)}°${angle.normalRange ? ` · Normal ${angle.normalRange}` : ""}${hasTarget ? ` · Koreksi ${correction.toFixed(1)}°` : ""}`;
   }
-  return `${value.toFixed(1)}°`;
+  return `${metric ? `${metric} ` : ""}${value.toFixed(1)}°${hasTarget ? ` → ${target.toFixed(0)}°` : ""}`;
 }
 
 export function getCircleDiameterText(
@@ -378,4 +382,3 @@ export function getCircleCanvasLabelText(
     ? `DIA: ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 2)}`
     : `DIA ${getCircleDiameterText(circle, mmPerPixel, measurementUnit, 1)}`;
 }
-

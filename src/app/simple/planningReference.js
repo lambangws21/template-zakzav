@@ -21,3 +21,15 @@ export const THA_PLANNING_REFERENCE = {
     { title: "Surgical Technique" },
   ],
 };
+
+export const HALLUX_PLANNING_REFERENCE = {
+  fullLabel: "Hallux Valgus Planning",
+  workflow: [
+    { title: "Setup & Body Side" },
+    { title: "Hallux Landmark Analysis" },
+    { title: "Review 5 Checks & Correction" },
+    { title: "Correction Lines" },
+    { title: "Planning Notes" },
+    { title: "Final Review & Report" },
+  ],
+};

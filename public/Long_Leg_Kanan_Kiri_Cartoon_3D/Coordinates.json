@@ -1,0 +1,32 @@
+[
+  {
+    "file": "Long_Leg_Kanan_Cartoon_3D.svg",
+    "patient_side": "Right",
+    "view": "anterior illustrative",
+    "viewBox": [
+      0,
+      0,
+      1024,
+      1536
+    ],
+    "image_type": "PNG embedded in SVG",
+    "mm_per_pixel": null,
+    "registered_to_patient_xray": false,
+    "landmarks": []
+  },
+  {
+    "file": "Long_Leg_Kiri_Cartoon_3D.svg",
+    "patient_side": "Left",
+    "view": "anterior illustrative",
+    "viewBox": [
+      0,
+      0,
+      1024,
+      1536
+    ],
+    "image_type": "PNG embedded in SVG",
+    "mm_per_pixel": null,
+    "registered_to_patient_xray": false,
+    "landmarks": []
+  }
+]
