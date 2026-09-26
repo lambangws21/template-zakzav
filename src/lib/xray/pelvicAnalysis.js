@@ -17,6 +17,31 @@ export const PELVIC_ANALYSIS_LANDMARKS = [
   { key: "medialWallLeft", label: "Medial wall acetabulum kiri", shortLabel: "MW-L", side: "left", guideKey: "acetabular_inferomedial_rim" },
 ];
 
+export const HIP_RESULT_DEFINITIONS = [
+  { key: "LLD", label: "Selisih panjang tungkai", color: "#f472b6", lineMetrics: ["ITD", "LLD", "Hip Length R", "Hip Length L"] },
+  { key: "Hip Length R", label: "Panjang hip kanan", color: "#34d399", lineMetrics: ["ITD", "Hip Length R"] },
+  { key: "Hip Length L", label: "Panjang hip kiri", color: "#34d399", lineMetrics: ["ITD", "Hip Length L"] },
+  { key: "FO R", label: "Femoral offset kanan", color: "#38bdf8", lineMetrics: ["Femoral Axis R", "FO R"] },
+  { key: "FO L", label: "Femoral offset kiri", color: "#38bdf8", lineMetrics: ["Femoral Axis L", "FO L"] },
+  { key: "AO R", label: "Acetabular offset kanan", color: "#fbbf24", lineMetrics: ["ITD", "AO R"] },
+  { key: "AO L", label: "Acetabular offset kiri", color: "#fbbf24", lineMetrics: ["ITD", "AO L"] },
+  { key: "CCD R", label: "Sudut neck-shaft kanan", color: "#a78bfa", lineMetrics: ["Femoral Axis R"], angleMetrics: ["CCD R"] },
+  { key: "CCD L", label: "Sudut neck-shaft kiri", color: "#a78bfa", lineMetrics: ["Femoral Axis L"], angleMetrics: ["CCD L"] },
+  { key: "FHD R", label: "Diameter head kanan", color: "#fb923c", circleMetrics: ["FHD R"] },
+  { key: "FHD L", label: "Diameter head kiri", color: "#fb923c", circleMetrics: ["FHD L"] },
+];
+
+export function isHipResultMeasurementRelevant(item, resultKey, kind) {
+  const definition = HIP_RESULT_DEFINITIONS.find((entry) => entry.key === resultKey);
+  if (!definition) return false;
+  const metrics = kind === "angle"
+    ? definition.angleMetrics
+    : kind === "circle"
+      ? definition.circleMetrics
+      : definition.lineMetrics;
+  return Boolean(metrics?.includes(item?.metric));
+}
+
 function pointMap(points) {
   return Object.fromEntries(
     PELVIC_ANALYSIS_LANDMARKS.map((definition, index) => [definition.key, points[index]]),

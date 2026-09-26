@@ -123,6 +123,8 @@ import { SHAPE_PRESETS } from "../data/shapePresets";
 import { pelvicLandmarkId } from "../data/pelvicLandmarks";
 import {
   buildPelvicAnalysisMeasurements,
+  HIP_RESULT_DEFINITIONS,
+  isHipResultMeasurementRelevant,
   PELVIC_ANALYSIS_LANDMARKS,
 } from "../lib/xray/pelvicAnalysis";
 import {
@@ -1029,6 +1031,7 @@ export default function XrayCalibrationWorkspace({
   const [draftLine, setDraftLine] = useState(null);
   const [angles, setAngles] = useState([]);
   const [focusedHalluxMetric, setFocusedHalluxMetric] = useState(null);
+  const [focusedHipResult, setFocusedHipResult] = useState(null);
   const [draftAnglePoints, setDraftAnglePoints] = useState([]);
   const [circles, setCircles] = useState([]);
   const circlesRef = useRef([]);
@@ -1043,6 +1046,8 @@ export default function XrayCalibrationWorkspace({
   const [draftHalluxValgusPoints, setDraftHalluxValgusPoints] = useState([]);
   const halluxValgusCompletionRef = useRef(false);
   const halluxCorrectionFreeCutRef = useRef(null);
+  const neckOsteotomyLinePendingRef = useRef(false);
+  const neckOsteotomyFreeCutRef = useRef(null);
   const [guideBuilderMode, setGuideBuilderMode] = useState("parallel");
   const [guideBuilderPreviewPoint, setGuideBuilderPreviewPoint] =
     useState(null);
@@ -1318,6 +1323,43 @@ export default function XrayCalibrationWorkspace({
     planningProcedure === "foot" &&
     halluxResults.some((item) => item.metric === focusedHalluxMetric)
       ? focusedHalluxMetric
+      : null;
+  const hipResults = useMemo(() => {
+    const latest = (items, metric) => [...items].reverse().find((item) => item.metric === metric);
+    const length = (line) => line ? getLineLength(line) * (mmPerPixel || 1) : null;
+    const diameter = (circle) => circle ? circle.radius * 2 * (mmPerPixel || 1) : null;
+    const unit = mmPerPixel ? "mm" : "px";
+    const rightHipLength = length(latest(lines, "Hip Length R"));
+    const leftHipLength = length(latest(lines, "Hip Length L"));
+    return HIP_RESULT_DEFINITIONS
+      .map((item) => {
+        const angle = latest(angles, item.key);
+        const measured = item.angleMetrics
+          ? angle && getAngleDegrees(angle.p1, angle.p2, angle.p3)
+          : item.circleMetrics
+            ? diameter(latest(circles, item.key))
+            : item.key === "LLD"
+              ? length(latest(lines, "LLD")) ?? (
+                  rightHipLength !== null && leftHipLength !== null
+                    ? Math.abs(rightHipLength - leftHipLength)
+                    : null
+                )
+              : length(latest(lines, item.key));
+        if (!Number.isFinite(measured)) return null;
+        return {
+          metric: item.key,
+          label: item.label,
+          value: `${measured.toFixed(1)} ${item.angleMetrics ? "°" : unit}`,
+          color: item.color,
+        };
+      })
+      .filter(Boolean);
+  }, [angles, circles, lines, mmPerPixel]);
+  const activeHipFocus =
+    isPlanningLayout &&
+    planningProcedure === "hip" &&
+    hipResults.some((item) => item.metric === focusedHipResult)
+      ? focusedHipResult
       : null;
   const [planningSessions, setPlanningSessions] = useState(() => ({
     tka: createPlanningSession(),
@@ -2507,8 +2549,19 @@ export default function XrayCalibrationWorkspace({
   const appendLineMeasurement = useCallback(
     (lineInput, options = {}) => {
       if (!lineInput) return null;
+      const isNeckOsteotomyLine = options.neckOsteotomyCandidate &&
+        neckOsteotomyLinePendingRef.current &&
+        (!lineInput.type || lineInput.type === "normal");
+      if (isNeckOsteotomyLine) neckOsteotomyLinePendingRef.current = false;
       const nextLine = {
         ...lineInput,
+        ...(isNeckOsteotomyLine ? {
+          name: "Neck Osteotomy",
+          metric: "Neck Osteotomy",
+          color: "#fb7185",
+          strokeWidth: 1.5,
+          showLabel: true,
+        } : {}),
         id: nextLineIdRef.current,
         side: lineInput.side || canvasAnatomySide,
         measurementMode: normalizeLineMeasurementMode(
@@ -6939,6 +6992,7 @@ export default function XrayCalibrationWorkspace({
       }
 
       halluxCorrectionFreeCutRef.current = null;
+      neckOsteotomyFreeCutRef.current = null;
       setFreeCutMode(requestedMode);
       setFreeCutModePickerOpen(false);
       setDraftCut(null);
@@ -6958,6 +7012,41 @@ export default function XrayCalibrationWorkspace({
     },
     [handleToolChange, image],
   );
+
+  const activateNeckOsteotomyRealCut = useCallback(() => {
+    if (!hasCalibration) {
+      focusCalibrationStep("Kalibrasi X-ray sebelum simulasi neck osteotomy.");
+      return;
+    }
+    const cutLine = selectedLine?.metric === "Neck Osteotomy"
+      ? selectedLine
+      : [...lines].reverse().find((line) => line.metric === "Neck Osteotomy");
+    if (!cutLine || getLineLength(cutLine) < 10) {
+      setNotice("Buat garis Neck Osteotomy melintasi leher femur terlebih dahulu.");
+      return;
+    }
+
+    activateCanvasFreeCut("real");
+    neckOsteotomyFreeCutRef.current = {
+      lineId: cutLine.id,
+      side: cutLine.side,
+      x1: cutLine.x1,
+      y1: cutLine.y1,
+      x2: cutLine.x2,
+      y2: cutLine.y2,
+    };
+    setSelectedCutLayerId(null);
+    setDraftCut({
+      targetLayerId: null,
+      points: [
+        { x: cutLine.x1, y: cutLine.y1 },
+        { x: cutLine.x2, y: cutLine.y2 },
+      ],
+      hoverPoint: { x: cutLine.x2, y: cutLine.y2 },
+    });
+    setHistoryPaused(true);
+    setNotice("Garis neck menjadi tepi potong. Telusuri fragmen head/neck, lalu tap titik awal untuk Real Cut.");
+  }, [activateCanvasFreeCut, focusCalibrationStep, hasCalibration, lines, selectedLine]);
 
   const activateHalluxCorrectionFreeCut = useCallback(() => {
     const selectedTarget = selectedLine?.correctionTarget
@@ -7079,6 +7168,11 @@ export default function XrayCalibrationWorkspace({
 
     nextLayer.cutMode = freeCutMode;
     const halluxCorrection = halluxCorrectionFreeCutRef.current;
+    const neckOsteotomy = freeCutMode === "real" ? neckOsteotomyFreeCutRef.current : null;
+    if (neckOsteotomy) {
+      nextLayer.name = `Neck Osteotomy ${neckOsteotomy.side === "left" ? "L" : "R"}`;
+      nextLayer.neckOsteotomy = neckOsteotomy;
+    }
     if (halluxCorrection) {
       nextLayer.name = `${halluxCorrection.metric} Correction ${Math.abs(halluxCorrection.rotationDeg).toFixed(1)}°`;
       nextLayer.rotation = normalizeRotationDegrees(
@@ -7117,8 +7211,11 @@ export default function XrayCalibrationWorkspace({
     setDraftCut(null);
     setHistoryPaused(false);
     halluxCorrectionFreeCutRef.current = null;
+    neckOsteotomyFreeCutRef.current = null;
     setNotice(
-      halluxCorrection
+      neckOsteotomy
+        ? "Neck osteotomy Real Cut dibuat. Periksa batas potong dan posisi fragmen pada X-ray sebelum menyimpan planning."
+        : halluxCorrection
         ? `${halluxCorrection.metric} Free Cut dibuat dan diputar ${Math.abs(halluxCorrection.rotationDeg).toFixed(1)}° menuju target ${halluxCorrection.targetDeg.toFixed(1)}°. Verifikasi posisi fragmen sebelum menyimpan planning.`
         : nextLayer.imageSrc
         ? canCutTargetLayer
@@ -7260,6 +7357,20 @@ export default function XrayCalibrationWorkspace({
       resetMobileLineTapTarget,
     ],
   );
+
+  const startNeckOsteotomyLine = useCallback(() => {
+    if (!hasCalibration) {
+      focusCalibrationStep("Kalibrasi X-ray sebelum merencanakan neck osteotomy.");
+      return;
+    }
+    neckOsteotomyLinePendingRef.current = true;
+    handleLinePresetChange("normal");
+    setNotice("Tandai dua titik pada garis rencana osteotomi leher femur.");
+  }, [focusCalibrationStep, handleLinePresetChange, hasCalibration]);
+
+  useEffect(() => {
+    if (tool !== "draw") neckOsteotomyLinePendingRef.current = false;
+  }, [tool]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -10381,7 +10492,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.setLineDash([3, 4]);
         overlayCtx.lineWidth = 1;
         overlayCtx.strokeStyle = opts.color;
-        overlayCtx.globalAlpha = 0.45;
+        overlayCtx.globalAlpha *= 0.45;
         overlayCtx.stroke();
         overlayCtx.restore();
       }
@@ -10423,6 +10534,9 @@ export default function XrayCalibrationWorkspace({
     for (const line of lines) {
       const isSelected = line.id === selectedLineId;
       const isHalluxLine = Boolean(line.halluxValgusAnalysisId);
+      const isHipLine = Boolean(line.pelvicAnalysisId) || HIP_RESULT_DEFINITIONS.some(
+        (item) => item.lineMetrics?.includes(line.metric),
+      );
       const isFocusedHalluxTarget =
         activeHalluxFocus && line.metric === `${activeHalluxFocus} Target`;
       if (line.correctionTarget && isHalluxLine && !isSelected && !isFocusedHalluxTarget) {
@@ -10449,6 +10563,12 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.globalAlpha = isHalluxValgusLineRelevant(line, activeHalluxFocus)
           ? line.correctionTarget ? 0.75 : 1
           : 0.12;
+      } else if (isHipLine && isPlanningLayout && planningProcedure === "hip") {
+        overlayCtx.globalAlpha = isSelected
+          ? 1
+          : activeHipFocus
+            ? isHipResultMeasurementRelevant(line, activeHipFocus, "line") ? 1 : 0.1
+            : 0.55;
       }
       drawLine(line, {
         color: style.color,
@@ -10659,8 +10779,14 @@ export default function XrayCalibrationWorkspace({
         selectionPulse?.type === "angle" && selectionPulse.id === angle.id;
       const isEmphasized = isSelected || isPulsing;
       const isHalluxAngle = Boolean(angle.halluxValgusAnalysisId);
+      const isHipAngle = angle.metric === "CCD R" || angle.metric === "CCD L";
       const isDimmedHalluxAngle =
         isHalluxAngle && activeHalluxFocus && angle.metric !== activeHalluxFocus;
+      const hipAngleOpacity = isHipAngle && isPlanningLayout && planningProcedure === "hip"
+        ? isSelected ? 1 : activeHipFocus
+          ? isHipResultMeasurementRelevant(angle, activeHipFocus, "angle") ? 1 : 0.1
+          : 0.55
+        : 1;
       const showExpandedInfo = isSelected || isHovered;
       const color = angle.color || DEFAULT_ANGLE_COLOR;
       const strokeWidth = Math.max(
@@ -10687,6 +10813,7 @@ export default function XrayCalibrationWorkspace({
 
       overlayCtx.save();
       if (isDimmedHalluxAngle) overlayCtx.globalAlpha = 0.12;
+      if (isHipAngle) overlayCtx.globalAlpha *= hipAngleOpacity;
       if (assistGeometry) {
         overlayCtx.fillStyle = "rgba(15, 23, 42, 0.28)";
         overlayCtx.beginPath();
@@ -10780,6 +10907,8 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.fillText(text, p2.x + labelOffsetX, p2.y + labelOffsetY);
         overlayCtx.restore();
       } else {
+        overlayCtx.save();
+        if (isHipAngle) overlayCtx.globalAlpha *= hipAngleOpacity;
         drawTag(
           overlayCtx,
           p2.x + labelOffsetX,
@@ -10806,6 +10935,7 @@ export default function XrayCalibrationWorkspace({
             radius: 4,
           },
         );
+        overlayCtx.restore();
       }
     }
 
@@ -10821,6 +10951,12 @@ export default function XrayCalibrationWorkspace({
         selectionPulse?.type === "circle" && selectionPulse.id === circle.id;
       const isEmphasized = isSelected || isPulsing;
       const showExpandedInfo = isSelected || isHovered;
+      const isHipCircle = circle.metric === "FHD R" || circle.metric === "FHD L";
+      const hipCircleOpacity = isHipCircle && isPlanningLayout && planningProcedure === "hip"
+        ? isSelected ? 1 : activeHipFocus
+          ? isHipResultMeasurementRelevant(circle, activeHipFocus, "circle") ? 1 : 0.1
+          : 0.55
+        : 1;
       const color =
         circle.color || (isSelected ? "#a78bfa" : DEFAULT_CIRCLE_COLOR);
       const strokeWidth = Math.max(
@@ -10831,6 +10967,7 @@ export default function XrayCalibrationWorkspace({
       );
 
       overlayCtx.save();
+      if (isHipCircle) overlayCtx.globalAlpha *= hipCircleOpacity;
       if (isPulsing) {
         overlayCtx.strokeStyle = "rgba(248, 250, 252, 0.38)";
         overlayCtx.lineWidth = 7;
@@ -10854,7 +10991,7 @@ export default function XrayCalibrationWorkspace({
         ? strokeWidth
         : Math.max(0.8, strokeWidth * 0.5);
       overlayCtx.strokeStyle = color;
-      overlayCtx.globalAlpha = isEmphasized ? 1 : 0.4;
+      overlayCtx.globalAlpha *= isEmphasized ? 1 : 0.4;
       overlayCtx.beginPath();
       overlayCtx.moveTo(center.x - radiusPx * dCos, center.y - radiusPx * dSin);
       overlayCtx.lineTo(center.x + radiusPx * dCos, center.y + radiusPx * dSin);
@@ -10903,16 +11040,19 @@ export default function XrayCalibrationWorkspace({
         Math.abs(circle.labelOffsetY ?? 0) > 2;
       if (hasLabelOffset) {
         overlayCtx.save();
+        if (isHipCircle) overlayCtx.globalAlpha *= hipCircleOpacity;
         overlayCtx.beginPath();
         overlayCtx.moveTo(labelAnchorX, center.y - radiusPx);
         overlayCtx.lineTo(labelX, labelY);
         overlayCtx.setLineDash([3, 4]);
         overlayCtx.lineWidth = 1;
         overlayCtx.strokeStyle = color;
-        overlayCtx.globalAlpha = 0.45;
+        overlayCtx.globalAlpha *= 0.45;
         overlayCtx.stroke();
         overlayCtx.restore();
       }
+      overlayCtx.save();
+      if (isHipCircle) overlayCtx.globalAlpha *= hipCircleOpacity;
       drawTag(
         overlayCtx,
         labelX,
@@ -10933,6 +11073,7 @@ export default function XrayCalibrationWorkspace({
           radius: 4,
         },
       );
+      overlayCtx.restore();
     }
 
     for (const item of hkaSets) {
@@ -12768,6 +12909,7 @@ export default function XrayCalibrationWorkspace({
     activeSnapTarget,
     activeIntersectionAngleKey,
     activeHalluxFocus,
+    activeHipFocus,
     annotations,
     angles,
     calibrationMode,
@@ -12806,6 +12948,7 @@ export default function XrayCalibrationWorkspace({
     isCoarsePointer,
     expandedLineHandle,
     isPlanningLayout,
+    planningProcedure,
     planningGuides,
     level,
     lineTypeColor,
@@ -15959,11 +16102,14 @@ export default function XrayCalibrationWorkspace({
         pelvicAnalysisCompletionRef.current = true;
         const analysisId = `pelvic-${Date.now()}`;
         const generated = buildPelvicAnalysisMeasurements(next, analysisId);
-        generated.lines.forEach((line) => appendLineMeasurement(line));
+        generated.lines.forEach((line) => appendLineMeasurement({
+          ...line,
+          color: HIP_RESULT_DEFINITIONS.find((item) => item.key === line.metric)?.color || line.color,
+        }));
         const generatedAngles = generated.angles.map((angle) => ({
           ...angle,
           id: nextAngleIdRef.current++,
-          color: DEFAULT_ANGLE_COLOR,
+          color: HIP_RESULT_DEFINITIONS.find((item) => item.key === angle.metric)?.color || DEFAULT_ANGLE_COLOR,
           labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
           labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
           resultOpacity: DEFAULT_LABEL_OPACITY,
@@ -15974,7 +16120,7 @@ export default function XrayCalibrationWorkspace({
         const generatedCircles = generated.circles.map((circle) => ({
           ...circle,
           id: nextCircleIdRef.current++,
-          color: DEFAULT_CIRCLE_COLOR,
+          color: HIP_RESULT_DEFINITIONS.find((item) => item.key === circle.metric)?.color || DEFAULT_CIRCLE_COLOR,
           labelOffsetX: 0,
           labelOffsetY: 0,
           resultOpacity: DEFAULT_LABEL_OPACITY,
@@ -16528,6 +16674,7 @@ export default function XrayCalibrationWorkspace({
           }
           const completedLine = appendLineMeasurement(nextLineInput, {
             mobileHandleAssistEnd: true,
+            neckOsteotomyCandidate: true,
           });
           if (
             completedLine &&
@@ -18434,19 +18581,15 @@ export default function XrayCalibrationWorkspace({
         );
         const length = getLineLength(constrainedDraft);
         if (length >= 2) {
-          const nextLine = {
-            ...constrainedDraft,
-            id: nextLineIdRef.current,
-            labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
-            labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
-            labelOpacity: DEFAULT_LABEL_OPACITY,
-            strokeWidth: Number.isFinite(constrainedDraft.strokeWidth)
-              ? constrainedDraft.strokeWidth
-              : calibrationDraftStrokeWidth,
-          };
-          nextLineIdRef.current += 1;
-          setLines((prev) => [...prev, nextLine]);
-          setSelectedLineId(nextLine.id);
+          const nextLine = appendLineMeasurement(
+            {
+              ...constrainedDraft,
+              strokeWidth: Number.isFinite(constrainedDraft.strokeWidth)
+                ? constrainedDraft.strokeWidth
+                : calibrationDraftStrokeWidth,
+            },
+            { neckOsteotomyCandidate: true },
+          );
           if (isSimpleUiMode && isMobileViewport && hasCalibration) {
             pendingMobileLineSettingsRef.current = nextLine.id;
           }
@@ -18615,6 +18758,7 @@ export default function XrayCalibrationWorkspace({
       }
     },
     [
+      appendLineMeasurement,
       appendCircleMeasurement,
       applyMagnificationCircleCalibration,
       anatomicalRefSizeMm,
@@ -24588,6 +24732,13 @@ export default function XrayCalibrationWorkspace({
       },
       active: tool === "circle",
     },
+    ...(planningProcedure === "hip" ? [{
+      id: "cupAssessment",
+      label: "Cup Assessment",
+      icon: CircleDot,
+      action: () => setShowCupAssessment((open) => !open),
+      active: showCupAssessment,
+    }] : []),
     {
       id: "hallux",
       label: "Hallux Valgus",
@@ -24819,16 +24970,6 @@ export default function XrayCalibrationWorkspace({
     side,
     ...extra,
   });
-  const startBilateralHipAngle = (side) => {
-    setCanvasAnatomySide(side);
-    planningAngleMetricRef.current = `CCD ${side === "left" ? "L" : "R"}`;
-    handleToolChange("angle");
-  };
-  const startBilateralHeadDiameter = (side) => {
-    setCanvasAnatomySide(side);
-    planningCircleMetricRef.current = `FHD ${side === "left" ? "L" : "R"}`;
-    handleToolChange("circle");
-  };
   const planningAnalysisTools =
     planningProcedure === "tka"
       ? [
@@ -25004,6 +25145,7 @@ export default function XrayCalibrationWorkspace({
             complete: lines.some((item) => Boolean(item.pelvicAnalysisId)),
             instruction:
               "Tandai 16 titik pelvis dan femur kanan/kiri.",
+            guideView: "ap_pelvis_cartoon",
             guideImage:
               "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
             guideSteps: PELVIC_ANALYSIS_LANDMARKS.map((item) =>
@@ -25012,210 +25154,6 @@ export default function XrayCalibrationWorkspace({
               }),
             ),
             points: [],
-          },
-          {
-            id: "ccd-right",
-            label: "CCD kanan",
-            icon: DraftingCompass,
-            action: () => startBilateralHipAngle("right"),
-            ...(tool === "angle" && planningAngleMetricRef.current === "CCD R"
-              ? {
-                  active: true,
-                  pointCount: draftAnglePoints.length,
-                  backPoint: () => backPlanningDraftPoint("angle"),
-                  activePoint: `Titik sudut ${Math.min(3, draftAnglePoints.length + 1)} dari 3`,
-                  liveProgress: planningGuideProgress(
-                    draftAnglePoints.length,
-                    3,
-                  ),
-                }
-              : {}),
-            complete: angles.some((item) => item.metric === "CCD R"),
-            instruction:
-              "Kanan: pusat head, vertex neck-shaft, shaft distal.",
-            guideView: "pelvic_marked",
-            highlightId: pelvicLandmarkId("femoral_head_center", "right"),
-            guideSteps: [
-              pelvicGuideStep(
-                "femoral_head_center",
-                "Pusat femoral head kanan",
-                "right",
-              ),
-              pelvicGuideStep(
-                "greater_trochanter_inferior",
-                "Vertex neck-shaft kanan",
-                "right",
-              ),
-              pelvicGuideStep(
-                "femoral_shaft_distal_center",
-                "Pusat shaft femur kanan",
-                "right",
-              ),
-            ],
-            points: [
-              "Pusat femoral head",
-              "Pusat femoral neck sebagai vertex",
-              "Titik pada sumbu shaft femur",
-            ],
-          },
-          {
-            id: "ccd-left",
-            label: "CCD kiri",
-            icon: DraftingCompass,
-            action: () => startBilateralHipAngle("left"),
-            ...(tool === "angle" && planningAngleMetricRef.current === "CCD L"
-              ? {
-                  active: true,
-                  pointCount: draftAnglePoints.length,
-                  backPoint: () => backPlanningDraftPoint("angle"),
-                  activePoint: `Titik sudut ${Math.min(3, draftAnglePoints.length + 1)} dari 3`,
-                  liveProgress: planningGuideProgress(
-                    draftAnglePoints.length,
-                    3,
-                  ),
-                }
-              : {}),
-            complete: angles.some((item) => item.metric === "CCD L"),
-            instruction:
-              "Kiri: pusat head, vertex neck-shaft, shaft distal.",
-            guideView: "pelvic_marked",
-            highlightId: pelvicLandmarkId("femoral_head_center", "left"),
-            guideSteps: [
-              pelvicGuideStep(
-                "femoral_head_center",
-                "Pusat femoral head kiri",
-                "left",
-              ),
-              pelvicGuideStep(
-                "greater_trochanter_inferior",
-                "Vertex neck-shaft kiri",
-                "left",
-              ),
-              pelvicGuideStep(
-                "femoral_shaft_distal_center",
-                "Pusat shaft femur kiri",
-                "left",
-              ),
-            ],
-            points: [
-              "Pusat femoral head",
-              "Pusat femoral neck sebagai vertex",
-              "Titik pada sumbu shaft femur",
-            ],
-          },
-          {
-            id: "fhd-right",
-            label: "Diameter head kanan",
-            icon: CircleDot,
-            action: () => startBilateralHeadDiameter("right"),
-            ...(tool === "circle" && planningCircleMetricRef.current === "FHD R"
-              ? {
-                  active: true,
-                  pointCount: draftCirclePoints.length,
-                  backPoint: () => backPlanningDraftPoint("circle"),
-                  activePoint: draftCirclePoints.length
-                    ? "Titik berikutnya: tepi femoral head"
-                    : "Titik berikutnya: pusat femoral head",
-                  liveProgress: planningGuideProgress(
-                    draftCirclePoints.length,
-                    2,
-                  ),
-                }
-              : {}),
-            complete: circles.some((item) => item.metric === "FHD R"),
-            instruction: "Kanan: pusat head, lalu tepi korteks.",
-            guideView: "pelvic_marked",
-            highlightId: pelvicLandmarkId("femoral_head_center", "right"),
-            guideSteps: [
-              pelvicGuideStep(
-                "femoral_head_center",
-                "Pusat femoral head kanan",
-                "right",
-              ),
-              pelvicGuideStep(
-                "femoral_head_lateral_edge",
-                "Tepi femoral head kanan",
-                "right",
-              ),
-            ],
-            points: [
-              "Tap pusat femoral head",
-              "Tap tepi terluar femoral head",
-              "Sesuaikan lingkaran agar mengikuti korteks",
-            ],
-          },
-          {
-            id: "fhd-left",
-            label: "Diameter head kiri",
-            icon: CircleDot,
-            action: () => startBilateralHeadDiameter("left"),
-            ...(tool === "circle" && planningCircleMetricRef.current === "FHD L"
-              ? {
-                  active: true,
-                  pointCount: draftCirclePoints.length,
-                  backPoint: () => backPlanningDraftPoint("circle"),
-                  activePoint: draftCirclePoints.length
-                    ? "Titik berikutnya: tepi femoral head"
-                    : "Titik berikutnya: pusat femoral head",
-                  liveProgress: planningGuideProgress(
-                    draftCirclePoints.length,
-                    2,
-                  ),
-                }
-              : {}),
-            complete: circles.some((item) => item.metric === "FHD L"),
-            instruction: "Kiri: pusat head, lalu tepi korteks.",
-            guideView: "pelvic_marked",
-            highlightId: pelvicLandmarkId("femoral_head_center", "left"),
-            guideSteps: [
-              pelvicGuideStep(
-                "femoral_head_center",
-                "Pusat femoral head kiri",
-                "left",
-              ),
-              pelvicGuideStep(
-                "femoral_head_lateral_edge",
-                "Tepi femoral head kiri",
-                "left",
-              ),
-            ],
-            points: [
-              "Tap pusat femoral head",
-              "Tap tepi terluar femoral head",
-              "Sesuaikan lingkaran agar mengikuti korteks",
-            ],
-          },
-          {
-            id: "cup",
-            label: "Cup Assessment",
-            icon: CircleDot,
-            action: () => setShowCupAssessment((open) => !open),
-            active: showCupAssessment,
-            complete: Boolean(
-              savedCupAssessment && matchesPlanningSide(savedCupAssessment),
-            ),
-            instruction:
-              "Sesuaikan elips rim cup; simpan inklinasi dan anteversi.",
-            guideView: "pelvic_marked",
-            highlightId: pelvicLandmarkId(
-              "acetabular_inferomedial_rim",
-              planningSession.side,
-            ),
-            guideSteps: [
-              pelvicGuideStep(
-                "femoral_head_superior_edge",
-                "Acuan rim superior",
-              ),
-              pelvicGuideStep(
-                "acetabular_inferomedial_rim",
-                "Rim acetabulum inferomedial",
-              ),
-            ],
-            points: [
-              "Tandai rim cup superior-lateral",
-              "Tandai rim cup superior-medial",
-              "Sesuaikan elips terhadap bukaan cup lalu simpan",
-            ],
           },
         ];
   const guideDistanceField = (label, value, onChange, min, max) => ({
@@ -41602,12 +41540,17 @@ export default function XrayCalibrationWorkspace({
             tools={planningTools}
             actions={planningActions}
             analysisTools={planningAnalysisTools}
-            halluxResults={halluxResults}
-            focusedHalluxMetric={activeHalluxFocus}
-            onFocusHalluxMetric={(metric) => {
-              setFocusedHalluxMetric((current) => current === metric ? null : metric);
+            analysisResults={planningProcedure === "hip" ? hipResults : halluxResults}
+            focusedAnalysisMetric={planningProcedure === "hip" ? activeHipFocus : activeHalluxFocus}
+            onFocusAnalysisMetric={(metric) => {
+              if (planningProcedure === "hip") {
+                setFocusedHipResult((current) => current === metric ? null : metric);
+              } else {
+                setFocusedHalluxMetric((current) => current === metric ? null : metric);
+              }
               setSelectedLineId(null);
               setSelectedAngleId(null);
+              setSelectedCircleId(null);
             }}
             correctionControls={
               planningProcedure === "tka" ? (
@@ -41655,13 +41598,22 @@ export default function XrayCalibrationWorkspace({
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  className="planning-inline-action"
-                  onClick={() => handleLinePresetChange("normal")}
-                >
-                  Femoral neck osteotomy line
-                </button>
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    onClick={startNeckOsteotomyLine}
+                  >
+                    1. Garis neck osteotomy
+                  </button>
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    onClick={activateNeckOsteotomyRealCut}
+                  >
+                    2. Neck osteotomy Real Cut
+                  </button>
+                </div>
               )
             }
             catalog={LOCAL_IMPLANT_LIBRARY}

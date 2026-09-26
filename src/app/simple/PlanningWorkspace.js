@@ -237,9 +237,9 @@ export default function PlanningWorkspace({
   tools,
   actions,
   analysisTools,
-  halluxResults,
-  focusedHalluxMetric,
-  onFocusHalluxMetric,
+  analysisResults,
+  focusedAnalysisMetric,
+  onFocusAnalysisMetric,
   correctionControls,
   catalog,
   selectedImplantId,
@@ -285,6 +285,7 @@ export default function PlanningWorkspace({
   const [groupEditorOpen, setGroupEditorOpen] = useState(false);
   const [groupSelection, setGroupSelection] = useState([]);
   const [logTab, setLogTab] = useState("measurements");
+  const [measurementSearch, setMeasurementSearch] = useState("");
   const [brand, setBrand] = useState("");
   const [system, setSystem] = useState("");
   const [component, setComponent] = useState("");
@@ -358,6 +359,9 @@ export default function PlanningWorkspace({
       };
     });
   }, [measurements, rows]);
+  const filteredMeasurementRows = displayedMeasurementRows.filter((row) =>
+    `${row.key} ${row.name || ""} ${row.detail || ""}`.toLowerCase().includes(measurementSearch.trim().toLowerCase()),
+  );
   const getPlannedValue = (row) => {
     const planned = alignmentPlan?.plannedMetrics?.[row.key];
     if (procedure === "tka" && Number.isFinite(planned)) return planned;
@@ -484,7 +488,9 @@ export default function PlanningWorkspace({
     analysisTools.find((item) => item.id === guideItemId) || null;
   const isSplitGuide = Boolean(
     guideItem?.guideView &&
-    (guideItem.id === "hallux-valgus" || guideItem.guideView === "ap_tka_long_leg"),
+    (guideItem.id === "hallux-valgus" ||
+      guideItem.guideView === "ap_tka_long_leg" ||
+      guideItem.guideView === "ap_pelvis_cartoon"),
   );
   const dismissedGuideItem =
     analysisTools.find((item) => item.id === dismissedGuideId) || null;
@@ -533,21 +539,24 @@ export default function PlanningWorkspace({
     }
   }, [catalog, procedure, selectedImplantId]);
   useEffect(() => {
+    const hipGuidePreview = procedure === "hip" && canProceed && session.step === 0;
     if (
       !enabled ||
-      session.step !== 1 ||
+      (session.step !== 1 && !hipGuidePreview) ||
       !activeAnalysisItem ||
-      activeAnalysisItem.complete
+      activeAnalysisItem.complete ||
+      dismissedGuideId === activeAnalysisItem.id
     )
       return;
     setGuideItemId(activeAnalysisItem.id);
     const splitGuide = activeAnalysisItem.id === "hallux-valgus" ||
-      activeAnalysisItem.guideView === "ap_tka_long_leg";
+      activeAnalysisItem.guideView === "ap_tka_long_leg" ||
+      activeAnalysisItem.guideView === "ap_pelvis_cartoon";
     setGuideMinimized(!splitGuide);
     setGuideVisualOpen(splitGuide);
     setGuideStepIndex(0);
     if (splitGuide) setSheet(null);
-  }, [activeAnalysisItem?.id, enabled, procedure, session.step]);
+  }, [activeAnalysisItem?.id, canProceed, dismissedGuideId, enabled, procedure, session.step]);
   useEffect(() => {
     if (!Number.isFinite(liveGuideStep) || guideSteps.length === 0) return;
     setGuideStepIndex(Math.min(liveGuideStep, guideSteps.length - 1));
@@ -563,8 +572,9 @@ export default function PlanningWorkspace({
     setStepExpanded(true);
     setWorkflowOpen(true);
     const splitGuide = activeAnalysisItemId === "hallux-valgus" ||
-      (procedure === "tka" && Boolean(activeAnalysisItemId));
-    if (activeAnalysisItemId && !activeAnalysisItemComplete) {
+      activeAnalysisItem?.guideView === "ap_tka_long_leg" ||
+      activeAnalysisItem?.guideView === "ap_pelvis_cartoon";
+    if (activeAnalysisItemId && !activeAnalysisItemComplete && dismissedGuideId !== activeAnalysisItemId) {
       setGuideItemId(activeAnalysisItemId);
       setGuideMinimized(!splitGuide);
       setGuideVisualOpen(splitGuide);
@@ -578,6 +588,7 @@ export default function PlanningWorkspace({
     activeAnalysisItemComplete,
     activeAnalysisItemId,
     analysisSignature,
+    dismissedGuideId,
     enabled,
     procedure,
     session.step,
@@ -1446,11 +1457,11 @@ export default function PlanningWorkspace({
           aria-label="Planning log sections"
         >
           {[
-            ["measurements", "Measurements"],
-            ["implants", "Implants"],
-            ["texts", "Texts"],
-            ["crops", "Crops"],
-          ].map(([key, label]) => (
+            ["measurements", "Ukuran", Ruler, displayedMeasurementRows.length],
+            ["implants", "Implant", Layers, layers.filter((item) => item.kind !== "crop").length],
+            ["texts", "Teks", PencilLine, annotations.length],
+            ["crops", "Potongan", ImagePlus, layers.filter((item) => item.kind === "crop").length],
+          ].map(([key, label, TabIcon, count]) => (
             <button
               key={key}
               type="button"
@@ -1463,7 +1474,9 @@ export default function PlanningWorkspace({
                 setMetricEditor(null);
               }}
             >
-              {label}
+              <TabIcon size={14} aria-hidden="true" />
+              <span>{label}</span>
+              <small>{count}</small>
             </button>
           ))}
         </div>
@@ -1478,126 +1491,82 @@ export default function PlanningWorkspace({
                 <strong>Measurements</strong>
                 <span>{displayedMeasurementRows.length} terukur</span>
               </div>
+              <label className={styles.logSearch}>
+                <Search size={15} aria-hidden="true" />
+                <input
+                  type="search"
+                  aria-label="Cari measurement"
+                  placeholder="Cari nama pengukuran..."
+                  value={measurementSearch}
+                  onChange={(event) => setMeasurementSearch(event.target.value)}
+                />
+              </label>
               <div
                 className={styles.measurementScroll}
                 role="region"
                 aria-label="Measurement values"
                 tabIndex={0}
               >
-                <table className={styles.measurements}>
-                  <thead>
-                    <tr>
-                      <th>Parameter</th>
-                      <th>Measured</th>
-                      <th>Planned</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedMeasurementRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className={styles.emptyMeasurement}>
-                          Belum ada pengukuran.
-                        </td>
-                      </tr>
-                    ) : (
-                      displayedMeasurementRows.map((row) => {
-                        const planningStatus = getPlanningStatus(row);
-                        return (
-                          <tr key={row.key}>
-                            <th>
-                              <span className={styles.metricNameCell}>
-                                <button
-                                  type="button"
-                                  title={`${row.detail}. Klik untuk mengubah info.`}
-                                  onClick={() =>
-                                    setMetricEditor(
-                                      metricEditor === row.key ? null : row.key,
-                                    )
-                                  }
-                                  aria-expanded={metricEditor === row.key}
-                                >
-                                  <span className={styles.metricTitle}>
-                                    <span>
-                                      {row.clinical ? row.key : row.name}
-                                    </span>
-                                    {row.sourceKind === "line" ? (
-                                      <em
-                                        className={styles.measurementModeBadge}
-                                        data-mode={
-                                          row.measurementMode || "length"
-                                        }
-                                      >
-                                        {row.measurementMode === "radius"
-                                          ? "Radius"
-                                          : row.measurementMode === "diameter"
-                                            ? "Diameter"
-                                            : "Length"}
-                                      </em>
-                                    ) : null}
-                                  </span>
-                                  <ChevronDown size={12} />
-                                </button>
-                                {row.sourceLineIds.length > 0 && (
-                                  <button
-                                    type="button"
-                                    className={styles.metricLabelToggle}
-                                    title={
-                                      row.sourceShowLabel
-                                        ? "Sembunyikan bacaan di canvas"
-                                        : "Tampilkan bacaan di canvas"
-                                    }
-                                    aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} bacaan ${row.key} di canvas`}
-                                    onClick={() =>
-                                      onToggleMeasurementLabel?.(
-                                        row.sourceLineIds,
-                                        row.sourceShowLabel,
-                                      )
-                                    }
-                                  >
-                                    {row.sourceShowLabel ? (
-                                      <Eye size={13} />
-                                    ) : (
-                                      <EyeOff size={13} />
-                                    )}
-                                  </button>
-                                )}
-                              </span>
-                            </th>
-                            <td>
-                              {formatPlanningValue(
-                                row.clinical && session.initial
-                                  ? row.initial
-                                  : row.value,
-                                row.unit,
-                              )}
-                            </td>
-                            <td
-                              className={
-                                Number.isFinite(getPlannedValue(row))
-                                  ? styles.changed
-                                  : ""
-                              }
-                            >
-                              {formatPlanningValue(
-                                getPlannedValue(row),
-                                row.unit,
-                              )}
-                            </td>
-                            <td>
-                              <span
-                                className={styles.metricStatus}
-                                data-tone={planningStatus.tone}
-                              >
-                                {planningStatus.label}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                <ul className={styles.measurementList}>
+                  {filteredMeasurementRows.length === 0 ? (
+                    <li className={styles.logEmpty}>
+                      <Ruler size={20} aria-hidden="true" />
+                      <strong>{measurementSearch ? "Pengukuran tidak ditemukan" : "Belum ada pengukuran"}</strong>
+                    </li>
+                  ) : filteredMeasurementRows.map((row) => {
+                    const planningStatus = getPlanningStatus(row);
+                    const displayName = row.name || row.key;
+                    const planned = getPlannedValue(row);
+                    return (
+                      <li key={row.key} className={styles.measurementItem} data-selected={metricEditor === row.key}>
+                        <button
+                          type="button"
+                          className={styles.measurementMain}
+                          onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
+                          aria-expanded={metricEditor === row.key}
+                          aria-label={`Edit ${displayName}`}
+                          title={row.detail}
+                        >
+                          <span className={styles.measurementItemName}>
+                            <i style={{ background: row.color || "var(--pw-accent)" }} aria-hidden="true" />
+                            <strong>{displayName}</strong>
+                          </span>
+                          <b>{formatPlanningValue(row.value, row.unit)}</b>
+                          <span className={styles.measurementItemMeta}>
+                            {row.sourceKind === "line" && (
+                              <em className={styles.measurementModeBadge} data-mode={row.measurementMode || "length"}>
+                                {row.measurementMode === "radius" ? "Radius" : row.measurementMode === "diameter" ? "Diameter" : "Length"}
+                              </em>
+                            )}
+                            {Number.isFinite(planned) && (
+                              <span>Awal {formatPlanningValue(row.initial, row.unit)} · Rencana {formatPlanningValue(planned, row.unit)}</span>
+                            )}
+                            <span className={styles.metricStatus} data-tone={planningStatus.tone}>
+                              {planningStatus.label === "Measured" ? "Terukur" : planningStatus.label === "On target" ? "Sesuai target" : "Tinjau"}
+                            </span>
+                          </span>
+                        </button>
+                        <div className={styles.measurementItemActions}>
+                          <Action
+                            icon={PencilLine}
+                            title={`Edit ${displayName}`}
+                            aria-label={`Pengaturan ${displayName}`}
+                            onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
+                          />
+                          {row.sourceLineIds.length > 0 && (
+                            <Action
+                              icon={row.sourceShowLabel ? Eye : EyeOff}
+                              title={row.sourceShowLabel ? "Sembunyikan bacaan di canvas" : "Tampilkan bacaan di canvas"}
+                              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} bacaan ${displayName}`}
+                              aria-pressed={row.sourceShowLabel}
+                              onClick={() => onToggleMeasurementLabel?.(row.sourceLineIds, row.sourceShowLabel)}
+                            />
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
               {metricEditor &&
                 (() => {
@@ -2325,6 +2294,7 @@ export default function PlanningWorkspace({
     "angle",
     "interline",
     "circle",
+    "cupAssessment",
     "hallux",
     "cut",
   ]);
@@ -2695,35 +2665,40 @@ export default function PlanningWorkspace({
         </nav>
         <div className={styles.canvas}>
           {children}
-          {procedure === "foot" && halluxResults?.length > 0 && !guideItem && (
-            <div className={styles.halluxResultRail} aria-label="Hasil sudut Hallux Valgus">
-              {halluxResults.map((result) => (
-                <button
-                  key={result.metric}
-                  type="button"
-                  className={styles.halluxResultBadge}
-                  style={{ "--result-color": result.color }}
-                  data-muted={Boolean(focusedHalluxMetric && focusedHalluxMetric !== result.metric)}
-                  aria-pressed={focusedHalluxMetric === result.metric}
-                  title={`${result.label}: ${result.value.toFixed(1)} derajat`}
-                  onClick={() => onFocusHalluxMetric?.(result.metric)}
-                >
-                  <span><strong>{result.metric}</strong><b>{result.value.toFixed(1)}°</b></span>
-                  <small>{result.label}</small>
-                </button>
+          {(procedure === "foot" || procedure === "hip") && analysisResults?.length > 0 && !guideItem && (
+            <ul className={styles.analysisResultRail} aria-label={`Hasil analisis ${procedure === "hip" ? "HIP" : "Hallux Valgus"}`}>
+              {analysisResults.map((result) => (
+                <li key={result.metric}>
+                  <button
+                    type="button"
+                    className={styles.analysisResultBadge}
+                    style={{ "--result-color": result.color }}
+                    data-procedure={procedure}
+                    data-muted={Boolean(focusedAnalysisMetric && focusedAnalysisMetric !== result.metric)}
+                    aria-pressed={focusedAnalysisMetric === result.metric}
+                    aria-label={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    title={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    onClick={() => onFocusAnalysisMetric?.(result.metric)}
+                  >
+                    <span><strong>{result.metric}</strong><b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b></span>
+                    <small>{result.label}</small>
+                  </button>
+                </li>
               ))}
-              {focusedHalluxMetric && (
-                <button
-                  type="button"
-                  className={styles.halluxShowAll}
-                  onClick={() => onFocusHalluxMetric?.(null)}
-                >
-                  Tampilkan semua
-                </button>
+              {focusedAnalysisMetric && (
+                <li>
+                  <button
+                    type="button"
+                    className={styles.analysisShowAll}
+                    onClick={() => onFocusAnalysisMetric?.(null)}
+                  >
+                    Tampilkan semua
+                  </button>
+                </li>
               )}
-            </div>
+            </ul>
           )}
-          {(procedure === "tka" || procedure === "foot") &&
+          {(procedure === "tka" || procedure === "foot" || procedure === "hip") &&
             hasImage &&
             !canProceed && (
             <aside
@@ -2731,14 +2706,18 @@ export default function PlanningWorkspace({
               aria-label={
                 procedure === "foot"
                   ? "Mulai Hallux Valgus planning"
-                  : "Mulai TKA planning"
+                  : procedure === "hip"
+                    ? "Mulai HIP planning"
+                    : "Mulai TKA planning"
               }
             >
               <header>
                 <span>
                   {procedure === "foot"
                     ? "Mulai Hallux Valgus"
-                    : "Mulai TKA Planning"}
+                    : procedure === "hip"
+                      ? "Mulai HIP Planning"
+                      : "Mulai TKA Planning"}
                 </span>
                 <strong>2 langkah awal</strong>
               </header>
@@ -2747,7 +2726,11 @@ export default function PlanningWorkspace({
                   <span>{session.side ? <Check size={12} /> : "1"}</span>
                   <div>
                     <strong>
-                      {procedure === "foot" ? "Pilih sisi kaki" : "Pilih sisi lutut"}
+                      {procedure === "foot"
+                        ? "Pilih sisi kaki"
+                        : procedure === "hip"
+                          ? "Pilih sisi hip"
+                          : "Pilih sisi lutut"}
                     </strong>
                     <small>
                       {session.side
@@ -2773,7 +2756,11 @@ export default function PlanningWorkspace({
               <div
                 className={styles.startSideButtons}
                 aria-label={
-                  procedure === "foot" ? "Pilih sisi kaki" : "Pilih sisi lutut"
+                  procedure === "foot"
+                    ? "Pilih sisi kaki"
+                    : procedure === "hip"
+                      ? "Pilih sisi hip"
+                      : "Pilih sisi lutut"
                 }
               >
                 <button
@@ -2802,7 +2789,9 @@ export default function PlanningWorkspace({
               <small className={styles.startHint}>
                 {procedure === "foot"
                   ? "Setelah kalibrasi, wizard 12 titik Hallux terbuka pada langkah analisis."
-                  : "Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis."}
+                  : procedure === "hip"
+                    ? "Setelah kalibrasi, panduan landmark pelvis terbuka otomatis."
+                    : "Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis."}
               </small>
             </aside>
           )}
@@ -2977,15 +2966,15 @@ export default function PlanningWorkspace({
                 aria-label={`Ilustrasi landmark ${guideItem.label}`}
                 style={splitGuideTop === null ? undefined : { top: splitGuideTop }}
               >
-                {(guideItem.guideSide || session.side) && (
+                {(guideStep?.side || guideItem.guideSide || session.side) && (
                   <span className={styles.figureSideBadge}>
-                    {(guideItem.guideSide || session.side) === "left" ? "L / KIRI" : "R / KANAN"}
+                    {(guideStep?.side || guideItem.guideSide || session.side) === "left" ? "L / KIRI" : "R / KANAN"}
                   </span>
                 )}
                 <GuideContent
                   viewId={guideItem.guideView}
                   highlightId={guideStep?.id || guideItem.highlightId}
-                  side={guideItem.guideSide || session.side}
+                  side={guideStep?.side || guideItem.guideSide || session.side}
                 />
               </aside>
             )}
@@ -3221,12 +3210,15 @@ export default function PlanningWorkspace({
                       <Target size={14} />
                       Wizard aktif · pilih landmark yang disorot
                     </div>
+                  ) : !canProceed ? (
+                    <Action icon={Target} onClick={revealWorkflow}>
+                      Pilih sisi & kalibrasi
+                    </Action>
                   ) : (
                     <Action
                       icon={Play}
                       onClick={() => {
-                        setGuideMinimized(false);
-                        activate(guideItem.action);
+                        startAnalysisTool(guideItem);
                       }}
                     >
                       Mulai wizard landmark

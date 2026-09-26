@@ -995,10 +995,60 @@ function LongLegTkaGuide({ highlightId, side }) {
   );
 }
 
+const PELVIS_CARTOON_RIGHT_POINTS = {
+  teardrop: [581, 540],
+  femoral_head_center: [446, 473],
+  femoral_head_lateral_edge: [389, 457],
+  femoral_head_medial_edge: [510, 480],
+  femoral_head_superior_edge: [444, 409],
+  acetabular_inferomedial_rim: [546, 531],
+  lesser_trochanter: [396, 632],
+  greater_trochanter_inferior: [338, 566],
+  greater_trochanter_lateral_tip: [214, 484],
+  femoral_cortex_medial: [322, 755],
+  femoral_cortex_lateral: [247, 755],
+  femoral_shaft_distal_center: [306, 950],
+};
+
+function PelvisCartoonGuide({ highlightId, side }) {
+  const active = PELVIC_LANDMARK_BY_ID[highlightId];
+  const patientSide = active?.side || side;
+  const basePoint = active && PELVIS_CARTOON_RIGHT_POINTS[active.key];
+  const point = basePoint
+    ? patientSide === "left" ? [1536 - basePoint[0], basePoint[1]] : basePoint
+    : null;
+  const cropWidth = point ? 480 : 680;
+  const cropHeight = point ? 720 : 1020;
+  const centerX = point?.[0] || (patientSide === "left" ? 1150 : 386);
+  const centerY = point?.[1] || 512;
+  const cropX = Math.max(0, Math.min(1536 - cropWidth, centerX - cropWidth / 2));
+  const cropY = Math.max(0, Math.min(1024 - cropHeight, centerY - cropHeight / 2));
+
+  return (
+    <svg
+      viewBox={`${cropX} ${cropY} ${cropWidth} ${cropHeight}`}
+      role="img"
+      aria-label={`Ilustrasi pelvis AP ${patientSide === "left" ? "kiri" : "kanan"}; landmark aktif ${active?.label || "belum dipilih"}`}
+    >
+      <rect width="1536" height="1024" fill="#101820" />
+      <image href="/Pelvis_AP_Cartoon_3D.svg" width="1536" height="1024" />
+      {point && (
+        <g>
+          <circle cx={point[0]} cy={point[1]} r="41" fill="none" stroke="#ffffff" strokeWidth="8">
+            <animate attributeName="r" values="34;49;34" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={point[0]} cy={point[1]} r="18" fill="#06b6d4" stroke="#ffffff" strokeWidth="6" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const GUIDE_REGISTRY = {
   pelvic_marked:            { label: "AP Pelvis — Marked Landmarks", Component: MarkedPelvicGuide, needsSide: false },
+  ap_pelvis_cartoon:        { label: "AP Pelvis — Cartoon 3D", Component: PelvisCartoonGuide, needsSide: "simple" },
   ap_hip:                  { label: "AP Hip / Pelvis",            Component: ApHipGuide,          needsSide: "full"   },
   ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: "simple" },
   ap_tka_planning:         { label: "AP TKA — Femur & Tibia",     Component: ApTkaPlanningGuide,  needsSide: "simple" },
