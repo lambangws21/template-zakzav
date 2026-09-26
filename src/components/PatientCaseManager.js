@@ -48,6 +48,7 @@ import CaseFullReportModal from "./CaseFullReportModal";
 import CaseCompareModal from "./CaseCompareModal";
 import ThemeToggle from "./ThemeToggle";
 import UserProfileBadge from "./UserProfileBadge";
+import CaseAccessGate from "./CaseAccessGate";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 
@@ -775,21 +776,22 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
         exit={{ opacity: 0, x: -20 }}
         className={`group relative overflow-hidden rounded-lg border transition-all sm:hidden ${
           selected
-            ? "border-violet-500 bg-violet-500/10 shadow-[0_0_0_1px_rgba(139,92,246,0.2)]"
-            : "border-slate-700/80 bg-[#111d2d] hover:border-slate-600 hover:bg-[#142236]"
+            ? "border-cyan-400 bg-cyan-500/10 ring-1 ring-cyan-400/30"
+            : c.actualImplantLabel || c.actualSizeNum != null
+              ? "border-emerald-500/50 bg-[#111d2d] hover:border-emerald-400"
+              : "border-sky-500/50 bg-[#111d2d] hover:border-sky-400"
         }`}
       >
         <div className="flex items-stretch gap-0">
 
           {/* thumbnail */}
-          <div className="relative flex h-full w-20 shrink-0 flex-col overflow-hidden bg-slate-950 sm:w-24">
+          <div className="relative flex h-20 w-16 shrink-0 flex-col overflow-hidden border-r border-slate-600 bg-slate-950">
             {thumbnail ? (
               <>
                 <img
                   src={thumbnail}
                   alt="X-ray"
-                  className={`w-full object-cover transition-all duration-300 group-hover:opacity-60 ${c.postOpPhotos?.length > 0 ? "flex-1" : "h-full"}`}
-                  style={{ minHeight: 60 }}
+                  className={`min-h-0 w-full object-cover transition-all duration-300 group-hover:opacity-60 ${c.postOpPhotos?.length > 0 ? "flex-1" : "h-full"}`}
                 />
                 {/* overlay zoom button */}
                 <button
@@ -836,7 +838,7 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
           <button
             type="button"
             onClick={() => onSelect(c)}
-              className="flex min-h-20 min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
+              className="flex min-h-[72px] min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5 text-left"
           >
             {/* Row 1: name + badges */}
             <div className="flex items-center gap-1.5">
@@ -860,9 +862,9 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
             <p className="truncate text-[9px] text-slate-400">{c.procedure || "Belum ada prosedur"}</p>
             {/* Row 3: pre-op component chips (max 2) */}
             {c.implantLabel && (
-              <div className="mt-0.5 flex flex-wrap gap-0.5">
+              <div className="mt-0.5 flex min-w-0 gap-0.5 overflow-hidden">
                 {c.implantLabel.split(" · ").slice(0, 2).map((part, i) => (
-                  <span key={i} className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[8px] text-slate-300">
+                  <span key={i} className="truncate rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[8px] text-sky-200">
                     {part.trim()}
                   </span>
                 ))}
@@ -1788,10 +1790,12 @@ function LegacyCaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp
   );
 }
 
-function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox, onDelete }) {
+function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onOpenInTemplating, onPreOpReport, onFullReport, onCompare, onLightbox, onDelete }) {
   const [activeTab, setActiveTab] = useState("preop");
   const [activeImage, setActiveImage] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     setActiveTab("preop");
@@ -1812,7 +1816,19 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
   const availableImages = [preOpSrc, ...postOpSources].filter(Boolean);
   const shownImage = availableImages[Math.min(activeImage, Math.max(availableImages.length - 1, 0))] || null;
   const selectedPostIndex = Math.max(0, Math.min(activeImage - 1, Math.max(postOpSources.length - 1, 0)));
-  const displayImage = activeTab === "postop" ? postOpSources[selectedPostIndex] || null : shownImage;
+  const displayImage = activeTab === "postop" ? postOpSources[selectedPostIndex] || null : activeTab === "preop" ? preOpSrc : shownImage;
+
+  async function openActiveImage() {
+    if (!displayImage || !onOpenInTemplating || opening) return;
+    setOpening(true);
+    setActionError("");
+    try {
+      await onOpenInTemplating(displayImage, `${caseData.patientName || "Kasus"} - ${activeTab === "postop" ? "Post-Op" : "Pre-Op"}`, caseData);
+      onClose();
+    } catch (error) {
+      setActionError(error.message || "Gambar gagal dibuka.");
+    } finally { setOpening(false); }
+  }
 
   async function exportXray() {
     const source = displayImage || preOpSrc;
@@ -1935,9 +1951,10 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                 <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2.5 sm:rounded-lg sm:p-4"><div className="mb-1.5 flex items-center justify-between sm:mb-2"><h3 className="text-xs font-black sm:text-sm">Informasi Pasien</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-8 items-center gap-1 rounded-md border border-slate-600 px-2.5 text-[8px] sm:min-h-9 sm:px-3 sm:text-[9px]"><Pencil className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> Edit</button></div><InfoRow label="Nama" value={caseData.patientName} /><InfoRow label="Umur" value={caseData.patientAge} /><InfoRow label="Jenis Kelamin" value={caseData.gender} /><InfoRow label="ID Pasien" value={patientId} /></section>
                 <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2.5 sm:rounded-lg sm:p-4"><div className="mb-1.5 flex items-center justify-between sm:mb-2"><h3 className="text-xs font-black sm:text-sm">Detail Prosedur</h3><button type="button" onClick={() => onEdit(caseData.id)} className="flex min-h-8 items-center gap-1 rounded-md border border-slate-600 px-2.5 text-[8px] sm:min-h-9 sm:px-3 sm:text-[9px]"><Pencil className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> Edit</button></div><InfoRow label="Prosedur" value={caseData.procedure} /><InfoRow label="Templating" value={formatDate(caseData.savedAt)} /><InfoRow label="Sisi" value={anatomySide === "left" ? "Left (L)" : anatomySide === "right" ? "Right (R)" : anatomySide} /><InfoRow label="Status" value={hasPostOp ? "Post-Op" : "Planning"} /></section>
                 <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2.5 sm:rounded-lg sm:p-3"><h3 className="mb-2 text-xs font-black sm:mb-3 sm:text-sm">Quick Actions</h3><div className="space-y-1.5 sm:space-y-2">
-                  {onLoadAsLayer && preOpSrc && <ActionButton icon={ImageIcon} title="Buka di Templating" subtitle="Lanjutkan perencanaan kasus ini" accent="primary" onClick={() => { onLoadAsLayer(preOpSrc, `${caseData.patientName || "Kasus"} - ${caseData.procedure || ""}`); onClose(); }} />}
+                  {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
+                  {onOpenInTemplating && <ActionButton icon={ImageIcon} title={opening ? "Memuat gambar..." : "Buka di Templating"} subtitle="Gunakan foto aktif" accent="primary" disabled={!displayImage || opening} onClick={openActiveImage} />}
                   <ActionButton icon={ClipboardCheck} title={hasPostOp ? "Edit Data Post-Op" : "Input Data Post-Op"} subtitle="Tambahkan hasil post-operative" accent="success" onClick={() => onPostOp(caseData)} />
-                  {onLoadAsLayer && preOpSrc && <ActionButton icon={Layers} title="Buka sebagai Layer Perbandingan" subtitle="Bandingkan dengan kasus lain" onClick={() => { onLoadAsLayer(preOpSrc, `${caseData.patientName || "Kasus"} - Perbandingan`); onClose(); }} />}
+                  {onLoadAsLayer && displayImage && <ActionButton icon={Layers} title="Layer Perbandingan" subtitle="Tambahkan foto aktif sebagai overlay" onClick={() => { onLoadAsLayer(displayImage, `${caseData.patientName || "Kasus"} - Perbandingan`); onClose(); }} />}
                   <ActionButton icon={ImageIcon} title="Ekspor X-Ray (Gambar)" subtitle="Simpan sebagai PNG/JPG" onClick={exportXray} disabled={!shownImage || exporting} />
                   <ActionButton icon={FileText} title="Laporan Pre-Op (PDF)" subtitle="Generate laporan templating" onClick={() => { onPreOpReport(caseData); onClose(); }} />
                   <ActionButton icon={Download} title="Laporan Lengkap PDF" subtitle="Pre-Op, Post-Op, dan perbandingan" onClick={() => { onFullReport(caseData); onClose(); }} />
@@ -1958,7 +1975,11 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PatientCaseManager({ isOpen, onClose, currentSession, onLoadAsLayer }) {
+export default function PatientCaseManager(props) {
+  return <CaseAccessGate isOpen={props.isOpen} onClose={props.onClose}><PatientCaseManagerContent {...props} /></CaseAccessGate>;
+}
+
+function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLayer, onOpenInTemplating, onNavigate }) {
   const [cases, setCases] = useState([]);
   const lastLocalEditRef = useRef(0);
   const [loading, setLoading] = useState(false);
@@ -2331,9 +2352,9 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
               <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Navigasi kasus">
                 <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><Home size={17} />Dashboard</button>
                 <button type="button" className="flex min-h-11 items-center gap-3 rounded-lg bg-violet-600/25 px-3 text-left text-xs font-black text-violet-200 ring-1 ring-violet-500/30"><FolderOpen size={17} />Kasus Pasien<span className="ml-auto rounded-full border border-violet-400/50 px-2 py-0.5 text-[9px]">{cases.length}</span></button>
-                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><LayoutTemplate size={17} />Template</button>
-                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><Activity size={17} />Pengukuran</button>
-                <button type="button" onClick={onClose} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white"><Layers size={17} />Implant Library</button>
+                <button type="button" disabled={!onNavigate} onClick={() => onNavigate?.("templates")} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-40"><LayoutTemplate size={17} />Template</button>
+                <button type="button" disabled={!onNavigate} onClick={() => onNavigate?.("measurements")} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-40"><Activity size={17} />Pengukuran</button>
+                <button type="button" disabled={!onNavigate} onClick={() => onNavigate?.("implants")} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-40"><Layers size={17} />Implant Library</button>
                 <button type="button" disabled={cases.length < 2} onClick={() => setCompareCases(cases.slice(0, 2))} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-35"><ClipboardCheck size={17} />Compare</button>
                 <button type="button" disabled={!selectedCase && !cases[0]} onClick={() => setFullReportCase(selectedCase || cases[0])} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-35"><FileText size={17} />Laporan</button>
                 <button type="button" onClick={handleExportBackup} disabled={!cases.length} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-35"><Settings size={17} />Backup Data</button>
@@ -2825,6 +2846,7 @@ export default function PatientCaseManager({ isOpen, onClose, currentSession, on
           onEdit={(id) => { setEditingCaseId(id); }}
           onPostOp={(c) => { setPostOpCase(c); }}
           onLoadAsLayer={onLoadAsLayer}
+          onOpenInTemplating={onOpenInTemplating}
           onPreOpReport={(c) => setPreOpReportCase(c)}
           onFullReport={(c) => setFullReportCase(c)}
           onCompare={(c) => setCompareCases([c])}

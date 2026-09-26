@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, requireApprovedUser } from "@/lib/serverAuth";
+import { isPatientCaseAction, requireCaseAccess } from "@/lib/caseAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -257,6 +258,10 @@ export async function GET(request) {
     const authResult = await authorizeRead(request);
     if (authResult.error) return authResult.error;
     const { searchParams } = new URL(request.url);
+    if (isPatientCaseAction(searchParams.get("action"))) {
+      const denied = await requireCaseAccess(request, authResult.user.uid);
+      if (denied) return denied;
+    }
     const remoteUrl = String(searchParams.get("url") || "").trim();
     if (!remoteUrl) {
       return NextResponse.json({ ok: false, error: "Parameter url wajib diisi." }, { status: 400 });
@@ -294,6 +299,10 @@ export async function POST(request) {
       : await authorizeMutation(request);
     if (authResult.error) return authResult.error;
     const remoteUrl = String(payload?.url || "").trim();
+    if (isPatientCaseAction(payload?.action)) {
+      const denied = await requireCaseAccess(request, authResult.user.uid);
+      if (denied) return denied;
+    }
     if (!remoteUrl) {
       return NextResponse.json({ ok: false, error: "Field url wajib diisi." }, { status: 400 });
     }

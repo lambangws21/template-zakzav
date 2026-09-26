@@ -224,6 +224,7 @@ export function PlanningCorrectionControls({
 
 export default function PlanningWorkspace({
   enabled,
+  navigationRequest,
   children,
   procedure,
   onProcedure,
@@ -285,6 +286,13 @@ export default function PlanningWorkspace({
   const [groupEditorOpen, setGroupEditorOpen] = useState(false);
   const [groupSelection, setGroupSelection] = useState([]);
   const [logTab, setLogTab] = useState("measurements");
+  useEffect(() => {
+    if (navigationRequest?.target !== "measurements") return;
+    setLogTab("measurements");
+    setLogOpen(true);
+    setFocus(false);
+    if (window.matchMedia("(max-width: 1199px)").matches) setSheet("log");
+  }, [navigationRequest]);
   const [measurementSearch, setMeasurementSearch] = useState("");
   const [brand, setBrand] = useState("");
   const [system, setSystem] = useState("");

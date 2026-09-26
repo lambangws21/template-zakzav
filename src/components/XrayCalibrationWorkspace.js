@@ -23,6 +23,7 @@ import {
   SLIDE_UP_VARIANTS,
 } from "@/lib/uiTokens";
 import ThemeToggle from "@/components/ThemeToggle";
+import LayerNameInput from "@/components/LayerNameInput";
 import LogoutButton from "@/components/LogoutButton";
 import UserProfileBadge from "@/components/UserProfileBadge";
 import { useTheme } from "@/hooks/useTheme";
@@ -1590,6 +1591,7 @@ export default function XrayCalibrationWorkspace({
     useState(false);
   const [preOpReportModalOpen, setPreOpReportModalOpen] = useState(false);
   const [patientCaseManagerOpen, setPatientCaseManagerOpen] = useState(false);
+  const [caseNavigationRequest, setCaseNavigationRequest] = useState(null);
   const [wsAnalyticsOpen, setWsAnalyticsOpen] = useState(false);
   const [wsAnalyticsCases, setWsAnalyticsCases] = useState([]);
   const [implantSizePanelOpen, setImplantSizePanelOpen] = useState(false);
@@ -28166,8 +28168,8 @@ export default function XrayCalibrationWorkspace({
               className={
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
-                    ? "simple-layer-settings-modal pointer-events-auto max-h-[min(72dvh,620px)] w-[min(86vw,340px)] overflow-y-auto rounded-xl border border-[var(--soft-border)] p-2.5 [color:var(--soft-text)] backdrop-blur-lg [background:var(--soft-raised-bg)]"
-                    : "max-h-[84vh] w-full max-w-[660px] overflow-y-auto rounded-[22px] border border-[var(--soft-border)] p-4 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
+                    ? "simple-layer-settings-modal pointer-events-auto max-h-[min(48dvh,360px)] w-[min(calc(100vw-24px),300px)] overflow-y-auto rounded-lg border border-cyan-500/60 p-2 shadow-lg [color:var(--soft-text)] [background:var(--soft-raised-bg)]"
+                    : "max-h-[min(60dvh,440px)] w-full max-w-[360px] overflow-y-auto rounded-lg border border-cyan-500/60 p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
                       toolConfigModal === "layerLayout"
@@ -28357,16 +28359,14 @@ export default function XrayCalibrationWorkspace({
                       </div>
                     ) : (
                       <>
-                        <div className="rounded-xl border border-[var(--soft-border)] px-3 py-2 shadow-sm [background:var(--soft-surface-bg)]">
+                        <div className="rounded-md border border-cyan-500/40 bg-cyan-500/5 px-2 py-1.5">
                           <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-[9px] font-black tracking-widest text-cyan-500 uppercase">
-                                Layer Aktif
-                              </div>
-                              <div className="truncate text-xs font-black text-[var(--soft-text-hi)]">
-                                {selectedCutLayer.name ||
-                                  getLayerDefaultName(selectedCutLayer)}
-                              </div>
+                            <div className="min-w-0 flex-1">
+                              <LayerNameInput
+                                layer={selectedCutLayer}
+                                defaultName={getLayerDefaultName(selectedCutLayer)}
+                                onRename={(name) => updateLayerById(selectedCutLayer.id, { name })}
+                              />
                               <div className="mt-0.5 text-[10px] font-semibold text-[var(--soft-text)] opacity-70">
                                 W{" "}
                                 {formatTemplateLayerRealSize(
@@ -28389,20 +28389,6 @@ export default function XrayCalibrationWorkspace({
                             <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
                               Shape
                             </div>
-                            <input
-                              type="text"
-                              value={
-                                selectedCutLayer.name ||
-                                getLayerDefaultName(selectedCutLayer)
-                              }
-                              onChange={(event) =>
-                                updateLayerById(selectedCutLayer.id, {
-                                  name: event.target.value,
-                                })
-                              }
-                              className="mb-2 w-full rounded-xl border border-[var(--soft-border)] px-3 py-2 text-xs font-bold text-[var(--soft-text-hi)] outline-none [background:var(--soft-inset-bg)] focus:border-cyan-400"
-                              placeholder="Nama layer"
-                            />
                             <div className="flex flex-wrap items-center gap-1.5">
                               {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
                                 <ColorSwatchButton
@@ -28436,9 +28422,6 @@ export default function XrayCalibrationWorkspace({
                               <div>
                                 <div className="text-[9px] font-black tracking-widest text-violet-500 uppercase">
                                   Bend Implant
-                                </div>
-                                <div className="text-[10px] font-semibold text-[var(--soft-text)] opacity-70">
-                                  Untuk plate/nail mengikuti kurva anatomi
                                 </div>
                               </div>
                               <span className="rounded-full border border-[var(--soft-border)] px-2 py-1 text-[10px] font-black text-violet-500">
@@ -28591,8 +28574,8 @@ export default function XrayCalibrationWorkspace({
                                   ? "lock"
                                   : "unlock",
                                 label: selectedCutLayer.lockScale
-                                  ? "Unlock"
-                                  : "Lock",
+                                  ? "Buka skala"
+                                  : "Kunci skala",
                                 tone: "text-amber-500",
                                 onClick: () =>
                                   updateLayerById(
@@ -28634,7 +28617,8 @@ export default function XrayCalibrationWorkspace({
                                 type="button"
                                 onClick={action.onClick}
                                 disabled={action.disabled}
-                                className={`flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--soft-border)] px-1 py-1.5 text-[8px] font-black shadow-sm transition [background:var(--soft-raised-bg)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.tone}`}
+                                title={action.label}
+                                className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-md border border-[var(--soft-border)] px-1 py-1.5 text-[10px] font-semibold transition [background:var(--soft-raised-bg)] hover:border-cyan-500/50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.key === "delete" ? "text-rose-500" : "text-[var(--soft-text)]"}`}
                               >
                                 <Icon
                                   name={action.icon}
@@ -28646,10 +28630,13 @@ export default function XrayCalibrationWorkspace({
                           </div>
                         </div>
 
-                        <details className="group rounded-xl border border-[var(--soft-border)] shadow-sm [background:var(--soft-surface-bg)]">
-                          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-black text-[var(--soft-text)]">
-                            <span>Lanjutan</span>
-                            <span className="text-cyan-500 group-open:rotate-180">
+                        <details key={selectedCutLayer.id} className="group rounded-md border border-amber-500/50 bg-amber-500/5">
+                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-bold text-[var(--soft-text-hi)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-500">
+                            <Icon name="settings" className="h-4 w-4 shrink-0 text-amber-500" />
+                            <span className="flex-1">
+                              Lanjutan
+                            </span>
+                            <span aria-hidden="true" className="text-cyan-500 transition-transform group-open:rotate-180">
                               ⌄
                             </span>
                           </summary>
@@ -28928,10 +28915,11 @@ export default function XrayCalibrationWorkspace({
                             Active Target
                           </div>
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="min-w-0 truncate font-black text-[var(--soft-text-hi)]">
-                              {selectedCutLayer.name ||
-                                getLayerDefaultName(selectedCutLayer)}
-                            </span>
+                            <LayerNameInput
+                              layer={selectedCutLayer}
+                              defaultName={getLayerDefaultName(selectedCutLayer)}
+                              onRename={(name) => updateLayerById(selectedCutLayer.id, { name })}
+                            />
                             <span className="shrink-0 rounded-full border border-[var(--soft-border)] px-2.5 py-1 font-mono text-[10px] text-[var(--soft-text)] [background:var(--soft-raised-bg)]">
                               {selectedCutLayerIndex + 1}/{cutLayers.length} | W{" "}
                               {formatTemplateLayerRealSize(
@@ -41522,6 +41510,7 @@ export default function XrayCalibrationWorkspace({
         >
           <PlanningWorkspace
             enabled={isPlanningLayout}
+            navigationRequest={caseNavigationRequest}
             procedure={planningProcedure}
             onProcedure={selectPlanningProcedure}
             reference={
@@ -49351,6 +49340,32 @@ export default function XrayCalibrationWorkspace({
       <PatientCaseManager
         isOpen={patientCaseManagerOpen}
         onClose={() => setPatientCaseManagerOpen(false)}
+        onNavigate={(target) => {
+          setPatientCaseManagerOpen(false);
+          if (target === "measurements") {
+            setCaseNavigationRequest({ target, id: Date.now() });
+            if (!isPlanningLayout) {
+              setActiveRightPanel("measure");
+              setSimpleMobilePanel("manager");
+            }
+          } else if (target === "templates") setLibraryModalOpen(true);
+          else if (target === "implants") openSimpleImplantTemplateOverlay();
+        }}
+        onOpenInTemplating={async (url, name) => {
+          if (image && !window.confirm("Ganti canvas dengan foto aktif? Simpan planning saat ini terlebih dahulu jika diperlukan.")) {
+            throw new Error("Canvas tidak diubah.");
+          }
+          const loaded = await loadImageFromCandidates(buildDriveImageCandidates(url));
+          const applied = applyMainImageToWorkspace({ nextImage: loaded.image, nextImageName: name, noticeText: "Foto aktif dimuat. Kalibrasi ulang sebelum mengukur." });
+          if (!applied) throw new Error("Gambar tidak dapat diterapkan ke canvas.");
+          if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = null;
+          mainImageFileRef.current = null;
+          setMainImageSrc(loaded.src);
+          setHasTemporaryMainImage(false);
+          setPatientCaseManagerOpen(false);
+          if (isSimpleUiMode) openSimpleCalibrationModal();
+        }}
         onLoadAsLayer={(url, layerName) => {
           const img = new Image();
           img.crossOrigin = "anonymous";
