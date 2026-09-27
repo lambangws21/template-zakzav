@@ -978,7 +978,7 @@ function SaveForm({ currentSession, onSave, onCancel }) {
           exit={{ y: 30, opacity: 0, scale: 0.97 }}
           transition={{ type: "spring", damping: 26, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-[480px] overflow-hidden rounded-[24px] shadow-2xl"
+          className="glass-panel w-full max-w-[480px] overflow-hidden rounded-[24px] shadow-2xl"
           style={{ background: "var(--soft-raised-bg, #fff)", border: "1px solid var(--soft-border, #e2e8f0)" }}
         >
           {/* Header */}
@@ -1224,7 +1224,8 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-white/60 bg-[#f8f7ff] shadow-[0_-8px_40px_rgba(0,0,0,0.22)] sm:max-w-[480px] sm:rounded-[24px] sm:shadow-[0_24px_60px_rgba(0,0,0,0.32)]"
+            data-glass-tone="light"
+            className="glass-panel max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-white/60 bg-[#f8f7ff] shadow-[0_-8px_40px_rgba(0,0,0,0.22)] sm:max-w-[480px] sm:rounded-[24px] sm:shadow-[0_24px_60px_rgba(0,0,0,0.32)]"
             initial={{ y: 60, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
@@ -1464,7 +1465,7 @@ function LegacyCaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp
           exit={{ y: 40, opacity: 0 }}
           transition={{ type: "spring", damping: 26, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full overflow-hidden rounded-t-[24px] shadow-2xl sm:max-w-[520px] sm:rounded-[24px] border border-[var(--soft-border)]"
+          className="glass-panel w-full overflow-hidden rounded-t-[24px] shadow-2xl sm:max-w-[520px] sm:rounded-[24px] border border-[var(--soft-border)]"
           style={{ maxHeight: "94dvh", overflowY: "auto", background: "var(--soft-raised-bg)" }}
         >
           {/* Drag pill — mobile only */}
@@ -1894,6 +1895,7 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
           role="dialog"
           aria-modal="true"
           aria-label={`Detail kasus ${caseData.patientName || "pasien"}`}
+          data-glass-tone="dark"
           initial={{ y: 40, scale: 0.98, opacity: 0 }}
           animate={{ y: 0, scale: 1, opacity: 1 }}
           exit={{ y: 30, scale: 0.98, opacity: 0 }}
@@ -2338,6 +2340,7 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
             role="dialog"
             aria-modal="true"
             aria-label="Kasus Pasien"
+            data-glass-tone="dark"
             className="flex h-[100dvh] w-full overflow-hidden border border-slate-700 bg-[#08111f] text-slate-100 shadow-[0_30px_80px_rgba(0,0,0,0.55)] sm:h-auto sm:max-h-[94dvh] sm:max-w-[1440px] sm:rounded-xl"
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}

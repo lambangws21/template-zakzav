@@ -68,11 +68,8 @@ export default function PhotoPreviewModal({
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
     >
-      <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-label={title} data-glass-tone="dark" className="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
         <div className="flex items-center justify-between gap-2 border-b border-slate-700 px-4 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-100">

@@ -197,7 +197,8 @@ export default function CaseCompareModal({ isOpen, onClose, cases = [], initialC
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
             transition={{ type: "spring", damping: 26, stiffness: 300 }}
-            className="flex h-[90dvh] w-full max-w-[680px] flex-col overflow-hidden rounded-[24px] bg-[#f1f5f9] shadow-2xl"
+            data-glass-tone="light"
+            className="glass-panel flex h-[90dvh] w-full max-w-[680px] flex-col overflow-hidden rounded-[24px] border bg-[#f1f5f9] shadow-2xl"
           >
             {/* Header */}
             <div className="flex items-center gap-3 bg-[#1e1033] px-5 py-4 shrink-0">

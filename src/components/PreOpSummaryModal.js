@@ -53,7 +53,7 @@ export default function PreOpSummaryModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 16 }}
         transition={{ type: "spring", damping: 22, stiffness: 280 }}
-        className="flex w-full max-w-[min(100%,480px)] flex-col rounded-[28px] border border-white/75 bg-[#eef2f7]/97 shadow-[8px_8px_24px_rgba(148,163,184,0.32),-8px_-8px_24px_rgba(255,255,255,0.85)] backdrop-blur-xl"
+        className="glass-panel flex w-full max-w-[min(100%,480px)] flex-col rounded-[28px] border border-white/75 bg-[#eef2f7]/97 shadow-[8px_8px_24px_rgba(148,163,184,0.32),-8px_-8px_24px_rgba(255,255,255,0.85)] backdrop-blur-xl"
         style={{ maxHeight: "min(90dvh, 640px)" }}
       >
         {/* Header */}

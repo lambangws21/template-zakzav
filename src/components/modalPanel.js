@@ -148,7 +148,7 @@ export default function CalibrationLineModalPanel({
         }}
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-[490px] overflow-y-auto rounded-[28px] p-5 text-slate-800 neu-card">
+      <div className="glass-panel relative max-h-[92vh] w-full max-w-[490px] overflow-y-auto rounded-[28px] p-5 text-slate-800 neu-card">
         <button
           type="button"
           onClick={onClose}

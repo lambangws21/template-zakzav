@@ -20,7 +20,14 @@ export default function CaseAccessGate({ isOpen, onClose, children }) {
     if (!isOpen) return;
     setChecking(true);
     authenticatedFetch("/api/case-access", { cache: "no-store" })
-      .then((response) => { if (!cancelled) setUnlocked(response.ok); })
+      .then(async (response) => {
+        const result = await response.json().catch(() => null);
+        if (cancelled) return;
+        setUnlocked(response.ok && result?.ok === true);
+        if (!response.ok && result?.code !== "CASE_ACCESS_REQUIRED") {
+          setError(result?.error || "Layanan akses tidak tersedia. Periksa deployment server.");
+        }
+      })
       .catch(() => { if (!cancelled) setError("Sesi belum dapat diverifikasi."); })
       .finally(() => { if (!cancelled) setChecking(false); });
     return () => { cancelled = true; };
@@ -35,8 +42,8 @@ export default function CaseAccessGate({ isOpen, onClose, children }) {
       const response = await authenticatedFetch("/api/case-access", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Akses ditolak.");
+      const result = await response.json().catch(() => null);
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || "Layanan akses tidak tersedia. Periksa deployment server.");
       setCode("");
       setUnlocked(true);
     } catch (error) {
@@ -48,7 +55,7 @@ export default function CaseAccessGate({ isOpen, onClose, children }) {
   if (unlocked) return children;
   return createPortal(
     <div className="fixed inset-0 z-[99999] grid place-items-center bg-black/60 p-4">
-      <form onSubmit={unlock} role="dialog" aria-modal="true" aria-label="Akses Kasusku" className="w-full max-w-[300px] rounded-lg border border-zinc-700 bg-zinc-900 p-4 text-zinc-100">
+      <form onSubmit={unlock} role="dialog" aria-modal="true" aria-label="Akses Kasusku" data-glass-tone="dark" className="w-full max-w-[300px] rounded-lg border border-zinc-700 bg-zinc-900 p-4 text-zinc-100">
         <div className="mb-4 flex items-center gap-2"><LockKeyhole size={18} /><h2 className="flex-1 text-sm font-semibold">Kasusku</h2><button type="button" onClick={onClose} aria-label="Tutup akses Kasusku" className="grid h-9 w-9 place-items-center rounded hover:bg-zinc-800"><X size={18} /></button></div>
         {checking ? <p role="status" className="text-xs text-zinc-400">Memeriksa akses...</p> : <>
           <label className="block text-xs text-zinc-400">Kode akses<input autoFocus type="password" inputMode="numeric" autoComplete="off" value={code} maxLength={32} onChange={(event) => setCode(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-zinc-600 bg-zinc-950 px-3 text-base text-white outline-none focus:border-cyan-500" /></label>

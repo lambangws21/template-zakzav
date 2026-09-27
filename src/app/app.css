@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./glass.css";
 
 /* ─── Design tokens — light mode ──────────────────────────────────────────── */
 :root {

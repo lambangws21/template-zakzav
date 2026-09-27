@@ -1,0 +1,55 @@
+/* Apply transparency to surfaces only; never reduce text or image opacity. */
+:root {
+  --glass-base: #f4f7fa;
+  --glass-border: rgba(100, 116, 139, 0.42);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="dark"], [data-glass-tone="dark"] {
+  --glass-base: #172027;
+  --glass-border: rgba(170, 195, 210, 0.38);
+}
+
+[data-glass-tone="light"] {
+  --glass-base: #f4f7fa;
+  --glass-border: rgba(100, 116, 139, 0.42);
+}
+
+:is(.glass-panel, [role="dialog"], .simple-layer-settings-modal,
+    .layer-template-popover, .layer-floating-toolbar, .hka-result-modal) {
+  background: var(--glass-base) !important;
+  background: color-mix(in srgb, var(--glass-base) 78%, transparent) !important;
+  border-color: var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(115%) !important;
+  backdrop-filter: blur(12px) saturate(115%) !important;
+  --soft-surface-bg: color-mix(in srgb, var(--glass-base) 32%, transparent);
+  --soft-raised-bg: color-mix(in srgb, var(--glass-base) 54%, transparent);
+  --soft-inset-bg: color-mix(in srgb, var(--glass-base) 90%, transparent);
+}
+
+/* Full-screen dimming is lighter; blur belongs on the panel, not the X-ray. */
+.fixed.inset-0:not(.pointer-events-none):has(> :is([role="dialog"], .glass-panel)) {
+  background: rgba(0, 0, 0, 0.18) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :is(.glass-panel, [role="dialog"], .simple-layer-settings-modal,
+      .layer-template-popover, .layer-floating-toolbar, .hka-result-modal) {
+    background: var(--glass-base) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), print {
+  :is(.glass-panel, [role="dialog"], .simple-layer-settings-modal,
+      .layer-template-popover, .layer-floating-toolbar, .hka-result-modal) {
+    background: var(--glass-base) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    --soft-surface-bg: var(--glass-base);
+    --soft-raised-bg: var(--glass-base);
+    --soft-inset-bg: var(--glass-base);
+  }
+}

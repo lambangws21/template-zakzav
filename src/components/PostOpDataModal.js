@@ -388,7 +388,8 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="w-full max-w-[min(100%,480px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f8fafc] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
+            data-glass-tone="light"
+            className="glass-panel w-full max-w-[min(100%,480px)] overflow-hidden rounded-t-[28px] rounded-b-[28px] border border-white/60 bg-[#f8fafc] shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:rounded-[28px]"
             initial={{ y: 60, scale: 0.96, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 40, scale: 0.96, opacity: 0 }}

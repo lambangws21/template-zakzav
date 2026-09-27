@@ -3,18 +3,32 @@ import { getFirestore } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/serverAuth";
 import { getFirebaseAdminApp } from "@/lib/firebaseAdmin";
-import { CASE_ACCESS_COOKIE, CASE_ACCESS_TTL, caseAccessRef, hashCaseToken, requireCaseAccess, signCaseToken } from "@/lib/caseAccess";
+import { CASE_ACCESS_COOKIE, CASE_ACCESS_TTL, caseAccessRef, hashCaseToken, requireCaseAccess, signCaseToken, getCaseAccessSecret } from "@/lib/caseAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function accessErrorResponse(error) {
+  const missingConfig = error?.code === "CASE_ACCESS_CONFIG_MISSING";
+  // Only report a classification, never the PIN, token, or raw SDK error.
+  console.error("[case-access]", missingConfig ? "configuration_missing" : "verification_unavailable");
+  return NextResponse.json({
+    ok: false,
+    code: missingConfig ? "CASE_ACCESS_CONFIG_MISSING" : "CASE_ACCESS_UNAVAILABLE",
+    error: missingConfig
+      ? "Konfigurasi akses Kasusku belum lengkap. Set CASE_ACCESS_SECRET di server lalu deploy ulang."
+      : "Layanan akses Kasusku belum tersedia. Periksa konfigurasi Firebase Admin dan akses Firestore di server; ini bukan kesalahan kode PIN.",
+  }, { status: 503, headers: { "Cache-Control": "no-store" } });
+}
 
 export async function GET(request) {
   try {
     const auth = await requireApprovedUser(request);
     if (auth.error) return auth.error;
+    getCaseAccessSecret();
     return await requireCaseAccess(request, auth.user.uid) || NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
-    return NextResponse.json({ ok: false, error: "Akses belum dapat diverifikasi." }, { status: 503 });
+  } catch (error) {
+    return accessErrorResponse(error);
   }
 }
 
@@ -22,9 +36,12 @@ export async function POST(request) {
   try {
     const auth = await requireApprovedUser(request);
     if (auth.error) return auth.error;
-    const { code } = await request.json();
-    const expected = Buffer.from(process.env.CASE_ACCESS_CODE || "2026");
-    const provided = Buffer.from(typeof code === "string" ? code.slice(0, 128) : "");
+    const payload = await request.json().catch(() => null);
+    if (!payload || typeof payload.code !== "string" || payload.code.length > 128) {
+      return NextResponse.json({ ok: false, error: "Format kode akses tidak valid." }, { status: 400 });
+    }
+    const expected = Buffer.from(String(process.env.CASE_ACCESS_CODE || "").trim() || "2026");
+    const provided = Buffer.from(payload.code.trim());
     const valid = provided.length === expected.length && timingSafeEqual(provided, expected);
     const token = randomBytes(32).toString("hex");
     const signedToken = `${token}.${signCaseToken(token, auth.user.uid)}`;
@@ -46,7 +63,7 @@ export async function POST(request) {
     const response = NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(CASE_ACCESS_COOKIE, signedToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: CASE_ACCESS_TTL });
     return response;
-  } catch {
-    return NextResponse.json({ ok: false, error: "Kode akses belum dapat diverifikasi." }, { status: 503 });
+  } catch (error) {
+    return accessErrorResponse(error);
   }
 }

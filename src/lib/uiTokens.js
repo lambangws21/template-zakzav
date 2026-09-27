@@ -28,7 +28,7 @@ export const SOFT_PRIMARY_BUTTON_CLASS =
 export const SOFT_DARK_BUTTON_CLASS =
   "rounded-[18px] border border-[#2a3246] bg-[linear-gradient(180deg,#30394f_0%,#1f2636_100%)] px-3 py-2 text-xs font-medium text-white shadow-[8px_8px_18px_rgba(15,23,42,0.26),-2px_-2px_8px_rgba(255,255,255,0.08)] transition";
 
-export const SOFT_PANEL_CLASS = `${SOFT_SURFACE_CLASS} p-3`;
+export const SOFT_PANEL_CLASS = `glass-panel ${SOFT_SURFACE_CLASS} p-3`;
 
 export const SOFT_CARD_CLASS = `${SOFT_SURFACE_CLASS} p-2.5`;
 
@@ -37,7 +37,7 @@ export const SOFT_SECTION_CLASS = `${SOFT_SURFACE_CLASS} flex flex-col gap-2 p-2
 export const SOFT_TINT_CARD_CLASS = `${SOFT_SURFACE_CLASS}`;
 
 export const SOFT_FLOAT_SURFACE_CLASS =
-  "rounded-[24px] border border-[var(--soft-float-border)] [background:var(--soft-float-bg)] shadow-[var(--soft-shadow-float)] backdrop-blur";
+  "glass-panel rounded-[24px] border border-[var(--soft-float-border)] [background:var(--soft-float-bg)] shadow-[var(--soft-shadow-float)] backdrop-blur";
 
 // Reusable Framer Motion variants untuk panel/modal
 export const PANEL_VARIANTS = {

@@ -5,12 +5,15 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-function fixture() {
+function fixture({ env = {}, failStore = false } = {}) {
   let data = {};
   const ref = { get: async () => ({ data: () => data }) };
   const store = {
     collection: () => ({ doc: () => ref }),
-    runTransaction: async (fn) => fn({ get: ref.get, set: (_, next, options) => { data = options?.merge ? { ...data, ...next } : next; } }),
+    runTransaction: async (fn) => {
+      if (failStore) throw new Error("test storage unavailable");
+      return fn({ get: ref.get, set: (_, next, options) => { data = options?.merge ? { ...data, ...next } : next; } });
+    },
   };
   const mocks = {
     "node:crypto": require("node:crypto"),
@@ -23,7 +26,7 @@ function fixture() {
     const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
     const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
     const exports = {};
-    vm.runInNewContext(compiled, { exports, require: (name) => { if (!mocks[name]) throw new Error(name); return mocks[name]; }, process: { env: { CASE_ACCESS_CODE: "2026", CASE_ACCESS_SECRET: "test-secret-only" } }, Buffer, Date });
+    vm.runInNewContext(compiled, { exports, require: (name) => { if (!mocks[name]) throw new Error(name); return mocks[name]; }, process: { env: { CASE_ACCESS_CODE: "2026", CASE_ACCESS_SECRET: "test-secret-only", ...env } }, Buffer, Date });
     return exports;
   }
   const access = load("src/lib/caseAccess.js");
@@ -65,4 +68,43 @@ test("patient action aliases are protected without blocking implant reads", () =
   for (const action of ["list_patient_cases", "readPatientCases", "create_patient_case", "update-patient-case", "delete_patient_case"]) assert.equal(access.isPatientCaseAction(action), true);
   assert.equal(access.isPatientCaseAction("list"), false);
   assert.equal(access.isPatientCaseAction("create_implant_usage"), false);
+});
+
+test("production configuration failure is distinct from an invalid PIN", async () => {
+  const { route } = fixture({ env: { CASE_ACCESS_SECRET: "  " } });
+  const result = await route.POST({ json: async () => ({ code: "2026" }) });
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, "CASE_ACCESS_CONFIG_MISSING");
+  assert.equal(result.cookies.value, undefined);
+  const probe = await route.GET({ cookies: { get: () => undefined } });
+  assert.equal(probe.body.code, "CASE_ACCESS_CONFIG_MISSING");
+});
+
+test("normalizes pasted PIN whitespace and retains legacy secret fallback", async () => {
+  const { route } = fixture({ env: { CASE_ACCESS_CODE: "2026\n", CASE_ACCESS_SECRET: " ", ADMIN_SESSION_SECRET: "legacy-test-secret" } });
+  const result = await route.POST({ json: async () => ({ code: " 2026 " }) });
+  assert.equal(result.status, 200);
+});
+
+test("missing PIN override uses 2026 and production cookies remain secure", async () => {
+  const { route } = fixture({ env: { CASE_ACCESS_CODE: "", NODE_ENV: "production" } });
+  const result = await route.POST({ json: async () => ({ code: "2026" }) });
+  assert.equal(result.status, 200);
+  assert.equal(result.cookies.value[2].secure, true);
+  assert.equal(result.cookies.value[2].sameSite, "strict");
+});
+
+test("Firestore outage fails closed without issuing a session", async () => {
+  const { route } = fixture({ failStore: true });
+  const result = await route.POST({ json: async () => ({ code: "2026" }) });
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, "CASE_ACCESS_UNAVAILABLE");
+  assert.equal(result.cookies.value, undefined);
+});
+
+test("invalid request body returns 400 instead of a configuration error", async () => {
+  const { route } = fixture();
+  for (const body of [null, {}, { code: 2026 }, { code: "1".repeat(129) }]) {
+    assert.equal((await route.POST({ json: async () => body })).status, 400);
+  }
 });

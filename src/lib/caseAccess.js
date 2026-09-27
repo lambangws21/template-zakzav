@@ -8,9 +8,19 @@ export const CASE_ACCESS_TTL = 30 * 60;
 export const hashCaseToken = (token) => createHash("sha256").update(token).digest("hex");
 export const caseAccessRef = (uid) => getFirestore(getFirebaseAdminApp()).collection("private_case_access").doc(uid);
 
+export function getCaseAccessSecret() {
+  const secret = [process.env.CASE_ACCESS_SECRET, process.env.ADMIN_SESSION_SECRET, process.env.APPROVAL_SECRET]
+    .map((value) => String(value || "").trim()).find(Boolean);
+  if (!secret) {
+    const error = new Error("Konfigurasi akses Kasusku belum lengkap. Set CASE_ACCESS_SECRET di server lalu deploy ulang.");
+    error.code = "CASE_ACCESS_CONFIG_MISSING";
+    throw error;
+  }
+  return secret;
+}
+
 export function signCaseToken(token, uid) {
-  const secret = process.env.CASE_ACCESS_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.APPROVAL_SECRET;
-  if (!secret) throw new Error("CASE_ACCESS_SECRET belum dikonfigurasi.");
+  const secret = getCaseAccessSecret();
   return createHmac("sha256", secret).update(`case-access:${uid}:${token}`).digest("hex");
 }
 

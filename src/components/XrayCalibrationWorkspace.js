@@ -28169,7 +28169,7 @@ export default function XrayCalibrationWorkspace({
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
                     ? "simple-layer-settings-modal pointer-events-auto max-h-[min(48dvh,360px)] w-[min(calc(100vw-24px),300px)] overflow-y-auto rounded-lg border border-cyan-500/60 p-2 shadow-lg [color:var(--soft-text)] [background:var(--soft-raised-bg)]"
-                    : "max-h-[min(60dvh,440px)] w-full max-w-[360px] overflow-y-auto rounded-lg border border-cyan-500/60 p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
+                    : "glass-panel max-h-[min(60dvh,440px)] w-full max-w-[360px] overflow-y-auto rounded-lg border border-cyan-500/60 p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
                       toolConfigModal === "layerLayout"
@@ -28631,7 +28631,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
 
                         <details key={selectedCutLayer.id} className="group rounded-md border border-amber-500/50 bg-amber-500/5">
-                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-bold text-[var(--soft-text-hi)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-500">
+                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-bold text-[var(--soft-text-hi)] focus-visible:outline-2 focus-visible:outline-cyan-500">
                             <Icon name="settings" className="h-4 w-4 shrink-0 text-amber-500" />
                             <span className="flex-1">
                               Lanjutan

@@ -196,7 +196,8 @@ export default function CaseFullReportModal({ isOpen, onClose, caseData }) {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 30, opacity: 0 }}
             transition={{ type: "spring", damping: 26, stiffness: 300 }}
-            className="w-full max-w-[420px] overflow-hidden rounded-[24px] bg-white shadow-2xl"
+            data-glass-tone="light"
+            className="glass-panel w-full max-w-[420px] overflow-hidden rounded-[24px] border bg-white shadow-2xl"
           >
             {/* Header */}
             <div className="flex items-center gap-3 bg-[#0f172a] px-5 py-4">

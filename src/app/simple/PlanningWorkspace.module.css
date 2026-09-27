@@ -588,7 +588,7 @@
 .modalBackdrop { position: absolute; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #02060999; backdrop-filter: blur(3px); }
 .measurementModalBackdrop { position: fixed; }
 .objectSettingBackdrop { display: block; padding: 0; background: transparent; backdrop-filter: none; pointer-events: none; }
-.modalPanel { display: flex; width: min(680px, calc(100% - 24px)); max-height: min(760px, calc(100dvh - 40px)); flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 18px 50px #0009; }
+.modalPanel { composes: glass-panel from global; --glass-base: var(--pw-panel); display: flex; width: min(680px, calc(100% - 24px)); max-height: min(760px, calc(100dvh - 40px)); flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 18px 50px #0009; }
 .modalPanel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--pw-line); }
 .modalPanel > header small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
 .modalPanel > header .button { border: 0; background: transparent; }
@@ -878,6 +878,10 @@
 .measurementItemActions .button svg { width: 14px; height: 14px; }
 .logEmpty { display: grid; justify-items: center; gap: 8px; padding: 22px 8px; color: var(--pw-muted); text-align: center; }
 .logEmpty strong { font-size: 11px; font-weight: 500; }
+.sheet { composes: glass-panel from global; --glass-base: var(--pw-panel); }
+.canvasGuide { composes: glass-panel from global; --glass-base: var(--pw-panel); }
+.moreMenu { composes: glass-panel from global; --glass-base: var(--pw-panel); }
+.modalBackdrop:not(.objectSettingBackdrop) { background: rgba(0, 0, 0, 0.18); backdrop-filter: none; }
 @media (max-width: 1199px) {
   .logTabs button { min-height: 48px; }
   .workspace .logSearch input { min-height: 40px; font-size: 16px; }
