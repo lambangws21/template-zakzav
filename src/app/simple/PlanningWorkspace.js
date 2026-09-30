@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUp,
+  ChevronsDown,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -53,6 +57,7 @@ import {
   formatPlanningValue,
   getCompletedPlanningSteps,
   resolvePlanningRows,
+  measurementPresentation,
 } from "@/lib/planningWorkspace";
 import styles from "./PlanningWorkspace.module.css";
 import { GuideContent } from "@/components/LandmarkGuide";
@@ -249,6 +254,7 @@ export default function PlanningWorkspace({
   layers,
   onSelectLayer,
   onUpdateLayer,
+  onMoveLayer,
   annotations,
   guides,
   note,
@@ -264,9 +270,15 @@ export default function PlanningWorkspace({
   onUpdateMeasurementColor,
   onUpdateMeasurement,
   alignmentPlan,
+  alignmentCutInvalid = false,
+  alignmentPreviewBusy = false,
   alignmentSettings,
   onAlignmentSetting,
   onCreateAlignmentPreview,
+  onEditAlignmentLines,
+  tkaSizePredictions = [],
+  onAdjustTkaCutWidth,
+  onUseTkaPrediction,
   alignmentMode,
   onAlignmentMode,
   customTargetHkaDeg,
@@ -308,8 +320,14 @@ export default function PlanningWorkspace({
   const [guideVisualOpen, setGuideVisualOpen] = useState(false);
   const [splitGuideTop, setSplitGuideTop] = useState(null);
   const [resectionExpanded, setResectionExpanded] = useState(false);
+  const [normmedSizeChoices, setNormmedSizeChoices] = useState({});
+  const [normmedInsertBusy, setNormmedInsertBusy] = useState(false);
+  const [normmedInsertStatus, setNormmedInsertStatus] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [implantBrowserOpen, setImplantBrowserOpen] = useState(false);
+  const [implantInsertBusy, setImplantInsertBusy] = useState(false);
+  const [implantInsertError, setImplantInsertError] = useState("");
+  const implantInsertPending = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [implantSearch, setImplantSearch] = useState("");
   const [objectEditorPosition, setObjectEditorPosition] = useState(null);
@@ -362,6 +380,7 @@ export default function PlanningWorkspace({
       );
       return {
         ...row,
+        ...measurementPresentation(sourceMeasurement),
         measurementMode: sourceMeasurement?.measurementMode || null,
         sourceKind: String(sourceMeasurement?.id || "").split(":")[0] || null,
       };
@@ -385,6 +404,61 @@ export default function PlanningWorkspace({
       ? { label: "On target", tone: "target" }
       : { label: "Review", tone: "review" };
   };
+  const renderMeasurementRow = (row) => {
+                    const planningStatus = getPlanningStatus(row);
+                    const displayName = row.name || row.key;
+                    const planned = getPlannedValue(row);
+                    return (
+                      <li key={row.key} className={styles.measurementItem} data-selected={metricEditor === row.key} data-kind={row.measurementKind}>
+                        <button
+                          type="button"
+                          className={styles.measurementMain}
+                          onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
+                          aria-expanded={metricEditor === row.key}
+                          aria-label={`Edit ${displayName}`}
+                          title={row.detail}
+                        >
+                          <span className={styles.measurementItemName}>
+                            <i style={{ background: row.color || "var(--pw-accent)" }} aria-hidden="true" />
+                            <strong>{displayName}</strong>
+                          </span>
+                          <b>{formatPlanningValue(row.value, row.unit)}</b>
+                          <span className={styles.measurementItemMeta}>
+                            {row.sourceKind === "line" && (
+                              <em className={styles.measurementModeBadge} data-mode={row.measurementMode || "length"}>
+                                {row.measurementMode === "radius" ? "Radius" : row.measurementMode === "diameter" ? "Diameter" : "Length"}
+                              </em>
+                            )}
+                            {Number.isFinite(planned) && (
+                              <span>Awal {formatPlanningValue(row.initial, row.unit)} · Rencana {formatPlanningValue(planned, row.unit)}</span>
+                            )}
+                            <span className={styles.metricStatus} data-tone={planningStatus.tone}>
+                              {planningStatus.label === "Measured" ? "Terukur" : planningStatus.label === "On target" ? "Sesuai target" : "Tinjau"}
+                            </span>
+                          </span>
+                        </button>
+                        <div className={styles.measurementItemActions}>
+                          <Action
+                            icon={PencilLine}
+                            title={`Edit ${displayName}`}
+                            aria-label={`Pengaturan ${displayName}`}
+                            onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
+                          />
+                          {row.sourceLineIds.length > 0 && (
+                            <Action
+                              icon={row.sourceShowLabel ? Eye : EyeOff}
+                              title={row.sourceShowLabel ? "Sembunyikan bacaan di canvas" : "Tampilkan bacaan di canvas"}
+                              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} bacaan ${displayName}`}
+                              aria-pressed={row.sourceShowLabel}
+                              onClick={() => onToggleMeasurementLabel?.(row.sourceLineIds, row.sourceShowLabel)}
+                            />
+                          )}
+                        </div>
+                      </li>
+                    );
+
+  };
+
   const available = catalog.filter((item) =>
     procedure === "tka"
       ? item.type === "knee"
@@ -773,11 +847,25 @@ export default function PlanningWorkspace({
     );
     onSession({ ...session, step: index });
   };
-  const insertSelectedImplant = () => {
-    if (!selectedImplant) return;
-    onInsertImplant(selectedImplant.id);
-    setImplantBrowserOpen(false);
-    finishStep(3, {}, 4);
+  const insertSelectedImplant = async () => {
+    if (!selectedImplant || !calibrated || implantInsertPending.current) return;
+    implantInsertPending.current = true;
+    setImplantInsertBusy(true);
+    setImplantInsertError("");
+    try {
+      const added = await onInsertImplant(selectedImplant.id);
+      if (!added) {
+        setImplantInsertError("Implant gagal dimuat. Coba lagi.");
+        return;
+      }
+      setImplantBrowserOpen(false);
+      finishStep(3, {}, 4);
+    } catch {
+      setImplantInsertError("Implant gagal dimuat. Coba lagi.");
+    } finally {
+      implantInsertPending.current = false;
+      setImplantInsertBusy(false);
+    }
   };
 
   const implantList = (
@@ -785,11 +873,21 @@ export default function PlanningWorkspace({
       {layers.length === 0 ? (
         <p className={styles.empty}>Belum ada implant atau potongan.</p>
       ) : (
-        layers.map((layer) => (
-          <div key={layer.id} className={styles.layerRow}>
+        [
+          ["implant", "Implant"],
+          ["crop", "Potongan"],
+        ].map(([kind, label]) => {
+          const items = layers.filter((layer) => (layer.kind === "crop" ? "crop" : "implant") === kind);
+          if (!items.length) return null;
+          return <section key={kind} className={styles.layerGroup} aria-label={label}>
+            <h3>{label}<span>{items.length}</span></h3>
+            {items.map((layer) => (
+          <div key={layer.id} className={styles.layerRow} data-selected={layer.id === selectedLayerId}>
             <button
               type="button"
               className={styles.layerName}
+              aria-pressed={layer.id === selectedLayerId}
+              title={layer.name}
               onClick={() => activate(() => onSelectLayer(layer.id))}
             >
               <span>{layer.name}</span>
@@ -809,8 +907,16 @@ export default function PlanningWorkspace({
               aria-label={`${layer.locked ? "Unlock scale" : "Lock scale"} ${layer.name}`}
               onClick={() => onUpdateLayer(layer.id, { locked: !layer.locked })}
             />
+            {layer.id === selectedLayerId && <div className={styles.layerStackActions} aria-label={`Urutan ${layer.name}`}>
+              <Action icon={ChevronsUp} title="Paling depan" aria-label={`${layer.name}: paling depan`} onClick={() => onMoveLayer?.(layer.id, "front")} />
+              <Action icon={ArrowUp} title="Naik satu layer" aria-label={`${layer.name}: naik satu layer`} onClick={() => onMoveLayer?.(layer.id, "up")} />
+              <Action icon={ArrowDown} title="Turun satu layer" aria-label={`${layer.name}: turun satu layer`} onClick={() => onMoveLayer?.(layer.id, "down")} />
+              <Action icon={ChevronsDown} title="Paling belakang" aria-label={`${layer.name}: paling belakang`} onClick={() => onMoveLayer?.(layer.id, "back")} />
+            </div>}
           </div>
-        ))
+            ))}
+          </section>;
+        })
       )}
     </div>
   );
@@ -1144,8 +1250,15 @@ export default function PlanningWorkspace({
                                 </div>
                               </div>
                               <Action
+                                icon={Move}
+                                onClick={() => { onEditAlignmentLines?.(); setResectionExpanded(false); }}
+                              >
+                                Atur garis cut
+                              </Action>
+                              <Action
                                 icon={Layers}
                                 className={styles.tkaCutPreviewAction}
+                                disabled={alignmentCutInvalid || alignmentPreviewBusy}
                                 onClick={() => {
                                   onCreateAlignmentPreview?.();
                                   setResectionExpanded(false);
@@ -1154,8 +1267,11 @@ export default function PlanningWorkspace({
                                 Preview potongan femur & tibia
                               </Action>
                               <small className={styles.tkaPreviewHint}>
+                                {alignmentCutInvalid ? "Garis cut tidak valid. Atur kembali kedua ujung garis." :
+                                <>
                                 Membuat fragmen simulasi yang dapat dipindah untuk
                                 memeriksa alignment sebelum implant dipasang.
+                                </>}
                               </small>
                             </>
                           ) : (
@@ -1327,11 +1443,12 @@ export default function PlanningWorkspace({
                       )}
                       <Action
                         icon={Plus}
-                        disabled={!calibrated || !selectedImplant}
+                        disabled={!calibrated || !selectedImplant || implantInsertBusy}
                         onClick={insertSelectedImplant}
                       >
-                        Insert Implant
+                        {implantInsertBusy ? "Memuat..." : "Insert Implant"}
                       </Action>
+                      {implantInsertError && <p role="alert">{implantInsertError}</p>}
                       <Action
                         icon={Layers}
                         onClick={() => activate(actions.implantLibrary)}
@@ -1466,7 +1583,7 @@ export default function PlanningWorkspace({
         >
           {[
             ["measurements", "Ukuran", Ruler, displayedMeasurementRows.length],
-            ["implants", "Implant", Layers, layers.filter((item) => item.kind !== "crop").length],
+            ["implants", "Layer", Layers, layers.length],
             ["texts", "Teks", PencilLine, annotations.length],
             ["crops", "Potongan", ImagePlus, layers.filter((item) => item.kind === "crop").length],
           ].map(([key, label, TabIcon, count]) => (
@@ -1515,65 +1632,21 @@ export default function PlanningWorkspace({
                 aria-label="Measurement values"
                 tabIndex={0}
               >
+                {["tka", "hip", "foot"].map((group) => {
+                  const grouped = filteredMeasurementRows.filter((row) => row.landmarkGroup === group);
+                  if (!grouped.length) return null;
+                  return (
+                    <details key={group} className={styles.measurementGroup} data-landmark={group} open={measurementSearch.trim() ? true : undefined}>
+                      <summary>Landmark {group === "tka" ? "TKA" : group === "hip" ? "HIP" : "Hallux"} <span>{grouped.length}</span></summary>
+                      <ul className={styles.measurementList}>{grouped.map(renderMeasurementRow)}</ul>
+                    </details>
+                  );
+                })}
                 <ul className={styles.measurementList}>
-                  {filteredMeasurementRows.length === 0 ? (
-                    <li className={styles.logEmpty}>
-                      <Ruler size={20} aria-hidden="true" />
-                      <strong>{measurementSearch ? "Pengukuran tidak ditemukan" : "Belum ada pengukuran"}</strong>
-                    </li>
-                  ) : filteredMeasurementRows.map((row) => {
-                    const planningStatus = getPlanningStatus(row);
-                    const displayName = row.name || row.key;
-                    const planned = getPlannedValue(row);
-                    return (
-                      <li key={row.key} className={styles.measurementItem} data-selected={metricEditor === row.key}>
-                        <button
-                          type="button"
-                          className={styles.measurementMain}
-                          onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
-                          aria-expanded={metricEditor === row.key}
-                          aria-label={`Edit ${displayName}`}
-                          title={row.detail}
-                        >
-                          <span className={styles.measurementItemName}>
-                            <i style={{ background: row.color || "var(--pw-accent)" }} aria-hidden="true" />
-                            <strong>{displayName}</strong>
-                          </span>
-                          <b>{formatPlanningValue(row.value, row.unit)}</b>
-                          <span className={styles.measurementItemMeta}>
-                            {row.sourceKind === "line" && (
-                              <em className={styles.measurementModeBadge} data-mode={row.measurementMode || "length"}>
-                                {row.measurementMode === "radius" ? "Radius" : row.measurementMode === "diameter" ? "Diameter" : "Length"}
-                              </em>
-                            )}
-                            {Number.isFinite(planned) && (
-                              <span>Awal {formatPlanningValue(row.initial, row.unit)} · Rencana {formatPlanningValue(planned, row.unit)}</span>
-                            )}
-                            <span className={styles.metricStatus} data-tone={planningStatus.tone}>
-                              {planningStatus.label === "Measured" ? "Terukur" : planningStatus.label === "On target" ? "Sesuai target" : "Tinjau"}
-                            </span>
-                          </span>
-                        </button>
-                        <div className={styles.measurementItemActions}>
-                          <Action
-                            icon={PencilLine}
-                            title={`Edit ${displayName}`}
-                            aria-label={`Pengaturan ${displayName}`}
-                            onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
-                          />
-                          {row.sourceLineIds.length > 0 && (
-                            <Action
-                              icon={row.sourceShowLabel ? Eye : EyeOff}
-                              title={row.sourceShowLabel ? "Sembunyikan bacaan di canvas" : "Tampilkan bacaan di canvas"}
-                              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} bacaan ${displayName}`}
-                              aria-pressed={row.sourceShowLabel}
-                              onClick={() => onToggleMeasurementLabel?.(row.sourceLineIds, row.sourceShowLabel)}
-                            />
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
+                  {filteredMeasurementRows.filter((row) => !row.landmarkGroup).map(renderMeasurementRow)}
+                  {filteredMeasurementRows.length === 0 && (
+                    <li className={styles.logEmpty}>Belum ada hasil pengukuran.</li>
+                  )}
                 </ul>
               </div>
               {metricEditor &&
@@ -2456,9 +2529,9 @@ export default function PlanningWorkspace({
       </section>
       <section>
         <strong>File</strong>
-        <button type="button" onClick={() => activate(actions.upload)}>
-          <ImagePlus size={16} />
-          Open X-ray
+        <button type="button" className={styles.fileShortcut} data-file-action="xray" onClick={() => activate(actions.upload)}>
+          <span className={styles.fileShortcutIcon} aria-hidden="true"><ImagePlus size={16} /></span>
+          <span>Open X-ray</span>
         </button>
         <button
           type="button"
@@ -2491,9 +2564,9 @@ export default function PlanningWorkspace({
       <section>
         <strong>App</strong>
         {actions.cases && (
-          <button type="button" onClick={() => activate(actions.cases)}>
-            <ListOrdered size={16} />
-            Kasus Ku
+          <button type="button" className={styles.fileShortcut} data-file-action="cases" onClick={() => activate(actions.cases)}>
+            <span className={styles.fileShortcutIcon} aria-hidden="true"><ListOrdered size={16} /></span>
+            <span>Kasusku</span>
           </button>
         )}
         <button
@@ -2517,6 +2590,40 @@ export default function PlanningWorkspace({
       </section>
     </div>
   );
+
+  const analysisResultList = (procedure === "tka" || procedure === "foot" || procedure === "hip") && analysisResults?.length > 0 && !guideItem && (
+            <ul className={styles.analysisResultRail} aria-label={`Hasil analisis ${procedure === "tka" ? "TKA" : procedure === "hip" ? "HIP" : "Hallux Valgus"}`}>
+              {analysisResults.map((result) => (
+                <li key={result.metric}>
+                  <button
+                    type="button"
+                    className={styles.analysisResultBadge}
+                    style={{ "--result-color": result.color }}
+                    data-procedure={procedure}
+                    data-muted={Boolean(focusedAnalysisMetric && focusedAnalysisMetric !== result.metric)}
+                    aria-pressed={focusedAnalysisMetric === result.metric}
+                    aria-label={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    title={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    onClick={() => onFocusAnalysisMetric?.(result.metric)}
+                  >
+                    <span><strong>{result.metric}</strong><b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b></span>
+                    <small>{result.label}</small>
+                  </button>
+                </li>
+              ))}
+              {focusedAnalysisMetric && (
+                <li>
+                  <button
+                    type="button"
+                    className={styles.analysisShowAll}
+                    onClick={() => onFocusAnalysisMetric?.(null)}
+                  >
+                    Tampilkan semua
+                  </button>
+                </li>
+              )}
+            </ul>
+          );
 
   return (
     <div
@@ -2673,39 +2780,7 @@ export default function PlanningWorkspace({
         </nav>
         <div className={styles.canvas}>
           {children}
-          {(procedure === "foot" || procedure === "hip") && analysisResults?.length > 0 && !guideItem && (
-            <ul className={styles.analysisResultRail} aria-label={`Hasil analisis ${procedure === "hip" ? "HIP" : "Hallux Valgus"}`}>
-              {analysisResults.map((result) => (
-                <li key={result.metric}>
-                  <button
-                    type="button"
-                    className={styles.analysisResultBadge}
-                    style={{ "--result-color": result.color }}
-                    data-procedure={procedure}
-                    data-muted={Boolean(focusedAnalysisMetric && focusedAnalysisMetric !== result.metric)}
-                    aria-pressed={focusedAnalysisMetric === result.metric}
-                    aria-label={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
-                    title={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
-                    onClick={() => onFocusAnalysisMetric?.(result.metric)}
-                  >
-                    <span><strong>{result.metric}</strong><b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b></span>
-                    <small>{result.label}</small>
-                  </button>
-                </li>
-              ))}
-              {focusedAnalysisMetric && (
-                <li>
-                  <button
-                    type="button"
-                    className={styles.analysisShowAll}
-                    onClick={() => onFocusAnalysisMetric?.(null)}
-                  >
-                    Tampilkan semua
-                  </button>
-                </li>
-              )}
-            </ul>
-          )}
+          {procedure !== "tka" && analysisResultList}
           {(procedure === "tka" || procedure === "foot" || procedure === "hip") &&
             hasImage &&
             !canProceed && (
@@ -2808,14 +2883,16 @@ export default function PlanningWorkspace({
               {session.side === "left" ? "L" : "R"}
             </span>
           )}
-          {procedure === "tka" && alignmentPlan && (
+          {procedure === "tka" && !guideItem && (
+            <div className={styles.tkaCanvasPanels} data-expanded={resectionExpanded}>
+            {alignmentPlan && (
             <aside
               className={styles.resectionSummary}
               data-minimized={!resectionExpanded}
               aria-label="TKA resection preview"
             >
               <header>
-                <span>Kine Line</span>
+                <span>Koreksi</span>
                 <strong>
                   {resectionExpanded
                     ? "Alignment preview"
@@ -2917,7 +2994,7 @@ export default function PlanningWorkspace({
                           min="1"
                           max="20"
                           step="0.5"
-                          value={alignmentSettings?.tibialResectionMm ?? 8}
+                          value={alignmentSettings?.tibialResectionMm ?? 2}
                           onChange={(event) =>
                             onAlignmentSetting?.(
                               "tibialResectionMm",
@@ -2940,7 +3017,14 @@ export default function PlanningWorkspace({
                     </small>
                   </div>
                   <Action
+                    icon={Move}
+                    onClick={() => { onEditAlignmentLines?.(); setResectionExpanded(false); }}
+                  >
+                    Atur garis cut
+                  </Action>
+                  <Action
                     icon={Layers}
+                    disabled={alignmentCutInvalid || alignmentPreviewBusy}
                     onClick={() => {
                       onCreateAlignmentPreview?.();
                       setResectionExpanded(false);
@@ -2949,12 +3033,66 @@ export default function PlanningWorkspace({
                     Preview potongan femur & tibia
                   </Action>
                   <small>
-                    Simulasi planning. Verifikasi landmark dan hasil secara
-                    klinis.
+                    {alignmentCutInvalid ? "Garis cut tidak valid. Atur kembali kedua ujung garis." : "Simulasi planning. Verifikasi landmark dan hasil secara klinis."}
                   </small>
                 </>
               )}
             </aside>
+            )}
+            {tkaSizePredictions.length > 0 && (
+              <details className={styles.tkaSizePredictions}>
+                <summary>Prediksi Normmed <ChevronDown size={14} /></summary>
+                {tkaSizePredictions.map((item) => (
+                  <section key={item.role}>
+                    <strong>{item.label}</strong>
+                    <label>
+                      {item.source} (mm)
+                      <input
+                        key={`${item.role}-${item.widthMm.toFixed(2)}`}
+                        type="number" min="0.1" max="200" step="0.1"
+                        aria-label={`Lebar ML ${item.label}`}
+                        defaultValue={item.widthMm.toFixed(1)}
+                        onBlur={(event) => {
+                          const value = Number(event.target.value);
+                          if (event.target.value && Number.isFinite(value) && value > 0 && value <= 200) {
+                            if (value !== Number(item.widthMm.toFixed(1))) onAdjustTkaCutWidth?.(item.role, value);
+                          } else event.target.value = item.widthMm.toFixed(1);
+                        }}
+                        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                      />
+                    </label>
+                    <span>Size {item.size} · ML {item.referenceMm} mm</span>
+                    <small>Selisih {item.deltaMm.toFixed(1)} mm{item.outsideCatalog ? " · Di luar katalog" : ""}</small>
+                    <label>Ukuran SVG AP
+                      <select
+                        aria-label={`Ukuran SVG ${item.label}`}
+                        value={normmedSizeChoices[`${item.role}:${item.widthMm}`] || ""}
+                        onChange={(event) => setNormmedSizeChoices((current) => ({ ...current, [`${item.role}:${item.widthMm}`]: event.target.value }))}
+                      >
+                        <option value="">{item.outsideCatalog ? "Pilih ukuran manual" : `Prediksi: Size ${item.size}`}</option>
+                        {item.sizes.map((size) => <option key={size.size} value={size.size}>Size {size.size} · ML {size.width} mm</option>)}
+                      </select>
+                    </label>
+                    <Action icon={Plus} disabled={normmedInsertBusy || (item.outsideCatalog && !normmedSizeChoices[`${item.role}:${item.widthMm}`])} onClick={async () => {
+                      setNormmedInsertBusy(true);
+                      setNormmedInsertStatus("");
+                      try {
+                        const added = await onUseTkaPrediction?.(item.role, normmedSizeChoices[`${item.role}:${item.widthMm}`] || null);
+                        setNormmedInsertStatus(added ? `${item.label}: SVG ditambahkan.` : "SVG belum ditambahkan. Periksa gambar dan kalibrasi.");
+                      } catch {
+                        setNormmedInsertStatus("SVG gagal dimuat. Coba kembali.");
+                      } finally { setNormmedInsertBusy(false); }
+                    }}>
+                      Pasang SVG AP
+                    </Action>
+                  </section>
+                ))}
+                <small role="status">{normmedInsertBusy ? "Memuat SVG..." : normmedInsertStatus}</small>
+                <small>Perkiraan ML, bukan ukuran final. Kedua SVG merupakan kontur perkiraan; verifikasi AP, geometri, dan skala. Tibia DRAFT.</small>
+              </details>
+            )}
+            {analysisResultList}
+            </div>
           )}
           {!guideItem && hasImage && resumeGuideItem && (dismissedGuideItem || (session.step === 1 && canProceed && !resumeGuideItem.complete)) && (
             <Action
@@ -3311,6 +3449,12 @@ export default function PlanningWorkspace({
                     <span>{selectedLayer.kind}</span>
                     <strong>{selectedLayer.size}</strong>
                   </div>
+                  <div className={styles.layerStackActions} aria-label="Urutan layer aktif">
+                    <Action icon={ChevronsUp} title="Paling depan" aria-label="Layer aktif: paling depan" onClick={() => onMoveLayer?.(selectedLayer.id, "front")} />
+                    <Action icon={ArrowUp} title="Naik satu layer" aria-label="Layer aktif: naik satu layer" onClick={() => onMoveLayer?.(selectedLayer.id, "up")} />
+                    <Action icon={ArrowDown} title="Turun satu layer" aria-label="Layer aktif: turun satu layer" onClick={() => onMoveLayer?.(selectedLayer.id, "down")} />
+                    <Action icon={ChevronsDown} title="Paling belakang" aria-label="Layer aktif: paling belakang" onClick={() => onMoveLayer?.(selectedLayer.id, "back")} />
+                  </div>
                   <label>
                     Rotation{" "}
                     <span>
@@ -3468,11 +3612,12 @@ export default function PlanningWorkspace({
                   </div>
                   <Action
                     icon={Plus}
-                    disabled={!calibrated}
+                    disabled={!calibrated || implantInsertBusy}
                     onClick={insertSelectedImplant}
                   >
-                    Insert active template
+                    {implantInsertBusy ? "Memuat..." : "Insert active template"}
                   </Action>
+                  {implantInsertError && <p role="alert">{implantInsertError}</p>}
                 </div>
               ) : (
                 <div className={styles.inspectorEmpty}>
@@ -3948,17 +4093,18 @@ export default function PlanningWorkspace({
                 <p className={styles.empty}>Implant tidak ditemukan.</p>
               )}
             </div>
+            {implantInsertError && <p role="alert">{implantInsertError}</p>}
             <footer>
-              <Action onClick={() => setImplantBrowserOpen(false)}>
+              <Action disabled={implantInsertBusy} onClick={() => setImplantBrowserOpen(false)}>
                 Cancel
               </Action>
               <Action
                 icon={Plus}
                 className={styles.primaryAction}
-                disabled={!calibrated || !selectedImplant}
+                disabled={!calibrated || !selectedImplant || implantInsertBusy}
                 onClick={insertSelectedImplant}
               >
-                Insert Implant
+                {implantInsertBusy ? "Memuat..." : "Insert Implant"}
               </Action>
             </footer>
           </section>

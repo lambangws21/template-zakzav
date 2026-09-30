@@ -2,6 +2,17 @@ export function createPlanningSession() {
   return { step: 0, side: null, bindings: {}, initial: null, completedSteps: [] };
 }
 
+export function measurementPresentation(source) {
+  const group = ["tka", "hip", "foot"].includes(source?.landmarkGroup)
+    ? source.landmarkGroup : null;
+  const kind = String(source?.id || "").split(":")[0];
+  const type = kind === "intersection" ? "interline"
+    : kind === "tka-plan" ? "guide"
+    : kind === "line" ? source?.type === "ruler" ? "ruler" : "line"
+    : ["angle", "circle", "guide"].includes(kind) ? kind : "other";
+  return { landmarkGroup: group, measurementKind: type };
+}
+
 export function getCompletedPlanningSteps(session, setupComplete = false) {
   const completed = new Set(
     Array.isArray(session?.completedSteps)

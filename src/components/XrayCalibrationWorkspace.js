@@ -106,7 +106,7 @@ import {
   classifyAlignment,
 } from "../lib/hka/hkaCalculator";
 import { calculateFTA, predictHKAAFromFTA } from "../lib/hka/ftaCalculator";
-import { computeJLA, computeTkaResectionPlan } from "../lib/hka/jlaCalculator";
+import { computeJLA, computeTkaResectionPlan, applyTkaCutLines, estimateTkaMlSize } from "../lib/hka/jlaCalculator";
 import useMobileCanvasGestures from "../hooks/useMobileCanvasGestures";
 import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
 import DriveImageWithFallback from "./media/DriveImageWithFallback";
@@ -114,6 +114,7 @@ import {
   getImplantLibraryItemById,
   LOCAL_IMPLANT_LIBRARY,
   LOCAL_IMPLANT_LIBRARY_TYPES,
+  NORMMED_FEMORAL_SIZES,
   NORMMED_TIBIAL_SIZES,
 } from "../lib/digitalTemplating/implantLibrary";
 import { createTemplatingId } from "../lib/digitalTemplating/viewerUtils";
@@ -540,8 +541,8 @@ const DEFAULT_HKA_LABEL_OFFSET_Y = -16;
 const DEFAULT_GUIDE_LABEL_OFFSET_X = -54;
 const DEFAULT_GUIDE_LABEL_OFFSET_Y = -18;
 const DEFAULT_LABEL_OPACITY = 0.56;
-const RESECTION_GUIDE_STROKE_WIDTH = 1.25;
-const RESECTION_PREVIEW_STROKE_WIDTH = 1.35;
+const RESECTION_GUIDE_STROKE_WIDTH = 0.5;
+const RESECTION_PREVIEW_STROKE_WIDTH = 0.5;
 
 const HKA_POINT_HINTS = {
   hip: {
@@ -1033,6 +1034,8 @@ export default function XrayCalibrationWorkspace({
   const [angles, setAngles] = useState([]);
   const [focusedHalluxMetric, setFocusedHalluxMetric] = useState(null);
   const [focusedHipResult, setFocusedHipResult] = useState(null);
+  const [focusedTkaResult, setFocusedTkaResult] = useState(null);
+  const [activeTkaSourceId, setActiveTkaSourceId] = useState(null);
   const [draftAnglePoints, setDraftAnglePoints] = useState([]);
   const [circles, setCircles] = useState([]);
   const circlesRef = useRef([]);
@@ -1703,7 +1706,9 @@ export default function XrayCalibrationWorkspace({
   const [tibialCutOffsetPx, setTibialCutOffsetPx] = useState(10);
   const [tibialCutLineLengthPx, setTibialCutLineLengthPx] = useState(90);
   const [tkaFemoralResectionMm, setTkaFemoralResectionMm] = useState(9);
-  const [tkaTibialResectionMm, setTkaTibialResectionMm] = useState(8);
+  const [tkaTibialResectionMm, setTkaTibialResectionMm] = useState(2);
+  const [tkaCutPending, setTkaCutPending] = useState(false);
+  const tkaCutPendingRef = useRef(false);
   const [tkaAlignmentMode, setTkaAlignmentMode] = useState("mechanical");
   const [tkaCustomTargetHkaDeg, setTkaCustomTargetHkaDeg] = useState(0);
   const [planningGuideLabelOffsetX, setPlanningGuideLabelOffsetX] = useState(
@@ -2309,9 +2314,14 @@ export default function XrayCalibrationWorkspace({
   }, [selectedHka]);
   const activeTkaJointAngles = useMemo(() => {
     if (selectedHka?.mode === "jla") return selectedHka;
+    const editing = hkaSets.find((item) => item.id === activeTkaSourceId && item.mode === "jla");
+    if (editing) return editing;
     return [...hkaSets].reverse().find((item) => item.mode === "jla") || null;
-  }, [hkaSets, selectedHka]);
-  const tkaResectionPlan = useMemo(
+  }, [hkaSets, selectedHka, activeTkaSourceId]);
+  useEffect(() => {
+    if (selectedHka?.mode === "jla") setActiveTkaSourceId(selectedHka.id);
+  }, [selectedHka]);
+  const automaticTkaResectionPlan = useMemo(
     () =>
       computeTkaResectionPlan({
         hka: activeTkaJointAngles,
@@ -2330,6 +2340,41 @@ export default function XrayCalibrationWorkspace({
       tkaCustomTargetHkaDeg,
     ],
   );
+  const tkaResectionPlan = useMemo(
+    () => applyTkaCutLines(automaticTkaResectionPlan, activeTkaJointAngles, lines, mmPerPixel),
+    [automaticTkaResectionPlan, activeTkaJointAngles, lines, mmPerPixel],
+  );
+  const tkaSizePredictions = useMemo(() => {
+    if (!activeTkaJointAngles || !tkaResectionPlan || !(mmPerPixel > 0)) return [];
+    return ["femoral", "tibial"].map((role) => {
+      const femoral = role === "femoral";
+      const cutLine = lines.find((line) => line.tkaSourceId === activeTkaJointAngles.id && line.tkaCutRole === role);
+      const estimate = estimateTkaMlSize(
+        tkaResectionPlan[role],
+        activeTkaJointAngles[femoral ? "femCondyleMedial" : "tibPlateauMedial"],
+        activeTkaJointAngles[femoral ? "femCondyleLateral" : "tibPlateauLateral"],
+        mmPerPixel, femoral ? NORMMED_FEMORAL_SIZES : NORMMED_TIBIAL_SIZES,
+        Boolean(cutLine?.tkaSizingMeasured),
+      );
+      return estimate ? { ...estimate, role, label: femoral ? "Femoral" : "Tibia (DRAFT)",
+        templateId: `normmed-${role}-ap-${estimate.size}`,
+        sizes: (femoral ? NORMMED_FEMORAL_SIZES : NORMMED_TIBIAL_SIZES).map((item) => ({ size: item.size, width: item.width })),
+      } : null;
+    }).filter(Boolean);
+  }, [activeTkaJointAngles, tkaResectionPlan, lines, mmPerPixel]);
+  const tkaResults = useMemo(() => {
+    if (!activeTkaJointAngles) return [];
+    const result = getHkaMeasurementResult(activeTkaJointAngles).jla;
+    if (!result) return [];
+    return [
+      { metric: "mLDFA", label: "Distal femur", value: result.LDFA, color: "#38bdf8" },
+      { metric: "mMPTA", label: "Proximal tibia", value: result.MPTA, color: "#34d399" },
+      { metric: "JLCA", label: "Konvergensi sendi", value: result.JLCA, color: "#e879f9" },
+      { metric: "aHKA", label: "MPTA - LDFA", value: result.cpakHKA, color: "#fbbf24" },
+    ].filter((item) => Number.isFinite(item.value));
+  }, [activeTkaJointAngles]);
+  const activeTkaFocus = isPlanningLayout && planningProcedure === "tka"
+    ? focusedTkaResult : null;
   const selectedLayerCanApplyRealSize =
     isImageBackedLayerKind(selectedCutLayer?.kind) &&
     mmPerPixel !== null &&
@@ -4153,7 +4198,7 @@ export default function XrayCalibrationWorkspace({
       } = {},
     ) => {
       const configuredStrokeWidth = Math.max(
-        line?.halluxValgusAnalysisId ? 0.5 : 1.2,
+        line?.halluxValgusAnalysisId || line?.tkaCutRole ? 0.5 : 1.2,
         Number.isFinite(line?.strokeWidth)
           ? line.strokeWidth
           : DEFAULT_LINE_STROKE_WIDTH,
@@ -4223,7 +4268,7 @@ export default function XrayCalibrationWorkspace({
         dashPattern,
         width:
           baseStrokeWidth +
-          (line?.halluxValgusAnalysisId
+          (line?.halluxValgusAnalysisId || line?.tkaCutRole
             ? 0
             : isSelected || isPulsing
               ? 0.45
@@ -7982,7 +8027,7 @@ export default function XrayCalibrationWorkspace({
           clamp(Number(payload.tkaFemoralResectionMm) || 9, 1, 20),
         );
         setTkaTibialResectionMm(
-          clamp(Number(payload.tkaTibialResectionMm) || 8, 1, 20),
+          clamp(Number(payload.tkaTibialResectionMm) || 2, 1, 20),
         );
         setActivityLog(
           Array.isArray(payload.activityLog)
@@ -8667,6 +8712,7 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const line of lines) {
+        if (line.hidden) continue;
         if (hideSavedCalibrationLine && line.id === calibrationLineId) continue;
         const distance = distancePointToSegment(imagePoint, line);
         if (distance <= thresholdInImage && distance < minDistance) {
@@ -8871,6 +8917,7 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const line of lines) {
+        if (line.hidden) continue;
         if (hideSavedCalibrationLine && line.id === calibrationLineId) continue;
         const handles = [
           { key: "start", x: line.x1, y: line.y1 },
@@ -8911,6 +8958,7 @@ export default function XrayCalibrationWorkspace({
     (screenPoint) => {
       for (let index = lines.length - 1; index >= 0; index -= 1) {
         const line = lines[index];
+        if (line.hidden) continue;
         if (
           line.showLabel === false ||
           (hideSavedCalibrationLine && line.id === calibrationLineId)
@@ -8990,6 +9038,7 @@ export default function XrayCalibrationWorkspace({
     (screenPoint) => {
       for (let index = hkaSets.length - 1; index >= 0; index -= 1) {
         const item = hkaSets[index];
+        if (item.hidden) continue;
         const measurement = getHkaMeasurementResult(item);
         let anchor = null;
 
@@ -9222,6 +9271,7 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const item of hkaSets) {
+        if (item.hidden) continue;
         const handles = getHkaPointEntries(item).map((entry) => ({
           key: entry.key,
           x: entry.point.x,
@@ -9252,6 +9302,7 @@ export default function XrayCalibrationWorkspace({
       let minDistance = Infinity;
 
       for (const item of hkaSets) {
+        if (item.hidden) continue;
         const segments =
           item.mode === "fta"
             ? item.femurMidshaft10cm &&
@@ -9397,6 +9448,7 @@ export default function XrayCalibrationWorkspace({
 
     if (snapSettings.endpoint) {
       for (const line of lines) {
+        if (line.hidden) continue;
         pushCandidate({
           type: "endpoint",
           x: line.x1,
@@ -9438,6 +9490,7 @@ export default function XrayCalibrationWorkspace({
       }
 
       for (const item of hkaSets) {
+        if (item.hidden) continue;
         for (const entry of getHkaPointEntries(item)) {
           pushCandidate({
             type: "endpoint",
@@ -9451,6 +9504,7 @@ export default function XrayCalibrationWorkspace({
 
     if (snapSettings.midpoint || snapSettings.intersection) {
       for (const line of lines) {
+        if (line.hidden) continue;
         const segment = {
           x1: line.x1,
           y1: line.y1,
@@ -9574,6 +9628,7 @@ export default function XrayCalibrationWorkspace({
 
       if (snapSettings.perpendicular) {
         for (const line of lines) {
+          if (line.hidden) continue;
           const projection = projectPointToInfiniteLine(rawPoint, line);
           if (!projection) continue;
           evaluateCandidate({
@@ -10534,6 +10589,7 @@ export default function XrayCalibrationWorkspace({
     };
 
     for (const line of lines) {
+      if (line.hidden) continue;
       const isSelected = line.id === selectedLineId;
       const isHalluxLine = Boolean(line.halluxValgusAnalysisId);
       const isHipLine = Boolean(line.pelvicAnalysisId) || HIP_RESULT_DEFINITIONS.some(
@@ -10551,7 +10607,7 @@ export default function XrayCalibrationWorkspace({
       const isCalibrationReference =
         calibrationMode === "line" && calibrationReferenceLine?.id === line.id;
       const isLocked = isLineLocked(line.id);
-      const isResectionPreview = Boolean(line.alignmentSimulation);
+      const isResectionPreview = Boolean(line.alignmentSimulation || line.tkaCutRole);
       const style = getLineVisualStyle(line, {
         isSelected,
         isPulsing,
@@ -10579,8 +10635,8 @@ export default function XrayCalibrationWorkspace({
         contrastOutline: false,
         handleRadius: isResectionPreview
           ? isCoarsePointer
-            ? 13
-            : 10
+            ? 9
+            : 6
           : isCoarsePointer
             ? 17
             : 15,
@@ -11079,6 +11135,7 @@ export default function XrayCalibrationWorkspace({
     }
 
     for (const item of hkaSets) {
+      if (item.hidden) continue;
       const measurement = getHkaMeasurementResult(item);
       const isSelected = item.id === selectedHkaId;
       const isHovered =
@@ -11212,7 +11269,7 @@ export default function XrayCalibrationWorkspace({
       // ── JLA mode rendering ─────────────────────────────────────────────────
       if (item.mode === "jla") {
         if (!item.hip || !item.knee || !item.ankle) continue;
-        const compactForResection = cutLayers.some(
+        const compactForResection = !isPlanningLayout && cutLayers.some(
           (layer) => !layer.hidden && Boolean(layer.alignmentSimulation),
         );
         const jlaHip = imageToScreenPoint(item.hip.x, item.hip.y);
@@ -11237,12 +11294,12 @@ export default function XrayCalibrationWorkspace({
             )
           : null;
         const baseStrokeWidth = Math.max(
-          1.2,
-          Number.isFinite(item.strokeWidth)
+          0.5,
+          Number.isFinite(item.strokeWidth) && item.strokeWidth !== DEFAULT_HKA_STROKE_WIDTH
             ? item.strokeWidth
-            : DEFAULT_HKA_STROKE_WIDTH,
+            : 0.5,
         );
-        const strokeWidth = baseStrokeWidth + (isEmphasized ? 0.55 : 0);
+        const strokeWidth = baseStrokeWidth + (isEmphasized ? 0.25 : 0);
         const labelOffsetX = Number.isFinite(item.labelOffsetX)
           ? item.labelOffsetX
           : DEFAULT_HKA_LABEL_OFFSET_X;
@@ -11254,8 +11311,8 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.lineCap = "round";
         overlayCtx.lineJoin = "round";
 
-        // Shadow glow — femoral (amber) + tibial (green) crossing at knee
-        {
+        // Keep extension guides subtle; the actual measurement lines stay sharp.
+        if (!activeTkaFocus) {
           const femDx = jlaKnee.x - jlaHip.x,
             femDy = jlaKnee.y - jlaHip.y;
           const femLen = Math.hypot(femDx, femDy) || 1;
@@ -11263,11 +11320,11 @@ export default function XrayCalibrationWorkspace({
             tibDy = jlaKnee.y - jlaAnkle.y;
           const tibLen = Math.hypot(tibDx, tibDy) || 1;
           const ext = Math.min(femLen, tibLen) * 0.18;
-          overlayCtx.lineWidth = strokeWidth + 1.5;
+          overlayCtx.lineWidth = strokeWidth;
           overlayCtx.setLineDash([]);
           overlayCtx.strokeStyle = "#f59e0b44";
           overlayCtx.shadowColor = "#f59e0b";
-          overlayCtx.shadowBlur = 9;
+          overlayCtx.shadowBlur = 0;
           overlayCtx.beginPath();
           overlayCtx.moveTo(jlaHip.x, jlaHip.y);
           overlayCtx.lineTo(
@@ -11289,6 +11346,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // Femoral mechanical axis
+        overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
         overlayCtx.strokeStyle = "#ffe600";
         overlayCtx.lineWidth = strokeWidth;
         overlayCtx.beginPath();
@@ -11297,6 +11355,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
 
         // Tibial mechanical axis
+        overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
         overlayCtx.strokeStyle = "#00ffcc";
         overlayCtx.lineWidth = strokeWidth;
         overlayCtx.beginPath();
@@ -11306,10 +11365,11 @@ export default function XrayCalibrationWorkspace({
 
         // Condyle line dashed (MFC–LFC extended)
         if (!compactForResection && jlaMFC && jlaLFC) {
-          const condExt = jlaExtendLine(jlaMFC, jlaLFC, 100);
+          overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "JLCA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
+          const condExt = jlaExtendLine(jlaMFC, jlaLFC, 24);
           overlayCtx.strokeStyle = "#00b7ff";
-          overlayCtx.lineWidth = Math.max(1, strokeWidth - 0.5);
-          overlayCtx.setLineDash([5, 4]);
+          overlayCtx.lineWidth = strokeWidth;
+          overlayCtx.setLineDash([]);
           overlayCtx.beginPath();
           overlayCtx.moveTo(condExt.a.x, condExt.a.y);
           overlayCtx.lineTo(condExt.b.x, condExt.b.y);
@@ -11319,10 +11379,11 @@ export default function XrayCalibrationWorkspace({
 
         // Plateau line dashed (MTP–LTP extended)
         if (!compactForResection && jlaMTP && jlaLTP) {
-          const platExt = jlaExtendLine(jlaMTP, jlaLTP, 100);
+          overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "JLCA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
+          const platExt = jlaExtendLine(jlaMTP, jlaLTP, 24);
           overlayCtx.strokeStyle = "#00ffcc";
-          overlayCtx.lineWidth = Math.max(1, strokeWidth - 0.5);
-          overlayCtx.setLineDash([5, 4]);
+          overlayCtx.lineWidth = strokeWidth;
+          overlayCtx.setLineDash([]);
           overlayCtx.beginPath();
           overlayCtx.moveTo(platExt.a.x, platExt.a.y);
           overlayCtx.lineTo(platExt.b.x, platExt.b.y);
@@ -11331,7 +11392,8 @@ export default function XrayCalibrationWorkspace({
         }
 
         // LDFA arc at femoral axis × condyle line intersection
-        if (jlaMFC && jlaLFC) {
+        overlayCtx.globalAlpha = 1;
+        if ((!activeTkaFocus || ["mLDFA", "aHKA"].includes(activeTkaFocus)) && jlaMFC && jlaLFC) {
           const condFar = jlaExtendLine(jlaMFC, jlaLFC, 500);
           const ldfaV = jlaLineIntersect(jlaHip, jlaKnee, condFar.a, condFar.b);
           if (ldfaV) {
@@ -11354,7 +11416,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // MPTA arc at tibial axis × plateau line intersection
-        if (jlaMTP && jlaLTP) {
+        if ((!activeTkaFocus || ["mMPTA", "aHKA"].includes(activeTkaFocus)) && jlaMTP && jlaLTP) {
           const platFar = jlaExtendLine(jlaMTP, jlaLTP, 500);
           const mptaV = jlaLineIntersect(
             jlaKnee,
@@ -11385,7 +11447,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // JLCA arc at condyle × plateau intersection
-        if (!compactForResection && jlaMFC && jlaLFC && jlaMTP && jlaLTP) {
+        if ((!activeTkaFocus || activeTkaFocus === "JLCA") && !compactForResection && jlaMFC && jlaLFC && jlaMTP && jlaLTP) {
           const jlcaV = jlaLineIntersect(jlaMFC, jlaLFC, jlaMTP, jlaLTP);
           if (jlcaV) {
             const cDir = { x: jlaLFC.x - jlaMFC.x, y: jlaLFC.y - jlaMFC.y };
@@ -11405,14 +11467,14 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.restore();
 
         if (isEmphasized) {
-          const primaryRadius = isCoarsePointer ? 16 : 13;
-          const secondaryRadius = isCoarsePointer ? 14 : 11;
+          const primaryRadius = isCoarsePointer ? 9 : 6;
+          const secondaryRadius = isCoarsePointer ? 8 : 5;
           drawCleanHandleRings(
             [{ ...jlaHip, radius: primaryRadius }],
             "#ffe600",
           );
           drawCleanHandleRings(
-            [{ ...jlaKnee, radius: isCoarsePointer ? 18 : 15 }],
+            [{ ...jlaKnee, radius: primaryRadius }],
             "#f97316",
           );
           drawCleanHandleRings(
@@ -11433,7 +11495,7 @@ export default function XrayCalibrationWorkspace({
           );
         }
 
-        if (!compactForResection) {
+        if (!compactForResection && !(isPlanningLayout && planningProcedure === "tka")) {
           drawTag(
             overlayCtx,
             jlaKnee.x + labelOffsetX,
@@ -11682,12 +11744,12 @@ export default function XrayCalibrationWorkspace({
       const isEmphasizedGuide = isSelectedGuide || isPulsingGuide;
       const guideStyle = getPlanningGuideVisualStyle(guide);
       const baseStrokeWidth = Math.max(
-        1.2,
+        0.5,
         Number.isFinite(guide.strokeWidth)
           ? guide.strokeWidth
           : DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
       );
-      const strokeWidth = baseStrokeWidth + (isEmphasizedGuide ? 0.6 : 0);
+      const strokeWidth = baseStrokeWidth + (isEmphasizedGuide ? 0.25 : 0);
 
       overlayCtx.save();
       if (isPulsingGuide) {
@@ -12912,6 +12974,7 @@ export default function XrayCalibrationWorkspace({
     activeIntersectionAngleKey,
     activeHalluxFocus,
     activeHipFocus,
+    activeTkaFocus,
     annotations,
     angles,
     calibrationMode,
@@ -13243,6 +13306,7 @@ export default function XrayCalibrationWorkspace({
       physicalHeightMm = null,
       transparentWhiteBackground = false,
       implantViewMode = null,
+      placement = null,
     }) => {
       if (!image || !modelWidth || !modelHeight) {
         setNotice(
@@ -13426,16 +13490,16 @@ export default function XrayCalibrationWorkspace({
         sourceHeight: srcH,
         displayWidth,
         displayHeight,
-        centerX: modelWidth / 2,
-        centerY: modelHeight / 2,
-        rotation: 0,
+        centerX: Number.isFinite(placement?.x) ? placement.x : modelWidth / 2,
+        centerY: Number.isFinite(placement?.y) ? placement.y : modelHeight / 2,
+        rotation: Number.isFinite(placement?.rotation) ? placement.rotation : 0,
         flipX: false,
         flipY: false,
         opacity:
           shouldMatchBase || sameCanvasSize ? Math.min(opacity, 0.6) : opacity,
         contrast: 100,
         level: 100,
-        lockScale: false,
+        lockScale: Boolean(placement),
         lockRotation: false,
         hidden: false,
         autoScaleFromCalibration: Boolean(autoScaleFromCalibration),
@@ -13446,17 +13510,18 @@ export default function XrayCalibrationWorkspace({
         physicalHeightMm: physicalTemplateSize?.heightMm || null,
         transparentWhiteBackground: Boolean(transparentWhiteBackground),
         implantViewMode,
+        tkaAutoImplantRole: placement?.tkaAutoImplantRole || null,
       };
 
       nextCutLayerIdRef.current += 1;
       setCutLayers((prev) => [...prev, nextLayer]);
-      focusLayerSettings(nextLayer.id);
+      if (!placement?.silent) focusLayerSettings(nextLayer.id);
       setSelectedLineId(null);
       setSelectedAngleId(null);
       setSelectedCircleId(null);
       setSelectedHkaId(null);
       setTool(getIdleTool());
-      setMobileControlsOpen(!isMobileViewport);
+      if (!placement?.silent) setMobileControlsOpen(!isMobileViewport);
       const trimText = contentBounds
         ? " Margin kosong template otomatis di-trim."
         : "";
@@ -20634,6 +20699,7 @@ export default function XrayCalibrationWorkspace({
             template.transparentWhiteBackground,
           ),
           implantViewMode: template.implantViewMode || null,
+          placement: template.placement || null,
         });
       } catch {
         setNotice("Gagal load template dari library.");
@@ -20664,7 +20730,7 @@ export default function XrayCalibrationWorkspace({
   );
 
   const useSelectedImplantLibraryAsLayer = useCallback(
-    (implantItemId = null) => {
+    (implantItemId = null, placement = null) => {
       const explicitItemId =
         typeof implantItemId === "string" || typeof implantItemId === "number"
           ? implantItemId
@@ -20677,7 +20743,7 @@ export default function XrayCalibrationWorkspace({
         return;
       }
       const calibrationInstruction = `Implant "${implantItem.label}" ditambahkan. Klik Calib/Ruler, pilih atau buat garis kalibrasi, isi nilai real, lalu Simpan Kalibrasi supaya implant mengikuti skala X-ray.`;
-      void addTemplateToCanvas({
+      return addTemplateToCanvas({
         id: implantItem.id,
         name: implantItem.label,
         imageSrc: implantItem.imageSrc,
@@ -20691,13 +20757,15 @@ export default function XrayCalibrationWorkspace({
           implantItem.transparentWhiteBackground,
         ),
         implantViewMode: implantItem.implantViewMode || null,
+        placement,
       }).then((added) => {
-        if (!added || mmPerPixel !== null) return;
+        if (!added || mmPerPixel !== null) return added;
         if (isSimpleUiMode) {
           openSimpleCalibrationModal(calibrationInstruction);
-          return;
+          return added;
         }
         focusCalibrationStep(calibrationInstruction);
+        return added;
       });
     },
     [
@@ -20948,6 +21016,7 @@ export default function XrayCalibrationWorkspace({
     const sourceLines = lines.filter(
       (line) =>
         line.id !== calibrationLineId &&
+        !line.hidden && !line.tkaCutRole && !line.alignmentSimulation &&
         !line.halluxValgusAnalysisId &&
         getLineLength(line) > 4 &&
         Number.isFinite(line.x1) &&
@@ -21651,7 +21720,74 @@ export default function XrayCalibrationWorkspace({
     valgusCutOffsetPx,
   ]);
 
-  const createTkaNormalAlignmentPreview = useCallback(() => {
+  const editTkaCutLines = useCallback(() => {
+    if (!activeTkaJointAngles || !automaticTkaResectionPlan) {
+      setNotice("Lengkapi landmark dan kalibrasi terlebih dahulu.");
+      return;
+    }
+    const guides = ["femoral", "tibial"].map((role) => {
+      const existing = lines.find((line) => line.tkaSourceId === activeTkaJointAngles.id && line.tkaCutRole === role);
+      if (existing) return { ...existing, hidden: false, showLabel: true };
+      const cut = automaticTkaResectionPlan[role];
+      return {
+        id: nextLineIdRef.current++, type: "normal",
+        tkaSourceId: activeTkaJointAngles.id, tkaCutRole: role,
+        x1: cut.start.x, y1: cut.start.y, x2: cut.end.x, y2: cut.end.y,
+        name: role === "femoral" ? "Distal Femoral Resection" : "Proximal Tibial Resection",
+        color: role === "femoral" ? "#f87171" : "#34d399",
+        strokeWidth: RESECTION_PREVIEW_STROKE_WIDTH, showLabel: true,
+      };
+    });
+    setLines((previous) => [
+      ...previous.filter((line) => !(line.tkaSourceId === activeTkaJointAngles.id && line.tkaCutRole)),
+      ...guides,
+    ]);
+    setSelectedLineId(guides[0].id);
+    setActiveTkaSourceId(activeTkaJointAngles.id);
+    setSelectedHkaId(null);
+    setSelectedCutLayerId(null);
+    setSelectedPlanningGuideId(null);
+    setSelectedAngleId(null);
+    setSelectedCircleId(null);
+    handleToolChange("pan");
+    setNotice("Geser garis cut atau ujungnya; nilai reseksi mengikuti posisi garis. Jalankan preview lagi setelah selesai.");
+  }, [activeTkaJointAngles, automaticTkaResectionPlan, lines, handleToolChange]);
+
+  const adjustTkaCutWidth = useCallback((role, value) => {
+    const widthMm = Number(value);
+    if (!["femoral", "tibial"].includes(role) || !activeTkaJointAngles ||
+      !tkaResectionPlan || !(mmPerPixel > 0) || !Number.isFinite(widthMm) || widthMm <= 0 || widthMm > 200) return;
+    const cut = tkaResectionPlan[role];
+    const span = Math.hypot(cut.end.x - cut.start.x, cut.end.y - cut.start.y);
+    if (span < 1) return;
+    const cx = (cut.start.x + cut.end.x) / 2;
+    const cy = (cut.start.y + cut.end.y) / 2;
+    const factor = widthMm / mmPerPixel / span / 2;
+    const dx = (cut.end.x - cut.start.x) * factor;
+    const dy = (cut.end.y - cut.start.y) * factor;
+    const existing = lines.find((line) => line.tkaSourceId === activeTkaJointAngles.id && line.tkaCutRole === role);
+    if (existing && lockedLineIds.has(existing.id)) {
+      setNotice("Buka lock garis cut sebelum mengubah ML.");
+      return;
+    }
+    const next = {
+      ...existing, id: existing?.id ?? nextLineIdRef.current++, type: "normal",
+      tkaSourceId: activeTkaJointAngles.id, tkaCutRole: role, tkaSizingMeasured: true,
+      x1: cx - dx, y1: cy - dy, x2: cx + dx, y2: cy + dy,
+      name: existing?.name || (role === "femoral" ? "Distal Femoral Resection" : "Proximal Tibial Resection"),
+      color: existing?.color || (role === "femoral" ? "#f87171" : "#34d399"),
+      strokeWidth: existing?.strokeWidth ?? 0.5, hidden: false, showLabel: true,
+    };
+    setLines((previous) => [...previous.filter((line) => line.id !== next.id), next]);
+    setActiveTkaSourceId(activeTkaJointAngles.id);
+    setSelectedLineId(next.id);
+    setSelectedHkaId(null);
+    setSelectedCutLayerId(null);
+    handleToolChange("pan");
+  }, [activeTkaJointAngles, tkaResectionPlan, mmPerPixel, lines, lockedLineIds, handleToolChange]);
+
+  const createTkaNormalAlignmentPreview = useCallback(async () => {
+    if (tkaCutPendingRef.current) return;
     if (
       !image ||
       !activeTkaJointAngles ||
@@ -21787,8 +21923,8 @@ export default function XrayCalibrationWorkspace({
     );
     const extension = Math.max(10, 12 / mmPerPixel);
     const femoralProximalHalfWidth = Math.max(
-      11 / mmPerPixel,
-      femoralWidth * 0.4,
+      24 / mmPerPixel,
+      femoralWidth * 0.65,
     );
     const femoralDistalHalfWidth = Math.max(
       18 / mmPerPixel,
@@ -21798,7 +21934,7 @@ export default function XrayCalibrationWorkspace({
       16 / mmPerPixel,
       tibialWidth * 0.72,
     );
-    const tibialDistalHalfWidth = Math.max(9 / mmPerPixel, tibialWidth * 0.34);
+    const tibialDistalHalfWidth = Math.max(18 / mmPerPixel, tibialWidth * 0.55);
     const femoralMaskPolygon = corridor(
       activeTkaJointAngles.hip,
       activeTkaJointAngles.knee,
@@ -21920,6 +22056,7 @@ export default function XrayCalibrationWorkspace({
         color: "#ef4444",
         showLabel: false,
         alignmentSimulation: previewToken,
+        hidden: true,
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -21937,6 +22074,7 @@ export default function XrayCalibrationWorkspace({
         color: "#22c55e",
         showLabel: false,
         alignmentSimulation: previewToken,
+        hidden: true,
         labelOffsetX: DEFAULT_LINE_LABEL_OFFSET_X,
         labelOffsetY: DEFAULT_LINE_LABEL_OFFSET_Y,
         labelOpacity: DEFAULT_LABEL_OPACITY,
@@ -21944,21 +22082,71 @@ export default function XrayCalibrationWorkspace({
       },
     ];
 
+    tkaCutPendingRef.current = true;
+    setTkaCutPending(true);
     setCutLayers((previous) => [
-      ...previous.filter((layer) => !layer.alignmentSimulation),
+      ...previous.filter((layer) => !layer.alignmentSimulation && !layer.tkaAutoImplantRole),
       ...previewLayers,
     ]);
-    setLines((previous) => [
-      ...previous.filter((line) => !line.alignmentSimulation),
-      ...previewLines,
-    ]);
+    setLines((previous) => {
+      const cuts = previewLines.map((line, index) => {
+        const role = index === 0 ? "femoral" : "tibial";
+        const existing = previous.find((item) => item.tkaSourceId === activeTkaJointAngles.id && item.tkaCutRole === role);
+        return {
+          ...line, ...existing,
+          tkaSourceId: activeTkaJointAngles.id, tkaCutRole: role,
+          hidden: true,
+        };
+      });
+      return [
+        ...previous.filter((line) => !line.alignmentSimulation &&
+          !(line.tkaSourceId === activeTkaJointAngles.id && line.tkaCutRole)),
+        ...cuts,
+      ];
+    });
+    setActiveTkaSourceId(activeTkaJointAngles.id);
     setSelectedCutLayerId(null);
     setSelectedLineId(null);
-    setSelectedHkaId(activeTkaJointAngles.id);
-    setNotice(
-      `Preview ${tkaResectionPlan.targetLabel.toLowerCase()} dibuat untuk target mFA-mTA ${tkaResectionPlan.targetHkaDeg.toFixed(1)}°. Rotasi tibia ${rotation.toFixed(1)}°. Verifikasi landmark dan nilai reseksi sebelum digunakan.`,
-    );
-  }, [activeTkaJointAngles, cropRect, image, mmPerPixel, tkaResectionPlan]);
+    setSelectedHkaId(null);
+    setHkaSets((previous) => previous.map((item) =>
+      item.id === activeTkaJointAngles.id ? { ...item, hidden: true } : item,
+    ));
+    setFocusedTkaResult(null);
+    setNotice("Potongan dibuat. Memuat SVG femoral dan tibia...");
+    const failed = [];
+    try {
+      for (const role of ["femoral", "tibial"]) {
+        const prediction = tkaSizePredictions.find((item) => item.role === role);
+        const item = getImplantLibraryItemById(`normmed-${role}-ap-${prediction?.size || 3}`, LOCAL_IMPLANT_LIBRARY);
+        if (!item) { failed.push(role); continue; }
+        const cut = tkaResectionPlan[role];
+        let angle = Math.atan2(cut.end.y - cut.start.y, cut.end.x - cut.start.x);
+        if (angle > Math.PI / 2) angle -= Math.PI;
+        if (angle < -Math.PI / 2) angle += Math.PI;
+        const offset = (role === "femoral" ? -1 : 1) * item.physicalHeightMm / mmPerPixel / 2;
+        let x = (cut.start.x + cut.end.x) / 2 - Math.sin(angle) * offset;
+        let y = (cut.start.y + cut.end.y) / 2 + Math.cos(angle) * offset;
+        if (role === "tibial") {
+          const dx = x - pivot.x;
+          const dy = y - pivot.y;
+          x = pivot.x + dx * Math.cos(radians) - dy * Math.sin(radians);
+          y = pivot.y + dx * Math.sin(radians) + dy * Math.cos(radians);
+          angle += radians;
+        }
+        const added = await useSelectedImplantLibraryAsLayer(item.id, {
+          x, y, rotation: angle * 180 / Math.PI,
+          silent: true, tkaAutoImplantRole: role,
+        });
+        if (!added) failed.push(role);
+      }
+      setNotice(failed.length
+        ? `Potongan dibuat; SVG ${failed.join(" / ")} gagal dimuat. Gunakan panel Prediksi Normmed untuk mencoba kembali.`
+        : "Potongan dan SVG femoral/tibia dibuat. SVG berada di depan potongan; verifikasi posisi dan ukuran ilustrasinya.");
+    } finally {
+      tkaCutPendingRef.current = false;
+      setTkaCutPending(false);
+    }
+  }, [activeTkaJointAngles, cropRect, image, mmPerPixel, tkaResectionPlan, tkaSizePredictions, useSelectedImplantLibraryAsLayer]);
 
   const removePlanningGuide = useCallback(
     (guideId) => {
@@ -23541,7 +23729,7 @@ export default function XrayCalibrationWorkspace({
   }, [normmedFemoralMeasurement.line, triggerSelectionPulse]);
 
   const useRecommendedNormmedTemplate = useCallback(
-    ({ size, dimension, component = "femoral" }) => {
+    async ({ size, dimension, component = "femoral", placement = null }) => {
       const viewMode = dimension === "width" ? "ap" : "lateral";
       const itemId = `normmed-${component}-${viewMode}-${String(size)}`;
       const item = getImplantLibraryItemById(itemId, LOCAL_IMPLANT_LIBRARY);
@@ -23552,10 +23740,9 @@ export default function XrayCalibrationWorkspace({
 
       setSelectedImplantType("knee");
       setSelectedImplantLibraryId(item.id);
-      useSelectedImplantLibraryAsLayer(item.id);
-      setNotice(
-        `${item.label} dipasang otomatis dari hasil line ${dimension === "width" ? "ML" : "AP/Lateral"}.`,
-      );
+      const added = await useSelectedImplantLibraryAsLayer(item.id, placement);
+      if (added) setNotice(`${item.label} ditambahkan. Verifikasi posisi, orientasi, dan skala sebelum digunakan.`);
+      return Boolean(added);
     },
     [useSelectedImplantLibraryAsLayer],
   );
@@ -24207,6 +24394,7 @@ export default function XrayCalibrationWorkspace({
         : "R";
     const entries = lines.map((line) => ({
       id: `line:${line.id}`,
+      landmarkGroup: line.pelvicAnalysisId ? "hip" : line.halluxValgusAnalysisId ? "foot" : null,
       name: line.name || `${lineTypeLabel(line.type)} #${line.id}`,
       metric:
         line.metric ||
@@ -24229,6 +24417,7 @@ export default function XrayCalibrationWorkspace({
     angles.forEach((angle) =>
       entries.push({
         id: `angle:${angle.id}`,
+        landmarkGroup: angle.pelvicAnalysisId ? "hip" : angle.halluxValgusAnalysisId ? "foot" : null,
         name: angle.name || `Angle #${angle.id}`,
         metric: angle.metric || angle.name || null,
         side: angle.side,
@@ -24243,6 +24432,7 @@ export default function XrayCalibrationWorkspace({
     circles.forEach((circle) =>
       entries.push({
         id: `circle:${circle.id}`,
+        landmarkGroup: circle.pelvicAnalysisId ? "hip" : circle.halluxValgusAnalysisId ? "foot" : null,
         name: circle.name || `Diameter #${circle.id}`,
         metric: circle.metric || circle.name || null,
         side: circle.side,
@@ -24290,6 +24480,7 @@ export default function XrayCalibrationWorkspace({
         const add = (metric, value) =>
           entries.push({
             id: `hka:${hka.id}:${metric}`,
+            landmarkGroup: "tka",
             metric,
             name: `${metric} / ${hka.side || "right"} #${hka.id}`,
             value,
@@ -24313,6 +24504,7 @@ export default function XrayCalibrationWorkspace({
           if (length > 0)
             entries.push({
               id: `hka:${hka.id}:MAD`,
+              landmarkGroup: "tka",
               metric: "MAD",
               name: `MAD / ${hka.side || "right"} #${hka.id}`,
               unit: "mm",
@@ -24372,6 +24564,7 @@ export default function XrayCalibrationWorkspace({
     if (rightLengthLine && leftLengthLine)
       entries.push({
         id: "derived:lld",
+        landmarkGroup: rightLengthLine.pelvicAnalysisId && leftLengthLine.pelvicAnalysisId ? "hip" : null,
         name: "LLD / selisih dua line LLD",
         metric: "LLD",
         unit: "mm",
@@ -41529,10 +41722,15 @@ export default function XrayCalibrationWorkspace({
             tools={planningTools}
             actions={planningActions}
             analysisTools={planningAnalysisTools}
-            analysisResults={planningProcedure === "hip" ? hipResults : halluxResults}
-            focusedAnalysisMetric={planningProcedure === "hip" ? activeHipFocus : activeHalluxFocus}
+            analysisResults={planningProcedure === "tka" ? tkaResults : planningProcedure === "hip" ? hipResults : halluxResults}
+            focusedAnalysisMetric={planningProcedure === "tka" ? activeTkaFocus : planningProcedure === "hip" ? activeHipFocus : activeHalluxFocus}
             onFocusAnalysisMetric={(metric) => {
-              if (planningProcedure === "hip") {
+              if (planningProcedure === "tka") {
+                setFocusedTkaResult((current) => current === metric ? null : metric);
+                setHkaSets((previous) => previous.map((item) =>
+                  item.id === activeTkaJointAngles?.id ? { ...item, hidden: false } : item,
+                ));
+              } else if (planningProcedure === "hip") {
                 setFocusedHipResult((current) => current === metric ? null : metric);
               } else {
                 setFocusedHalluxMetric((current) => current === metric ? null : metric);
@@ -41637,6 +41835,7 @@ export default function XrayCalibrationWorkspace({
             onSelectLayer={(id) => {
               setSelectedCutLayerId(id);
             }}
+            onMoveLayer={moveCutLayerInStack}
             onUpdateLayer={(id, patch) => {
               const layer = cutLayers.find((item) => item.id === id);
               if ("rotation" in patch && layer?.lockRotation) {
@@ -41677,9 +41876,28 @@ export default function XrayCalibrationWorkspace({
             onToggleDarkMode={toggleDarkMode}
             accountControl={<LogoutButton variant="header" />}
             alignmentPlan={
-              planningProcedure === "tka" ? tkaResectionPlan : null
+              planningProcedure === "tka" ? tkaResectionPlan || automaticTkaResectionPlan : null
             }
+            alignmentCutInvalid={Boolean(automaticTkaResectionPlan && !tkaResectionPlan)}
+            alignmentPreviewBusy={tkaCutPending}
             onCreateAlignmentPreview={createTkaNormalAlignmentPreview}
+            onEditAlignmentLines={editTkaCutLines}
+            tkaSizePredictions={tkaSizePredictions}
+            onAdjustTkaCutWidth={adjustTkaCutWidth}
+            onUseTkaPrediction={(role, chosenSize = null) => {
+              const prediction = tkaSizePredictions.find((item) => item.role === role);
+              if (!prediction) return false;
+              const manualSize = prediction.sizes.find((item) => item.size === Number(chosenSize));
+              if (prediction.outsideCatalog && !manualSize) return false;
+              const cut = tkaResectionPlan?.[role];
+              if (!cut) return;
+              let rotation = Math.atan2(cut.end.y - cut.start.y, cut.end.x - cut.start.x) * 180 / Math.PI;
+              if (rotation > 90) rotation -= 180;
+              if (rotation < -90) rotation += 180;
+              return useRecommendedNormmedTemplate({ size: manualSize?.size ?? prediction.size, dimension: "width", component: role,
+                placement: { x: (cut.start.x + cut.end.x) / 2, y: (cut.start.y + cut.end.y) / 2, rotation },
+              });
+            }}
             alignmentSettings={{
               femoralResectionMm: tkaFemoralResectionMm,
               tibialResectionMm: tkaTibialResectionMm,
@@ -41692,6 +41910,10 @@ export default function XrayCalibrationWorkspace({
             }
             onAlignmentSetting={(key, value) => {
               const safeValue = clamp(Number(value) || 0, 1, 20);
+              const role = key === "femoralResectionMm" ? "femoral" : "tibial";
+              setLines((previous) => previous.filter((line) =>
+                !(line.tkaSourceId === activeTkaJointAngles?.id && line.tkaCutRole === role),
+              ));
               if (key === "femoralResectionMm")
                 setTkaFemoralResectionMm(safeValue);
               if (key === "tibialResectionMm")
@@ -41745,6 +41967,7 @@ export default function XrayCalibrationWorkspace({
               if (kind === "line") {
                 const line = lines.find((item) => String(item.id) === rawId);
                 if (!line) return;
+                setLines((previous) => previous.map((item) => item.id === line.id ? { ...item, hidden: false } : item));
                 handleToolChange("pan");
                 setSelectedLineId(line.id);
                 setSelectedAngleId(null);

@@ -191,7 +191,7 @@ export function computeTkaResectionPlan({
   hka,
   mmPerPixel,
   femoralResectionMm = 9,
-  tibialResectionMm = 8,
+  tibialResectionMm = 2,
   alignmentMode = "mechanical",
   customTargetHkaDeg = 0,
 }) {
@@ -300,4 +300,83 @@ export function computeTkaResectionPlan({
       Math.min(15, signedCorrectionDeg - targetHkaDeg),
     ),
   };
+}
+
+// Intersect the landmark's mechanical-axis ray with the edited cut line.
+// Signed depths are retained so a cut outside the bone is not reported as zero.
+export function applyTkaCutLines(plan, hka, lines, mmPerPixel) {
+  if (!plan || !hka || !(mmPerPixel > 0)) return plan;
+  const next = { ...plan, plannedMetrics: { ...plan.plannedMetrics } };
+  for (const role of ["femoral", "tibial"]) {
+    const line = [...lines].reverse().find(
+      (item) => item.tkaSourceId === hka.id && item.tkaCutRole === role,
+    );
+    if (!line) continue;
+    if (![line.x1, line.y1, line.x2, line.y2].every(Number.isFinite)) return null;
+    const start = { x: line.x1, y: line.y1 };
+    const end = { x: line.x2, y: line.y2 };
+    const tangent = { x: end.x - start.x, y: end.y - start.y };
+    const length = Math.hypot(tangent.x, tangent.y);
+    const axisEnd = role === "femoral" ? hka.hip : hka.ankle;
+    const axis = normalize({ x: axisEnd.x - hka.knee.x, y: axisEnd.y - hka.knee.y });
+    if (!axis || length < 1) return null;
+    const denominator = axis.x * tangent.y - axis.y * tangent.x;
+    if (Math.abs(denominator) / length < 0.05) return null;
+    const depth = (point) => (
+      ((start.x - point.x) * tangent.y - (start.y - point.y) * tangent.x) /
+      denominator
+    ) * mmPerPixel;
+    const medial = role === "femoral" ? hka.femCondyleMedial : hka.tibPlateauMedial;
+    const lateral = role === "femoral" ? hka.femCondyleLateral : hka.tibPlateauLateral;
+    const depthA = depth(medial);
+    const depthB = depth(lateral);
+    next[role] = {
+      ...plan[role], start, end,
+      center: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+      depthA, depthB, medialMm: depthA, lateralMm: depthB, edited: true,
+    };
+    next.plannedMetrics[role === "femoral" ? "mFCL" : "mTCL"] = depthA;
+    next.plannedMetrics[role === "femoral" ? "lFCL" : "lTCL"] = depthB;
+  }
+  return next;
+}
+
+export function estimateTkaMlSize(cut, medial, lateral, mmPerPixel, sizes, useCutSpan = false) {
+  if (!cut || !medial || !lateral || !(mmPerPixel > 0) || !sizes.length) return null;
+  const dx = cut.end.x - cut.start.x;
+  const dy = cut.end.y - cut.start.y;
+  const span = Math.hypot(dx, dy);
+  if (!Number.isFinite(span) || span < 1) return null;
+  // Automatic cut guides extend beyond bone. Do not size implants from that padding.
+  const widthMm = (useCutSpan ? span : Math.abs(
+    ((lateral.x - medial.x) * dx + (lateral.y - medial.y) * dy) / span,
+  )) * mmPerPixel;
+  if (!Number.isFinite(widthMm) || widthMm <= 0) return null;
+  const nearest = [...sizes].sort((a, b) => Math.abs(a.width - widthMm) - Math.abs(b.width - widthMm))[0];
+  return {
+    widthMm, size: nearest.size, referenceMm: nearest.width,
+    deltaMm: widthMm - nearest.width,
+    source: useCutSpan ? "ML garis" : "ML landmark",
+    outsideCatalog: widthMm < Math.min(...sizes.map((item) => item.width)) ||
+      widthMm > Math.max(...sizes.map((item) => item.width)),
+  };
+}
+
+export function tkaImplantPlacement(cut, role, heightMm, mmPerPixel, pivot, tibialRotationDeg = 0) {
+  if (!cut || !(heightMm > 0) || !(mmPerPixel > 0)) return null;
+  let angle = Math.atan2(cut.end.y - cut.start.y, cut.end.x - cut.start.x);
+  if (angle > Math.PI / 2) angle -= Math.PI;
+  if (angle < -Math.PI / 2) angle += Math.PI;
+  const offset = (role === "femoral" ? -1 : 1) * heightMm / mmPerPixel / 2;
+  let x = (cut.start.x + cut.end.x) / 2 - Math.sin(angle) * offset;
+  let y = (cut.start.y + cut.end.y) / 2 + Math.cos(angle) * offset;
+  if (role === "tibial" && pivot) {
+    const radians = tibialRotationDeg * Math.PI / 180;
+    const dx = x - pivot.x;
+    const dy = y - pivot.y;
+    x = pivot.x + dx * Math.cos(radians) - dy * Math.sin(radians);
+    y = pivot.y + dx * Math.sin(radians) + dy * Math.cos(radians);
+    angle += radians;
+  }
+  return { x, y, rotation: angle * 180 / Math.PI };
 }
