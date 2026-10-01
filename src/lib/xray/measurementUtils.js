@@ -2,7 +2,7 @@ import { clamp, getLineLength, getDistance, getAngleDegrees, getAngleArcGeometry
 import { signedCoronalAngle as getHkaSignedCoronalAngle } from "../hka/geometry";
 import { calculateFullLengthHKA, classifyAlignment } from "../hka/hkaCalculator";
 import { calculateFTA, predictHKAAFromFTA } from "../hka/ftaCalculator";
-import { computeJLA } from "../hka/jlaCalculator";
+import { computeJLA, buildKneeApReference, getFemoralImGuide } from "../hka/jlaCalculator";
 
 const DEFAULT_LABEL_OPACITY = 0.56;
 const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
@@ -10,6 +10,21 @@ const DEFAULT_HKA_LABEL_OFFSET_X = 0;
 const DEFAULT_HKA_LABEL_OFFSET_Y = -16;
 
 export const HKA_MODE_DEFINITIONS = {
+  "knee-ap": {
+    key: "knee-ap",
+    label: "AP Knee",
+    modeLabel: "AP knee - referensi axis estimasi",
+    points: [
+      { key: "femoralProximal", shortLabel: "F1", promptLabel: "pusat shaft femur proksimal" },
+      { key: "femoralDistal", shortLabel: "F2", promptLabel: "pusat shaft femur distal" },
+      { key: "tibialProximal", shortLabel: "T1", promptLabel: "pusat shaft tibia proksimal" },
+      { key: "tibialDistal", shortLabel: "T2", promptLabel: "pusat shaft tibia distal" },
+      { key: "femCondyleMedial", shortLabel: "MFC", promptLabel: "kondilus femur medial distal" },
+      { key: "femCondyleLateral", shortLabel: "LFC", promptLabel: "kondilus femur lateral distal" },
+      { key: "tibPlateauMedial", shortLabel: "MTP", promptLabel: "plateau tibia medial" },
+      { key: "tibPlateauLateral", shortLabel: "LTP", promptLabel: "plateau tibia lateral" },
+    ],
+  },
   full: {
     key: "full",
     label: "HKA",
@@ -70,7 +85,7 @@ export function cloneOptionalPoint(point) {
 
 export function getHkaPointEntries(hka) {
   const definition = getHkaModeDefinition(hka?.mode);
-  return definition.points
+  const points = definition.points
     .map((pointDef) =>
       hka?.[pointDef.key]
         ? {
@@ -80,6 +95,9 @@ export function getHkaPointEntries(hka) {
         : null,
     )
     .filter(Boolean);
+  const im = ["full", "jla"].includes(hka?.mode || "full") ? getFemoralImGuide(hka) : null;
+  if (im) points.push({ key: "femoralImPoint", shortLabel: "IM", promptLabel: "pusat kanal intramedular femur", point: im.point });
+  return points;
 }
 
 export function getAnglePointEntries(angle) {
@@ -95,6 +113,7 @@ export function cloneHkaItem(item) {
   const definition = getHkaModeDefinition(item?.mode);
   const cloned = {
     ...item,
+    femoralImPoint: cloneOptionalPoint(item?.femoralImPoint),
     mode: definition.key,
     direction: item?.direction || "varus",
     side: item?.side || "right",
@@ -171,6 +190,12 @@ export function getMobileInteractionLabel(mode) {
 
 export function getHkaMeasurementResult(hka) {
   const mode = hka?.mode || "full";
+  if (mode === "knee-ap") {
+    const reference = buildKneeApReference(hka, hka.femoralOffsetDeg ?? 0);
+    if (!reference) return { mode, label: "AP Knee belum lengkap", absoluteDeviation: null, signedDeviation: null, jla: null };
+    const result = getHkaMeasurementResult({ ...reference, mode: "jla" });
+    return { ...result, mode, modeLabel: "AP knee - axis estimasi", label: `Estimasi ${result.label}`, axisReference: "estimated-ap" };
+  }
   const definition = getHkaModeDefinition(mode);
   const isComplete = definition.points.every((pointDef) => hka?.[pointDef.key]);
 

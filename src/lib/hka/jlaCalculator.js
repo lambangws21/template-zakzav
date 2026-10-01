@@ -150,6 +150,139 @@ function dot(point, axis) {
   return point.x * axis.x + point.y * axis.y;
 }
 
+const finitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+
+export function getFemoralImGuide(item) {
+  if (![item?.hip, item?.knee, item?.ankle].every(finitePoint)) return null;
+  const { hip, knee, ankle } = item;
+  const tibLength = Math.hypot(knee.x - ankle.x, knee.y - ankle.y);
+  const femLength = Math.hypot(hip.x - knee.x, hip.y - knee.y);
+  if (tibLength < 1 || femLength < 1) return null;
+  const length = Math.min(tibLength, femLength) * 0.22;
+  const confirmed = Boolean(finitePoint(item.femoralImPoint));
+  const point = confirmed ? item.femoralImPoint : {
+    x: knee.x + (knee.x - ankle.x) / tibLength * length,
+    y: knee.y + (knee.y - ankle.y) / tibLength * length,
+  };
+  const angle = confirmed ? angleDeg({ x: hip.x - knee.x, y: hip.y - knee.y }, { x: point.x - knee.x, y: point.y - knee.y }) : null;
+  return { point, confirmed, angle: angle === null ? null : Math.min(angle, 180 - angle) };
+}
+
+// Clip the active image rectangle to the bone side of an infinite cut line.
+export function clipTkaImageAtCut(width, height, cut, keepPoint) {
+  if (!(width > 0) || !(height > 0) || !Number.isFinite(width + height) ||
+      !finitePoint(cut?.start) || !finitePoint(cut?.end) || !finitePoint(keepPoint)) return null;
+  const dx = cut.end.x - cut.start.x;
+  const dy = cut.end.y - cut.start.y;
+  if (Math.hypot(dx, dy) < 1) return null;
+  const side = (p) => dx * (p.y - cut.start.y) - dy * (p.x - cut.start.x);
+  const direction = Math.sign(side(keepPoint));
+  if (!direction) return null;
+  const corners = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }];
+  const output = [];
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    const da = direction * side(a);
+    const db = direction * side(b);
+    if (da >= 0) output.push(a);
+    if ((da >= 0) !== (db >= 0)) {
+      const t = da / (da - db);
+      output.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+    }
+  }
+  return output.length >= 3 ? output : null;
+}
+
+// A short AP knee image cannot measure hip/ankle centers. These reference rays
+// are explicitly estimated from shaft landmarks and a user-supplied offset.
+export function buildKneeApReference(landmarks, femoralOffsetDeg = 0) {
+  if (!landmarks || !Number.isFinite(femoralOffsetDeg) || Math.abs(femoralOffsetDeg) > 15) return null;
+  const keys = ["femoralProximal", "femoralDistal", "tibialProximal", "tibialDistal",
+    "femCondyleMedial", "femCondyleLateral", "tibPlateauMedial", "tibPlateauLateral"];
+  if (keys.some((key) => !finitePoint(landmarks[key]))) return null;
+  const vector = (a, b) => ({ x: b.x - a.x, y: b.y - a.y });
+  const femoral = normalize(vector(landmarks.femoralDistal, landmarks.femoralProximal));
+  const tibial = normalize(vector(landmarks.tibialProximal, landmarks.tibialDistal));
+  if (!femoral || !tibial) return null;
+  const jointKeys = keys.slice(4);
+  const knee = jointKeys.reduce((sum, key) => ({
+    x: sum.x + landmarks[key].x / 4,
+    y: sum.y + landmarks[key].y / 4,
+  }), { x: 0, y: 0 });
+  const femoralLength = Math.hypot(landmarks.femoralProximal.x - knee.x, landmarks.femoralProximal.y - knee.y);
+  const tibialLength = Math.hypot(landmarks.tibialDistal.x - knee.x, landmarks.tibialDistal.y - knee.y);
+  if (femoralLength < 1 || tibialLength < 1) return null;
+  const radians = femoralOffsetDeg / DEG;
+  const rotated = {
+    x: femoral.x * Math.cos(radians) - femoral.y * Math.sin(radians),
+    y: femoral.x * Math.sin(radians) + femoral.y * Math.cos(radians),
+  };
+  return {
+    ...landmarks,
+    axisReference: "estimated-ap",
+    femoralOffsetDeg,
+    knee,
+    hip: { x: knee.x + rotated.x * femoralLength, y: knee.y + rotated.y * femoralLength },
+    ankle: { x: knee.x + tibial.x * tibialLength, y: knee.y + tibial.y * tibialLength },
+    anatomicalAxes: {
+      femoral: { start: { ...landmarks.femoralProximal }, end: { ...landmarks.femoralDistal } },
+      tibial: { start: { ...landmarks.tibialProximal }, end: { ...landmarks.tibialDistal } },
+    },
+  };
+}
+
+export function applyTkaAxisLines(source, lines, shaft = null) {
+  if (!source) return null;
+  let reference = { ...source };
+  const matching = lines.filter((line) => line.tkaSourceId === source.id && line.tkaAxisRole);
+  const segment = (role, bone) => {
+    const line = [...matching].reverse().find((item) => item.tkaAxisRole === role && item.tkaAxisBone === bone);
+    if (!line) return undefined;
+    if (![line.x1, line.y1, line.x2, line.y2].every(Number.isFinite) || Math.hypot(line.x2 - line.x1, line.y2 - line.y1) < 1) return null;
+    return { start: { x: line.x1, y: line.y1 }, end: { x: line.x2, y: line.y2 } };
+  };
+  const fa = segment("anatomical", "Femoral");
+  const ta = segment("anatomical", "Tibial");
+  const fm = segment("mechanical", "Femoral");
+  const tm = segment("mechanical", "Tibial");
+  if ([fa, ta, fm, tm].some((item) => item === null)) return null;
+  if (source.mode === "knee-ap") {
+    reference = buildKneeApReference({ ...source,
+      ...(fa ? { femoralProximal: fa.start, femoralDistal: fa.end } : {}),
+      ...(ta ? { tibialProximal: ta.start, tibialDistal: ta.end } : {}),
+    }, source.femoralOffsetDeg ?? 0);
+    if (!reference) return null;
+  }
+  reference.anatomicalAxes = {
+    femoral: fa || (finitePoint(source.femoralImPoint) ? { start: source.femoralImPoint, end: source.knee } : null) || reference.anatomicalAxes?.femoral || (shaft ? { start: shaft.femurMidshaft10cm, end: shaft.femoralNotch } : null),
+    tibial: ta || reference.anatomicalAxes?.tibial || (shaft ? { start: shaft.tibiaMidshaft4cm, end: shaft.tibiaMidshaft10cm } : null),
+  };
+  if (fm) { reference.hip = fm.start; reference.knee = fm.end; }
+  if (tm && reference.knee) {
+    reference.ankle = { x: reference.knee.x + tm.end.x - tm.start.x, y: reference.knee.y + tm.end.y - tm.start.y };
+  }
+  const anatomical = reference.anatomicalAxes.femoral;
+  if (anatomical?.start && anatomical?.end && reference.hip && reference.knee) {
+    const angle = angleDeg(
+      { x: reference.hip.x - reference.knee.x, y: reference.hip.y - reference.knee.y },
+      { x: anatomical.start.x - anatomical.end.x, y: anatomical.start.y - anatomical.end.y },
+    );
+    reference.femoralValgusAngleDeg = angle === null ? null : Math.min(angle, 180 - angle);
+  }
+  return reference;
+}
+
+export function centerCutOnPoint(cut, point) {
+  if (![cut?.start, cut?.end, point].every(finitePoint)) return null;
+  const dx = point.x - (cut.start.x + cut.end.x) / 2;
+  const dy = point.y - (cut.start.y + cut.end.y) / 2;
+  return {
+    start: { x: cut.start.x + dx, y: cut.start.y + dy },
+    end: { x: cut.end.x + dx, y: cut.end.y + dy },
+  };
+}
+
 function buildResectionLine(pointA, pointB, axis, depthMm, mmPerPixel) {
   const depthPx = depthMm / mmPerPixel;
   const tangent = { x: -axis.y, y: axis.x };
@@ -362,8 +495,28 @@ export function estimateTkaMlSize(cut, medial, lateral, mmPerPixel, sizes, useCu
   };
 }
 
+export function correctedTkaMechanicalAxes(source, rotationDeg) {
+  if (![source?.hip, source?.knee, source?.ankle].every(finitePoint) || !Number.isFinite(rotationDeg)) return [];
+  const { hip, knee, ankle } = source;
+  const radians = rotationDeg * Math.PI / 180;
+  const dx = ankle.x - knee.x;
+  const dy = ankle.y - knee.y;
+  return [
+    { bone: "Femoral", start: { ...hip }, end: { ...knee } },
+    { bone: "Tibial", start: { ...knee }, end: {
+      x: knee.x + dx * Math.cos(radians) - dy * Math.sin(radians),
+      y: knee.y + dx * Math.sin(radians) + dy * Math.cos(radians),
+    } },
+  ];
+}
+
 export function tkaImplantPlacement(cut, role, heightMm, mmPerPixel, pivot, tibialRotationDeg = 0) {
-  if (!cut || !(heightMm > 0) || !(mmPerPixel > 0)) return null;
+  if (!cut || !["femoral", "tibial"].includes(role) ||
+      ![heightMm, mmPerPixel, tibialRotationDeg].every(Number.isFinite) ||
+      !(heightMm > 0) || !(mmPerPixel > 0) ||
+      !finitePoint(cut.start) || !finitePoint(cut.end) ||
+      Math.hypot(cut.end.x - cut.start.x, cut.end.y - cut.start.y) < 1 ||
+      (pivot && !finitePoint(pivot))) return null;
   let angle = Math.atan2(cut.end.y - cut.start.y, cut.end.x - cut.start.x);
   if (angle > Math.PI / 2) angle -= Math.PI;
   if (angle < -Math.PI / 2) angle += Math.PI;

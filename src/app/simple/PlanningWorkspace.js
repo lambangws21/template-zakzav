@@ -41,6 +41,7 @@ import {
   RotateCw,
   Ruler,
   Save,
+  Scissors,
   Search,
   SlidersHorizontal,
   Sun,
@@ -551,12 +552,11 @@ export default function PlanningWorkspace({
     .map((item) => `${item.complete ? "1" : "0"}:${item.progress || ""}`)
     .join("|");
   const firstIncompleteAnalysis = analysisTools.findIndex(
-    (item) => !item.complete,
+    (item) => item.required !== false && !item.complete,
   );
+  const runningAnalysisIndex = analysisTools.findIndex((item) => item.active);
   const activeAnalysisIndex =
-    firstIncompleteAnalysis < 0
-      ? analysisTools.length - 1
-      : firstIncompleteAnalysis;
+    runningAnalysisIndex >= 0 ? runningAnalysisIndex : firstIncompleteAnalysis;
   const requiredAnalysisTools = analysisTools.filter(
     (item) => item.required !== false,
   );
@@ -571,7 +571,7 @@ export default function PlanningWorkspace({
   const isSplitGuide = Boolean(
     guideItem?.guideView &&
     (guideItem.id === "hallux-valgus" ||
-      guideItem.guideView === "ap_tka_long_leg" ||
+      guideItem.guideView === "ap_tka_long_leg" || guideItem.guideView === "ap_tka_knee" ||
       guideItem.guideView === "ap_pelvis_cartoon"),
   );
   const dismissedGuideItem =
@@ -632,7 +632,7 @@ export default function PlanningWorkspace({
       return;
     setGuideItemId(activeAnalysisItem.id);
     const splitGuide = activeAnalysisItem.id === "hallux-valgus" ||
-      activeAnalysisItem.guideView === "ap_tka_long_leg" ||
+      activeAnalysisItem.guideView === "ap_tka_long_leg" || activeAnalysisItem.guideView === "ap_tka_knee" ||
       activeAnalysisItem.guideView === "ap_pelvis_cartoon";
     setGuideMinimized(!splitGuide);
     setGuideVisualOpen(splitGuide);
@@ -644,6 +644,12 @@ export default function PlanningWorkspace({
     setGuideStepIndex(Math.min(liveGuideStep, guideSteps.length - 1));
   }, [guideItemId, guideSteps.length, liveGuideStep]);
   useEffect(() => {
+    if (guideItem?.complete && !guideItem.active && (!activeAnalysisItem || activeAnalysisItem.complete)) {
+      setGuideItemId(null);
+      setDismissedGuideId(null);
+    }
+  }, [guideItem?.id, guideItem?.complete, guideItem?.active, activeAnalysisItem?.id, activeAnalysisItem?.complete]);
+  useEffect(() => {
     const previous = previousAnalysisRef.current;
     const analysisAdvanced =
       previous.procedure === procedure &&
@@ -654,7 +660,7 @@ export default function PlanningWorkspace({
     setStepExpanded(true);
     setWorkflowOpen(true);
     const splitGuide = activeAnalysisItemId === "hallux-valgus" ||
-      activeAnalysisItem?.guideView === "ap_tka_long_leg" ||
+      activeAnalysisItem?.guideView === "ap_tka_long_leg" || activeAnalysisItem?.guideView === "ap_tka_knee" ||
       activeAnalysisItem?.guideView === "ap_pelvis_cartoon";
     if (activeAnalysisItemId && !activeAnalysisItemComplete && dismissedGuideId !== activeAnalysisItemId) {
       setGuideItemId(activeAnalysisItemId);
@@ -754,6 +760,12 @@ export default function PlanningWorkspace({
     if (!item) return false;
     return runCalibrated(() => {
       if (session.step !== 1) onSession({ ...session, step: 1 });
+      if (item.complete) {
+        setGuideItemId(null);
+        setDismissedGuideId(item.id);
+        item.action?.();
+        return;
+      }
       setGuideItemId(item.id);
       setDismissedGuideId(null);
       setGuideMinimized(false);
@@ -921,6 +933,19 @@ export default function PlanningWorkspace({
     </div>
   );
 
+  const tkaModeSelector = procedure === "tka" && (
+    <div className={styles.tkaImageMode} role="group" aria-label="Jenis foto TKA">
+      {[["long-leg", "Long Leg"], ["ap", "AP Knee"]].map(([value, label]) => (
+        <button key={value} type="button" aria-pressed={(session.tkaImageMode || "long-leg") === value}
+          onClick={() => {
+            if ((session.tkaImageMode || "long-leg") === value) return;
+            setGuideItemId(null);
+            setDismissedGuideId(null);
+            onSession({ ...session, tkaImageMode: value, step: canProceed ? 1 : 0 });
+          }}>{label}</button>
+      ))}
+    </div>
+  );
   const workflow = (
     <>
       <div className={styles.panelHeading}>
@@ -942,6 +967,7 @@ export default function PlanningWorkspace({
         />
       </div>
       <div className={styles.workflowBody}>
+        {tkaModeSelector}
         <ol className={styles.steps} aria-label="Planning workflow">
           {reference.workflow.map((item, index) => (
             <li key={item.title}>
@@ -1190,6 +1216,15 @@ export default function PlanningWorkspace({
                           );
                         })}
                       </ol>
+                      {procedure === "tka" && <Action icon={Scissors} disabled={!alignmentPlan}
+                        onClick={() => {
+                          setGuideItemId(null);
+                          setResectionExpanded(true);
+                          setWorkflowOpen(false);
+                          setSheet(null);
+                        }}>
+                        {session.tkaImageMode === "ap" ? "Potongan AP Knee" : "Potongan Long Leg"}
+                      </Action>}
                       <div className={styles.analysisBypass}>
                         <span>
                           Analysis bersifat opsional untuk templating cepat.
@@ -2779,6 +2814,7 @@ export default function PlanningWorkspace({
           </button>
         </nav>
         <div className={styles.canvas}>
+          {procedure === "tka" && (canProceed || !hasImage) && <div className={styles.canvasImageMode}>{tkaModeSelector}</div>}
           {children}
           {procedure !== "tka" && analysisResultList}
           {(procedure === "tka" || procedure === "foot" || procedure === "hip") &&
@@ -2804,6 +2840,7 @@ export default function PlanningWorkspace({
                 </span>
                 <strong>2 langkah awal</strong>
               </header>
+              {tkaModeSelector}
               <ol>
                 <li data-complete={Boolean(session.side)}>
                   <span>{session.side ? <Check size={12} /> : "1"}</span>
@@ -2874,7 +2911,9 @@ export default function PlanningWorkspace({
                   ? "Setelah kalibrasi, wizard 12 titik Hallux terbuka pada langkah analisis."
                   : procedure === "hip"
                     ? "Setelah kalibrasi, panduan landmark pelvis terbuka otomatis."
-                    : "Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis."}
+                    : session.tkaImageMode === "ap"
+                      ? "Setelah kalibrasi, tandai shaft dan joint line pada AP."
+                      : "Setelah kalibrasi, panduan Mechanical Axis terbuka otomatis."}
               </small>
             </aside>
           )}
@@ -2895,7 +2934,7 @@ export default function PlanningWorkspace({
                 <span>Koreksi</span>
                 <strong>
                   {resectionExpanded
-                    ? "Alignment preview"
+                    ? "Potongan TKA"
                     : `Target ${alignmentPlan.targetHkaDeg.toFixed(1)}°`}
                 </strong>
                 <button
@@ -2909,10 +2948,35 @@ export default function PlanningWorkspace({
                   <ChevronDown size={14} />
                 </button>
               </header>
+              {alignmentSettings?.axes?.some((axis) => axis.available) && (
+                <details className={styles.visibilityDetails}>
+                <summary><Eye size={14} /> Visibilitas garis <ChevronDown size={14} /></summary>
+                <fieldset className={styles.axisVisibility}>
+                  <legend className={styles.srOnly}>Tampilkan / sembunyikan garis</legend>
+                  {alignmentSettings.axes.map((axis) => (
+                    <button type="button" key={axis.role} disabled={!axis.available}
+                      aria-pressed={axis.visible}
+                      aria-label={`${axis.visible ? "Sembunyikan" : "Tampilkan"} garis ${axis.role === "landmarks" ? "landmark HKA" : axis.role === "corrected" ? "hasil koreksi" : axis.role === "mechanical" ? "mekanikal" : "anatomikal"}`}
+                      onClick={() => onAlignmentSetting?.(axis.role, !axis.visible)}>
+                      {axis.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+                      <span>{axis.role === "landmarks" ? "Landmark / HKA" : axis.role === "corrected" ? "Hasil koreksi" : axis.role === "mechanical" ? `Mekanikal${alignmentSettings.estimatedAp ? " (estimasi)" : ""}` : "Anatomikal"}</span>
+                      <small>{!axis.available ? "Belum ada" : axis.visible ? "Tampil" : "Tersembunyi"}</small>
+                    </button>
+                  ))}
+                </fieldset>
+                </details>
+              )}
               {resectionExpanded && (
                 <>
+                  <div className={styles.resectionActions}>
+                    <Action icon={PencilLine} onClick={() => { onAlignmentSetting?.("editAxes"); setResectionExpanded(false); }}>Edit sumbu</Action>
+                    <Action icon={Move} onClick={() => { onEditAlignmentLines?.(); setResectionExpanded(false); }}>Edit garis potong</Action>
+                  </div>
+                  <Action icon={Target} onClick={() => { onAlignmentSetting?.("femoralAtKnee"); setResectionExpanded(false); }}>
+                    Pusatkan distal cut di lutut
+                  </Action>
                   <label className={styles.alignmentMode}>
-                    Alignment goal
+                    Target alignment
                     <select
                       value={alignmentMode || "mechanical"}
                       onChange={(event) =>
@@ -2920,12 +2984,12 @@ export default function PlanningWorkspace({
                       }
                     >
                       <option value="mechanical">
-                        Mechanical · neutral 0°
+                        Mekanikal · netral 0°
                       </option>
                       <option value="preserve">
-                        Preserve measured anatomy
+                        Pertahankan anatomi terukur
                       </option>
-                      <option value="custom">Custom target</option>
+                      <option value="custom">Target manual</option>
                     </select>
                   </label>
                   {alignmentMode === "custom" && (
@@ -2948,7 +3012,7 @@ export default function PlanningWorkspace({
                   )}
                   <div className={styles.resectionGrid}>
                     <section>
-                      <strong>Distal femur</strong>
+                      <strong>Hasil femur</strong>
                       <span>
                         Medial {alignmentPlan.femoral.medialMm.toFixed(1)} mm
                       </span>
@@ -2957,7 +3021,7 @@ export default function PlanningWorkspace({
                       </span>
                     </section>
                     <section>
-                      <strong>Proximal tibia</strong>
+                      <strong>Hasil tibia</strong>
                       <span>
                         Medial {alignmentPlan.tibial.medialMm.toFixed(1)} mm
                       </span>
@@ -2967,70 +3031,92 @@ export default function PlanningWorkspace({
                     </section>
                   </div>
                   <div className={styles.resectionSettings}>
+                    {alignmentSettings?.estimatedAp && <label>
+                      Offset femur (estimasi)
+                      <span>
+                        <input type="number" min="-15" max="15" step="0.5"
+                          value={alignmentSettings.femoralOffsetDeg ?? 0}
+                          onChange={(event) => onAlignmentSetting?.("femoralOffsetDeg", event.target.value)} />
+                        deg
+                      </span>
+                    </label>}
                     <label>
-                      Distal femur
+                      Preset femur
                       <span>
                         <input
                           type="number"
                           min="1"
                           max="20"
                           step="0.5"
-                          value={alignmentSettings?.femoralResectionMm ?? 9}
-                          onChange={(event) =>
-                            onAlignmentSetting?.(
-                              "femoralResectionMm",
-                              event.target.value,
-                            )
-                          }
+                          key={`femoral-${alignmentSettings?.femoralResectionMm}`}
+                          defaultValue={alignmentSettings?.femoralResectionMm ?? 9}
+                          onBlur={(event) => {
+                            const value = Number(event.target.value);
+                            if (event.target.value && Number.isFinite(value) && value >= 1 && value <= 20) {
+                              if (value !== (alignmentSettings?.femoralResectionMm ?? 9)) onAlignmentSetting?.("femoralResectionMm", value);
+                            } else event.target.value = String(alignmentSettings?.femoralResectionMm ?? 9);
+                          }}
+                          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
                         />
                         mm
                       </span>
                     </label>
                     <label>
-                      Proximal tibia
+                      Preset tibia
                       <span>
                         <input
                           type="number"
                           min="1"
                           max="20"
                           step="0.5"
-                          value={alignmentSettings?.tibialResectionMm ?? 2}
-                          onChange={(event) =>
-                            onAlignmentSetting?.(
-                              "tibialResectionMm",
-                              event.target.value,
-                            )
-                          }
+                          key={`tibial-${alignmentSettings?.tibialResectionMm}`}
+                          defaultValue={alignmentSettings?.tibialResectionMm ?? 2}
+                          onBlur={(event) => {
+                            const value = Number(event.target.value);
+                            if (event.target.value && Number.isFinite(value) && value >= 1 && value <= 20) {
+                              if (value !== (alignmentSettings?.tibialResectionMm ?? 2)) onAlignmentSetting?.("tibialResectionMm", value);
+                            } else event.target.value = String(alignmentSettings?.tibialResectionMm ?? 2);
+                          }}
+                          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
                         />
                         mm
                       </span>
                     </label>
                   </div>
                   <div className={styles.resectionTarget}>
-                    <span>Target</span>
+                    <span>{alignmentSettings?.estimatedAp ? "Target estimasi AP" : "Target"}</span>
                     <strong>
                       mFA-mTA {alignmentPlan.targetHkaDeg.toFixed(1)}°
                     </strong>
                     <small>
-                      Preview rotasi{" "}
+                      Rotasi tibia{" "}
                       {alignmentPlan.tibialPreviewRotationDeg.toFixed(1)}°
                     </small>
                   </div>
-                  <Action
-                    icon={Move}
-                    onClick={() => { onEditAlignmentLines?.(); setResectionExpanded(false); }}
-                  >
-                    Atur garis cut
-                  </Action>
+                  {alignmentSettings?.hasSelectedAxisLine && <fieldset className={styles.axisVisibility}>
+                    <legend>Gunakan line aktif sebagai sumbu femoral</legend>
+                    <Action icon={Target} onClick={() => onAlignmentSetting?.("bindMechanical")}>Mekanikal</Action>
+                    <Action icon={PencilLine} onClick={() => onAlignmentSetting?.("bindAnatomical")}>Anatomikal / IM</Action>
+                  </fieldset>}
+                  {!alignmentSettings?.hasAnatomicalAxis && !alignmentSettings?.estimatedAp && (
+                    <Action icon={PencilLine} onClick={() => {
+                      onAlignmentSetting?.("editIm");
+                      setResectionExpanded(false);
+                    }}>Sesuaikan garis IM</Action>
+                  )}
+                  {Number.isFinite(alignmentSettings?.femoralValgusAngleDeg) && <output>
+                    Sudut antar-sumbu{alignmentSettings.estimatedAp ? " (estimasi)" : ""}: {alignmentSettings.femoralValgusAngleDeg.toFixed(1)}°
+                  </output>}
                   <Action
                     icon={Layers}
+                    className={styles.resectionPrimary}
                     disabled={alignmentCutInvalid || alignmentPreviewBusy}
                     onClick={() => {
                       onCreateAlignmentPreview?.();
                       setResectionExpanded(false);
                     }}
                   >
-                    Preview potongan femur & tibia
+                    {alignmentPreviewBusy ? "Memproses potongan..." : "Terapkan potongan + SVG"}
                   </Action>
                   <small>
                     {alignmentCutInvalid ? "Garis cut tidak valid. Atur kembali kedua ujung garis." : "Simulasi planning. Verifikasi landmark dan hasil secara klinis."}

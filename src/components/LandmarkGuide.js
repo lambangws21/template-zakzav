@@ -948,6 +948,8 @@ const LONG_LEG_POINTS = {
     tibPlateauMedial: [550, 804], tibPlateauLateral: [479, 804],
     femurMidshaft10cm: [494, 539], femoralNotch: [515, 769],
     tibiaMidshaft4cm: [518, 908], tibiaMidshaft10cm: [522, 1070],
+    femoralProximal: [494, 539], femoralDistal: [509, 678],
+    tibialProximal: [518, 908], tibialDistal: [522, 1070],
     "axis-proximal-1": [469, 480], "axis-proximal-2": [516, 480],
     "axis-distal-1": [486, 642], "axis-distal-2": [533, 642],
   },
@@ -957,16 +959,24 @@ const LONG_LEG_POINTS = {
     tibPlateauMedial: [506, 809], tibPlateauLateral: [580, 809],
     femurMidshaft10cm: [560, 541], femoralNotch: [548, 774],
     tibiaMidshaft4cm: [540, 916], tibiaMidshaft10cm: [534, 1075],
+    femoralProximal: [560, 541], femoralDistal: [548, 678],
+    tibialProximal: [540, 916], tibialDistal: [534, 1075],
     "axis-proximal-1": [537, 480], "axis-proximal-2": [584, 480],
     "axis-distal-1": [521, 643], "axis-distal-2": [568, 643],
   },
 };
 
-function LongLegTkaGuide({ highlightId, side }) {
+function LongLegTkaGuide({ highlightId, side, kneeOnly = false }) {
   if (side !== "left" && side !== "right") {
     return <div role="img" aria-label="Pilih sisi pasien untuk panduan TKA">Pilih sisi pasien</div>;
   }
   const point = LONG_LEG_POINTS[side][highlightId];
+  const axisPair = [
+    ["femurMidshaft10cm", "femoralNotch"],
+    ["tibiaMidshaft4cm", "tibiaMidshaft10cm"],
+    ["femoralProximal", "femoralDistal"],
+    ["tibialProximal", "tibialDistal"],
+  ].find((pair) => pair.includes(highlightId));
   const cropWidth = point ? 480 : 1024;
   const cropHeight = point ? 720 : 1536;
   const cropX = point ? Math.max(0, Math.min(1024 - cropWidth, point[0] - cropWidth / 2)) : 0;
@@ -977,12 +987,25 @@ function LongLegTkaGuide({ highlightId, side }) {
 
   return (
     <svg
-      viewBox={`${cropX} ${cropY} ${cropWidth} ${cropHeight}`}
+      viewBox={kneeOnly ? "300 450 440 690" : `${cropX} ${cropY} ${cropWidth} ${cropHeight}`}
       role="img"
       aria-label={`Ilustrasi tungkai ${side === "left" ? "kiri" : "kanan"}; landmark aktif ${highlightId || "belum dipilih"}`}
     >
       <rect width="1024" height="1536" fill="#101820" />
       <image href={`${LONG_LEG_GUIDE_BASE}${file}`} width="1024" height="1536" />
+      {axisPair && (() => {
+        const [a, b] = axisPair.map((key) => LONG_LEG_POINTS[side][key]);
+        return <g>
+          <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#fb7185" strokeWidth="5" />
+          {axisPair.map((key, index) => {
+            const [x, y] = LONG_LEG_POINTS[side][key];
+            return <g key={key}>
+              <circle cx={x} cy={y} r="12" fill="#101820" stroke="#fb7185" strokeWidth="4" />
+              <text x={x + 28} y={y + 9} fill="white" stroke="#101820" strokeWidth="3" paintOrder="stroke" fontSize="28">{index + 1}</text>
+            </g>;
+          })}
+        </g>;
+      })()}
       {point && (
         <g>
           <circle cx={point[0]} cy={point[1]} r="41" fill="none" stroke="#ffffff" strokeWidth="8">
@@ -993,6 +1016,10 @@ function LongLegTkaGuide({ highlightId, side }) {
       )}
     </svg>
   );
+}
+
+function KneeApTkaGuide(props) {
+  return <LongLegTkaGuide {...props} kneeOnly />;
 }
 
 const PELVIS_CARTOON_RIGHT_POINTS = {
@@ -1053,6 +1080,7 @@ const GUIDE_REGISTRY = {
   ap_knee:                 { label: "AP Knee",                    Component: ApKneeGuide,         needsSide: "simple" },
   ap_tka_planning:         { label: "AP TKA — Femur & Tibia",     Component: ApTkaPlanningGuide,  needsSide: "simple" },
   ap_tka_long_leg:         { label: "TKA Long Leg — Kanan/Kiri", Component: LongLegTkaGuide,     needsSide: "simple" },
+  ap_tka_knee:             { label: "TKA AP Knee — Kanan/Kiri", Component: KneeApTkaGuide,       needsSide: "simple" },
   ap_femur:                { label: "AP Femur",                   Component: ApProxFemurGuide,    needsSide: false    },
   ap_proximal_femur:       { label: "AP Proksimal Femur",         Component: ApProxFemurGuide,    needsSide: false    },
   ap_ankle:                { label: "AP Ankle",                   Component: ApKneeGuide,         needsSide: false    },
