@@ -18533,6 +18533,18 @@ export default function XrayCalibrationWorkspace({
               };
             });
         });
+        if (handleKey === "femoralImPoint") {
+          const source = hkaSets.find((item) => item.id === hkaId);
+          if (source?.knee) {
+            const sharedIds = new Set(hkaSets.filter((item) =>
+              ["full", "jla"].includes(item.mode || "full") && normalizeHkaSide(item.side) === normalizeHkaSide(source.side)
+            ).map((item) => item.id));
+            scheduleLinesUpdate((previous) => previous.map((line) =>
+              sharedIds.has(line.tkaSourceId) && line.tkaAxisRole === "anatomical" && line.tkaAxisBone === "Femoral"
+                ? { ...line, x1: adjustedPoint.x, y1: adjustedPoint.y, x2: source.knee.x, y2: source.knee.y }
+                : line));
+          }
+        }
         return;
       }
     },
@@ -42060,6 +42072,8 @@ export default function XrayCalibrationWorkspace({
               });
             }}
             alignmentSettings={{
+              manualFemoralCut: lines.some((line) => line.tkaSourceId === activeTkaJointAngles?.id && line.tkaCutRole === "femoral"),
+              manualTibialCut: lines.some((line) => line.tkaSourceId === activeTkaJointAngles?.id && line.tkaCutRole === "tibial"),
               femoralValgusAngleDeg: activeTkaJointAngles?.femoralValgusAngleDeg,
               hasAnatomicalAxis: Boolean(activeTkaJointAngles?.anatomicalAxes?.femoral?.start),
               hasSelectedAxisLine: Boolean(selectedLine && selectedLine.type !== "calibration"),

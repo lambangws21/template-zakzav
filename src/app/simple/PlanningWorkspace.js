@@ -3013,6 +3013,7 @@ export default function PlanningWorkspace({
                   <div className={styles.resectionGrid}>
                     <section>
                       <strong>Hasil femur</strong>
+                      <small>{alignmentSettings?.manualFemoralCut ? "Garis manual" : "Dari preset"}</small>
                       <span>
                         Medial {alignmentPlan.femoral.medialMm.toFixed(1)} mm
                       </span>
@@ -3022,6 +3023,7 @@ export default function PlanningWorkspace({
                     </section>
                     <section>
                       <strong>Hasil tibia</strong>
+                      <small>{alignmentSettings?.manualTibialCut ? "Garis manual" : "Dari preset"}</small>
                       <span>
                         Medial {alignmentPlan.tibial.medialMm.toFixed(1)} mm
                       </span>
