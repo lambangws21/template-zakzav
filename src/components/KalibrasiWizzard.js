@@ -332,7 +332,7 @@ export default function CalibrationWizard({
           isCompactCanvasEdit
             ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+74px)] z-[95] mx-auto w-[min(430px,calc(100vw-16px))] rounded-[16px] p-2 text-slate-800 cw-card font-sans"
           : isMobile
-            ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] z-[95] mx-auto max-h-[50dvh] w-[min(430px,calc(100vw-16px))] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
+            ? "fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+68px)] z-[95] mx-auto max-h-[36dvh] w-[min(320px,calc(100vw-16px))] touch-pan-y overscroll-contain overflow-y-auto rounded-lg p-2 text-slate-800 cw-card font-sans"
             : "fixed bottom-3 left-3 z-[95] w-[min(360px,calc(100vw-24px))] max-h-[min(58vh,480px)] touch-pan-y overscroll-contain overflow-y-auto rounded-[16px] p-2.5 text-slate-800 cw-card font-sans"
         }
         onClick={(e) => e.stopPropagation()}

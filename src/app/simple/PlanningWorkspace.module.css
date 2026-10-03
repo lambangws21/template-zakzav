@@ -1029,3 +1029,47 @@
   .measurementItemActions { flex-direction: row; align-items: center; }
   .measurementItemActions .button { min-width: 32px; min-height: 40px; }
 }
+
+/* Keep mobile editors below the working area; long content scrolls inside. */
+@media (max-width: 699px) {
+  .modalBackdrop { padding: 4px 6px calc(62px + env(safe-area-inset-bottom)); }
+  .modalPanel, .implantBrowser, .exportPanel { width: min(300px, 100%); max-height: min(38dvh, 320px); border: 1px solid var(--pw-line); border-radius: 8px; font-size: 11px; }
+  .measurementModal, .groupModal { max-height: min(28dvh, 236px); }
+  .measurementModal:has(.lineObjectSetting), .objectSettingModal { width: min(264px, calc(100% - 12px)); max-height: min(25dvh, 210px); border-radius: 8px; }
+  .modalPanel > header { padding: 4px 7px; flex-shrink: 0; }
+  .modalPanel > footer { padding: 4px 7px; flex-shrink: 0; }
+  .measurementModalBody, .groupModalBody { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .sheet { left: 6px; right: 6px; width: min(310px, calc(100% - 12px)); margin-inline: auto; max-height: min(25dvh, 210px); border-radius: 8px; }
+  .sheet[data-expanded="true"] { max-height: min(38dvh, 320px); }
+  .sheetHeader { padding: 2px 6px; }
+  .sheetContent { padding: 0 6px 6px; }
+  .logTabs button { min-height: 36px; padding: 4px 2px; }
+  .panelHeading { padding: 4px 6px; }
+  .logBody { padding: 4px 6px; }
+  .measurementItem { padding: 3px 0; }
+  .measurementItemActions .button { min-height: 36px; }
+  .tkaCanvasPanels { top: 54px; right: 5px; width: min(156px, calc(100% - 10px)); max-height: min(34dvh, calc(100% - 120px)); gap: 4px; }
+  .tkaCanvasPanels[data-expanded="true"] { width: min(244px, calc(100% - 10px)); max-height: min(35dvh, calc(100% - 120px)); }
+  .tkaCanvasPanels > .resectionSummary { padding: 5px; }
+  .resectionSummary header { gap: 4px; }
+  .resectionSummary header strong { font-size: 10px; }
+  .resectionSummary header button { width: 32px; height: 32px; }
+  .resectionSummary > .button, .resectionActions .button, .visibilityDetails summary, .visibilityDetails .axisVisibility button { min-height: 36px; }
+  .analysisResultBadge { min-height: 34px; padding: 4px 5px; box-shadow: none; }
+  .analysisResultBadge small { display: none; }
+  .canvasGuide { max-height: min(24dvh, 190px); padding: 5px; border-radius: 8px; }
+  .canvasGuide[data-split-guide="true"] { max-height: min(24dvh, 190px); }
+  .planningStartCard { width: min(200px, calc(100% - 12px)); max-height: 30dvh; overflow-y: auto; padding: 6px; }
+  .implantGrid > button { min-height: 72px; padding: 6px; }
+  .exportOptions .button { min-height: 36px; }
+  .modalPanel > header h2, .panelHeading h2 { font-size: 11px; line-height: 1.3; }
+  .modalPanel .button, .resectionSummary > .button, .resectionActions .button, .visibilityDetails summary, .visibilityDetails .axisVisibility button { font-size: 10px; gap: 4px; padding: 4px 6px; }
+  .visibilityDetails .axisVisibility button small { font-size: 9px; }
+  .measurementItemName strong, .measurementMain > b { font-size: 10px; }
+  .measurementItemMeta { font-size: 9px; gap: 3px; }
+  .measurementValueSummary strong { font-size: 12px; }
+  .modalPanel > header, .modalPanel > footer { padding: 3px 6px; }
+  .measurementModalBody, .groupModalBody { padding: 5px 6px; }
+  .tkaSizePredictions summary { font-size: 10px; min-height: 34px; padding: 4px 6px; }
+  .implantGrid > button { gap: 6px; min-height: 64px; font-size: 10px; }
+}

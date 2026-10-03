@@ -999,3 +999,26 @@ summary::-webkit-details-marker { display: none }
 [data-theme="dark"] [data-mobj] .text-slate-600 { color: #8ba3be !important; }
 [data-theme="dark"] [data-mobj] .text-slate-500,
 [data-theme="dark"] [data-mobj] .text-slate-400 { color: #64748b !important; }
+
+@media (max-width: 699px) {
+  .simple-layer-settings-modal {
+    width: min(254px, calc(100vw - 16px));
+    max-height: min(28dvh, 236px);
+    padding: 5px;
+    border-radius: 8px;
+    overscroll-behavior: contain;
+  }
+  .simple-layer-settings-modal > div:first-child { top: -6px; margin: -6px -6px 4px; padding: 6px; }
+  .implant-template-modal, .templating-wizard-modal { max-height: 38dvh; max-width: 300px; border-radius: 8px; }
+  .layer-template-popover { max-height: 30dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .advanced-setup-panel, .advanced-inspector-panel { max-height: 38dvh; border-radius: 8px 8px 0 0; gap: 6px; }
+  .ms-card { max-width: 320px; max-height: 40dvh; overflow-y: auto; border-radius: 8px; }
+  .ms-card > div:last-child { padding: 12px; }
+  .cw-card { width: min(280px, calc(100vw - 16px)); max-height: 32dvh; overflow-y: auto; padding: 6px; border-radius: 8px; }
+  .cw-card h2, .simple-layer-settings-modal h2, .implant-template-modal h2, .templating-wizard-modal h2 { font-size: 12px; line-height: 1.3; }
+  .cw-card label, .simple-layer-settings-modal label { font-size: 10px; line-height: 1.35; }
+  .cw-card button, .simple-layer-settings-modal button { font-size: 10px; }
+  .ms-card { max-width: 280px; max-height: 36dvh; }
+  .ms-card .ms-title { font-size: 13px; }
+  .ms-card .ms-desc { font-size: 11px; }
+}

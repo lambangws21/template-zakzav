@@ -43950,8 +43950,8 @@ export default function XrayCalibrationWorkspace({
                         mobileSheetSnap === "collapsed"
                           ? "h-[58px]"
                           : mobileSheetSnap === "half"
-                            ? "h-[38dvh] min-h-[220px] max-h-[360px]"
-                            : "h-[76dvh] max-h-[680px]"
+                            ? "h-[28dvh] min-h-0 max-h-[236px]"
+                            : "h-[44dvh] max-h-[380px]"
                       }`}
                     >
                       <div className="flex shrink-0 items-center justify-center px-3 pt-1.5 pb-1">
