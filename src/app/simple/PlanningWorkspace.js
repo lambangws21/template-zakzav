@@ -3796,6 +3796,7 @@ export default function PlanningWorkspace({
           role="dialog"
           aria-label={`Planning ${sheet}`}
           data-expanded={expanded}
+          data-section={sheet}
         >
           <div className={styles.sheetHeader}>
             <button
@@ -3821,8 +3822,16 @@ export default function PlanningWorkspace({
                 drag.current = null;
               }}
             >
-              <span />
+              {sheet === "log" ? <strong className={styles.logSheetTitle}>Planning Log</strong> : <span />}
             </button>
+            {sheet === "log" && <>
+              <Action icon={ImagePlus} disabled={!hasImage || !actions.addPhoto}
+                aria-label="Tambah foto ke canvas" title="Tambah foto ke canvas"
+                onClick={() => activate(actions.addPhoto)} />
+              <Action icon={FileText} disabled={!hasImage}
+                aria-label="Buat laporan" title="Buat laporan"
+                onClick={() => activate(actions.report)} />
+            </>}
             <Action
               icon={X}
               aria-label="Tutup panel"
@@ -3848,6 +3857,7 @@ export default function PlanningWorkspace({
                         "angle",
                         "interline",
                         "circle",
+                        "cupAssessment",
                       ].includes(item.id),
                     )
                     .map((item) => (

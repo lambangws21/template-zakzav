@@ -1072,4 +1072,22 @@
   .measurementModalBody, .groupModalBody { padding: 5px 6px; }
   .tkaSizePredictions summary { font-size: 10px; min-height: 34px; padding: 4px 6px; }
   .implantGrid > button { gap: 6px; min-height: 64px; font-size: 10px; }
+  .sheet[data-section="log"] { width: min(400px, calc(100% - 12px)); }
+  .sheet[data-section="log"] .sheetHeader { padding: 2px 5px; gap: 2px; }
+  .sheet[data-section="log"] .sheetHeader .handle { justify-content: flex-start; min-height: 32px; padding: 0 5px; touch-action: none; }
+  .logSheetTitle { font-size: 11px; font-weight: 650; }
+  .sheet[data-section="log"] .sheetHeader .button { min-width: 32px; min-height: 32px; padding: 5px; }
+  .sheetContent[data-section="log"] > .panelHeading,
+  .sheetContent[data-section="log"] > .stepFooter { display: none; }
+  .sheetContent[data-section="log"] .logBody { padding: 0 5px 5px; overflow-y: auto; }
+  .sheetContent[data-section="log"] .logTabs { position: sticky; top: 0; z-index: 2; background: var(--pw-panel); margin: 0; padding: 2px 0; gap: 3px; }
+  .sheetContent[data-section="log"] .logTabs button { min-height: 32px; font-size: 10px; gap: 3px; padding: 3px; }
+  .sheetContent[data-section="log"] .sectionHeading { display: none; }
+  .sheetContent[data-section="log"] .logSearch { margin: 3px 0; padding: 0 5px; }
+  .sheetContent[data-section="log"] .logSearch input { min-height: 32px; padding: 3px 0; }
+  .sheetContent[data-section="log"] .measurementScroll { max-height: none; overflow: visible; margin: 3px 0; border: 0; }
+  .sheetContent[data-section="log"] .measurementGroup { margin-bottom: 4px; }
+  .sheetContent[data-section="log"] .measurementGroup > summary { min-height: 30px; padding: 4px 6px; font-size: 10px; }
+  .sheetContent[data-section="log"] .measurementItem { margin-bottom: 3px; padding: 2px 3px; }
+  .sheetContent[data-section="log"] .measurementItemActions .button { min-height: 32px; }
 }
