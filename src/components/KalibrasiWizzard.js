@@ -101,7 +101,6 @@ export default function CalibrationWizard({
   onMagnificationFactorChange,
   anatomicalRefSizeMm = "46",
   onAnatomicalRefSizeMmChange,
-  onCircleNudge,
   onCircleResize,
   circleRadiusPx = null,
 } = {}) {
@@ -114,20 +113,8 @@ export default function CalibrationWizard({
   const [estimateApplyPulse, setEstimateApplyPulse] = useState(false);
   const [canvasEditCompact, setCanvasEditCompact] = useState(false);
   const estimatePulseTimerRef = useRef(null);
-  const nudgeIntervalRef = useRef(null);
   const dragControls = useDragControls();
 
-  const startNudge = (fn) => {
-    fn();
-    nudgeIntervalRef.current = setInterval(fn, 120);
-  };
-  const stopNudge = () => {
-    if (nudgeIntervalRef.current) {
-      clearInterval(nudgeIntervalRef.current);
-      nudgeIntervalRef.current = null;
-    }
-  };
-  useEffect(() => () => stopNudge(), []);
 
   const isLineMode = calibrationMode === "line";
   const isMagMode = calibrationMode === "magnification";
@@ -353,10 +340,10 @@ export default function CalibrationWizard({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[11px] font-black uppercase tracking-tight text-slate-800">
-                  Edit Circle di Canvas
+                  Kalibrasi Ball
                 </p>
                 <p className="truncate text-[9px] font-bold text-slate-500">
-                  {selectedLengthText || `Ø ${anatomicalRefSizeMm || "-"} mm`} · geser langsung di foto
+                  Diameter {anatomicalRefSizeMm || "-"} mm
                 </p>
               </div>
               <button
@@ -364,7 +351,7 @@ export default function CalibrationWizard({
                 onClick={() => setCanvasEditCompact(false)}
                 className="flex h-9 shrink-0 items-center justify-center rounded-[14px] px-3 text-[10px] font-black text-slate-600 cw-btn"
               >
-                Panel
+                Diameter
               </button>
               <button
                 type="button"
@@ -375,20 +362,13 @@ export default function CalibrationWizard({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={handleAutoHeadCircle}
                 className="rounded-[14px] px-2 py-2 text-[9px] font-black uppercase tracking-wide text-slate-600 cw-btn"
               >
-                Update Ø
-              </button>
-              <button
-                type="button"
-                onClick={() => setCanvasEditCompact(false)}
-                className="rounded-[14px] px-2 py-2 text-[9px] font-black uppercase tracking-wide text-slate-600 cw-btn"
-              >
-                Kontrol
+                Perbarui lingkaran
               </button>
               <button
                 type="button"
@@ -946,18 +926,7 @@ export default function CalibrationWizard({
             </div>
 
             {/* Apparent size result */}
-            {apparentSizeMm ? (
-              <div className="flex items-center gap-3 rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2">
-                <div className="text-[24px] font-black leading-none text-emerald-700">{apparentSizeMm}</div>
-                <div>
-                  <div className="text-[8px] font-black uppercase tracking-widest text-emerald-500">mm referensi aktif</div>
-                  <div className="text-[10px] font-bold text-emerald-700">Circle akan dihitung langsung sebagai {anatomicalRefSizeMm} mm</div>
-                </div>
-                <div className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                  <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
-                </div>
-              </div>
-            ) : (
+            {!apparentSizeMm && (
               <div className="rounded-[12px] px-3 py-2 text-center text-[9px] text-slate-400 cw-pressed">
                 Isi diameter referensi head terlebih dulu.
               </div>
@@ -976,22 +945,20 @@ export default function CalibrationWizard({
 
             {/* Draw + Apply — combined */}
             <div className="rounded-[18px] border border-white/60 cw-flat overflow-hidden">
-              <div className="p-3">
-                <p className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
-                  2 · Circle diameter head
-                </p>
+              <div className="grid grid-cols-2 gap-2 p-2">
                 <button type="button" onClick={handleManualCircle}
                   className="flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-slate-900 text-[10px] font-black tracking-wider text-white uppercase">
                   <MousePointer2 className="h-3.5 w-3.5" />
-                  Gambar Circle Manual
+                  Gambar manual
                 </button>
                 <button type="button" onClick={handleAutoHeadCircle}
-                  className="mt-2 flex w-full min-h-10 items-center justify-center gap-2 rounded-[12px] bg-blue-600 text-[10px] font-black tracking-wider text-white uppercase">
+                  disabled={!Number.isFinite(anatomicalSizeNum) || anatomicalSizeNum <= 0}
+                  className="flex w-full min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-2 text-[10px] font-black text-white disabled:opacity-40">
                   <Ruler className="h-3.5 w-3.5" />
-                  Buat / Update Circle {anatomicalRefSizeMm || "-"} mm
+                  {hasHeadCircle ? "Perbarui" : "Buat lingkaran"}
                 </button>
                 {hasHeadCircle ? (
-                  <div className="mt-2 space-y-2">
+                  <div className="col-span-2 space-y-2">
                     <div className="flex items-center gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 px-2.5 py-1.5">
                       <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
                         <Check className="h-3 w-3 text-white stroke-[3]" />
@@ -1036,44 +1003,17 @@ export default function CalibrationWizard({
               </div>
             )}
 
-            {/* ── Mobile d-pad: move + resize circle ── */}
+            {/* Fine size adjustment; position is edited on the canvas. */}
             {isMobile && hasHeadCircle && (
-              <div className="rounded-[16px] border border-pink-200/60 bg-pink-50/60 p-3 space-y-2">
-                <p className="text-[8px] font-black uppercase tracking-widest text-pink-400">Kontrol Circle</p>
+              <div className="rounded-lg border border-white/60 p-2 cw-flat">
 
-                {/* D-pad move */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  <div />
-                  <button type="button"
-                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
-                    onPointerDown={() => startNudge(() => onCircleNudge?.(0, -8))}
-                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>▲</button>
-                  <div />
-                  <button type="button"
-                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
-                    onPointerDown={() => startNudge(() => onCircleNudge?.(-8, 0))}
-                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>◀</button>
-                  <div className="flex h-10 items-center justify-center rounded-[12px] bg-pink-100 border border-pink-200">
-                    <span className="text-[9px] font-black text-pink-400">MOVE</span>
-                  </div>
-                  <button type="button"
-                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
-                    onPointerDown={() => startNudge(() => onCircleNudge?.(8, 0))}
-                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>▶</button>
-                  <div />
-                  <button type="button"
-                    className="flex h-10 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
-                    onPointerDown={() => startNudge(() => onCircleNudge?.(0, 8))}
-                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>▼</button>
-                  <div />
-                </div>
 
                 {/* Resize */}
                 <div className="flex items-center gap-2">
                   <button type="button"
                     className="flex h-10 flex-1 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
-                    onPointerDown={() => startNudge(() => onCircleResize?.(-6))}
-                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>−</button>
+                    aria-label="Perkecil lingkaran"
+                    onClick={() => onCircleResize?.(-6)}><Minus className="h-4 w-4" /></button>
                   <div className="flex-1 text-center">
                     <p className="text-[8px] font-black uppercase tracking-widest text-pink-400">Radius</p>
                     <p className="text-[11px] font-black text-slate-700">
@@ -1082,8 +1022,8 @@ export default function CalibrationWizard({
                   </div>
                   <button type="button"
                     className="flex h-10 flex-1 items-center justify-center rounded-[12px] bg-white border border-pink-200 text-pink-500 text-lg font-black active:scale-95 shadow-sm"
-                    onPointerDown={() => startNudge(() => onCircleResize?.(6))}
-                    onPointerUp={stopNudge} onPointerLeave={stopNudge}>+</button>
+                    aria-label="Perbesar lingkaran"
+                    onClick={() => onCircleResize?.(6)}><Plus className="h-4 w-4" /></button>
                 </div>
               </div>
             )}

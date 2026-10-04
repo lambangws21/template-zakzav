@@ -1015,10 +1015,26 @@ summary::-webkit-details-marker { display: none }
   .ms-card { max-width: 320px; max-height: 40dvh; overflow-y: auto; border-radius: 8px; }
   .ms-card > div:last-child { padding: 12px; }
   .cw-card { width: min(280px, calc(100vw - 16px)); max-height: 32dvh; overflow-y: auto; padding: 6px; border-radius: 8px; }
-  .cw-card h2, .simple-layer-settings-modal h2, .implant-template-modal h2, .templating-wizard-modal h2 { font-size: 12px; line-height: 1.3; }
-  .cw-card label, .simple-layer-settings-modal label { font-size: 10px; line-height: 1.35; }
-  .cw-card button, .simple-layer-settings-modal button { font-size: 10px; }
+  .cw-card h2, .simple-layer-settings-modal h2, .implant-template-modal h2, .templating-wizard-modal h2 { font-size: 11px; line-height: 1.3; }
+  .cw-card label, .simple-layer-settings-modal label { font-size: 9px; line-height: 1.35; }
+  .cw-card button, .simple-layer-settings-modal button { font-size: 9px; }
   .ms-card { max-width: 280px; max-height: 36dvh; }
-  .ms-card .ms-title { font-size: 13px; }
-  .ms-card .ms-desc { font-size: 11px; }
+  .ms-card .ms-title { font-size: 11px; }
+  .ms-card .ms-desc { font-size: 10px; }
+  :is(.implant-template-modal, .templating-wizard-modal, .layer-template-popover,
+      .layer-floating-toolbar, .advanced-setup-panel, .advanced-inspector-panel, [data-mobj]) {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal, .layer-template-popover,
+      .layer-floating-toolbar, .advanced-setup-panel, .advanced-inspector-panel, [data-mobj]) :is(button, label) {
+    font-size: 9px;
+    line-height: 1.35;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal, .layer-template-popover,
+      .simple-layer-settings-modal, .cw-card, [data-mobj]) button > span { font-size: inherit; }
+  :is(.implant-template-modal, .templating-wizard-modal, .cw-card, .simple-layer-settings-modal) p {
+    font-size: 10px;
+    line-height: 1.35;
+  }
 }
