@@ -186,7 +186,10 @@ export default function TemplateStoragePicker({
           Belum ada template dari storage.
         </div>
       ) : (
-        <div className="max-h-44 space-y-1.5 overflow-y-auto">
+        <div
+          className="max-h-64 space-y-1.5 overflow-y-auto overscroll-contain touch-pan-y"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
           {visibleTemplates.length === 0 ? (
             <div
               className={`${SOFT_INSET_CLASS} px-3 py-3 text-center text-[10px] text-slate-500`}

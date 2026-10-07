@@ -729,10 +729,10 @@
 .measurementModalBackdrop { position: fixed; }
 .objectSettingBackdrop { display: block; padding: 0; background: transparent; backdrop-filter: none; pointer-events: none; }
 .modalPanel { composes: glass-panel from global; --glass-base: var(--pw-panel); display: flex; width: min(680px, calc(100% - 24px)); max-height: min(760px, calc(100dvh - 40px)); flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 8px; box-shadow: 0 18px 50px #0009; }
-.modalPanel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--pw-line); }
+.modalPanel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--pw-line); flex-shrink: 0; }
 .modalPanel > header small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
 .modalPanel > header .button { border: 0; background: transparent; }
-.modalPanel > footer { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--pw-line); }
+.modalPanel > footer { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--pw-line); flex-shrink: 0; }
 .measurementModal, .groupModal { width: min(440px, calc(100% - 24px)); }
 .objectSettingModal { position: fixed; right: 14px; bottom: 34px; width: min(310px, calc(100% - 16px)); max-height: min(320px, calc(100dvh - 80px)); pointer-events: auto; background: color-mix(in srgb, var(--pw-panel) 82%, transparent); box-shadow: 0 10px 28px #0007; }
 .objectSettingModal .measurementModalBody { padding: 8px 9px; }
@@ -812,7 +812,7 @@
 .zimmerSourceTabs strong, .zimmerSourceTabs small { display: block; }
 .zimmerSourceTabs strong { font-size: 10px; }
 .zimmerSourceTabs small { margin-top: 2px; color: var(--pw-muted); font-size: 8px; }
-.implantGrid { display: grid; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; padding: 4px 14px 14px; }
+.implantGrid { display: grid; flex: 1 1 auto; min-height: 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 4px 14px 14px; align-content: start; }
 .implantGrid > button { display: grid; min-height: 112px; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; text-align: left; }
 .implantGrid > button[data-selected="true"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-accent); }
 .implantGrid > button img { width: 64px; height: 90px; object-fit: contain; background: #fff; border-radius: 4px; }
@@ -1110,4 +1110,42 @@
   .resectionSummary header strong, .analysisResultBadge strong { font-size: 9px; }
   .canvasGuideHeader strong, .guideCurrentStep strong { font-size: 10px; }
   .sheet .stepFooter { padding: 5px 6px; }
+}
+
+/* Planning Log: taller sheet + bigger rows so measurements are easier to read.
+   Scoped to data-section="log" so other sheets (tools/workflow/more) keep their compact size. */
+@media (max-width: 699px) {
+  .sheet[data-section="log"] { max-height: min(46dvh, 400px); }
+  .sheet[data-section="log"][data-expanded="true"] { max-height: min(78dvh, 660px); }
+  .sheet[data-section="log"][data-expanded="true"] .measurementGroup > summary {
+    min-height: 36px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItem {
+    padding: 8px 2px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemName strong {
+    font-size: 13px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementMain > b {
+    font-size: 13px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemMeta {
+    font-size: 10px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .logTabs button {
+    min-height: 40px;
+    font-size: 11px;
+  }
+}
+
+.expandToggle svg { transition: transform 0.15s ease; }
+.expandToggleOpen svg { transform: rotate(180deg); }
+
+/* Select Implant (Template Library) modal: give the implant grid real room to scroll on mobile.
+   .modalPanel's base rules cap this at ~320px, which leaves ~0px for .implantGrid once the
+   search field, type tabs, knee tabs and brand/system selects are stacked above it. */
+@media (max-width: 699px) {
+  .implantBrowser { max-height: min(82dvh, 640px); }
 }

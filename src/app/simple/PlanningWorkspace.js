@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   ClipboardList,
   CloudUpload,
   Download,
@@ -3831,6 +3832,13 @@ export default function PlanningWorkspace({
               <Action icon={FileText} disabled={!hasImage}
                 aria-label="Buat laporan" title="Buat laporan"
                 onClick={() => activate(actions.report)} />
+              <Action
+                icon={ChevronUp}
+                className={`${styles.expandToggle} ${expanded ? styles.expandToggleOpen : ""}`}
+                aria-label={expanded ? "Kembalikan ukuran panel" : "Lebarkan panel ke atas"}
+                title={expanded ? "Kembalikan ukuran" : "Lebarkan ke atas"}
+                onClick={() => setExpanded((value) => !value)}
+              />
             </>}
             <Action
               icon={X}
