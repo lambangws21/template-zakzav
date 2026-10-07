@@ -89,6 +89,11 @@ export function resolvePlanningRows(procedure, session, measurements) {
       value: Number.isFinite(source?.value) ? source.value : null,
       sourceLineIds: Array.isArray(source?.sourceLineIds) ? source.sourceLineIds : [],
       sourceShowLabel: source?.sourceShowLabel !== false,
+      sourceHidden: Boolean(source?.sourceHidden),
+      sourceIntersectionKey: source?.sourceIntersectionKey || null,
+      sourceAngleId: Number.isFinite(source?.sourceAngleId)
+        ? source.sourceAngleId
+        : null,
       initial: Number.isFinite(session.initial?.values?.[key])
         ? session.initial.values[key] : null,
     };

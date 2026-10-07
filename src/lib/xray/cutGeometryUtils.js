@@ -32,6 +32,8 @@ export const DEFAULT_CIRCLE_COLOR = "#8b5cf6";
 export const DEFAULT_CIRCLE_STROKE_WIDTH = 2;
 export const DEFAULT_PLANNING_GUIDE_STROKE_WIDTH = 2;
 export const DEFAULT_FREE_LINE_COLOR = "#3b82f6";
+export const DEFAULT_FREE_LINE_STROKE_WIDTH = 2;
+export const DEFAULT_FREE_LINE_FILL_OPACITY = 1;
 export const DEFAULT_LAYER_DUPLICATE_OFFSET = 18;
 export const DEFAULT_FREE_LINE_MODE = "freehand";
 export const DEFAULT_FREE_LINE_CURVE_FREEHAND = 0.16;
@@ -363,6 +365,9 @@ export function buildFreeLineLayerFromPoints({
   layerId,
   name,
   fillColor = DEFAULT_FREE_LINE_COLOR,
+  fillOpacity = DEFAULT_FREE_LINE_FILL_OPACITY,
+  strokeColor,
+  strokeWidth = DEFAULT_FREE_LINE_STROKE_WIDTH,
   drawMode = DEFAULT_FREE_LINE_MODE,
   curveStrength,
 }) {
@@ -406,6 +411,19 @@ export function buildFreeLineLayerFromPoints({
     lockRotation: false,
     hidden: false,
     fillColor,
+    fillOpacity: clamp(
+      Number.isFinite(fillOpacity)
+        ? fillOpacity
+        : DEFAULT_FREE_LINE_FILL_OPACITY,
+      0,
+      1,
+    ),
+    strokeColor: strokeColor || fillColor,
+    strokeWidth: clamp(
+      Number.isFinite(strokeWidth) ? strokeWidth : DEFAULT_FREE_LINE_STROKE_WIDTH,
+      0,
+      12,
+    ),
     drawMode,
     curveStrength: clamp(
       Number.isFinite(curveStrength)

@@ -50,6 +50,7 @@ import {
   Redo2,
   Target,
   Trash2,
+  Type,
   Undo2,
   X,
 } from "lucide-react";
@@ -266,6 +267,7 @@ export default function PlanningWorkspace({
   toolLabel,
   isDark,
   onToggleMeasurementLabel,
+  onToggleMeasurementHidden,
   onRenameMeasurement,
   onSelectMeasurement,
   onDeleteMeasurement,
@@ -372,6 +374,11 @@ export default function PlanningWorkspace({
           ? item.sourceLineIds
           : [],
         sourceShowLabel: item.sourceShowLabel !== false,
+        sourceHidden: Boolean(item.sourceHidden),
+        sourceIntersectionKey: item.sourceIntersectionKey || null,
+        sourceAngleId: Number.isFinite(item.sourceAngleId)
+          ? item.sourceAngleId
+          : null,
         color: item.color || null,
         type: item.type || null,
         clinical: false,
@@ -439,23 +446,26 @@ export default function PlanningWorkspace({
                             </span>
                           </span>
                         </button>
-                        <div className={styles.measurementItemActions}>
-                          <Action
-                            icon={PencilLine}
-                            title={`Edit ${displayName}`}
-                            aria-label={`Pengaturan ${displayName}`}
-                            onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
-                          />
-                          {row.sourceLineIds.length > 0 && (
+                        {(row.sourceLineIds.length > 0 || row.sourceIntersectionKey || row.sourceAngleId) && (
+                          <div className={styles.measurementItemActions}>
                             <Action
-                              icon={row.sourceShowLabel ? Eye : EyeOff}
-                              title={row.sourceShowLabel ? "Sembunyikan bacaan di canvas" : "Tampilkan bacaan di canvas"}
-                              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} bacaan ${displayName}`}
-                              aria-pressed={row.sourceShowLabel}
-                              onClick={() => onToggleMeasurementLabel?.(row.sourceLineIds, row.sourceShowLabel)}
+                              icon={row.sourceHidden ? EyeOff : Eye}
+                              active={row.sourceHidden}
+                              title={row.sourceHidden ? "Tampilkan di canvas" : "Sembunyikan dari canvas"}
+                              aria-label={`${row.sourceHidden ? "Tampilkan" : "Sembunyikan"} ${displayName} di canvas`}
+                              aria-pressed={row.sourceHidden}
+                              onClick={() => onToggleMeasurementHidden?.(row)}
                             />
-                          )}
-                        </div>
+                            <Action
+                              icon={Type}
+                              active={!row.sourceShowLabel}
+                              title={row.sourceShowLabel ? "Sembunyikan angka di canvas" : "Tampilkan angka di canvas"}
+                              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} angka ${displayName} di canvas`}
+                              aria-pressed={!row.sourceShowLabel}
+                              onClick={() => onToggleMeasurementLabel?.(row)}
+                            />
+                          </div>
+                        )}
                       </li>
                     );
 
@@ -1953,10 +1963,17 @@ export default function PlanningWorkspace({
                                   type="button"
                                   className={styles.measurementVisibility}
                                   onClick={() =>
-                                    onToggleMeasurementLabel?.(
-                                      sourceMeasurement?.sourceLineIds,
-                                      sourceMeasurement?.sourceShowLabel,
-                                    )
+                                    onToggleMeasurementHidden?.(sourceMeasurement)
+                                  }
+                                >
+                                  {sourceMeasurement?.sourceHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                                  {sourceMeasurement?.sourceHidden ? "Tampilkan line" : "Sembunyikan line"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.measurementVisibility}
+                                  onClick={() =>
+                                    onToggleMeasurementLabel?.(sourceMeasurement)
                                   }
                                 >
                                   {sourceMeasurement?.sourceShowLabel ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -2116,26 +2133,44 @@ export default function PlanningWorkspace({
                                 </label>
                               </div>
                             ) : null}
-                            {sourceMeasurement?.sourceLineIds?.length && !isLineMeasurement ? (
-                              <button
-                                type="button"
-                                className={styles.measurementVisibility}
-                                onClick={() =>
-                                  onToggleMeasurementLabel?.(
-                                    sourceMeasurement.sourceLineIds,
-                                    sourceMeasurement.sourceShowLabel,
-                                  )
-                                }
-                              >
-                                {sourceMeasurement.sourceShowLabel ? (
-                                  <EyeOff size={15} />
-                                ) : (
-                                  <Eye size={15} />
-                                )}
-                                {sourceMeasurement.sourceShowLabel
-                                  ? "Sembunyikan nilai"
-                                  : "Tampilkan nilai"}
-                              </button>
+                            {(sourceMeasurement?.sourceLineIds?.length ||
+                              sourceMeasurement?.sourceIntersectionKey ||
+                              Number.isFinite(sourceMeasurement?.sourceAngleId)) &&
+                            !isLineMeasurement ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className={styles.measurementVisibility}
+                                  onClick={() =>
+                                    onToggleMeasurementHidden?.(sourceMeasurement)
+                                  }
+                                >
+                                  {sourceMeasurement.sourceHidden ? (
+                                    <Eye size={15} />
+                                  ) : (
+                                    <EyeOff size={15} />
+                                  )}
+                                  {sourceMeasurement.sourceHidden
+                                    ? "Tampilkan line"
+                                    : "Sembunyikan line"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.measurementVisibility}
+                                  onClick={() =>
+                                    onToggleMeasurementLabel?.(sourceMeasurement)
+                                  }
+                                >
+                                  {sourceMeasurement.sourceShowLabel ? (
+                                    <EyeOff size={15} />
+                                  ) : (
+                                    <Eye size={15} />
+                                  )}
+                                  {sourceMeasurement.sourceShowLabel
+                                    ? "Sembunyikan nilai"
+                                    : "Tampilkan nilai"}
+                                </button>
+                              </>
                             ) : null}
                             <div className={`${styles.metricEditorActions} ${isLineMeasurement ? styles.objectSettingActions : ""}`}>
                               {!isLineMeasurement ? <Action
@@ -2229,6 +2264,30 @@ export default function PlanningWorkspace({
                           <div className={styles.degreeValue}>
                             {formatPlanningValue(row.value, row.unit)}
                           </div>
+                          {sourceMeasurement?.sourceIntersectionKey ? (
+                            <div className={styles.metricEditorActions}>
+                              <Action
+                                icon={sourceMeasurement.sourceHidden ? Eye : EyeOff}
+                                onClick={() =>
+                                  onToggleMeasurementHidden?.(sourceMeasurement)
+                                }
+                              >
+                                {sourceMeasurement.sourceHidden
+                                  ? "Tampilkan line"
+                                  : "Sembunyikan line"}
+                              </Action>
+                              <Action
+                                icon={sourceMeasurement.sourceShowLabel ? EyeOff : Eye}
+                                onClick={() =>
+                                  onToggleMeasurementLabel?.(sourceMeasurement)
+                                }
+                              >
+                                {sourceMeasurement.sourceShowLabel
+                                  ? "Sembunyikan derajat"
+                                  : "Tampilkan derajat"}
+                              </Action>
+                            </div>
+                          ) : null}
                           <footer>
                             <Action onClick={() => setMetricEditor(null)}>
                               Selesai
@@ -3894,6 +3953,24 @@ export default function PlanningWorkspace({
                         "flip",
                         "delete",
                       ].includes(item.id),
+                    )
+                    .map((item) => (
+                      <Action
+                        key={item.id}
+                        icon={item.icon}
+                        active={item.active}
+                        disabled={item.disabled}
+                        onClick={() => runTool(item.id)}
+                      >
+                        {item.label}
+                      </Action>
+                    ))}
+                </div>
+                <h2>Shapes</h2>
+                <div className={styles.buttonGrid}>
+                  {tools
+                    .filter((item) =>
+                      ["shapeSquare", "shapeTriangle"].includes(item.id),
                     )
                     .map((item) => (
                       <Action

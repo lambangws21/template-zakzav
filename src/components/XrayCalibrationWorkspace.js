@@ -77,9 +77,11 @@ import {
   Scaling,
   Spline,
   LineSquiggle,
+  Square,
   Sun,
   Target,
   Trash2,
+  Triangle,
   Undo2,
   Upload,
   X,
@@ -304,6 +306,8 @@ import {
   DEFAULT_CIRCLE_STROKE_WIDTH,
   DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
   DEFAULT_FREE_LINE_COLOR,
+  DEFAULT_FREE_LINE_STROKE_WIDTH,
+  DEFAULT_FREE_LINE_FILL_OPACITY,
   DEFAULT_LAYER_DUPLICATE_OFFSET,
   DEFAULT_FREE_LINE_MODE,
   DEFAULT_FREE_LINE_CURVE_FREEHAND,
@@ -782,6 +786,8 @@ const HKA_INFO_BUBBLES = {
 
 const MOBILE_IDLE_TOOL = "pan";
 const MIN_FREE_CUT_POINTS = 3;
+const FREE_LINE_STROKE_MIN = 0;
+const FREE_LINE_STROKE_MAX = 12;
 const FREE_CUT_CLOSE_RADIUS_SCREEN = 18;
 const MOBILE_DOUBLE_TAP_MS = 320;
 const MOBILE_LINE_HANDLE_ASSIST_RADIUS_SCREEN = 72;
@@ -1105,6 +1111,9 @@ export default function XrayCalibrationWorkspace({
   const [intersectionAngleQuadrants, setIntersectionAngleQuadrants] = useState(
     {},
   );
+  const [intersectionAngleHidden, setIntersectionAngleHidden] = useState({});
+  const [intersectionAngleLabelHidden, setIntersectionAngleLabelHidden] =
+    useState({});
   const lineIntersectionAngleOverlaysRef = useRef([]);
   const [selectedAngleId, setSelectedAngleId] = useState(null);
   const [selectedCircleId, setSelectedCircleId] = useState(null);
@@ -2975,6 +2984,15 @@ export default function XrayCalibrationWorkspace({
     setNotice("Tampilan hasil line di canvas diperbarui.");
   }, []);
 
+  const toggleLineHiddenById = useCallback((lineId) => {
+    setLines((previous) =>
+      previous.map((line) =>
+        line.id === lineId ? { ...line, hidden: !line.hidden } : line,
+      ),
+    );
+    setNotice("Visibilitas line diperbarui.");
+  }, []);
+
   const scheduleMobileStateUpdate = useCallback(
     (setter, rafRef, updaterRef, updater) => {
       if (typeof window === "undefined") {
@@ -3217,6 +3235,20 @@ export default function XrayCalibrationWorkspace({
           : { ...item, ...updater };
       }),
     );
+  }, []);
+
+  const toggleIntersectionAngleHidden = useCallback((key) => {
+    setIntersectionAngleHidden((previous) => ({
+      ...previous,
+      [key]: !previous[key],
+    }));
+  }, []);
+
+  const toggleIntersectionAngleLabelHidden = useCallback((key) => {
+    setIntersectionAngleLabelHidden((previous) => ({
+      ...previous,
+      [key]: !previous[key],
+    }));
   }, []);
 
   const updateHkaById = useCallback((hkaId, updater) => {
@@ -4496,6 +4528,13 @@ export default function XrayCalibrationWorkspace({
           : null,
         transparentWhiteBackground: Boolean(layer.transparentWhiteBackground),
         fillColor: layer.fillColor || "",
+        fillOpacity: Number.isFinite(layer.fillOpacity)
+          ? layer.fillOpacity
+          : undefined,
+        strokeColor: layer.strokeColor || "",
+        strokeWidth: Number.isFinite(layer.strokeWidth)
+          ? layer.strokeWidth
+          : undefined,
         drawMode: layer.drawMode || DEFAULT_FREE_LINE_MODE,
         curveStrength: Number.isFinite(layer.curveStrength)
           ? layer.curveStrength
@@ -7369,6 +7408,74 @@ export default function XrayCalibrationWorkspace({
     [activateFreeLineMode, freeLineMode, image, modelHeight, modelWidth],
   );
 
+  const insertPresetShapeLayer = useCallback(
+    (shapeKind) => {
+      if (!image || modelWidth <= 0 || modelHeight <= 0) {
+        setNotice("Upload gambar utama dulu sebelum menambah shape.");
+        return;
+      }
+
+      const cx = modelWidth / 2;
+      const cy = modelHeight / 2;
+      const size = Math.min(modelWidth, modelHeight) * 0.22;
+
+      let polygonPoints;
+      let label;
+      if (shapeKind === "triangle") {
+        polygonPoints = [0, 1, 2].map((i) => {
+          const angle = ((-90 + i * 120) * Math.PI) / 180;
+          return {
+            x: cx + size * Math.cos(angle),
+            y: cy + size * Math.sin(angle),
+          };
+        });
+        label = "Triangle";
+      } else {
+        const half = size * 0.82;
+        polygonPoints = [
+          { x: cx - half, y: cy - half },
+          { x: cx + half, y: cy - half },
+          { x: cx + half, y: cy + half },
+          { x: cx - half, y: cy + half },
+        ];
+        label = "Square";
+      }
+
+      const nextLayerId = nextCutLayerIdRef.current;
+      const nextLayer = buildFreeLineLayerFromPoints({
+        polygonPoints,
+        layerId: nextLayerId,
+        name: `${label} ${nextLayerId}`,
+        fillColor: DEFAULT_FREE_LINE_COLOR,
+        drawMode: "point",
+        curveStrength: 0,
+      });
+      if (!nextLayer) {
+        setNotice("Gagal membuat shape. Coba lagi.");
+        return;
+      }
+
+      nextCutLayerIdRef.current += 1;
+      setCutLayers((prev) => [...prev, nextLayer]);
+      focusLayerSettings(nextLayer.id);
+      setNotice(
+        `${label} ditambahkan sebagai layer baru. Geser/putar/resize seperti layer lain, lalu atur warna/opacity di Object Settings untuk arsir.`,
+      );
+      setTool(getIdleTool());
+      if (shouldUseMobileOneShotTool) {
+        setMobileControlsOpen(false);
+      }
+    },
+    [
+      focusLayerSettings,
+      getIdleTool,
+      image,
+      modelHeight,
+      modelWidth,
+      shouldUseMobileOneShotTool,
+    ],
+  );
+
   const handleLinePresetChange = useCallback(
     (nextPreset) => {
       if (nextPreset !== "normal" && !hasCalibration) {
@@ -7785,6 +7892,13 @@ export default function XrayCalibrationWorkspace({
                   layer.transparentWhiteBackground,
                 ),
                 fillColor: layer.fillColor || "",
+                fillOpacity: Number.isFinite(Number(layer.fillOpacity))
+                  ? Number(layer.fillOpacity)
+                  : DEFAULT_FREE_LINE_FILL_OPACITY,
+                strokeColor: layer.strokeColor || "",
+                strokeWidth: Number.isFinite(Number(layer.strokeWidth))
+                  ? Number(layer.strokeWidth)
+                  : DEFAULT_FREE_LINE_STROKE_WIDTH,
                 drawMode:
                   layer.drawMode === "point" ? "point" : DEFAULT_FREE_LINE_MODE,
                 curveStrength: getFreeLineCurveStrength(layer),
@@ -9977,12 +10091,24 @@ export default function XrayCalibrationWorkspace({
             cachedMaskPoints ?? getLayerMaskDisplayPoints(layer);
           if (localMaskPoints?.length >= MIN_FREE_CUT_POINTS) {
             const curveStrength = getFreeLineCurveStrength(layer);
+            const outlineWidth = Number.isFinite(layer.strokeWidth)
+              ? layer.strokeWidth
+              : DEFAULT_FREE_LINE_STROKE_WIDTH;
+            const fillOpacity = Number.isFinite(layer.fillOpacity)
+              ? layer.fillOpacity
+              : DEFAULT_FREE_LINE_FILL_OPACITY;
+            const baseLayerAlpha = imageCtx.globalAlpha;
             imageCtx.fillStyle = layer.fillColor || DEFAULT_FREE_LINE_COLOR;
-            imageCtx.strokeStyle = layer.fillColor || DEFAULT_FREE_LINE_COLOR;
-            imageCtx.lineWidth = Math.max(1 / view.scale, 1.15);
+            imageCtx.strokeStyle =
+              layer.strokeColor || layer.fillColor || DEFAULT_FREE_LINE_COLOR;
+            imageCtx.lineWidth = Math.max(1 / view.scale, outlineWidth);
             traceSmoothClosedPath(imageCtx, localMaskPoints, curveStrength);
-            imageCtx.fill();
-            imageCtx.stroke();
+            if (fillOpacity > 0) {
+              imageCtx.globalAlpha = baseLayerAlpha * fillOpacity;
+              imageCtx.fill();
+              imageCtx.globalAlpha = baseLayerAlpha;
+            }
+            if (outlineWidth > 0) imageCtx.stroke();
           }
         } else {
           const isImageBacked = isImageBackedLayerKind(layer.kind);
@@ -10683,6 +10809,7 @@ export default function XrayCalibrationWorkspace({
     }
 
     for (const overlay of lineIntersectionAngleOverlays) {
+      if (intersectionAngleHidden[overlay.key]) continue;
       const point = imageToScreenPoint(overlay.x, overlay.y);
       const selectedQuadrantIndex =
         intersectionAngleQuadrants[overlay.key] ??
@@ -10824,21 +10951,24 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
         overlayCtx.setLineDash([]);
       }
-      overlayCtx.font = `${isActiveIntersection || isLinkedSelection ? 700 : 600} ${isActiveIntersection ? 13 : isLinkedSelection ? 12 : 10}px Inter, sans-serif`;
-      overlayCtx.textAlign = "center";
-      overlayCtx.textBaseline = "middle";
-      overlayCtx.fillStyle = color;
-      overlayCtx.shadowColor = "rgba(15, 23, 42, 0.88)";
-      overlayCtx.shadowBlur = 4;
-      overlayCtx.fillText(
-        `${selectedQuadrant.angleDeg.toFixed(1)}°`,
-        point.x + Math.cos(bisector) * (arcRadius + 22),
-        point.y + Math.sin(bisector) * (arcRadius + 22),
-      );
+      if (!intersectionAngleLabelHidden[overlay.key]) {
+        overlayCtx.font = `${isActiveIntersection || isLinkedSelection ? 700 : 600} ${isActiveIntersection ? 13 : isLinkedSelection ? 12 : 10}px Inter, sans-serif`;
+        overlayCtx.textAlign = "center";
+        overlayCtx.textBaseline = "middle";
+        overlayCtx.fillStyle = color;
+        overlayCtx.shadowColor = "rgba(15, 23, 42, 0.88)";
+        overlayCtx.shadowBlur = 4;
+        overlayCtx.fillText(
+          `${selectedQuadrant.angleDeg.toFixed(1)}°`,
+          point.x + Math.cos(bisector) * (arcRadius + 22),
+          point.y + Math.sin(bisector) * (arcRadius + 22),
+        );
+      }
       overlayCtx.restore();
     }
 
     for (const angle of angles) {
+      if (angle.hidden) continue;
       const p1 = imageToScreenPoint(angle.p1.x, angle.p1.y);
       const p2 = imageToScreenPoint(angle.p2.x, angle.p2.y);
       const p3 = imageToScreenPoint(angle.p3.x, angle.p3.y);
@@ -10965,7 +11095,9 @@ export default function XrayCalibrationWorkspace({
         );
       }
 
-      if (isHalluxAngle) {
+      if (angle.showLabel === false) {
+        // Degree label hidden — angle lines/arc above stay visible.
+      } else if (isHalluxAngle) {
         overlayCtx.save();
         if (isDimmedHalluxAngle) overlayCtx.globalAlpha = 0.16;
         overlayCtx.font = "700 11px Arial";
@@ -13983,8 +14115,13 @@ export default function XrayCalibrationWorkspace({
       const point = getLocalPoint(event);
       const imagePoint = screenToImagePoint(point.x, point.y);
       const boundedPoint = clampToImageBounds(imagePoint);
-      const snappedPlacementPoint =
-        resolveSnappedImagePoint(boundedPoint).point;
+      // Free-line/free-cut tracing places points densely by hand; the touch-friendly
+      // 52px mobile snap radius used elsewhere would merge nearby distinct points
+      // into whichever existing landmark happens to be closest, so keep it tight here.
+      const isFreePointTracingTool = tool === "freeLine" || tool === "cut";
+      const snappedPlacementPoint = resolveSnappedImagePoint(boundedPoint, {
+        thresholdPx: isFreePointTracingTool ? 12 : undefined,
+      }).point;
       const isTouchLikePointer =
         event.pointerType === "touch" ||
         (isCoarsePointer && event.button === 0);
@@ -23934,6 +24071,22 @@ export default function XrayCalibrationWorkspace({
       freeLineMode: "point",
     },
     {
+      icon: "square",
+      label: "Square",
+      desc: "Tambahkan shape kotak sebagai layer baru. Bisa digeser, diresize, dan diberi warna/arsir.",
+      key: "shapeSquare",
+      action: "insertSquare",
+      disabled: !image,
+    },
+    {
+      icon: "triangle",
+      label: "Triangle",
+      desc: "Tambahkan shape segitiga sebagai layer baru. Bisa digeser, diresize, dan diberi warna/arsir.",
+      key: "shapeTriangle",
+      action: "insertTriangle",
+      disabled: !image,
+    },
+    {
       icon: "angle",
       label: "Angle",
       desc: "Ukur sudut dengan 3 titik: kaki pertama, vertex, kaki kedua.",
@@ -24044,7 +24197,14 @@ export default function XrayCalibrationWorkspace({
       key: "xfo",
       label: "XFO",
       items: simpleToolMenuItems.filter((item) =>
-        ["pan", "cut", "freeLine", "freeLinePoint"].includes(item.key),
+        [
+          "pan",
+          "cut",
+          "freeLine",
+          "freeLinePoint",
+          "shapeSquare",
+          "shapeTriangle",
+        ].includes(item.key),
       ),
     },
     {
@@ -24087,6 +24247,8 @@ export default function XrayCalibrationWorkspace({
     if (item.key === "pan") return "pan";
     if (item.key === "cut") return "cut";
     if (item.key === "freeLine") return "freeLine";
+    if (item.key === "shapeSquare") return "square";
+    if (item.key === "shapeTriangle") return "triangle";
     if (item.key === "draw") return "draw";
     if (item.key === "angle") return "angle";
     if (item.key === "circle") return "circle";
@@ -24140,6 +24302,14 @@ export default function XrayCalibrationWorkspace({
     }
     if (item.action === "dorr") {
       setSimpleDesktopDorrOpen((v) => !v);
+      return;
+    }
+    if (item.action === "insertSquare") {
+      insertPresetShapeLayer("square");
+      return;
+    }
+    if (item.action === "insertTriangle") {
+      insertPresetShapeLayer("triangle");
       return;
     }
     if (item.freeLineMode) {
@@ -24560,6 +24730,7 @@ export default function XrayCalibrationWorkspace({
       value: linear(getLineLength(line)),
       sourceLineIds: [line.id],
       sourceShowLabel: line.showLabel !== false,
+      sourceHidden: Boolean(line.hidden),
       color: line.color || lineTypeColor(line.type),
       locked: lockedLineIds.has(line.id),
       measurementMode: normalizeLineMeasurementMode(line.measurementMode),
@@ -24580,6 +24751,9 @@ export default function XrayCalibrationWorkspace({
         strokeWidth: Number.isFinite(angle.strokeWidth)
           ? angle.strokeWidth
           : DEFAULT_ANGLE_STROKE_WIDTH,
+        sourceAngleId: angle.id,
+        sourceShowLabel: angle.showLabel !== false,
+        sourceHidden: Boolean(angle.hidden),
       }),
     );
     circles.forEach((circle) =>
@@ -24683,6 +24857,9 @@ export default function XrayCalibrationWorkspace({
         metric: null,
         unit: "deg",
         value: selectedQuadrant.angleDeg,
+        sourceIntersectionKey: entry.key,
+        sourceShowLabel: !intersectionAngleLabelHidden[entry.key],
+        sourceHidden: Boolean(intersectionAngleHidden[entry.key]),
       });
     });
     if (canvasCup?.a > 0) {
@@ -24777,6 +24954,8 @@ export default function XrayCalibrationWorkspace({
     getPlanningGuideLabelText,
     lineIntersectionAngleOverlays,
     intersectionAngleQuadrants,
+    intersectionAngleHidden,
+    intersectionAngleLabelHidden,
     canvasCup,
     planningProcedure,
     planningSession.side,
@@ -25106,6 +25285,20 @@ export default function XrayCalibrationWorkspace({
       icon: Slice,
       action: planningActions.freeCut,
       active: tool === "cut",
+    },
+    {
+      id: "shapeSquare",
+      label: "Square",
+      icon: Square,
+      action: () => insertPresetShapeLayer("square"),
+      disabled: !image,
+    },
+    {
+      id: "shapeTriangle",
+      label: "Triangle",
+      icon: Triangle,
+      action: () => insertPresetShapeLayer("triangle"),
+      disabled: !image,
     },
     {
       id: "flip",
@@ -28752,8 +28945,28 @@ export default function XrayCalibrationWorkspace({
 
                         {selectedCutLayer.kind === "free-line" ? (
                           <div className="rounded-[20px] border border-[var(--soft-border)] p-3 shadow-sm [background:var(--soft-surface-bg)]">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleCutLayerVisibility(selectedCutLayer.id)
+                              }
+                              className={`mb-2 flex min-h-8 w-full items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-black ${
+                                selectedCutLayer.hidden
+                                  ? "border-rose-300 bg-rose-100 text-rose-700"
+                                  : `${SOFT_RAISED_CLASS} text-[var(--soft-text)]`
+                              }`}
+                            >
+                              {selectedCutLayer.hidden ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                              {selectedCutLayer.hidden
+                                ? "Shape disembunyikan"
+                                : "Hide Shape"}
+                            </button>
                             <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
-                              Shape
+                              Fill
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5">
                               {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
@@ -28773,6 +28986,141 @@ export default function XrayCalibrationWorkspace({
                                 />
                               ))}
                             </div>
+                            <CompactSliderField
+                              label="Fill Opacity"
+                              valueText={`${Math.round(
+                                (Number.isFinite(selectedCutLayer.fillOpacity)
+                                  ? selectedCutLayer.fillOpacity
+                                  : DEFAULT_FREE_LINE_FILL_OPACITY) * 100,
+                              )}%`}
+                              min={0}
+                              max={100}
+                              step={5}
+                              value={Math.round(
+                                (Number.isFinite(selectedCutLayer.fillOpacity)
+                                  ? selectedCutLayer.fillOpacity
+                                  : DEFAULT_FREE_LINE_FILL_OPACITY) * 100,
+                              )}
+                              onChange={(event) =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  fillOpacity: clamp(
+                                    Number(event.target.value) / 100,
+                                    0,
+                                    1,
+                                  ),
+                                })
+                              }
+                              onDecrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    fillOpacity: clamp(
+                                      (Number.isFinite(item.fillOpacity)
+                                        ? item.fillOpacity
+                                        : DEFAULT_FREE_LINE_FILL_OPACITY) -
+                                        0.05,
+                                      0,
+                                      1,
+                                    ),
+                                  }),
+                                )
+                              }
+                              onIncrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    fillOpacity: clamp(
+                                      (Number.isFinite(item.fillOpacity)
+                                        ? item.fillOpacity
+                                        : DEFAULT_FREE_LINE_FILL_OPACITY) +
+                                        0.05,
+                                      0,
+                                      1,
+                                    ),
+                                  }),
+                                )
+                              }
+                            />
+
+                            <div className="mt-3 mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
+                              Outline
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
+                                <ColorSwatchButton
+                                  key={`simple-modal-free-stroke-${color}`}
+                                  color={color}
+                                  active={
+                                    (selectedCutLayer.strokeColor ||
+                                      selectedCutLayer.fillColor ||
+                                      DEFAULT_FREE_LINE_COLOR) === color
+                                  }
+                                  label={`Warna outline ${color}`}
+                                  onClick={() =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      strokeColor: color,
+                                    })
+                                  }
+                                />
+                              ))}
+                            </div>
+                            <CompactSliderField
+                              label="Thickness"
+                              valueText={`${
+                                Number.isFinite(selectedCutLayer.strokeWidth)
+                                  ? selectedCutLayer.strokeWidth
+                                  : DEFAULT_FREE_LINE_STROKE_WIDTH
+                              }px`}
+                              min={FREE_LINE_STROKE_MIN}
+                              max={FREE_LINE_STROKE_MAX}
+                              step={1}
+                              value={
+                                Number.isFinite(selectedCutLayer.strokeWidth)
+                                  ? selectedCutLayer.strokeWidth
+                                  : DEFAULT_FREE_LINE_STROKE_WIDTH
+                              }
+                              onChange={(event) =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  strokeWidth: clamp(
+                                    Number(event.target.value),
+                                    FREE_LINE_STROKE_MIN,
+                                    FREE_LINE_STROKE_MAX,
+                                  ),
+                                })
+                              }
+                              onDecrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    strokeWidth: clamp(
+                                      (Number.isFinite(item.strokeWidth)
+                                        ? item.strokeWidth
+                                        : DEFAULT_FREE_LINE_STROKE_WIDTH) - 1,
+                                      FREE_LINE_STROKE_MIN,
+                                      FREE_LINE_STROKE_MAX,
+                                    ),
+                                  }),
+                                )
+                              }
+                              onIncrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    strokeWidth: clamp(
+                                      (Number.isFinite(item.strokeWidth)
+                                        ? item.strokeWidth
+                                        : DEFAULT_FREE_LINE_STROKE_WIDTH) + 1,
+                                      FREE_LINE_STROKE_MIN,
+                                      FREE_LINE_STROKE_MAX,
+                                    ),
+                                  }),
+                                )
+                              }
+                            />
                           </div>
                         ) : null}
 
@@ -30229,11 +30577,33 @@ export default function XrayCalibrationWorkspace({
                         {layerSettingsTab === "view" ? (
                           <div className="flex flex-col gap-2">
                             {selectedCutLayer.kind === "free-line" ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  toggleCutLayerVisibility(selectedCutLayer.id)
+                                }
+                                className={`flex min-h-8 w-full items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold ${
+                                  selectedCutLayer.hidden
+                                    ? "border-rose-300 bg-rose-100 text-rose-700"
+                                    : `${SOFT_RAISED_CLASS} text-slate-700`
+                                }`}
+                              >
+                                {selectedCutLayer.hidden ? (
+                                  <EyeOff className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Eye className="h-3.5 w-3.5" />
+                                )}
+                                {selectedCutLayer.hidden
+                                  ? "Shape disembunyikan"
+                                  : "Hide Shape"}
+                              </button>
+                            ) : null}
+                            {selectedCutLayer.kind === "free-line" ? (
                               <div
                                 className={`${SOFT_SURFACE_CLASS} px-3 py-3`}
                               >
                                 <div className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
-                                  Shape Color
+                                  Fill Color
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
@@ -30279,6 +30649,180 @@ export default function XrayCalibrationWorkspace({
                                   </label>
                                 </div>
                               </div>
+                            ) : null}
+                            {selectedCutLayer.kind === "free-line" ? (
+                              <CompactSliderField
+                                label="Fill Opacity"
+                                valueText={`${Math.round(
+                                  (Number.isFinite(
+                                    selectedCutLayer.fillOpacity,
+                                  )
+                                    ? selectedCutLayer.fillOpacity
+                                    : DEFAULT_FREE_LINE_FILL_OPACITY) * 100,
+                                )}%`}
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={Math.round(
+                                  (Number.isFinite(
+                                    selectedCutLayer.fillOpacity,
+                                  )
+                                    ? selectedCutLayer.fillOpacity
+                                    : DEFAULT_FREE_LINE_FILL_OPACITY) * 100,
+                                )}
+                                onChange={(event) =>
+                                  updateLayerById(selectedCutLayer.id, {
+                                    fillOpacity: clamp(
+                                      Number(event.target.value) / 100,
+                                      0,
+                                      1,
+                                    ),
+                                  })
+                                }
+                                onDecrease={() =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      fillOpacity: clamp(
+                                        (Number.isFinite(item.fillOpacity)
+                                          ? item.fillOpacity
+                                          : DEFAULT_FREE_LINE_FILL_OPACITY) -
+                                          0.05,
+                                        0,
+                                        1,
+                                      ),
+                                    }),
+                                  )
+                                }
+                                onIncrease={() =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      fillOpacity: clamp(
+                                        (Number.isFinite(item.fillOpacity)
+                                          ? item.fillOpacity
+                                          : DEFAULT_FREE_LINE_FILL_OPACITY) +
+                                          0.05,
+                                        0,
+                                        1,
+                                      ),
+                                    }),
+                                  )
+                                }
+                              />
+                            ) : null}
+                            {selectedCutLayer.kind === "free-line" ? (
+                              <div
+                                className={`${SOFT_SURFACE_CLASS} px-3 py-3`}
+                              >
+                                <div className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
+                                  Outline Color
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
+                                    <ColorSwatchButton
+                                      key={`stroke-${color}`}
+                                      color={color}
+                                      active={
+                                        (selectedCutLayer.strokeColor ||
+                                          selectedCutLayer.fillColor ||
+                                          DEFAULT_FREE_LINE_COLOR) === color
+                                      }
+                                      label={`Warna outline ${color}`}
+                                      onClick={() =>
+                                        updateLayerById(selectedCutLayer.id, {
+                                          strokeColor: color,
+                                        })
+                                      }
+                                    />
+                                  ))}
+                                  <label
+                                    className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
+                                    title="Warna custom outline"
+                                  >
+                                    <span
+                                      className="h-4 w-4 rounded-full border border-dashed border-slate-400"
+                                      style={{
+                                        background:
+                                          "conic-gradient(from 180deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ef4444)",
+                                      }}
+                                    />
+                                    <input
+                                      type="color"
+                                      value={
+                                        selectedCutLayer.strokeColor ||
+                                        selectedCutLayer.fillColor ||
+                                        DEFAULT_FREE_LINE_COLOR
+                                      }
+                                      onChange={(event) =>
+                                        updateLayerById(selectedCutLayer.id, {
+                                          strokeColor: event.target.value,
+                                        })
+                                      }
+                                      className="absolute inset-0 cursor-pointer opacity-0"
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ) : null}
+                            {selectedCutLayer.kind === "free-line" ? (
+                              <CompactSliderField
+                                label="Outline Thickness"
+                                valueText={`${
+                                  Number.isFinite(selectedCutLayer.strokeWidth)
+                                    ? selectedCutLayer.strokeWidth
+                                    : DEFAULT_FREE_LINE_STROKE_WIDTH
+                                }px`}
+                                min={FREE_LINE_STROKE_MIN}
+                                max={FREE_LINE_STROKE_MAX}
+                                step={1}
+                                value={
+                                  Number.isFinite(selectedCutLayer.strokeWidth)
+                                    ? selectedCutLayer.strokeWidth
+                                    : DEFAULT_FREE_LINE_STROKE_WIDTH
+                                }
+                                onChange={(event) =>
+                                  updateLayerById(selectedCutLayer.id, {
+                                    strokeWidth: clamp(
+                                      Number(event.target.value),
+                                      FREE_LINE_STROKE_MIN,
+                                      FREE_LINE_STROKE_MAX,
+                                    ),
+                                  })
+                                }
+                                onDecrease={() =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      strokeWidth: clamp(
+                                        (Number.isFinite(item.strokeWidth)
+                                          ? item.strokeWidth
+                                          : DEFAULT_FREE_LINE_STROKE_WIDTH) - 1,
+                                        FREE_LINE_STROKE_MIN,
+                                        FREE_LINE_STROKE_MAX,
+                                      ),
+                                    }),
+                                  )
+                                }
+                                onIncrease={() =>
+                                  updateLayerById(
+                                    selectedCutLayer.id,
+                                    (item) => ({
+                                      ...item,
+                                      strokeWidth: clamp(
+                                        (Number.isFinite(item.strokeWidth)
+                                          ? item.strokeWidth
+                                          : DEFAULT_FREE_LINE_STROKE_WIDTH) + 1,
+                                        FREE_LINE_STROKE_MIN,
+                                        FREE_LINE_STROKE_MAX,
+                                      ),
+                                    }),
+                                  )
+                                }
+                              />
                             ) : null}
                             <CompactSliderField
                               label="Opacity"
@@ -34383,6 +34927,26 @@ export default function XrayCalibrationWorkspace({
 
                         {selectedCutLayer.kind === "free-line" ? (
                           <div className="space-y-2.5 rounded-2xl border border-white/60 bg-[#eef2f7] p-3.5 shadow-[2px_2px_5px_rgba(165,180,203,0.38),-2px_-2px_5px_#ffffff]">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleCutLayerVisibility(selectedCutLayer.id)
+                              }
+                              className={`flex min-h-8 w-full items-center justify-center gap-1.5 rounded-xl border text-[10px] font-black ${
+                                selectedCutLayer.hidden
+                                  ? "border-rose-300 bg-rose-100 text-rose-700"
+                                  : "border-white/70 bg-white/65 text-slate-700"
+                              }`}
+                            >
+                              {selectedCutLayer.hidden ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                              {selectedCutLayer.hidden
+                                ? "Shape disembunyikan"
+                                : "Hide Shape"}
+                            </button>
                             <div className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
                               Nama & Warna Shape
                             </div>
@@ -34443,6 +35007,163 @@ export default function XrayCalibrationWorkspace({
                                 />
                               </label>
                             </div>
+                            <CompactSliderField
+                              label="Fill Opacity"
+                              valueText={`${Math.round(
+                                (Number.isFinite(selectedCutLayer.fillOpacity)
+                                  ? selectedCutLayer.fillOpacity
+                                  : DEFAULT_FREE_LINE_FILL_OPACITY) * 100,
+                              )}%`}
+                              min={0}
+                              max={100}
+                              step={5}
+                              value={Math.round(
+                                (Number.isFinite(selectedCutLayer.fillOpacity)
+                                  ? selectedCutLayer.fillOpacity
+                                  : DEFAULT_FREE_LINE_FILL_OPACITY) * 100,
+                              )}
+                              onChange={(event) =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  fillOpacity: clamp(
+                                    Number(event.target.value) / 100,
+                                    0,
+                                    1,
+                                  ),
+                                })
+                              }
+                              onDecrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    fillOpacity: clamp(
+                                      (Number.isFinite(item.fillOpacity)
+                                        ? item.fillOpacity
+                                        : DEFAULT_FREE_LINE_FILL_OPACITY) -
+                                        0.05,
+                                      0,
+                                      1,
+                                    ),
+                                  }),
+                                )
+                              }
+                              onIncrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    fillOpacity: clamp(
+                                      (Number.isFinite(item.fillOpacity)
+                                        ? item.fillOpacity
+                                        : DEFAULT_FREE_LINE_FILL_OPACITY) +
+                                        0.05,
+                                      0,
+                                      1,
+                                    ),
+                                  }),
+                                )
+                              }
+                            />
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {FREE_SHAPE_COLOR_OPTIONS.map((color) => (
+                                <ColorSwatchButton
+                                  key={`simple-stroke-color-${color}`}
+                                  color={color}
+                                  active={
+                                    (selectedCutLayer.strokeColor ||
+                                      selectedCutLayer.fillColor ||
+                                      DEFAULT_FREE_LINE_COLOR) === color
+                                  }
+                                  label={`Warna outline ${color}`}
+                                  onClick={() =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      strokeColor: color,
+                                    })
+                                  }
+                                />
+                              ))}
+                              <label
+                                className={`relative inline-flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full ${SOFT_RAISED_CLASS}`}
+                                title="Warna custom outline"
+                              >
+                                <span
+                                  className="h-4 w-4 rounded-full border border-dashed border-slate-400"
+                                  style={{
+                                    background:
+                                      "conic-gradient(from 180deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ef4444)",
+                                  }}
+                                />
+                                <input
+                                  type="color"
+                                  value={
+                                    selectedCutLayer.strokeColor ||
+                                    selectedCutLayer.fillColor ||
+                                    DEFAULT_FREE_LINE_COLOR
+                                  }
+                                  onChange={(event) =>
+                                    updateLayerById(selectedCutLayer.id, {
+                                      strokeColor: event.target.value,
+                                    })
+                                  }
+                                  className="absolute inset-0 cursor-pointer opacity-0"
+                                />
+                              </label>
+                            </div>
+                            <CompactSliderField
+                              label="Outline Thickness"
+                              valueText={`${
+                                Number.isFinite(selectedCutLayer.strokeWidth)
+                                  ? selectedCutLayer.strokeWidth
+                                  : DEFAULT_FREE_LINE_STROKE_WIDTH
+                              }px`}
+                              min={FREE_LINE_STROKE_MIN}
+                              max={FREE_LINE_STROKE_MAX}
+                              step={1}
+                              value={
+                                Number.isFinite(selectedCutLayer.strokeWidth)
+                                  ? selectedCutLayer.strokeWidth
+                                  : DEFAULT_FREE_LINE_STROKE_WIDTH
+                              }
+                              onChange={(event) =>
+                                updateLayerById(selectedCutLayer.id, {
+                                  strokeWidth: clamp(
+                                    Number(event.target.value),
+                                    FREE_LINE_STROKE_MIN,
+                                    FREE_LINE_STROKE_MAX,
+                                  ),
+                                })
+                              }
+                              onDecrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    strokeWidth: clamp(
+                                      (Number.isFinite(item.strokeWidth)
+                                        ? item.strokeWidth
+                                        : DEFAULT_FREE_LINE_STROKE_WIDTH) - 1,
+                                      FREE_LINE_STROKE_MIN,
+                                      FREE_LINE_STROKE_MAX,
+                                    ),
+                                  }),
+                                )
+                              }
+                              onIncrease={() =>
+                                updateLayerById(
+                                  selectedCutLayer.id,
+                                  (item) => ({
+                                    ...item,
+                                    strokeWidth: clamp(
+                                      (Number.isFinite(item.strokeWidth)
+                                        ? item.strokeWidth
+                                        : DEFAULT_FREE_LINE_STROKE_WIDTH) + 1,
+                                      FREE_LINE_STROKE_MIN,
+                                      FREE_LINE_STROKE_MAX,
+                                    ),
+                                  }),
+                                )
+                              }
+                            />
                           </div>
                         ) : null}
 
@@ -35489,6 +36210,7 @@ export default function XrayCalibrationWorkspace({
                         onRenameLine={renameLineById}
                         onChangeLineColor={changeLineColorById}
                         onToggleLineLabel={toggleLineLabelById}
+                        onToggleLineHidden={toggleLineHiddenById}
                         getLineLength={getLineLength}
                         formatMeasurementFromPx={formatMeasurementFromPx}
                         lineTypeLabel={lineTypeLabel}
@@ -39483,6 +40205,7 @@ export default function XrayCalibrationWorkspace({
                     onRenameLine={renameLineById}
                     onChangeLineColor={changeLineColorById}
                     onToggleLineLabel={toggleLineLabelById}
+                    onToggleLineHidden={toggleLineHiddenById}
                     getLineLength={getLineLength}
                     formatMeasurementFromPx={formatMeasurementFromPx}
                     lineTypeLabel={lineTypeLabel}
@@ -39992,6 +40715,52 @@ export default function XrayCalibrationWorkspace({
                     <div className="text-[10px] text-orange-700">
                       Drag 3 titik angle di canvas. Hasil angle di tengah bisa
                       dibuat transparan tanpa mengubah stroke line.
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateAngleById(selectedAngle.id, (item) => ({
+                            ...item,
+                            hidden: !item.hidden,
+                          }))
+                        }
+                        className={`flex min-h-8 items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold ${
+                          selectedAngle.hidden
+                            ? "border-orange-300 bg-orange-100 text-orange-800"
+                            : `${SOFT_RAISED_CLASS} text-orange-900`
+                        }`}
+                      >
+                        {selectedAngle.hidden ? (
+                          <EyeOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <Eye className="h-3.5 w-3.5" />
+                        )}
+                        {selectedAngle.hidden ? "Line disembunyikan" : "Hide Line"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateAngleById(selectedAngle.id, (item) => ({
+                            ...item,
+                            showLabel: item.showLabel === false,
+                          }))
+                        }
+                        className={`flex min-h-8 items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold ${
+                          selectedAngle.showLabel === false
+                            ? "border-orange-300 bg-orange-100 text-orange-800"
+                            : `${SOFT_RAISED_CLASS} text-orange-900`
+                        }`}
+                      >
+                        {selectedAngle.showLabel === false ? (
+                          <EyeOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <Eye className="h-3.5 w-3.5" />
+                        )}
+                        {selectedAngle.showLabel === false
+                          ? "Derajat disembunyikan"
+                          : "Hide Derajat"}
+                      </button>
                     </div>
                     <div className={`${SOFT_SURFACE_CLASS} mt-1.5 px-2 py-1.5`}>
                       <div className="mb-1 text-[10px] font-semibold tracking-wide text-orange-900 uppercase">
@@ -42182,8 +42951,33 @@ export default function XrayCalibrationWorkspace({
               if (key === "tibialResectionMm")
                 setTkaTibialResectionMm(safeValue);
             }}
-            onToggleMeasurementLabel={(lineIds, currentlyVisible) => {
-              const idSet = new Set(lineIds);
+            onToggleMeasurementLabel={(source) => {
+              if (source?.sourceIntersectionKey) {
+                toggleIntersectionAngleLabelHidden(
+                  source.sourceIntersectionKey,
+                );
+                setNotice(
+                  source.sourceShowLabel
+                    ? "Angka interline disembunyikan; garis tetap tampil."
+                    : "Angka interline ditampilkan kembali.",
+                );
+                return;
+              }
+              if (Number.isFinite(source?.sourceAngleId)) {
+                const currentlyVisibleAngle = source.sourceShowLabel !== false;
+                updateAngleById(source.sourceAngleId, (item) => ({
+                  ...item,
+                  showLabel: !currentlyVisibleAngle,
+                }));
+                setNotice(
+                  currentlyVisibleAngle
+                    ? "Derajat disembunyikan; garis sudut tetap tampil."
+                    : "Derajat ditampilkan kembali.",
+                );
+                return;
+              }
+              const idSet = new Set(source?.sourceLineIds || []);
+              const currentlyVisible = Boolean(source?.sourceShowLabel);
               setLines((previous) =>
                 previous.map((line) =>
                   idSet.has(line.id)
@@ -42195,6 +42989,44 @@ export default function XrayCalibrationWorkspace({
                 currentlyVisible
                   ? "Bacaan line disembunyikan; garis tetap tampil."
                   : "Bacaan line ditampilkan kembali.",
+              );
+            }}
+            onToggleMeasurementHidden={(source) => {
+              if (source?.sourceIntersectionKey) {
+                toggleIntersectionAngleHidden(source.sourceIntersectionKey);
+                setNotice(
+                  source.sourceHidden
+                    ? "Interline ditampilkan kembali."
+                    : "Interline disembunyikan.",
+                );
+                return;
+              }
+              if (Number.isFinite(source?.sourceAngleId)) {
+                const currentlyHiddenAngle = Boolean(source.sourceHidden);
+                updateAngleById(source.sourceAngleId, (item) => ({
+                  ...item,
+                  hidden: !currentlyHiddenAngle,
+                }));
+                setNotice(
+                  currentlyHiddenAngle
+                    ? "Angle ditampilkan kembali."
+                    : "Angle disembunyikan dari canvas.",
+                );
+                return;
+              }
+              const idSet = new Set(source?.sourceLineIds || []);
+              const currentlyHidden = Boolean(source?.sourceHidden);
+              setLines((previous) =>
+                previous.map((line) =>
+                  idSet.has(line.id)
+                    ? { ...line, hidden: !currentlyHidden }
+                    : line,
+                ),
+              );
+              setNotice(
+                currentlyHidden
+                  ? "Line ditampilkan kembali."
+                  : "Line disembunyikan dari canvas.",
               );
             }}
             onRenameMeasurement={(measurementId, name) => {
@@ -44444,6 +45276,7 @@ export default function XrayCalibrationWorkspace({
                             onRenameLine={renameLineById}
                             onChangeLineColor={changeLineColorById}
                             onToggleLineLabel={toggleLineLabelById}
+                            onToggleLineHidden={toggleLineHiddenById}
                             getLineLength={getLineLength}
                             formatMeasurementFromPx={formatMeasurementFromPx}
                             lineTypeLabel={lineTypeLabel}
@@ -47337,6 +48170,50 @@ export default function XrayCalibrationWorkspace({
                           <div className="rounded-2xl border border-white/60 bg-white/35 px-3 py-2 text-xs font-black">
                             {selectedAngleMetrics.valueDeg.toFixed(1)}°
                           </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateAngleById(selectedAngle.id, (item) => ({
+                                  ...item,
+                                  hidden: !item.hidden,
+                                }))
+                              }
+                              className={`flex min-h-8 items-center justify-center gap-1.5 rounded-xl border px-2 text-[9px] font-black ${
+                                selectedAngle.hidden
+                                  ? "border-amber-300 bg-amber-100 text-amber-800"
+                                  : "border-white/55 bg-[#eef2f7]/70 text-slate-700"
+                              }`}
+                            >
+                              {selectedAngle.hidden ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                              Hide Line
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateAngleById(selectedAngle.id, (item) => ({
+                                  ...item,
+                                  showLabel: item.showLabel === false,
+                                }))
+                              }
+                              className={`flex min-h-8 items-center justify-center gap-1.5 rounded-xl border px-2 text-[9px] font-black ${
+                                selectedAngle.showLabel === false
+                                  ? "border-amber-300 bg-amber-100 text-amber-800"
+                                  : "border-white/55 bg-[#eef2f7]/70 text-slate-700"
+                              }`}
+                            >
+                              {selectedAngle.showLabel === false ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                              Hide Derajat
+                            </button>
+                          </div>
                           <div className="rounded-2xl border border-white/50 bg-white/24 px-2 py-1.5">
                             <div className="mb-1 text-[8px] font-black tracking-widest text-slate-500 uppercase">
                               Angle Color
@@ -48051,8 +48928,8 @@ export default function XrayCalibrationWorkspace({
                         <div
                           className={`grid gap-1 ${
                             mobileNativeLineSizing?.primary
-                              ? "grid-cols-4"
-                              : "grid-cols-3"
+                              ? "grid-cols-5"
+                              : "grid-cols-4"
                           }`}
                         >
                           <button
@@ -48104,6 +48981,20 @@ export default function XrayCalibrationWorkspace({
                             type="button"
                             onClick={() => {
                               setSelectedLineId(mobileNativeLineInfoLine.id);
+                              toggleLineHiddenById(
+                                mobileNativeLineInfoLine.id,
+                              );
+                            }}
+                            className="min-h-7 rounded-[10px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
+                          >
+                            {mobileNativeLineInfoLine.hidden
+                              ? "Show Line"
+                              : "Hide Line"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedLineId(mobileNativeLineInfoLine.id);
                               toggleLineLabelById(
                                 mobileNativeLineInfoLine.id,
                               );
@@ -48111,8 +49002,8 @@ export default function XrayCalibrationWorkspace({
                             className="min-h-7 rounded-[10px] border border-white/10 bg-white/8 text-[8px] font-black text-slate-100"
                           >
                             {mobileNativeLineInfoLine.showLabel === false
-                              ? "Show"
-                              : "Hide"}
+                              ? "Show Angka"
+                              : "Hide Angka"}
                           </button>
                           {mobileNativeLineSizing?.primary ? (
                             <button
