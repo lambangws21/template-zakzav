@@ -299,6 +299,14 @@ export default function PlanningWorkspace({
   const [expanded, setExpanded] = useState(false);
   const [focus, setFocus] = useState(false);
   const [metricEditor, setMetricEditor] = useState(null);
+  const [isCompactLayout, setIsCompactLayout] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1199px)");
+    const update = () => setIsCompactLayout(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [groupEditorOpen, setGroupEditorOpen] = useState(false);
   const [groupSelection, setGroupSelection] = useState([]);
   const [logTab, setLogTab] = useState("measurements");
@@ -466,9 +474,687 @@ export default function PlanningWorkspace({
                             />
                           </div>
                         )}
+                        {isCompactLayout && metricEditor === row.key && renderMetricEditorFor(row.key, true)}
                       </li>
                     );
 
+  };
+
+  const renderMetricEditorFor = (rowKey, inline = false) => {
+    const row = displayedMeasurementRows.find((item) => item.key === rowKey);
+    if (!row) return null;
+    const sourceMeasurement = measurements.find(
+      (item) => item.id === row.sourceId,
+    );
+    const editableMeasurementId = /^(line|angle|circle):/.test(
+      sourceMeasurement?.id || "",
+    )
+      ? sourceMeasurement.id
+      : null;
+    const guideMeasurementId = /^guide:/.test(sourceMeasurement?.id || "")
+      ? sourceMeasurement.id
+      : null;
+    const displayName = sourceMeasurement?.name || row.name || row.key;
+    const activeMeasurementId = guideMeasurementId || editableMeasurementId;
+    const isLineMeasurement = /^line:/.test(activeMeasurementId || "");
+    if (activeMeasurementId) {
+      const header = (
+        <header
+          className={
+            inline
+              ? styles.inlinePanelHeader
+              : isLineMeasurement
+                ? styles.objectSettingHeader
+                : undefined
+          }
+          onPointerDown={
+            inline
+              ? undefined
+              : (event) => {
+                  if (!isLineMeasurement) return;
+                  if (
+                    event.target.closest("button, input, textarea, select")
+                  )
+                    return;
+                  const panel = event.currentTarget.closest(
+                    `.${styles.objectSettingModal}`,
+                  );
+                  const rect = panel?.getBoundingClientRect();
+                  if (!rect) return;
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  objectEditorDragRef.current = {
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    panelX: rect.left,
+                    panelY: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                  };
+                }
+          }
+          onPointerMove={
+            inline
+              ? undefined
+              : (event) => {
+                  const current = objectEditorDragRef.current;
+                  if (!current) return;
+                  const maxX = Math.max(
+                    8,
+                    window.innerWidth - current.width - 8,
+                  );
+                  const maxY = Math.max(
+                    8,
+                    window.innerHeight - current.height - 8,
+                  );
+                  setObjectEditorPosition({
+                    x: Math.max(
+                      8,
+                      Math.min(
+                        maxX,
+                        current.panelX + event.clientX - current.startX,
+                      ),
+                    ),
+                    y: Math.max(
+                      8,
+                      Math.min(
+                        maxY,
+                        current.panelY + event.clientY - current.startY,
+                      ),
+                    ),
+                  });
+                }
+          }
+          onPointerUp={
+            inline
+              ? undefined
+              : () => {
+                  objectEditorDragRef.current = null;
+                }
+          }
+          onPointerCancel={
+            inline
+              ? undefined
+              : () => {
+                  objectEditorDragRef.current = null;
+                }
+          }
+        >
+          {!inline && isLineMeasurement ? (
+            <span className={styles.sheetHandle} aria-hidden="true" />
+          ) : null}
+          <div>
+            <small>
+              {isLineMeasurement ? "Object setting" : "Measurement"}
+            </small>
+            <div className={styles.measurementModalTitle}>
+              <h2>{displayName}</h2>
+              {isLineMeasurement ? (
+                <em
+                  className={styles.measurementModeBadge}
+                  data-mode={sourceMeasurement?.measurementMode || "length"}
+                >
+                  {sourceMeasurement?.measurementMode === "radius"
+                    ? "Radius"
+                    : sourceMeasurement?.measurementMode === "diameter"
+                      ? "Diameter"
+                      : "Length"}
+                </em>
+              ) : null}
+            </div>
+          </div>
+          <Action
+            icon={X}
+            aria-label="Tutup"
+            onClick={() => setMetricEditor(null)}
+          />
+        </header>
+      );
+      const body = (
+        <div className={styles.measurementModalBody}>
+          {isLineMeasurement ? (
+            <div className={styles.lineObjectSetting}>
+              <label className={styles.objectNameField}>
+                <input
+                  key={`${row.key}:${displayName}`}
+                  type="text"
+                  aria-label="Nama line"
+                  defaultValue={displayName}
+                  maxLength={80}
+                  onBlur={(event) =>
+                    onRenameMeasurement?.(
+                      editableMeasurementId,
+                      event.target.value.trim() || displayName,
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                />
+              </label>
+              <div className={styles.measurementModeControl}>
+                <div>
+                  {[
+                    ["length", "Length"],
+                    ["radius", "Radius"],
+                    ["diameter", "Diameter"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      data-active={
+                        (sourceMeasurement?.measurementMode || "length") ===
+                        value
+                      }
+                      onClick={() =>
+                        onUpdateMeasurement?.(activeMeasurementId, {
+                          measurementMode: value,
+                          color: MEASUREMENT_MODE_COLORS[value],
+                        })
+                      }
+                      style={{
+                        "--measurement-mode-color":
+                          MEASUREMENT_MODE_COLORS[value],
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.objectValueRow}>
+                <span>
+                  {(sourceMeasurement?.measurementMode || "length") ===
+                  "radius"
+                    ? "Radius"
+                    : sourceMeasurement?.measurementMode === "diameter"
+                      ? "Diameter"
+                      : "Length"}
+                  : <strong>{formatPlanningValue(row.value, row.unit)}</strong>
+                </span>
+                <div className={styles.valueStepper}>
+                  <button
+                    type="button"
+                    aria-label="Kurangi panjang 1 mm"
+                    disabled={sourceMeasurement?.locked || !calibrated}
+                    onClick={() =>
+                      onUpdateMeasurement?.(activeMeasurementId, {
+                        lengthDeltaMm: -1,
+                      })
+                    }
+                  >
+                    <Minus size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Tambah panjang 1 mm"
+                    disabled={sourceMeasurement?.locked || !calibrated}
+                    onClick={() =>
+                      onUpdateMeasurement?.(activeMeasurementId, {
+                        lengthDeltaMm: 1,
+                      })
+                    }
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
+              </div>
+              <label className={styles.lineWidthControl}>
+                <span>
+                  Line width
+                  <strong>
+                    {Number(sourceMeasurement?.strokeWidth || 2).toFixed(2)}px
+                  </strong>
+                </span>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="8"
+                  step="0.25"
+                  value={sourceMeasurement?.strokeWidth || 2}
+                  disabled={sourceMeasurement?.locked}
+                  onChange={(event) =>
+                    onUpdateMeasurement?.(activeMeasurementId, {
+                      strokeWidth: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className={styles.measurementVisibility}
+                onClick={() => onToggleMeasurementHidden?.(sourceMeasurement)}
+              >
+                {sourceMeasurement?.sourceHidden ? (
+                  <Eye size={14} />
+                ) : (
+                  <EyeOff size={14} />
+                )}
+                {sourceMeasurement?.sourceHidden
+                  ? "Tampilkan line"
+                  : "Sembunyikan line"}
+              </button>
+              <button
+                type="button"
+                className={styles.measurementVisibility}
+                onClick={() => onToggleMeasurementLabel?.(sourceMeasurement)}
+              >
+                {sourceMeasurement?.sourceShowLabel ? (
+                  <EyeOff size={14} />
+                ) : (
+                  <Eye size={14} />
+                )}
+                {sourceMeasurement?.sourceShowLabel
+                  ? "Sembunyikan nama"
+                  : "Tampilkan nama"}
+              </button>
+              <label className={styles.lineColorControl}>
+                <span>Line color</span>
+                <input
+                  type="color"
+                  value={
+                    sourceMeasurement?.color ||
+                    MEASUREMENT_MODE_COLORS[
+                      sourceMeasurement?.measurementMode || "length"
+                    ]
+                  }
+                  onChange={(event) =>
+                    onUpdateMeasurementColor?.(
+                      activeMeasurementId,
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+            </div>
+          ) : (
+            <div className={styles.measurementValueSummary}>
+              <small>Nilai aktif</small>
+              <strong>{formatPlanningValue(row.value, row.unit)}</strong>
+            </div>
+          )}
+          {editableMeasurementId && !isLineMeasurement ? (
+            <label className={styles.measurementNameField}>
+              Nama info
+              <input
+                key={`${row.key}:${displayName}`}
+                type="text"
+                defaultValue={displayName}
+                maxLength={80}
+                onBlur={(event) =>
+                  onRenameMeasurement?.(
+                    editableMeasurementId,
+                    event.target.value.trim() || displayName,
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+              />
+            </label>
+          ) : null}
+          {guideMeasurementId ? (
+            <div className={styles.measurementFieldGrid}>
+              <label>
+                Sudut
+                <input
+                  type="number"
+                  step="1"
+                  value={sourceMeasurement?.angleDeg ?? 0}
+                  disabled={sourceMeasurement?.locked}
+                  onChange={(event) =>
+                    onUpdateMeasurement?.(activeMeasurementId, {
+                      angleDeg: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Offset (px)
+                <input
+                  type="number"
+                  step="1"
+                  value={sourceMeasurement?.offsetPx ?? 0}
+                  disabled={sourceMeasurement?.locked}
+                  onChange={(event) =>
+                    onUpdateMeasurement?.(activeMeasurementId, {
+                      offsetPx: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Panjang (px)
+                <input
+                  type="number"
+                  min="10"
+                  step="1"
+                  value={sourceMeasurement?.lineLengthPx ?? 10}
+                  disabled={sourceMeasurement?.locked}
+                  onChange={(event) =>
+                    onUpdateMeasurement?.(activeMeasurementId, {
+                      lineLengthPx: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+            </div>
+          ) : null}
+          {!isLineMeasurement ? (
+            <div className={styles.measurementAppearanceControls}>
+              <label className={styles.lineWidthControl}>
+                <span>
+                  Ketebalan line
+                  <strong>
+                    {Number(sourceMeasurement?.strokeWidth || 2).toFixed(2)}px
+                  </strong>
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="8"
+                  step="0.25"
+                  value={sourceMeasurement?.strokeWidth || 2}
+                  disabled={sourceMeasurement?.locked}
+                  onChange={(event) =>
+                    onUpdateMeasurement?.(activeMeasurementId, {
+                      strokeWidth: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className={styles.lineColorControl}>
+                <span>Warna line</span>
+                <input
+                  type="color"
+                  value={sourceMeasurement?.color || "#38bdf8"}
+                  disabled={sourceMeasurement?.locked}
+                  onChange={(event) =>
+                    onUpdateMeasurementColor?.(
+                      activeMeasurementId,
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+            </div>
+          ) : null}
+          {(sourceMeasurement?.sourceLineIds?.length ||
+            sourceMeasurement?.sourceIntersectionKey ||
+            Number.isFinite(sourceMeasurement?.sourceAngleId)) &&
+          !isLineMeasurement ? (
+            <>
+              <button
+                type="button"
+                className={styles.measurementVisibility}
+                onClick={() => onToggleMeasurementHidden?.(sourceMeasurement)}
+              >
+                {sourceMeasurement.sourceHidden ? (
+                  <Eye size={15} />
+                ) : (
+                  <EyeOff size={15} />
+                )}
+                {sourceMeasurement.sourceHidden
+                  ? "Tampilkan line"
+                  : "Sembunyikan line"}
+              </button>
+              <button
+                type="button"
+                className={styles.measurementVisibility}
+                onClick={() => onToggleMeasurementLabel?.(sourceMeasurement)}
+              >
+                {sourceMeasurement.sourceShowLabel ? (
+                  <EyeOff size={15} />
+                ) : (
+                  <Eye size={15} />
+                )}
+                {sourceMeasurement.sourceShowLabel
+                  ? "Sembunyikan nilai"
+                  : "Tampilkan nilai"}
+              </button>
+            </>
+          ) : null}
+          <div
+            className={`${styles.metricEditorActions} ${isLineMeasurement ? styles.objectSettingActions : ""}`}
+          >
+            {!isLineMeasurement ? (
+              <Action
+                icon={MousePointer2}
+                onClick={() => {
+                  onSelectMeasurement?.(activeMeasurementId);
+                  setMetricEditor(null);
+                }}
+              >
+                Pilih di Canvas
+              </Action>
+            ) : null}
+            {(guideMeasurementId || isLineMeasurement) && (
+              <Action
+                icon={sourceMeasurement?.locked ? LockOpen : Lock}
+                onClick={() =>
+                  onUpdateMeasurement?.(activeMeasurementId, {
+                    locked: !sourceMeasurement?.locked,
+                  })
+                }
+              >
+                {sourceMeasurement?.locked ? "Buka Lock" : "Lock"}
+              </Action>
+            )}
+            {isLineMeasurement ? (
+              <Action
+                icon={Target}
+                onClick={() => {
+                  setMetricEditor(null);
+                  activate(actions.calibrate);
+                }}
+              >
+                Calibrate
+              </Action>
+            ) : null}
+            <Action
+              icon={Trash2}
+              className={styles.dangerAction}
+              disabled={sourceMeasurement?.locked}
+              onClick={() => {
+                onDeleteMeasurement?.(activeMeasurementId);
+                setMetricEditor(null);
+              }}
+            >
+              Hapus
+            </Action>
+          </div>
+        </div>
+      );
+      const footer = !isLineMeasurement ? (
+        <footer>
+          <Action onClick={() => setMetricEditor(null)}>Selesai</Action>
+        </footer>
+      ) : null;
+      if (inline) {
+        return (
+          <div className={styles.inlinePanelWrap} data-open="true">
+            <section
+              className={styles.inlinePanel}
+              role="region"
+              aria-label={`Edit ${displayName}`}
+            >
+              {header}
+              {body}
+              {footer}
+            </section>
+          </div>
+        );
+      }
+      return (
+        <div
+          className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop} ${isLineMeasurement ? styles.objectSettingBackdrop : ""}`}
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setMetricEditor(null);
+          }}
+        >
+          <section
+            className={`${styles.modalPanel} ${styles.measurementModal} ${isLineMeasurement ? styles.objectSettingModal : ""}`}
+            role="dialog"
+            aria-modal={isLineMeasurement ? "false" : "true"}
+            aria-label={`Edit ${displayName}`}
+            style={
+              isLineMeasurement && objectEditorPosition
+                ? {
+                    left: objectEditorPosition.x,
+                    top: objectEditorPosition.y,
+                    right: "auto",
+                    bottom: "auto",
+                  }
+                : undefined
+            }
+          >
+            {header}
+            {body}
+            {footer}
+          </section>
+        </div>
+      );
+    }
+    if (row.unit === "deg") {
+      const degreeBody = (
+        <>
+          <div className={styles.degreeValue}>
+            {formatPlanningValue(row.value, row.unit)}
+          </div>
+          {sourceMeasurement?.sourceIntersectionKey ? (
+            <div className={styles.metricEditorActions}>
+              <Action
+                icon={sourceMeasurement.sourceHidden ? Eye : EyeOff}
+                onClick={() => onToggleMeasurementHidden?.(sourceMeasurement)}
+              >
+                {sourceMeasurement.sourceHidden
+                  ? "Tampilkan line"
+                  : "Sembunyikan line"}
+              </Action>
+              <Action
+                icon={sourceMeasurement.sourceShowLabel ? EyeOff : Eye}
+                onClick={() => onToggleMeasurementLabel?.(sourceMeasurement)}
+              >
+                {sourceMeasurement.sourceShowLabel
+                  ? "Sembunyikan derajat"
+                  : "Tampilkan derajat"}
+              </Action>
+            </div>
+          ) : null}
+        </>
+      );
+      const degreeHeader = (
+        <header>
+          <div>
+            <small>Sudut terpilih</small>
+            <h2>{displayName}</h2>
+          </div>
+          <Action
+            icon={X}
+            aria-label="Tutup"
+            onClick={() => setMetricEditor(null)}
+          />
+        </header>
+      );
+      const degreeFooter = (
+        <footer>
+          <Action onClick={() => setMetricEditor(null)}>Selesai</Action>
+        </footer>
+      );
+      if (inline) {
+        return (
+          <div className={styles.inlinePanelWrap} data-open="true">
+            <section
+              className={styles.inlinePanel}
+              role="region"
+              aria-label={`Nilai ${displayName}`}
+            >
+              {degreeHeader}
+              {degreeBody}
+              {degreeFooter}
+            </section>
+          </div>
+        );
+      }
+      return (
+        <div
+          className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setMetricEditor(null);
+          }}
+        >
+          <section
+            className={`${styles.modalPanel} ${styles.measurementModal} ${styles.degreeModal}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Nilai ${displayName}`}
+          >
+            {degreeHeader}
+            {degreeBody}
+            {degreeFooter}
+          </section>
+        </div>
+      );
+    }
+    return (
+      <div className={inline ? styles.inlinePanelWrap : styles.metricEditor}>
+        <div className={inline ? styles.inlinePanel : undefined}>
+          <strong>{row.clinical ? row.key : row.name}</strong>
+          <p>{row.detail}</p>
+          {editableMeasurementId && (
+            <label>
+              Nama info
+              <input
+                key={`${row.key}:${displayName}`}
+                type="text"
+                defaultValue={displayName}
+                maxLength={80}
+                onBlur={(event) =>
+                  onRenameMeasurement?.(
+                    editableMeasurementId,
+                    event.target.value.trim() || displayName,
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+              />
+            </label>
+          )}
+          {row.clinical && (
+            <label>
+              Sumber pengukuran
+              <select
+                value={session.bindings?.[row.key] || ""}
+                onChange={(e) =>
+                  onSession({
+                    ...session,
+                    bindings: { ...session.bindings, [row.key]: e.target.value },
+                  })
+                }
+              >
+                <option value="">Otomatis dari pengukuran berlabel</option>
+                {measurements
+                  .filter((m) => m.unit === row.unit)
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          {row.sourceLineIds.length > 1 && (
+            <p>
+              Hasil ini dihitung dari beberapa line. Ubah nama setiap line
+              melalui item pengukuran sumbernya.
+            </p>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const available = catalog.filter((item) =>
@@ -1695,670 +2381,7 @@ export default function PlanningWorkspace({
                   )}
                 </ul>
               </div>
-              {metricEditor &&
-                (() => {
-                  const row = displayedMeasurementRows.find(
-                    (item) => item.key === metricEditor,
-                  );
-                  if (!row) return null;
-                  const sourceMeasurement = measurements.find(
-                    (item) => item.id === row.sourceId,
-                  );
-                  const editableMeasurementId = /^(line|angle|circle):/.test(
-                    sourceMeasurement?.id || "",
-                  )
-                    ? sourceMeasurement.id
-                    : null;
-                  const guideMeasurementId = /^guide:/.test(
-                    sourceMeasurement?.id || "",
-                  )
-                    ? sourceMeasurement.id
-                    : null;
-                  const displayName =
-                    sourceMeasurement?.name || row.name || row.key;
-                  const activeMeasurementId =
-                    guideMeasurementId || editableMeasurementId;
-                  const isLineMeasurement = /^line:/.test(
-                    activeMeasurementId || "",
-                  );
-                  if (activeMeasurementId) {
-                    return (
-                      <div
-                        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop} ${isLineMeasurement ? styles.objectSettingBackdrop : ""}`}
-                        role="presentation"
-                        onPointerDown={(event) => {
-                          if (event.target === event.currentTarget)
-                            setMetricEditor(null);
-                        }}
-                      >
-                        <section
-                          className={`${styles.modalPanel} ${styles.measurementModal} ${isLineMeasurement ? styles.objectSettingModal : ""}`}
-                          role="dialog"
-                          aria-modal={isLineMeasurement ? "false" : "true"}
-                          aria-label={`Edit ${displayName}`}
-                          style={
-                            isLineMeasurement && objectEditorPosition
-                              ? {
-                                  left: objectEditorPosition.x,
-                                  top: objectEditorPosition.y,
-                                  right: "auto",
-                                  bottom: "auto",
-                                }
-                              : undefined
-                          }
-                        >
-                          <header
-                            className={
-                              isLineMeasurement
-                                ? styles.objectSettingHeader
-                                : undefined
-                            }
-                            onPointerDown={(event) => {
-                              if (!isLineMeasurement) return;
-                              if (
-                                event.target.closest(
-                                  "button, input, textarea, select",
-                                )
-                              )
-                                return;
-                              const panel = event.currentTarget.closest(
-                                `.${styles.objectSettingModal}`,
-                              );
-                              const rect = panel?.getBoundingClientRect();
-                              if (!rect) return;
-                              event.preventDefault();
-                              event.currentTarget.setPointerCapture(
-                                event.pointerId,
-                              );
-                              objectEditorDragRef.current = {
-                                startX: event.clientX,
-                                startY: event.clientY,
-                                panelX: rect.left,
-                                panelY: rect.top,
-                                width: rect.width,
-                                height: rect.height,
-                              };
-                            }}
-                            onPointerMove={(event) => {
-                              const current = objectEditorDragRef.current;
-                              if (!current) return;
-                              const maxX = Math.max(
-                                8,
-                                window.innerWidth - current.width - 8,
-                              );
-                              const maxY = Math.max(
-                                8,
-                                window.innerHeight - current.height - 8,
-                              );
-                              setObjectEditorPosition({
-                                x: Math.max(
-                                  8,
-                                  Math.min(
-                                    maxX,
-                                    current.panelX +
-                                      event.clientX -
-                                      current.startX,
-                                  ),
-                                ),
-                                y: Math.max(
-                                  8,
-                                  Math.min(
-                                    maxY,
-                                    current.panelY +
-                                      event.clientY -
-                                      current.startY,
-                                  ),
-                                ),
-                              });
-                            }}
-                            onPointerUp={() => {
-                              objectEditorDragRef.current = null;
-                            }}
-                            onPointerCancel={() => {
-                              objectEditorDragRef.current = null;
-                            }}
-                          >
-                            {isLineMeasurement ? <span className={styles.sheetHandle} aria-hidden="true" /> : null}
-                            <div>
-                              <small>{isLineMeasurement ? "Object setting" : "Measurement"}</small>
-                              <div className={styles.measurementModalTitle}>
-                                <h2>{displayName}</h2>
-                                {isLineMeasurement ? (
-                                  <em
-                                    className={styles.measurementModeBadge}
-                                    data-mode={
-                                      sourceMeasurement?.measurementMode ||
-                                      "length"
-                                    }
-                                  >
-                                    {sourceMeasurement?.measurementMode ===
-                                    "radius"
-                                      ? "Radius"
-                                      : sourceMeasurement?.measurementMode ===
-                                          "diameter"
-                                        ? "Diameter"
-                                        : "Length"}
-                                  </em>
-                                ) : null}
-                              </div>
-                            </div>
-                            <Action
-                              icon={X}
-                              aria-label="Tutup"
-                              onClick={() => setMetricEditor(null)}
-                            />
-                          </header>
-                          <div className={styles.measurementModalBody}>
-                            {isLineMeasurement ? (
-                              <div className={styles.lineObjectSetting}>
-                                <label className={styles.objectNameField}>
-                                  <input
-                                    key={`${row.key}:${displayName}`}
-                                    type="text"
-                                    aria-label="Nama line"
-                                    defaultValue={displayName}
-                                    maxLength={80}
-                                    onBlur={(event) =>
-                                      onRenameMeasurement?.(
-                                        editableMeasurementId,
-                                        event.target.value.trim() || displayName,
-                                      )
-                                    }
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") event.currentTarget.blur();
-                                    }}
-                                  />
-                                </label>
-                                <div className={styles.measurementModeControl}>
-                                  <div>
-                                    {[
-                                      ["length", "Length"],
-                                      ["radius", "Radius"],
-                                      ["diameter", "Diameter"],
-                                    ].map(([value, label]) => (
-                                      <button
-                                        key={value}
-                                        type="button"
-                                        data-active={
-                                          (sourceMeasurement?.measurementMode || "length") === value
-                                        }
-                                        onClick={() =>
-                                          onUpdateMeasurement?.(activeMeasurementId, {
-                                            measurementMode: value,
-                                            color:
-                                              MEASUREMENT_MODE_COLORS[value],
-                                          })
-                                        }
-                                        style={{
-                                          "--measurement-mode-color":
-                                            MEASUREMENT_MODE_COLORS[value],
-                                        }}
-                                      >
-                                        {label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className={styles.objectValueRow}>
-                                  <span>
-                                    {(sourceMeasurement?.measurementMode || "length") === "radius"
-                                      ? "Radius"
-                                      : sourceMeasurement?.measurementMode === "diameter"
-                                        ? "Diameter"
-                                        : "Length"}
-                                    : <strong>{formatPlanningValue(row.value, row.unit)}</strong>
-                                  </span>
-                                  <div className={styles.valueStepper}>
-                                    <button
-                                      type="button"
-                                      aria-label="Kurangi panjang 1 mm"
-                                      disabled={sourceMeasurement?.locked || !calibrated}
-                                      onClick={() =>
-                                        onUpdateMeasurement?.(activeMeasurementId, {
-                                          lengthDeltaMm: -1,
-                                        })
-                                      }
-                                    >
-                                      <Minus size={13} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      aria-label="Tambah panjang 1 mm"
-                                      disabled={sourceMeasurement?.locked || !calibrated}
-                                      onClick={() =>
-                                        onUpdateMeasurement?.(activeMeasurementId, {
-                                          lengthDeltaMm: 1,
-                                        })
-                                      }
-                                    >
-                                      <Plus size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                                <label className={styles.lineWidthControl}>
-                                  <span>
-                                    Line width
-                                    <strong>
-                                      {Number(
-                                        sourceMeasurement?.strokeWidth || 2,
-                                      ).toFixed(2)}
-                                      px
-                                    </strong>
-                                  </span>
-                                  <input
-                                    type="range"
-                                    min="0.5"
-                                    max="8"
-                                    step="0.25"
-                                    value={sourceMeasurement?.strokeWidth || 2}
-                                    disabled={sourceMeasurement?.locked}
-                                    onChange={(event) =>
-                                      onUpdateMeasurement?.(activeMeasurementId, {
-                                        strokeWidth: Number(event.target.value),
-                                      })
-                                    }
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  className={styles.measurementVisibility}
-                                  onClick={() =>
-                                    onToggleMeasurementHidden?.(sourceMeasurement)
-                                  }
-                                >
-                                  {sourceMeasurement?.sourceHidden ? <Eye size={14} /> : <EyeOff size={14} />}
-                                  {sourceMeasurement?.sourceHidden ? "Tampilkan line" : "Sembunyikan line"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className={styles.measurementVisibility}
-                                  onClick={() =>
-                                    onToggleMeasurementLabel?.(sourceMeasurement)
-                                  }
-                                >
-                                  {sourceMeasurement?.sourceShowLabel ? <EyeOff size={14} /> : <Eye size={14} />}
-                                  {sourceMeasurement?.sourceShowLabel ? "Sembunyikan nama" : "Tampilkan nama"}
-                                </button>
-                                <label className={styles.lineColorControl}>
-                                  <span>Line color</span>
-                                  <input
-                                    type="color"
-                                    value={
-                                      sourceMeasurement?.color ||
-                                      MEASUREMENT_MODE_COLORS[
-                                        sourceMeasurement?.measurementMode ||
-                                          "length"
-                                      ]
-                                    }
-                                    onChange={(event) =>
-                                      onUpdateMeasurementColor?.(
-                                        activeMeasurementId,
-                                        event.target.value,
-                                      )
-                                    }
-                                  />
-                                </label>
-                              </div>
-                            ) : (
-                              <div className={styles.measurementValueSummary}>
-                                <small>Nilai aktif</small>
-                                <strong>{formatPlanningValue(row.value, row.unit)}</strong>
-                              </div>
-                            )}
-                            {editableMeasurementId && !isLineMeasurement ? (
-                              <label className={styles.measurementNameField}>
-                                Nama info
-                                <input
-                                  key={`${row.key}:${displayName}`}
-                                  type="text"
-                                  defaultValue={displayName}
-                                  maxLength={80}
-                                  onBlur={(event) =>
-                                    onRenameMeasurement?.(
-                                      editableMeasurementId,
-                                      event.target.value.trim() || displayName,
-                                    )
-                                  }
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter")
-                                      event.currentTarget.blur();
-                                  }}
-                                />
-                              </label>
-                            ) : null}
-                            {guideMeasurementId ? (
-                              <div className={styles.measurementFieldGrid}>
-                                <label>
-                                  Sudut
-                                  <input
-                                    type="number"
-                                    step="1"
-                                    value={sourceMeasurement?.angleDeg ?? 0}
-                                    disabled={sourceMeasurement?.locked}
-                                    onChange={(event) =>
-                                      onUpdateMeasurement?.(
-                                        activeMeasurementId,
-                                        {
-                                          angleDeg: Number(event.target.value),
-                                        },
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label>
-                                  Offset (px)
-                                  <input
-                                    type="number"
-                                    step="1"
-                                    value={sourceMeasurement?.offsetPx ?? 0}
-                                    disabled={sourceMeasurement?.locked}
-                                    onChange={(event) =>
-                                      onUpdateMeasurement?.(
-                                        activeMeasurementId,
-                                        {
-                                          offsetPx: Number(event.target.value),
-                                        },
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label>
-                                  Panjang (px)
-                                  <input
-                                    type="number"
-                                    min="10"
-                                    step="1"
-                                    value={
-                                      sourceMeasurement?.lineLengthPx ?? 10
-                                    }
-                                    disabled={sourceMeasurement?.locked}
-                                    onChange={(event) =>
-                                      onUpdateMeasurement?.(
-                                        activeMeasurementId,
-                                        {
-                                          lineLengthPx: Number(
-                                            event.target.value,
-                                          ),
-                                        },
-                                      )
-                                    }
-                                  />
-                                </label>
-                              </div>
-                            ) : null}
-                            {!isLineMeasurement ? (
-                              <div className={styles.measurementAppearanceControls}>
-                                <label className={styles.lineWidthControl}>
-                                  <span>
-                                    Ketebalan line
-                                    <strong>
-                                      {Number(
-                                        sourceMeasurement?.strokeWidth || 2,
-                                      ).toFixed(2)}
-                                      px
-                                    </strong>
-                                  </span>
-                                  <input
-                                    type="range"
-                                    min="1"
-                                    max="8"
-                                    step="0.25"
-                                    value={sourceMeasurement?.strokeWidth || 2}
-                                    disabled={sourceMeasurement?.locked}
-                                    onChange={(event) =>
-                                      onUpdateMeasurement?.(
-                                        activeMeasurementId,
-                                        {
-                                          strokeWidth: Number(
-                                            event.target.value,
-                                          ),
-                                        },
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className={styles.lineColorControl}>
-                                  <span>Warna line</span>
-                                  <input
-                                    type="color"
-                                    value={sourceMeasurement?.color || "#38bdf8"}
-                                    disabled={sourceMeasurement?.locked}
-                                    onChange={(event) =>
-                                      onUpdateMeasurementColor?.(
-                                        activeMeasurementId,
-                                        event.target.value,
-                                      )
-                                    }
-                                  />
-                                </label>
-                              </div>
-                            ) : null}
-                            {(sourceMeasurement?.sourceLineIds?.length ||
-                              sourceMeasurement?.sourceIntersectionKey ||
-                              Number.isFinite(sourceMeasurement?.sourceAngleId)) &&
-                            !isLineMeasurement ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className={styles.measurementVisibility}
-                                  onClick={() =>
-                                    onToggleMeasurementHidden?.(sourceMeasurement)
-                                  }
-                                >
-                                  {sourceMeasurement.sourceHidden ? (
-                                    <Eye size={15} />
-                                  ) : (
-                                    <EyeOff size={15} />
-                                  )}
-                                  {sourceMeasurement.sourceHidden
-                                    ? "Tampilkan line"
-                                    : "Sembunyikan line"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className={styles.measurementVisibility}
-                                  onClick={() =>
-                                    onToggleMeasurementLabel?.(sourceMeasurement)
-                                  }
-                                >
-                                  {sourceMeasurement.sourceShowLabel ? (
-                                    <EyeOff size={15} />
-                                  ) : (
-                                    <Eye size={15} />
-                                  )}
-                                  {sourceMeasurement.sourceShowLabel
-                                    ? "Sembunyikan nilai"
-                                    : "Tampilkan nilai"}
-                                </button>
-                              </>
-                            ) : null}
-                            <div className={`${styles.metricEditorActions} ${isLineMeasurement ? styles.objectSettingActions : ""}`}>
-                              {!isLineMeasurement ? <Action
-                                  icon={MousePointer2}
-                                  onClick={() => {
-                                    onSelectMeasurement?.(activeMeasurementId);
-                                    setMetricEditor(null);
-                                  }}
-                                >
-                                  Pilih di Canvas
-                                </Action> : null}
-                              {(guideMeasurementId || isLineMeasurement) && (
-                                <Action
-                                  icon={
-                                    sourceMeasurement?.locked ? LockOpen : Lock
-                                  }
-                                  onClick={() =>
-                                    onUpdateMeasurement?.(
-                                      activeMeasurementId,
-                                      {
-                                        locked: !sourceMeasurement?.locked,
-                                      },
-                                    )
-                                  }
-                                >
-                                  {sourceMeasurement?.locked
-                                    ? "Buka Lock"
-                                    : "Lock"}
-                                </Action>
-                              )}
-                              {isLineMeasurement ? (
-                                <Action
-                                  icon={Target}
-                                  onClick={() => {
-                                    setMetricEditor(null);
-                                    activate(actions.calibrate);
-                                  }}
-                                >
-                                  Calibrate
-                                </Action>
-                              ) : null}
-                              <Action
-                                icon={Trash2}
-                                className={styles.dangerAction}
-                                disabled={sourceMeasurement?.locked}
-                                onClick={() => {
-                                  onDeleteMeasurement?.(activeMeasurementId);
-                                  setMetricEditor(null);
-                                }}
-                              >
-                                Hapus
-                              </Action>
-                            </div>
-                          </div>
-                          {!isLineMeasurement ? <footer>
-                            <Action onClick={() => setMetricEditor(null)}>
-                              Selesai
-                            </Action>
-                          </footer> : null}
-                        </section>
-                      </div>
-                    );
-                  }
-                  if (row.unit === "deg") {
-                    return (
-                      <div
-                        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
-                        role="presentation"
-                        onPointerDown={(event) => {
-                          if (event.target === event.currentTarget)
-                            setMetricEditor(null);
-                        }}
-                      >
-                        <section
-                          className={`${styles.modalPanel} ${styles.measurementModal} ${styles.degreeModal}`}
-                          role="dialog"
-                          aria-modal="true"
-                          aria-label={`Nilai ${displayName}`}
-                        >
-                          <header>
-                            <div>
-                              <small>Sudut terpilih</small>
-                              <h2>{displayName}</h2>
-                            </div>
-                            <Action
-                              icon={X}
-                              aria-label="Tutup"
-                              onClick={() => setMetricEditor(null)}
-                            />
-                          </header>
-                          <div className={styles.degreeValue}>
-                            {formatPlanningValue(row.value, row.unit)}
-                          </div>
-                          {sourceMeasurement?.sourceIntersectionKey ? (
-                            <div className={styles.metricEditorActions}>
-                              <Action
-                                icon={sourceMeasurement.sourceHidden ? Eye : EyeOff}
-                                onClick={() =>
-                                  onToggleMeasurementHidden?.(sourceMeasurement)
-                                }
-                              >
-                                {sourceMeasurement.sourceHidden
-                                  ? "Tampilkan line"
-                                  : "Sembunyikan line"}
-                              </Action>
-                              <Action
-                                icon={sourceMeasurement.sourceShowLabel ? EyeOff : Eye}
-                                onClick={() =>
-                                  onToggleMeasurementLabel?.(sourceMeasurement)
-                                }
-                              >
-                                {sourceMeasurement.sourceShowLabel
-                                  ? "Sembunyikan derajat"
-                                  : "Tampilkan derajat"}
-                              </Action>
-                            </div>
-                          ) : null}
-                          <footer>
-                            <Action onClick={() => setMetricEditor(null)}>
-                              Selesai
-                            </Action>
-                          </footer>
-                        </section>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className={styles.metricEditor}>
-                      <strong>{row.clinical ? row.key : row.name}</strong>
-                      <p>{row.detail}</p>
-                      {editableMeasurementId && (
-                        <label>
-                          Nama info
-                          <input
-                            key={`${row.key}:${displayName}`}
-                            type="text"
-                            defaultValue={displayName}
-                            maxLength={80}
-                            onBlur={(event) =>
-                              onRenameMeasurement?.(
-                                editableMeasurementId,
-                                event.target.value.trim() || displayName,
-                              )
-                            }
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter")
-                                event.currentTarget.blur();
-                            }}
-                          />
-                        </label>
-                      )}
-                      {row.clinical && (
-                        <label>
-                          Sumber pengukuran
-                          <select
-                            value={session.bindings?.[row.key] || ""}
-                            onChange={(e) =>
-                              onSession({
-                                ...session,
-                                bindings: {
-                                  ...session.bindings,
-                                  [row.key]: e.target.value,
-                                },
-                              })
-                            }
-                          >
-                            <option value="">
-                              Otomatis dari pengukuran berlabel
-                            </option>
-                            {measurements
-                              .filter((m) => m.unit === row.unit)
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name}
-                                </option>
-                              ))}
-                          </select>
-                        </label>
-                      )}
-                      {row.sourceLineIds.length > 1 && (
-                        <p>
-                          Hasil ini dihitung dari beberapa line. Ubah nama
-                          setiap line melalui item pengukuran sumbernya.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
+              {!isCompactLayout && metricEditor && renderMetricEditorFor(metricEditor)}
               {!session.initial && (
                 <Action
                   icon={Target}

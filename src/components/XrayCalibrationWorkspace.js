@@ -4428,12 +4428,10 @@ export default function XrayCalibrationWorkspace({
           : measurementMode === "diameter"
             ? `Ø ${baseLabel}`
             : baseLabel;
-      const displayName = String(line.name || "").trim();
-      const defaultName = lineTypeLabel(line.type);
-      const taggedLabel =
-        !displayName && (!line.type || line.type === "normal")
-          ? measurementLabel
-          : `${displayName || defaultName}: ${measurementLabel}`;
+      const displayName =
+        String(line.name || "").trim() ||
+        `${lineTypeLabel(line.type)} #${line.id}`;
+      const taggedLabel = `${displayName}: ${measurementLabel}`;
       return isLineLocked(line.id) ? `${taggedLabel} [LOCK]` : taggedLabel;
     },
     [formatMeasurementFromPx, isLineLocked, lineTypeLabel, mmPerPixel],

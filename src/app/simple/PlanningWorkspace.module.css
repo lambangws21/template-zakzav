@@ -212,6 +212,17 @@
 .metricEditor input:focus, .metricEditor select:focus { outline: 2px solid var(--pw-accent); outline-offset: 1px; }
 .metricEditorActions { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 6px; margin-top: 9px; }
 .metricEditorActions .button { min-height: 36px; }
+
+/* Inline Planning Log editor: expands under the tapped row instead of a floating modal,
+   so other rows stay reachable without closing it first. */
+.inlinePanelWrap { grid-column: 1 / -1; margin: 4px 0 2px; }
+.inlinePanel { display: flex; flex-direction: column; overflow: hidden; background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 8px; }
+.inlinePanel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--pw-line); }
+.inlinePanel > header small { display: block; margin-bottom: 2px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
+.inlinePanel > header .button { border: 0; background: transparent; }
+.inlinePanel > footer { display: flex; justify-content: flex-end; gap: 7px; padding: 8px 10px; border-top: 1px solid var(--pw-line); }
+.inlinePanel .measurementModalBody { padding: 9px 10px; }
+.inlinePanelHeader { cursor: default !important; touch-action: auto !important; }
 .metricColorControl { display: grid !important; justify-items: center; gap: 3px; margin-top: 0 !important; }
 .metricColorControl input { width: 42px !important; min-height: 36px !important; margin-top: 0 !important; padding: 3px !important; cursor: pointer; }
 .dangerAction { color: #be123c !important; border-color: rgba(225, 29, 72, 0.28) !important; }
