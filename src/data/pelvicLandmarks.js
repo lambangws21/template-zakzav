@@ -9,7 +9,7 @@ export const PELVIC_LANDMARK_IMAGE = {
 const LANDMARK_DEFINITIONS = [
   { key: "femoral_head_center", label: "Pusat femoral head", group: "femoral-head", right: [90.5, 194.5], left: [300.5, 189.5] },
   { key: "femoral_cortex_lateral", label: "Korteks femur lateral", group: "femoral-shaft", right: [30.5, 272.5], left: [360.5, 267.5] },
-  { key: "teardrop", label: "Teardrop pelvis", group: "pelvic-reference", right: [103.5, 218.5], left: [287.5, 213.5] },
+  { key: "teardrop", label: "Teardrop pelvis", group: "pelvic-reference", right: [95.2, 210.2], left: [294.9, 213.5] },
   { key: "femoral_head_lateral_edge", label: "Tepi lateral femoral head", group: "femoral-head", right: [70.5, 178.5], left: [320.5, 173.5] },
   { key: "femoral_head_medial_edge", label: "Tepi medial femoral head", group: "femoral-head", right: [108.5, 180.5], left: [282.5, 175.5] },
   { key: "femoral_head_superior_edge", label: "Tepi superior femoral head", group: "femoral-head", right: [72.5, 170.5], left: [318.5, 165.5] },

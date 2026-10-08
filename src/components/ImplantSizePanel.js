@@ -1301,9 +1301,9 @@ function CupOrientationCard() {
 
 // ─── Hip Stem Estimation ──────────────────────────────────────────────────────
 
-function HipStemEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
+function HipStemEstimation({ brand, rulerLines, calibrated, onSelectImplant, onAutoNeckCut }) {
   if (brand.id === "zimmer_ml_taper") {
-    return <ZimmerMlTaperEstimation brand={brand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />;
+    return <ZimmerMlTaperEstimation brand={brand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} onAutoNeckCut={onAutoNeckCut} />;
   }
 
   const [lineId, setLineId] = useState("");
@@ -1348,7 +1348,7 @@ function HipStemEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
 
 // ─── Zimmer M/L Taper — estimasi berbasis dataset JSON resmi ─────────────────
 
-function ZimmerMlTaperEstimation({ brand, rulerLines, calibrated, onSelectImplant }) {
+function ZimmerMlTaperEstimation({ brand, rulerLines, calibrated, onSelectImplant, onAutoNeckCut }) {
   const [lineId, setLineId] = useState("");
   const [manual, setManual] = useState("");
   const [apManual, setApManual] = useState("");          // AP canal diameter (opsional)
@@ -1509,6 +1509,16 @@ function ZimmerMlTaperEstimation({ brand, rulerLines, calibrated, onSelectImplan
                     + Tambah Stem ke Canvas
                   </button>
                 )}
+                {onAutoNeckCut && rec && (
+                  <button type="button" onClick={() => {
+                    onAutoNeckCut(rec.item.neckLengthMm[headNeck]);
+                    setShowRecPopup(false);
+                  }}
+                    className="w-full rounded-xl py-2.5 text-xs font-black transition hover:scale-[1.01] active:scale-[0.98]"
+                    style={{ background: "rgba(251,113,133,0.80)", color: "#fff", border: "1px solid rgba(251,113,133,0.40)" }}>
+                    + Garis Neck Cut Otomatis
+                  </button>
+                )}
                 <button type="button" onClick={() => setShowRecPopup(false)}
                   className="w-full rounded-xl py-2.5 text-xs font-black transition active:scale-[0.98]"
                   style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}>
@@ -1662,7 +1672,7 @@ function ZimmerMlTaperEstimation({ brand, rulerLines, calibrated, onSelectImplan
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPixel = null, onSelectImplant }) {
+export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPixel = null, onSelectImplant, onAutoNeckCut }) {
   const [procedure, setProcedure] = useState(SHOW_ONLY_ZIMMER ? "hip-stem" : "knee");
   const [activeTab, setActiveTab] = useState("estimasi"); // "estimasi" | "referensi"
   const [kneeBrandId, setKneeBrandId] = useState("zimmer_nexgen");
@@ -1820,7 +1830,7 @@ export default function ImplantSizePanel({ isOpen, onClose, lines = [], mmPerPix
                       <>
                         {procedure === "knee" && <KneeEstimation brand={kneeBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />}
                         {procedure === "hip-cup" && <HipCupEstimation brand={cupBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />}
-                        {procedure === "hip-stem" && <HipStemEstimation brand={stemBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} />}
+                        {procedure === "hip-stem" && <HipStemEstimation brand={stemBrand} rulerLines={rulerLines} calibrated={calibrated} onSelectImplant={onSelectImplant} onAutoNeckCut={onAutoNeckCut} />}
                       </>
                     ) : (
                       <>

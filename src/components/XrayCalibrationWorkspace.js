@@ -7139,6 +7139,72 @@ export default function XrayCalibrationWorkspace({
     setNotice("Garis neck menjadi tepi potong. Telusuri fragmen head/neck, lalu tap titik awal untuk Real Cut.");
   }, [activateCanvasFreeCut, focusCalibrationStep, hasCalibration, lines, selectedLine]);
 
+  // Auto-places the Neck Osteotomy reference line from the chosen stem's
+  // catalog neck length + the patient's own CCD geometry (head center -> neck
+  // vertex axis from Pelvic Mechanical Analysis). Only replaces the reference
+  // line itself; the fragment trace + Real Cut step stays manual.
+  const createAutoNeckCutLine = useCallback(
+    (neckLengthMm, sideOverride) => {
+      if (!hasCalibration || !Number.isFinite(mmPerPixel) || mmPerPixel <= 0) {
+        focusCalibrationStep("Kalibrasi X-ray sebelum membuat Neck Cut otomatis.");
+        return;
+      }
+      if (!Number.isFinite(neckLengthMm) || neckLengthMm <= 0) {
+        setNotice("Data neck length stem tidak tersedia.");
+        return;
+      }
+      const side = sideOverride || canvasAnatomySide;
+      const ccdMetric = `CCD ${side === "right" ? "R" : "L"}`;
+      const ccdAngle = [...angles].reverse().find((item) => item.metric === ccdMetric);
+      if (!ccdAngle) {
+        setNotice(
+          `Jalankan Pelvic Mechanical Analysis sisi ${side === "right" ? "kanan" : "kiri"} dulu sebelum membuat Neck Cut otomatis.`,
+        );
+        return;
+      }
+      const headCenter = ccdAngle.p1;
+      const neckVertex = ccdAngle.p2;
+      const dx = neckVertex.x - headCenter.x;
+      const dy = neckVertex.y - headCenter.y;
+      const axisLength = Math.hypot(dx, dy);
+      if (axisLength < 1) {
+        setNotice("Axis neck tidak valid, ulangi Pelvic Mechanical Analysis.");
+        return;
+      }
+      const ux = dx / axisLength;
+      const uy = dy / axisLength;
+      const neckLengthPx = neckLengthMm / mmPerPixel;
+      const cutCenter = {
+        x: headCenter.x + ux * neckLengthPx,
+        y: headCenter.y + uy * neckLengthPx,
+      };
+      const fhdMetric = `FHD ${side === "right" ? "R" : "L"}`;
+      const headCircle = [...circles].reverse().find((item) => item.metric === fhdMetric);
+      const halfLengthPx = headCircle?.radius ? headCircle.radius * 0.95 : 22 / mmPerPixel;
+      const px = -uy;
+      const py = ux;
+
+      setLines((previous) => previous.filter((line) => line.metric !== "Neck Osteotomy"));
+      appendLineMeasurement({
+        x1: cutCenter.x + px * halfLengthPx,
+        y1: cutCenter.y + py * halfLengthPx,
+        x2: cutCenter.x - px * halfLengthPx,
+        y2: cutCenter.y - py * halfLengthPx,
+        type: "normal",
+        name: "Neck Osteotomy",
+        metric: "Neck Osteotomy",
+        color: "#fb7185",
+        strokeWidth: 1.5,
+        showLabel: true,
+        side,
+      });
+      setNotice(
+        `Garis Neck Osteotomy otomatis dibuat (neck length ${neckLengthMm} mm dari stem terpilih). Geser bila perlu, lalu klik Real Cut.`,
+      );
+    },
+    [hasCalibration, mmPerPixel, focusCalibrationStep, canvasAnatomySide, angles, circles, appendLineMeasurement],
+  );
+
   const activateHalluxCorrectionFreeCut = useCallback(() => {
     const selectedTarget = selectedLine?.correctionTarget
       ? selectedLine
@@ -51626,6 +51692,7 @@ export default function XrayCalibrationWorkspace({
           setImplantSizePanelOpen(false);
           if (item?.id) useSelectedImplantLibraryAsLayer(item.id);
         }}
+        onAutoNeckCut={createAutoNeckCutLine}
       />
 
       <TraumaPlanningPanel
