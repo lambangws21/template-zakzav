@@ -268,6 +268,7 @@ export default function PlanningWorkspace({
   isDark,
   onToggleMeasurementLabel,
   onToggleMeasurementHidden,
+  onToggleMeasurementGroupHidden,
   onRenameMeasurement,
   onSelectMeasurement,
   onDeleteMeasurement,
@@ -344,6 +345,7 @@ export default function PlanningWorkspace({
   const [implantSearch, setImplantSearch] = useState("");
   const [objectEditorPosition, setObjectEditorPosition] = useState(null);
   const drag = useRef(null);
+  const sheetSwiped = useRef(false);
   const splitGuideDragRef = useRef(null);
   const sheetRef = useRef(null);
   const objectEditorDragRef = useRef(null);
@@ -478,6 +480,40 @@ export default function PlanningWorkspace({
                       </li>
                     );
 
+  };
+
+  const getTogglableMeasurementRows = (rows) =>
+    rows.filter(
+      (row) =>
+        (row.sourceLineIds && row.sourceLineIds.length > 0) ||
+        row.sourceIntersectionKey ||
+        Number.isFinite(row.sourceAngleId),
+    );
+
+  const toggleMeasurementGroupHidden = (rows) => {
+    const togglable = getTogglableMeasurementRows(rows);
+    if (!togglable.length) return;
+    const allHidden = togglable.every((row) => row.sourceHidden);
+    const nextHidden = !allHidden;
+    if (onToggleMeasurementGroupHidden) {
+      // Single state transaction covering every unique underlying line/
+      // angle/intersection in the group — avoids the double-toggle bug
+      // from calling the per-row toggle once per metric row (several
+      // metrics, e.g. TKA angles, can share the same underlying object).
+      onToggleMeasurementGroupHidden(togglable, nextHidden);
+      return;
+    }
+    // Dedupe by source before falling back to per-row toggles so a shared
+    // object isn't flipped more than once in this pass.
+    const seen = new Set();
+    togglable.forEach((row) => {
+      const dedupeKey = row.sourceId || row.key;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      if (row.sourceHidden !== nextHidden) {
+        onToggleMeasurementHidden?.(row);
+      }
+    });
   };
 
   const renderMetricEditorFor = (rowKey, inline = false) => {
@@ -917,12 +953,13 @@ export default function PlanningWorkspace({
           <div
             className={`${styles.metricEditorActions} ${isLineMeasurement ? styles.objectSettingActions : ""}`}
           >
-            {!isLineMeasurement ? (
+            {activeMeasurementId ? (
               <Action
                 icon={MousePointer2}
                 onClick={() => {
                   onSelectMeasurement?.(activeMeasurementId);
                   setMetricEditor(null);
+                  if (isCompactLayout) setSheet(null);
                 }}
               >
                 Pilih di Canvas
@@ -2367,9 +2404,31 @@ export default function PlanningWorkspace({
                 {["tka", "hip", "foot"].map((group) => {
                   const grouped = filteredMeasurementRows.filter((row) => row.landmarkGroup === group);
                   if (!grouped.length) return null;
+                  const groupTogglable = getTogglableMeasurementRows(grouped);
+                  const groupAllHidden = groupTogglable.length > 0 && groupTogglable.every((row) => row.sourceHidden);
+                  const groupLabel = group === "tka" ? "TKA" : group === "hip" ? "HIP" : "Hallux";
                   return (
                     <details key={group} className={styles.measurementGroup} data-landmark={group} open={measurementSearch.trim() ? true : undefined}>
-                      <summary>Landmark {group === "tka" ? "TKA" : group === "hip" ? "HIP" : "Hallux"} <span>{grouped.length}</span></summary>
+                      <summary>
+                        <span className={styles.measurementGroupLabel}>
+                          Landmark {groupLabel} <span>{grouped.length}</span>
+                        </span>
+                        {groupTogglable.length > 0 && (
+                          <Action
+                            icon={groupAllHidden ? EyeOff : Eye}
+                            active={groupAllHidden}
+                            className={styles.measurementGroupVisibility}
+                            title={groupAllHidden ? `Tampilkan semua landmark ${groupLabel}` : `Sembunyikan semua landmark ${groupLabel}`}
+                            aria-label={`${groupAllHidden ? "Tampilkan" : "Sembunyikan"} semua landmark ${groupLabel} di canvas`}
+                            aria-pressed={groupAllHidden}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleMeasurementGroupHidden(grouped);
+                            }}
+                          />
+                        )}
+                      </summary>
                       <ul className={styles.measurementList}>{grouped.map(renderMeasurementRow)}</ul>
                     </details>
                   );
@@ -3886,15 +3945,38 @@ export default function PlanningWorkspace({
               type="button"
               className={styles.handle}
               aria-label={expanded ? "Perkecil panel" : "Perbesar panel"}
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => {
+                if (sheetSwiped.current) {
+                  sheetSwiped.current = false;
+                  return;
+                }
+                setExpanded((value) => !value);
+              }}
               onPointerDown={(e) => {
+                sheetSwiped.current = false;
                 drag.current = e.clientY;
                 e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (drag.current === null) return;
+                const dy = e.clientY - drag.current;
+                sheetSwiped.current = Math.abs(dy) > 8;
+                const node = sheetRef.current;
+                if (node) {
+                  node.style.transition = "none";
+                  node.style.transform = `translateY(${Math.max(-60, Math.min(dy, 200))}px)`;
+                }
               }}
               onPointerUp={(e) => {
                 if (drag.current === null) return;
                 const dy = e.clientY - drag.current;
                 drag.current = null;
+                sheetSwiped.current = Math.abs(dy) > 8;
+                const node = sheetRef.current;
+                if (node) {
+                  node.style.transition = "transform 0.18s ease";
+                  node.style.transform = "";
+                }
                 if (dy > 80) {
                   setSheet(null);
                 } else if (Math.abs(dy) > 25) {
@@ -3903,6 +3985,12 @@ export default function PlanningWorkspace({
               }}
               onPointerCancel={() => {
                 drag.current = null;
+                sheetSwiped.current = false;
+                const node = sheetRef.current;
+                if (node) {
+                  node.style.transition = "transform 0.18s ease";
+                  node.style.transform = "";
+                }
               }}
             >
               {sheet === "log" ? <strong className={styles.logSheetTitle}>Planning Log</strong> : <span />}

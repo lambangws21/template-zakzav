@@ -266,6 +266,7 @@ import {
   projectPointToInfiniteLine,
   getCircleTangentPointsFromExternalPoint,
 } from "../lib/xray/geometryUtils";
+import { pickTouchLine } from "../lib/xray/lineHitTest";
 import {
   HKA_MODE_DEFINITIONS,
   getAngleResultOpacity,
@@ -8891,6 +8892,12 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestLineId = useCallback(
     (imagePoint) => {
+      if (isCoarsePointer) {
+        return pickTouchLine(
+          lines.filter((line) => !(hideSavedCalibrationLine && line.id === calibrationLineId)),
+          imagePoint, view.scale, selectedLineId, 24,
+        );
+      }
       const thresholdInImage =
         (isCoarsePointer ? MOBILE_TOUCH_TARGET_SCREEN : 14) / view.scale;
       let pickedId = null;
@@ -8913,6 +8920,7 @@ export default function XrayCalibrationWorkspace({
       hideSavedCalibrationLine,
       isCoarsePointer,
       lines,
+      selectedLineId,
       view.scale,
     ],
   );
@@ -9096,13 +9104,15 @@ export default function XrayCalibrationWorkspace({
 
   const findClosestHandle = useCallback(
     (imagePoint) => {
+      const touchLineId = isCoarsePointer ? findClosestLineId(imagePoint) : null;
       const thresholdInImage =
-        (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
+        (isCoarsePointer ? 24 : 10) / view.scale;
       let pickedHandle = null;
       let minDistance = Infinity;
 
       for (const line of lines) {
         if (line.hidden) continue;
+        if (isCoarsePointer && line.id !== touchLineId) continue;
         if (hideSavedCalibrationLine && line.id === calibrationLineId) continue;
         const handles = [
           { key: "start", x: line.x1, y: line.y1 },
@@ -9132,6 +9142,7 @@ export default function XrayCalibrationWorkspace({
     [
       calibrationLineId,
       expandedLineHandle,
+      findClosestLineId,
       hideSavedCalibrationLine,
       isCoarsePointer,
       lines,
@@ -14467,6 +14478,7 @@ export default function XrayCalibrationWorkspace({
         const hasMobileLongPressTarget =
           tool === "pan" &&
           mobileCanvasMode === "pan" &&
+          longPressLineId === null &&
           (longPressAnnotationId !== null ||
             longPressLayerId !== null ||
             longPressHkaId !== null ||
@@ -14680,7 +14692,8 @@ export default function XrayCalibrationWorkspace({
         isMobileViewport &&
         isTouchLikePointer &&
         mobileCanvasMode === "pan" &&
-        tool === "pan"
+        tool === "pan" &&
+        findClosestLineId(imagePoint) === null
       ) {
         const directLayerId = findCutLayerByPoint(imagePoint);
         const directLineHandle = findClosestHandle(imagePoint);
@@ -15183,12 +15196,20 @@ export default function XrayCalibrationWorkspace({
             setNotice("Garis ini terkunci. Unlock dulu sebelum di-adjust.");
             return;
           }
-          activateMobileHandleAssist(targetLine.id, hitHandle.handleKey);
+          clearMobileHandleAssist();
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-handle",
+            lineId: targetLine.id,
+            handleKey: hitHandle.handleKey,
+            pointerOffsetX: (hitHandle.handleKey === "start" ? targetLine.x1 : targetLine.x2) - imagePoint.x,
+            pointerOffsetY: (hitHandle.handleKey === "start" ? targetLine.y1 : targetLine.y2) - imagePoint.y,
+          };
           if (isMobileViewport) {
             setMobileControlsOpen(false);
           }
           setNotice(
-            "Ujung line dipilih. Bundaran assist aktif, sentuh area putih bundaran untuk adjust tanpa menutupi titik handle.",
+            "Geser ujung garis untuk mengatur panjang.",
           );
           return;
         }
@@ -15218,16 +15239,6 @@ export default function XrayCalibrationWorkspace({
           }
           if (isMobileViewport) {
             setMobileControlsOpen(false);
-          }
-          const shouldMoveLine = isRepeatedMobileLineTap({
-            targetType: "line-body",
-            lineId: hitLineId,
-          });
-          if (!shouldMoveLine) {
-            setNotice(
-              "Garis dipilih. Tap lagi pada badan garis untuk pindah, atau sentuh ujung garis untuk adjust panjang.",
-            );
-            return;
           }
           setHistoryPaused(true);
           interactionRef.current = {
@@ -43092,6 +43103,50 @@ export default function XrayCalibrationWorkspace({
                   ? "Line ditampilkan kembali."
                   : "Line disembunyikan dari canvas.",
               );
+            }}
+            onToggleMeasurementGroupHidden={(sources, hidden) => {
+              const lineIds = new Set();
+              const angleIds = new Set();
+              const intersectionKeys = new Set();
+              (sources || []).forEach((source) => {
+                if (source?.sourceIntersectionKey) {
+                  intersectionKeys.add(source.sourceIntersectionKey);
+                } else if (Number.isFinite(source?.sourceAngleId)) {
+                  angleIds.add(source.sourceAngleId);
+                } else if (source?.sourceLineIds?.length) {
+                  source.sourceLineIds.forEach((id) => lineIds.add(id));
+                }
+              });
+              if (lineIds.size) {
+                setLines((previous) =>
+                  previous.map((line) =>
+                    lineIds.has(line.id) ? { ...line, hidden } : line,
+                  ),
+                );
+              }
+              if (angleIds.size) {
+                setAngles((previous) =>
+                  previous.map((item) =>
+                    angleIds.has(item.id) ? { ...item, hidden } : item,
+                  ),
+                );
+              }
+              if (intersectionKeys.size) {
+                setIntersectionAngleHidden((previous) => {
+                  const next = { ...previous };
+                  intersectionKeys.forEach((key) => {
+                    next[key] = hidden;
+                  });
+                  return next;
+                });
+              }
+              if (lineIds.size || angleIds.size || intersectionKeys.size) {
+                setNotice(
+                  hidden
+                    ? "Grup landmark disembunyikan dari canvas."
+                    : "Grup landmark ditampilkan kembali.",
+                );
+              }
             }}
             onRenameMeasurement={(measurementId, name) => {
               const [kind, ...idParts] = String(measurementId).split(":");
