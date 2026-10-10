@@ -127,6 +127,8 @@ import { SHAPE_PRESETS } from "../data/shapePresets";
 import { pelvicLandmarkId } from "../data/pelvicLandmarks";
 import {
   buildPelvicAnalysisMeasurements,
+  getHipLineLabelOffset,
+  getHipMetricLabelOffset,
   HIP_RESULT_DEFINITIONS,
   isHipResultMeasurementRelevant,
   PELVIC_ANALYSIS_LANDMARKS,
@@ -1041,6 +1043,10 @@ export default function XrayCalibrationWorkspace({
   const [angles, setAngles] = useState([]);
   const [focusedHalluxMetric, setFocusedHalluxMetric] = useState(null);
   const [focusedHipResult, setFocusedHipResult] = useState(null);
+  // "right" | "left" | null — set by the Kanan/Kiri/Semua buttons in the
+  // "Garis pengukuran" results panel; reveals every canvas label for that
+  // side at once, on top of the single-metric focusedHipResult reveal.
+  const [focusedHipSide, setFocusedHipSide] = useState(null);
   const [focusedTkaResult, setFocusedTkaResult] = useState(null);
   const [activeTkaSourceId, setActiveTkaSourceId] = useState(null);
   const [draftAnglePoints, setDraftAnglePoints] = useState([]);
@@ -1054,6 +1060,25 @@ export default function XrayCalibrationWorkspace({
     [],
   );
   const pelvicAnalysisCompletionRef = useRef(false);
+  // One-shot flag: when set, the NEXT pelvic-analysis click is tagged
+  // confidence:"samar" (consumed/reset immediately after that click).
+  const pelvicNextPointUncertainRef = useRef(false);
+  const [pelvicNextPointUncertainArmed, setPelvicNextPointUncertainArmed] = useState(false);
+  // Persistent, connected landmark store: { key, x, y, confidence }[], one
+  // entry per PELVIC_ANALYSIS_LANDMARKS definition. Dragging one of these
+  // (via tool "editPelvicLandmark") regenerates every dependent line/angle/
+  // circle from pelvicAnalysis.js's pure builder functions, so e.g. moving
+  // HC updates every object derived from it while untouched landmarks (S1,
+  // S2, TD, ...) stay exactly where they are.
+  const [pelvicLandmarks, setPelvicLandmarks] = useState([]);
+  // Mirrors pelvicLandmarks for synchronous reads inside the memoized
+  // pointer-move handler (whose dependency array doesn't include
+  // pelvicLandmarks, same as lines/angles/circles) — avoids both a stale
+  // closure across drag ticks and nesting a setLines/setAngles/setCircles
+  // call inside the setPelvicLandmarks updater (which Strict Mode would
+  // double-invoke).
+  const pelvicLandmarksRef = useRef([]);
+  const activePelvicAnalysisIdRef = useRef(null);
   const [draftHalluxValgusPoints, setDraftHalluxValgusPoints] = useState([]);
   const halluxValgusCompletionRef = useRef(false);
   const halluxCorrectionFreeCutRef = useRef(null);
@@ -4284,10 +4309,19 @@ export default function XrayCalibrationWorkspace({
         dashPattern = [];
       } else if (type === "dorrCanal") {
         dashPattern = [6, 3];
+      } else if (type === "kohler") {
+        dashPattern = [10, 4];
+      } else if (type === "hcComparison") {
+        dashPattern = [3, 5];
       }
 
       if (line?.halluxValgusAnalysisId) {
         dashPattern = [];
+      }
+
+      if (line?.estimated) {
+        color = "#ef4444";
+        dashPattern = [6, 4];
       }
 
       if (isLocked) {
@@ -4414,12 +4448,18 @@ export default function XrayCalibrationWorkspace({
             ? `${line.presetMm / 10} cm`
             : `${(line.presetMm / 10).toFixed(1)} cm`
           : null;
+      // Hip lines always read in mm at 1 decimal, matching the "Garis
+      // pengukuran" panel's hipResults formatting exactly — independent of
+      // the global cm/mm measurementUnit preference, which otherwise made
+      // the same line show two different numbers in two places.
       const baseLabel =
-        mmPerPixel !== null
-          ? formatMeasurementFromPx(lineLengthPx)
-          : rulerTargetLabel
-            ? `Target ${rulerTargetLabel}`
-            : "Kalibrasi belum aktif";
+        line.pelvicAnalysisId && mmPerPixel !== null
+          ? `${(lineLengthPx * mmPerPixel).toFixed(1)} mm`
+          : mmPerPixel !== null
+            ? formatMeasurementFromPx(lineLengthPx)
+            : rulerTargetLabel
+              ? `Target ${rulerTargetLabel}`
+              : "Kalibrasi belum aktif";
       const measurementMode = normalizeLineMeasurementMode(
         line.measurementMode,
       );
@@ -4433,7 +4473,8 @@ export default function XrayCalibrationWorkspace({
         String(line.name || "").trim() ||
         `${lineTypeLabel(line.type)} #${line.id}`;
       const taggedLabel = `${displayName}: ${measurementLabel}`;
-      return isLineLocked(line.id) ? `${taggedLabel} [LOCK]` : taggedLabel;
+      const estimatedLabel = line?.estimated ? `${taggedLabel} ?` : taggedLabel;
+      return isLineLocked(line.id) ? `${estimatedLabel} [LOCK]` : estimatedLabel;
     },
     [formatMeasurementFromPx, isLineLocked, lineTypeLabel, mmPerPixel],
   );
@@ -4589,6 +4630,7 @@ export default function XrayCalibrationWorkspace({
       angles,
       circles,
       hkaSets,
+      pelvicLandmarks,
       annotations: annotations.map((item) => cloneAnnotation(item)),
       selectedLineId,
       selectedAngleId,
@@ -4676,6 +4718,7 @@ export default function XrayCalibrationWorkspace({
       flipX,
       flipY,
       hkaSets,
+      pelvicLandmarks,
       hkaInputMode,
       hkaSide,
       imageName,
@@ -7890,6 +7933,9 @@ export default function XrayCalibrationWorkspace({
         const parsedHkaSets = Array.isArray(payload.hkaSets)
           ? payload.hkaSets
           : [];
+        const parsedPelvicLandmarks = Array.isArray(payload.pelvicLandmarks)
+          ? payload.pelvicLandmarks
+          : [];
         const parsedAnnotations = Array.isArray(payload.annotations)
           ? payload.annotations.map((item) => cloneAnnotation(item))
           : [];
@@ -8070,6 +8116,10 @@ export default function XrayCalibrationWorkspace({
         setAngles(parsedAngles);
         setCircles(parsedCircles);
         setHkaSets(parsedHkaSets.map((item) => cloneHkaItem(item)));
+        pelvicLandmarksRef.current = parsedPelvicLandmarks;
+        setPelvicLandmarks(parsedPelvicLandmarks);
+        activePelvicAnalysisIdRef.current =
+          parsedLines.find((line) => line.pelvicAnalysisId)?.pelvicAnalysisId || null;
         setAnnotations(parsedAnnotations);
         setDraftAnglePoints([]);
         setDraftCirclePoints([]);
@@ -8623,6 +8673,7 @@ export default function XrayCalibrationWorkspace({
           : [],
       })),
       hkaSets: hkaSets.map((item) => cloneHkaItem(item)),
+      pelvicLandmarks: pelvicLandmarks.map((item) => ({ ...item })),
       annotations: annotations.map((item) => cloneAnnotation(item)),
       cutLayers: cutLayers.map((layer) => ({
         ...layer,
@@ -8695,6 +8746,7 @@ export default function XrayCalibrationWorkspace({
       flipX,
       flipY,
       hkaSets,
+      pelvicLandmarks,
       level,
       linePreset,
       lines,
@@ -8756,6 +8808,11 @@ export default function XrayCalibrationWorkspace({
       })),
     );
     setHkaSets(snapshot.hkaSets.map((item) => cloneHkaItem(item)));
+    const restoredPelvicLandmarks = Array.isArray(snapshot.pelvicLandmarks)
+      ? snapshot.pelvicLandmarks.map((item) => ({ ...item }))
+      : [];
+    pelvicLandmarksRef.current = restoredPelvicLandmarks;
+    setPelvicLandmarks(restoredPelvicLandmarks);
     setAnnotations(
       Array.isArray(snapshot.annotations)
         ? snapshot.annotations.map((item) => cloneAnnotation(item))
@@ -9148,6 +9205,147 @@ export default function XrayCalibrationWorkspace({
       lines,
       view.scale,
     ],
+  );
+
+  // Flat hit-test over the persistent pelvic landmark store — simpler than
+  // findClosestHandle since it's one 26-point list, no per-line iteration.
+  // Only consulted while tool === "editPelvicLandmark" (see that branch in
+  // the pointer-down handler), so it never competes with the existing line/
+  // angle/circle handle hit-tests used by every other tool.
+  const findClosestPelvicLandmark = useCallback(
+    (imagePoint) => {
+      const thresholdInImage = (isCoarsePointer ? 30 : 12) / view.scale;
+      let picked = null;
+      let minDistance = Infinity;
+      for (const landmark of pelvicLandmarks) {
+        const distance = Math.hypot(imagePoint.x - landmark.x, imagePoint.y - landmark.y);
+        if (distance <= thresholdInImage && distance < minDistance) {
+          minDistance = distance;
+          picked = landmark;
+        }
+      }
+      return picked;
+    },
+    [isCoarsePointer, pelvicLandmarks, view.scale],
+  );
+
+  // Rebuild every pelvic-analysis line/angle/circle from the current
+  // landmark positions (pure functions in pelvicAnalysis.js), replacing the
+  // previous batch in place — existing objects are matched and updated by
+  // `metric` (stable per analysis) so id/color/label-offset/selection survive
+  // a drag instead of being reset every move.
+  const regeneratePelvicGeometry = useCallback(
+    (landmarksList) => {
+      const analysisId = activePelvicAnalysisIdRef.current;
+      if (!analysisId) return;
+      const orderedPoints = PELVIC_ANALYSIS_LANDMARKS.map((definition) => {
+        const found = landmarksList.find((item) => item.key === definition.key);
+        return found ? { x: found.x, y: found.y, confidence: found.confidence } : null;
+      });
+      if (orderedPoints.some((point) => !point)) return;
+      const generated = buildPelvicAnalysisMeasurements(orderedPoints, analysisId);
+
+      setLines((previous) => {
+        const kept = previous.filter((line) => line.pelvicAnalysisId !== analysisId);
+        const existingByMetric = new Map(
+          previous
+            .filter((line) => line.pelvicAnalysisId === analysisId)
+            .map((line) => [line.metric, line]),
+        );
+        const rebuilt = generated.lines.map((line) => {
+          const existing = existingByMetric.get(line.metric);
+          if (existing) {
+            return {
+              ...existing,
+              x1: line.x1,
+              y1: line.y1,
+              x2: line.x2,
+              y2: line.y2,
+              estimated: line.estimated,
+            };
+          }
+          const fanOffset = getHipLineLabelOffset(line.type, line.side);
+          return {
+            ...line,
+            id: nextLineIdRef.current++,
+            side: line.side || canvasAnatomySide,
+            measurementMode: normalizeLineMeasurementMode(line.measurementMode),
+            labelOffsetX: fanOffset ? fanOffset.x : DEFAULT_LINE_LABEL_OFFSET_X,
+            labelOffsetY: fanOffset ? fanOffset.y : DEFAULT_LINE_LABEL_OFFSET_Y,
+            labelOpacity: DEFAULT_LABEL_OPACITY,
+            strokeWidth: DEFAULT_LINE_STROKE_WIDTH,
+            color: HIP_RESULT_DEFINITIONS.find((item) => item.key === line.metric)?.color || line.color,
+          };
+        });
+        return [...kept, ...rebuilt];
+      });
+
+      setAngles((previous) => {
+        const kept = previous.filter((angle) => angle.pelvicAnalysisId !== analysisId);
+        const existingByMetric = new Map(
+          previous
+            .filter((angle) => angle.pelvicAnalysisId === analysisId)
+            .map((angle) => [angle.metric, angle]),
+        );
+        const rebuilt = generated.angles.map((angle) => {
+          const existing = existingByMetric.get(angle.metric);
+          if (existing) {
+            return {
+              ...existing,
+              p1: angle.p1,
+              p2: angle.p2,
+              p3: angle.p3,
+              estimated: angle.estimated,
+            };
+          }
+          const fanOffset = getHipMetricLabelOffset(angle.metric, angle.side);
+          return {
+            ...angle,
+            id: nextAngleIdRef.current++,
+            color: HIP_RESULT_DEFINITIONS.find((item) => item.key === angle.metric)?.color || DEFAULT_ANGLE_COLOR,
+            labelOffsetX: fanOffset ? fanOffset.x : DEFAULT_ANGLE_LABEL_OFFSET_X,
+            labelOffsetY: fanOffset ? fanOffset.y : DEFAULT_ANGLE_LABEL_OFFSET_Y,
+            resultOpacity: DEFAULT_LABEL_OPACITY,
+            strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
+          };
+        });
+        return [...kept, ...rebuilt];
+      });
+
+      setCircles((previous) => {
+        const kept = previous.filter((circle) => circle.pelvicAnalysisId !== analysisId);
+        const existingByMetric = new Map(
+          previous
+            .filter((circle) => circle.pelvicAnalysisId === analysisId)
+            .map((circle) => [circle.metric, circle]),
+        );
+        const rebuilt = generated.circles.map((circle) => {
+          const existing = existingByMetric.get(circle.metric);
+          if (existing) {
+            return {
+              ...existing,
+              cx: circle.cx,
+              cy: circle.cy,
+              radius: circle.radius,
+              points: circle.points,
+              estimated: circle.estimated,
+            };
+          }
+          const fanOffset = getHipMetricLabelOffset(circle.metric, circle.side);
+          return {
+            ...circle,
+            id: nextCircleIdRef.current++,
+            color: HIP_RESULT_DEFINITIONS.find((item) => item.key === circle.metric)?.color || DEFAULT_CIRCLE_COLOR,
+            labelOffsetX: fanOffset ? fanOffset.x : 0,
+            labelOffsetY: fanOffset ? fanOffset.y : 0,
+            resultOpacity: DEFAULT_LABEL_OPACITY,
+            strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
+          };
+        });
+        return [...kept, ...rebuilt];
+      });
+    },
+    [canvasAnatomySide],
   );
 
   const findLineLabelByPoint = useCallback(
@@ -10422,10 +10620,45 @@ export default function XrayCalibrationWorkspace({
             ? [6, 4]
             : [],
       );
+      // visualExtend draws the stroke past both true endpoints (cosmetic
+      // only, so the two measured points are easier to pick out against a
+      // short segment) without touching line.x1/y1/x2/y2 — getLineLength()
+      // and the label still read the real, unextended measurement.
+      const extendRatio = Number.isFinite(line.visualExtend) ? line.visualExtend : 0;
+      const visualStart = extendRatio > 0
+        ? { x: start.x - (end.x - start.x) * extendRatio, y: start.y - (end.y - start.y) * extendRatio }
+        : start;
+      const visualEnd = extendRatio > 0
+        ? { x: end.x + (end.x - start.x) * extendRatio, y: end.y + (end.y - start.y) * extendRatio }
+        : end;
       overlayCtx.beginPath();
-      overlayCtx.moveTo(start.x, start.y);
-      overlayCtx.lineTo(end.x, end.y);
+      overlayCtx.moveTo(visualStart.x, visualStart.y);
+      if (line.type === "shenton") {
+        // Illustrative curve only (no pubic-ramus landmark exists to anchor
+        // this precisely) — bulge toward larger image-Y (inferior) so both
+        // sides sag the same visual direction regardless of L/R mirroring.
+        const segmentLength = Math.hypot(end.x - start.x, end.y - start.y);
+        const bulge = segmentLength * 0.18;
+        overlayCtx.quadraticCurveTo(
+          (start.x + end.x) / 2,
+          (start.y + end.y) / 2 + bulge,
+          end.x,
+          end.y,
+        );
+      } else {
+        overlayCtx.lineTo(visualEnd.x, visualEnd.y);
+      }
       overlayCtx.stroke();
+
+      if (extendRatio > 0) {
+        overlayCtx.fillStyle = opts.color;
+        overlayCtx.beginPath();
+        overlayCtx.arc(start.x, start.y, 3, 0, Math.PI * 2);
+        overlayCtx.fill();
+        overlayCtx.beginPath();
+        overlayCtx.arc(end.x, end.y, 3, 0, Math.PI * 2);
+        overlayCtx.fill();
+      }
 
       if (opts.directionArrow) {
         const dx = end.x - start.x;
@@ -10752,8 +10985,20 @@ export default function XrayCalibrationWorkspace({
 
       const offsetX = line.labelOffsetX ?? DEFAULT_LINE_LABEL_OFFSET_X;
       const offsetY = line.labelOffsetY ?? DEFAULT_LINE_LABEL_OFFSET_Y;
+      // Hip lines carry their values in the "Garis pengukuran" panel instead
+      // — keep the canvas itself uncluttered (just the colored lines) and
+      // only surface a label while the line is actually selected/pulsing, or
+      // when its result was just clicked in the panel (isHipResultMeasurementRelevant).
+      const pelvicLabelVisible =
+        !line.pelvicAnalysisId ||
+        opts.forceShowLabel ||
+        (isPlanningLayout &&
+          planningProcedure === "hip" &&
+          (isHipResultMeasurementRelevant(line, activeHipFocus, "line") ||
+            (focusedHipSide && (line.side === focusedHipSide || line.side === "bilateral"))));
       if (
         line.showLabel !== false &&
+        pelvicLabelVisible &&
         !line.halluxValgusAnalysisId &&
         (Math.abs(offsetX) > 2 || Math.abs(offsetY) > 2)
       ) {
@@ -10769,7 +11014,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.restore();
       }
 
-      if (line.showLabel !== false)
+      if (line.showLabel !== false && pelvicLabelVisible)
         drawTag(overlayCtx, midX, midY, line.halluxValgusAnalysisId ? line.name : label, opts.color, {
           bgOpacity: Math.max(
             0.2,
@@ -10847,7 +11092,7 @@ export default function XrayCalibrationWorkspace({
         color: style.color,
         width: style.width,
         dashPattern: isFocusedHalluxTarget ? [5, 4] : style.dashPattern,
-        contrastOutline: false,
+        contrastOutline: isHipLine,
         handleRadius: isResectionPreview
           ? isCoarsePointer
             ? 9
@@ -10860,6 +11105,7 @@ export default function XrayCalibrationWorkspace({
         showTouchHalo: false,
         endpointCaps: false,
         showEndpointRings: (isSelected || isPulsing) && !isLocked,
+        forceShowLabel: isSelected || isPulsing,
         showLegacyHandles:
           !isSelected &&
           !isPulsing &&
@@ -11056,7 +11302,7 @@ export default function XrayCalibrationWorkspace({
         selectionPulse?.type === "angle" && selectionPulse.id === angle.id;
       const isEmphasized = isSelected || isPulsing;
       const isHalluxAngle = Boolean(angle.halluxValgusAnalysisId);
-      const isHipAngle = angle.metric === "CCD R" || angle.metric === "CCD L";
+      const isHipAngle = Boolean(angle.pelvicAnalysisId);
       const isDimmedHalluxAngle =
         isHalluxAngle && activeHalluxFocus && angle.metric !== activeHalluxFocus;
       const hipAngleOpacity = isHipAngle && isPlanningLayout && planningProcedure === "hip"
@@ -11065,7 +11311,9 @@ export default function XrayCalibrationWorkspace({
           : 0.55
         : 1;
       const showExpandedInfo = isSelected || isHovered;
-      const color = angle.color || DEFAULT_ANGLE_COLOR;
+      const color = angle.estimated
+        ? "#ef4444"
+        : angle.color || DEFAULT_ANGLE_COLOR;
       const strokeWidth = Math.max(
         1.5,
         Number.isFinite(angle.strokeWidth)
@@ -11133,12 +11381,14 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.lineWidth = isHalluxAngle ? 1.2 : strokeWidth + (isEmphasized ? 0.35 : 0);
         overlayCtx.lineCap = "round";
         overlayCtx.lineJoin = "round";
+        overlayCtx.setLineDash(angle.estimated ? [6, 4] : []);
         overlayCtx.beginPath();
         overlayCtx.moveTo(p2.x, p2.y);
         overlayCtx.lineTo(p1.x, p1.y);
         overlayCtx.moveTo(p2.x, p2.y);
         overlayCtx.lineTo(p3.x, p3.y);
         overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
         overlayCtx.restore();
       }
 
@@ -11146,6 +11396,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.beginPath();
         overlayCtx.strokeStyle = color;
         overlayCtx.lineWidth = Math.max(1.2, strokeWidth - 0.35);
+        overlayCtx.setLineDash(angle.estimated ? [4, 3] : []);
         overlayCtx.arc(
           p2.x,
           p2.y,
@@ -11155,6 +11406,7 @@ export default function XrayCalibrationWorkspace({
           arcGeometry.counterclockwise,
         );
         overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
       }
 
       overlayCtx.restore();
@@ -11170,7 +11422,13 @@ export default function XrayCalibrationWorkspace({
         );
       }
 
-      if (angle.showLabel === false) {
+      const pelvicAngleLabelVisible =
+        !isHipAngle ||
+        isSelected ||
+        isPulsing ||
+        activeHipFocus === angle.metric ||
+        (focusedHipSide && angle.side === focusedHipSide);
+      if (angle.showLabel === false || !pelvicAngleLabelVisible) {
         // Degree label hidden — angle lines/arc above stay visible.
       } else if (isHalluxAngle) {
         overlayCtx.save();
@@ -11192,7 +11450,9 @@ export default function XrayCalibrationWorkspace({
           overlayCtx,
           p2.x + labelOffsetX,
           p2.y + labelOffsetY,
-          getAngleCanvasLabelText(angle, showExpandedInfo),
+          angle.estimated
+            ? `${getAngleCanvasLabelText(angle, showExpandedInfo)} ?`
+            : getAngleCanvasLabelText(angle, showExpandedInfo),
           color,
           {
             bgOpacity: Math.max(
@@ -11230,14 +11490,15 @@ export default function XrayCalibrationWorkspace({
         selectionPulse?.type === "circle" && selectionPulse.id === circle.id;
       const isEmphasized = isSelected || isPulsing;
       const showExpandedInfo = isSelected || isHovered;
-      const isHipCircle = circle.metric === "FHD R" || circle.metric === "FHD L";
+      const isHipCircle = Boolean(circle.pelvicAnalysisId);
       const hipCircleOpacity = isHipCircle && isPlanningLayout && planningProcedure === "hip"
         ? isSelected ? 1 : activeHipFocus
           ? isHipResultMeasurementRelevant(circle, activeHipFocus, "circle") ? 1 : 0.1
           : 0.55
         : 1;
-      const color =
-        circle.color || (isSelected ? "#a78bfa" : DEFAULT_CIRCLE_COLOR);
+      const color = circle.estimated
+        ? "#ef4444"
+        : circle.color || (isSelected ? "#a78bfa" : DEFAULT_CIRCLE_COLOR);
       const strokeWidth = Math.max(
         1.2,
         Number.isFinite(circle.strokeWidth)
@@ -11256,9 +11517,11 @@ export default function XrayCalibrationWorkspace({
       }
       overlayCtx.strokeStyle = color;
       overlayCtx.lineWidth = strokeWidth + (isEmphasized ? 0.6 : 0);
+      overlayCtx.setLineDash(circle.estimated ? [6, 4] : []);
       overlayCtx.beginPath();
       overlayCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
       overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
       // Diameter line at user-defined angle
       const dAngleRad = ((circle.diameterAngle ?? 0) * Math.PI) / 180;
       const dCos = Math.cos(dAngleRad);
@@ -11330,18 +11593,25 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
         overlayCtx.restore();
       }
+      const pelvicCircleLabelVisible =
+        !isHipCircle ||
+        isSelected ||
+        isPulsing ||
+        activeHipFocus === circle.metric ||
+        (focusedHipSide && circle.side === focusedHipSide);
+      if (pelvicCircleLabelVisible) {
       overlayCtx.save();
       if (isHipCircle) overlayCtx.globalAlpha *= hipCircleOpacity;
+      // Same mm/1-decimal override as hip lines — keep the canvas number
+      // identical to the "Garis pengukuran" panel's hipResults formatting.
+      const circleLabelText = isHipCircle && mmPerPixel !== null
+        ? `DIA ${(circle.radius * 2 * mmPerPixel).toFixed(1)} mm`
+        : getCircleCanvasLabelText(circle, mmPerPixel, measurementUnit, showExpandedInfo);
       drawTag(
         overlayCtx,
         labelX,
         labelY,
-        getCircleCanvasLabelText(
-          circle,
-          mmPerPixel,
-          measurementUnit,
-          showExpandedInfo,
-        ),
+        circle.estimated ? `${circleLabelText} ?` : circleLabelText,
         color,
         {
           bgOpacity: showExpandedInfo ? 0.72 : 0.34,
@@ -11353,6 +11623,41 @@ export default function XrayCalibrationWorkspace({
         },
       );
       overlayCtx.restore();
+      }
+    }
+
+    if (pelvicLandmarks.length && isPlanningLayout && planningProcedure === "hip") {
+      const isEditingLandmarks = tool === "editPelvicLandmark";
+      const activeHipSide = planningSessions.hip?.side;
+      for (const landmark of pelvicLandmarks) {
+        const definition = PELVIC_ANALYSIS_LANDMARKS.find((item) => item.key === landmark.key);
+        if (!definition) continue;
+        if (!isEditingLandmarks && definition.side && definition.side !== activeHipSide) continue;
+        const point = imageToScreenPoint(landmark.x, landmark.y);
+        const isActiveDrag =
+          isEditingLandmarks &&
+          interactionRef.current?.mode === "move-landmark" &&
+          interactionRef.current.landmarkKey === landmark.key;
+        const markerColor = landmark.confidence === "samar" ? "#ef4444" : "#facc15";
+        overlayCtx.save();
+        overlayCtx.globalAlpha = isEditingLandmarks ? 1 : 0.45;
+        drawCleanHandleRings(
+          [{ x: point.x, y: point.y, radius: isEditingLandmarks ? (isCoarsePointer ? 20 : 11) : 5 }],
+          markerColor,
+          { strokeWidth: isActiveDrag ? 3 : 2 },
+        );
+        if (isEditingLandmarks) {
+          drawTag(overlayCtx, point.x, point.y - 16, definition.shortLabel, markerColor, {
+            bgOpacity: 0.7,
+            borderOpacity: 0.9,
+            fontSize: 8,
+            paddingX: 3,
+            paddingY: 1,
+            radius: 3,
+          });
+        }
+        overlayCtx.restore();
+      }
     }
 
     const drawFemoralImGuide = (item) => {
@@ -15917,6 +16222,45 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
+      // When an angle is already selected (e.g. the user just clicked CEA in
+      // the results panel), re-pressing near one of ITS OWN p1/p2/p3 points
+      // should always grab that same angle — even if another object (a line
+      // whose handle also happens to sit at HC, say) would otherwise win the
+      // generic nearest-handle scan below. Without this, adjusting a hip
+      // angle whose vertex coincides with several other lines' endpoints
+      // (HC is shared by FO/AO/COR-V/CCD/CEA/FHD) kept grabbing the wrong
+      // object instead of the one the user had just selected.
+      if (tool === "pan" && selectedAngleId !== null) {
+        const activeAngle = angles.find((item) => item.id === selectedAngleId);
+        if (activeAngle) {
+          const ownHandleThreshold =
+            (isCoarsePointer ? MOBILE_HANDLE_TARGET_SCREEN : 10) / view.scale;
+          const ownHandles = [
+            { key: "p1", x: activeAngle.p1.x, y: activeAngle.p1.y },
+            { key: "p2", x: activeAngle.p2.x, y: activeAngle.p2.y },
+            { key: "p3", x: activeAngle.p3.x, y: activeAngle.p3.y },
+          ];
+          let closestOwnHandle = null;
+          let minOwnDistance = Infinity;
+          for (const handle of ownHandles) {
+            const distance = Math.hypot(imagePoint.x - handle.x, imagePoint.y - handle.y);
+            if (distance <= ownHandleThreshold && distance < minOwnDistance) {
+              minOwnDistance = distance;
+              closestOwnHandle = handle;
+            }
+          }
+          if (closestOwnHandle) {
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-angle-handle",
+              angleId: activeAngle.id,
+              handleKey: closestOwnHandle.key,
+            };
+            return;
+          }
+        }
+      }
+
       const genericHitHandle =
         tool === "pan" ? findClosestHandle(imagePoint) : null;
       if (genericHitHandle) {
@@ -16434,12 +16778,21 @@ export default function XrayCalibrationWorkspace({
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
         setSelectedPlanningGuideId(null);
-        const next = [...draftPelvicAnalysisPoints, snappedPlacementPoint];
+        const pointWasUncertain = pelvicNextPointUncertainRef.current;
+        pelvicNextPointUncertainRef.current = false;
+        setPelvicNextPointUncertainArmed(false);
+        const taggedPoint = {
+          ...snappedPlacementPoint,
+          confidence: pointWasUncertain ? "samar" : "jelas",
+        };
+        const next = [...draftPelvicAnalysisPoints, taggedPoint];
         if (next.length < PELVIC_ANALYSIS_LANDMARKS.length) {
           const landmark = PELVIC_ANALYSIS_LANDMARKS[next.length];
           setDraftPelvicAnalysisPoints(next);
           setNotice(
-            `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${landmark.label}.`,
+            pointWasUncertain
+              ? `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: titik sebelumnya ditandai samar. Lanjut pilih ${landmark.label}.`
+              : `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${landmark.label}.`,
           );
           return;
         }
@@ -16447,30 +16800,63 @@ export default function XrayCalibrationWorkspace({
         pelvicAnalysisCompletionRef.current = true;
         const analysisId = `pelvic-${Date.now()}`;
         const generated = buildPelvicAnalysisMeasurements(next, analysisId);
-        generated.lines.forEach((line) => appendLineMeasurement({
-          ...line,
-          color: HIP_RESULT_DEFINITIONS.find((item) => item.key === line.metric)?.color || line.color,
+        activePelvicAnalysisIdRef.current = analysisId;
+        const seededLandmarks = PELVIC_ANALYSIS_LANDMARKS.map((definition, index) => ({
+          key: definition.key,
+          x: next[index].x,
+          y: next[index].y,
+          confidence: next[index].confidence || "jelas",
         }));
-        const generatedAngles = generated.angles.map((angle) => ({
-          ...angle,
-          id: nextAngleIdRef.current++,
-          color: HIP_RESULT_DEFINITIONS.find((item) => item.key === angle.metric)?.color || DEFAULT_ANGLE_COLOR,
-          labelOffsetX: DEFAULT_ANGLE_LABEL_OFFSET_X,
-          labelOffsetY: DEFAULT_ANGLE_LABEL_OFFSET_Y,
-          resultOpacity: DEFAULT_LABEL_OPACITY,
-          strokeWidth: Number.isFinite(angle.strokeWidth)
-            ? angle.strokeWidth
-            : DEFAULT_ANGLE_STROKE_WIDTH,
-        }));
-        const generatedCircles = generated.circles.map((circle) => ({
-          ...circle,
-          id: nextCircleIdRef.current++,
-          color: HIP_RESULT_DEFINITIONS.find((item) => item.key === circle.metric)?.color || DEFAULT_CIRCLE_COLOR,
-          labelOffsetX: 0,
-          labelOffsetY: 0,
-          resultOpacity: DEFAULT_LABEL_OPACITY,
-          strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
-        }));
+        pelvicLandmarksRef.current = seededLandmarks;
+        setPelvicLandmarks(seededLandmarks);
+        // Re-running Pelvic Mechanical Analysis should replace the previous
+        // result, not pile another copy on top of it (mirrors the hallux
+        // valgus re-run guard below).
+        setLines((previous) =>
+          previous.filter((line) => !line.pelvicAnalysisId),
+        );
+        setAngles((previous) =>
+          previous.filter((angle) => !angle.pelvicAnalysisId),
+        );
+        setCircles((previous) =>
+          previous.filter((circle) => !circle.pelvicAnalysisId),
+        );
+        generated.lines.forEach((line) => {
+          const fanOffset = getHipLineLabelOffset(line.type, line.side);
+          appendLineMeasurement({
+            ...line,
+            color: HIP_RESULT_DEFINITIONS.find((item) => item.key === line.metric)?.color || line.color,
+            ...(fanOffset
+              ? { labelOffsetX: fanOffset.x, labelOffsetY: fanOffset.y }
+              : {}),
+          });
+        });
+        const generatedAngles = generated.angles.map((angle) => {
+          const fanOffset = getHipMetricLabelOffset(angle.metric, angle.side);
+          return {
+            ...angle,
+            id: nextAngleIdRef.current++,
+            color: HIP_RESULT_DEFINITIONS.find((item) => item.key === angle.metric)?.color || DEFAULT_ANGLE_COLOR,
+            labelOffsetX: fanOffset ? fanOffset.x : DEFAULT_ANGLE_LABEL_OFFSET_X,
+            labelOffsetY: fanOffset ? fanOffset.y : DEFAULT_ANGLE_LABEL_OFFSET_Y,
+            resultOpacity: DEFAULT_LABEL_OPACITY,
+            strokeWidth: Number.isFinite(angle.strokeWidth)
+              ? angle.strokeWidth
+              : DEFAULT_ANGLE_STROKE_WIDTH,
+          };
+        });
+        const generatedCircles = generated.circles.map((circle) => {
+          const fanOffset = getHipMetricLabelOffset(circle.metric, circle.side);
+          return {
+            ...circle,
+            id: nextCircleIdRef.current++,
+            color: HIP_RESULT_DEFINITIONS.find((item) => item.key === circle.metric)?.color || DEFAULT_CIRCLE_COLOR,
+            labelOffsetX: fanOffset ? fanOffset.x : 0,
+            labelOffsetY: fanOffset ? fanOffset.y : 0,
+            resultOpacity: DEFAULT_LABEL_OPACITY,
+            strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
+          };
+        });
         setAngles((previous) => [...previous, ...generatedAngles]);
         setCircles((previous) => [...previous, ...generatedCircles]);
         setDraftPelvicAnalysisPoints([]);
@@ -16479,6 +16865,17 @@ export default function XrayCalibrationWorkspace({
         );
         setTool(getIdleTool());
         if (shouldUseMobileOneShotTool) setMobileControlsOpen(false);
+        return;
+      }
+
+      if (tool === "editPelvicLandmark") {
+        const hit = findClosestPelvicLandmark(imagePoint);
+        if (!hit) return;
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setHistoryPaused(true);
+        interactionRef.current = { mode: "move-landmark", landmarkKey: hit.key };
         return;
       }
 
@@ -18371,6 +18768,18 @@ export default function XrayCalibrationWorkspace({
               : layer,
           ),
         );
+        return;
+      }
+
+      if (interactionRef.current.mode === "move-landmark") {
+        const { landmarkKey } = interactionRef.current;
+        const movePoint = clampToImageBounds(screenToImagePoint(point.x, point.y));
+        const nextLandmarks = pelvicLandmarksRef.current.map((item) =>
+          item.key === landmarkKey ? { ...item, x: movePoint.x, y: movePoint.y } : item,
+        );
+        pelvicLandmarksRef.current = nextLandmarks;
+        setPelvicLandmarks(nextLandmarks);
+        regeneratePelvicGeometry(nextLandmarks);
         return;
       }
 
@@ -21325,6 +21734,7 @@ export default function XrayCalibrationWorkspace({
         line.id !== calibrationLineId &&
         !line.hidden && !line.tkaCutRole && !line.alignmentSimulation &&
         !line.halluxValgusAnalysisId &&
+        !line.pelvicAnalysisId &&
         getLineLength(line) > 4 &&
         Number.isFinite(line.x1) &&
         Number.isFinite(line.y1) &&
@@ -24806,6 +25216,7 @@ export default function XrayCalibrationWorkspace({
       sourceLineIds: [line.id],
       sourceShowLabel: line.showLabel !== false,
       sourceHidden: Boolean(line.hidden),
+      estimated: Boolean(line.estimated),
       color: line.color || lineTypeColor(line.type),
       locked: lockedLineIds.has(line.id),
       measurementMode: normalizeLineMeasurementMode(line.measurementMode),
@@ -24829,6 +25240,7 @@ export default function XrayCalibrationWorkspace({
         sourceAngleId: angle.id,
         sourceShowLabel: angle.showLabel !== false,
         sourceHidden: Boolean(angle.hidden),
+        estimated: Boolean(angle.estimated),
       }),
     );
     circles.forEach((circle) =>
@@ -24926,12 +25338,18 @@ export default function XrayCalibrationWorkspace({
         entry.quadrants.find(
           (quadrant) => quadrant.index === selectedQuadrantIndex,
         ) || entry.quadrants[0];
+      const intersectionLineA = lines.find((item) => item.id === entry.lineAId);
+      const intersectionLineB = lines.find((item) => item.id === entry.lineBId);
+      const isHipIntersection =
+        Boolean(intersectionLineA?.pelvicAnalysisId) &&
+        Boolean(intersectionLineB?.pelvicAnalysisId);
       entries.push({
         id: `intersection:${entry.key}`,
         name: `Interline ${entry.lineAId} / ${entry.lineBId}`,
         metric: null,
         unit: "deg",
         value: selectedQuadrant.angleDeg,
+        landmarkGroup: isHipIntersection ? "hip" : null,
         sourceIntersectionKey: entry.key,
         sourceShowLabel: !intersectionAngleLabelHidden[entry.key],
         sourceHidden: Boolean(intersectionAngleHidden[entry.key]),
@@ -25542,6 +25960,16 @@ export default function XrayCalibrationWorkspace({
       setNotice("Titik diameter terakhir dibatalkan. Pilih ulang titik di canvas.");
     }
   };
+  const togglePelvicNextPointUncertain = () => {
+    const next = !pelvicNextPointUncertainRef.current;
+    pelvicNextPointUncertainRef.current = next;
+    setPelvicNextPointUncertainArmed(next);
+    setNotice(
+      next
+        ? "Titik berikutnya akan ditandai samar/tidak terlihat jelas."
+        : "Penandaan samar dibatalkan untuk titik berikutnya.",
+    );
+  };
   const planningHkaGuideState = (mode) => {
     const definition = getHkaModeDefinition(mode);
     const isActive = tool === "hkaAuto" && hkaInputMode === mode;
@@ -25776,11 +26204,13 @@ export default function XrayCalibrationWorkspace({
                     draftPelvicAnalysisPoints.length,
                     PELVIC_ANALYSIS_LANDMARKS.length,
                   ),
+                  markNextPointUncertain: togglePelvicNextPointUncertain,
+                  nextPointUncertainArmed: pelvicNextPointUncertainArmed,
                 }
               : {}),
             complete: lines.some((item) => Boolean(item.pelvicAnalysisId)),
             instruction:
-              "Tandai 16 titik pelvis dan femur kanan/kiri.",
+              "Tandai 26 titik pelvis dan femur kanan/kiri.",
             guideView: "ap_pelvis_cartoon",
             guideImage:
               "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
@@ -42756,6 +43186,13 @@ export default function XrayCalibrationWorkspace({
               setSelectedAngleId(null);
               setSelectedCircleId(null);
             }}
+            focusedHipSide={focusedHipSide}
+            onFocusHipSide={(side) => {
+              setFocusedHipSide((current) => (current === side ? null : side));
+              setSelectedLineId(null);
+              setSelectedAngleId(null);
+              setSelectedCircleId(null);
+            }}
             correctionControls={
               planningProcedure === "tka" ? (
                 <PlanningCorrectionControls
@@ -42817,6 +43254,93 @@ export default function XrayCalibrationWorkspace({
                   >
                     2. Neck osteotomy Real Cut
                   </button>
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    disabled={!pelvicLandmarks.length}
+                    aria-pressed={tool === "editPelvicLandmark"}
+                    onClick={() => {
+                      if (tool === "editPelvicLandmark") {
+                        setTool(getIdleTool());
+                        setNotice("Edit Landmark nonaktif.");
+                      } else {
+                        setTool("editPelvicLandmark");
+                        setNotice(
+                          "Edit Landmark aktif. Geser titik (TD, HC, S1, dst) — semua garis/angle/circle yang memakainya ikut diperbarui.",
+                        );
+                      }
+                    }}
+                  >
+                    {tool === "editPelvicLandmark" ? "Edit Landmark aktif — ketuk untuk selesai" : "Edit Landmark (geser titik)"}
+                  </button>
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    disabled={!lines.some((line) => line.type === "shenton")}
+                    aria-pressed={lines.some((line) => line.type === "shenton" && !line.hidden)}
+                    onClick={() => {
+                      const nextHidden = lines.some((line) => line.type === "shenton" && !line.hidden);
+                      setLines((previous) =>
+                        previous.map((line) =>
+                          line.type === "shenton" ? { ...line, hidden: nextHidden } : line,
+                        ),
+                      );
+                    }}
+                  >
+                    {lines.some((line) => line.type === "shenton" && !line.hidden)
+                      ? "Sembunyikan garis Shenton"
+                      : "Tampilkan garis Shenton"}
+                  </button>
+                  <div className="grid gap-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                      Garis Shenton (utuh / terputus)
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[["shentonR", "Kanan"], ["shentonL", "Kiri"]].map(([field, sideLabel]) => (
+                        <div key={field} className="grid grid-cols-2 gap-1">
+                          {[["utuh", "Utuh"], ["putus", "Putus"]].map(([value, optionLabel]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className="planning-inline-action"
+                              aria-pressed={planningSession.qualitative?.[field] === value}
+                              onClick={() => updatePlanningSession({
+                                ...planningSession,
+                                qualitative: { ...planningSession.qualitative, [field]: value },
+                              })}
+                            >
+                              {sideLabel} {optionLabel}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                      Garis Köhler: dasar asetabulum melewati garis?
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[["kohlerR", "Kanan"], ["kohlerL", "Kiri"]].map(([field, sideLabel]) => (
+                        <div key={field} className="grid grid-cols-2 gap-1">
+                          {[["tidak", "Tidak"], ["melewati", "Melewati"]].map(([value, optionLabel]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className="planning-inline-action"
+                              aria-pressed={planningSession.qualitative?.[field] === value}
+                              onClick={() => updatePlanningSession({
+                                ...planningSession,
+                                qualitative: { ...planningSession.qualitative, [field]: value },
+                              })}
+                            >
+                              {sideLabel} {optionLabel}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )
             }
@@ -50602,6 +51126,7 @@ export default function XrayCalibrationWorkspace({
       <PreOpReportModal
         isOpen={preOpReportModalOpen}
         onClose={() => setPreOpReportModalOpen(false)}
+        procedure={planningProcedure}
         measurementRows={measurementRows}
         templateInventoryRows={templateInventoryRows}
         hkaSets={hkaSets}

@@ -19,6 +19,11 @@ const LANDMARK_DEFINITIONS = [
   { key: "greater_trochanter_lateral_tip", label: "Ujung lateral greater trochanter", group: "femoral-reference", right: [27.5, 192.5], left: [365.5, 188.5] },
   { key: "femoral_shaft_distal_center", label: "Pusat shaft femur distal", group: "femoral-shaft", right: [53.5, 323.5], left: [337.5, 318.5] },
   { key: "femoral_cortex_medial", label: "Korteks femur medial", group: "femoral-shaft", right: [70.5, 269.5], left: [320.5, 264.5] },
+  { key: "ischial_tuberosity", label: "Tuber ischii", group: "pelvic-reference", right: [125, 250], left: [266, 250] },
+  { key: "kohler_ilium_medial_edge", label: "Tepi medial ilium (Köhler)", group: "kohler-line", right: [130, 170], left: [261, 170] },
+  { key: "kohler_ischium_medial_edge", label: "Tepi medial ischium (Köhler)", group: "kohler-line", right: [128, 235], left: [263, 235] },
+  { key: "acetabular_lateral_rim", label: "Tepi lateral sourcil", group: "acetabulum", right: [62, 172], left: [329, 172] },
+  { key: "femoral_neck_midpoint", label: "Titik tengah neck femur", group: "femoral-reference", right: [60, 198], left: [331, 198] },
 ];
 
 const normalize = ([x, y]) => ({

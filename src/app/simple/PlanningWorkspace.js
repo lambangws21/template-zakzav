@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleHelp,
   ClipboardList,
   CloudUpload,
   Download,
@@ -62,6 +63,7 @@ import {
   resolvePlanningRows,
   measurementPresentation,
 } from "@/lib/planningWorkspace";
+import { HIP_LEGEND_ITEMS } from "@/lib/xray/pelvicAnalysis";
 import styles from "./PlanningWorkspace.module.css";
 import { GuideContent } from "@/components/LandmarkGuide";
 
@@ -249,6 +251,8 @@ export default function PlanningWorkspace({
   analysisResults,
   focusedAnalysisMetric,
   onFocusAnalysisMetric,
+  focusedHipSide,
+  onFocusHipSide,
   correctionControls,
   catalog,
   selectedImplantId,
@@ -333,6 +337,7 @@ export default function PlanningWorkspace({
   const [guideVisualOpen, setGuideVisualOpen] = useState(false);
   const [splitGuideTop, setSplitGuideTop] = useState(null);
   const [resectionExpanded, setResectionExpanded] = useState(false);
+  const [hipLegendExpanded, setHipLegendExpanded] = useState(true);
   const [normmedSizeChoices, setNormmedSizeChoices] = useState({});
   const [normmedInsertBusy, setNormmedInsertBusy] = useState(false);
   const [normmedInsertStatus, setNormmedInsertStatus] = useState("");
@@ -2407,6 +2412,8 @@ export default function PlanningWorkspace({
                   const groupTogglable = getTogglableMeasurementRows(grouped);
                   const groupAllHidden = groupTogglable.length > 0 && groupTogglable.every((row) => row.sourceHidden);
                   const groupLabel = group === "tka" ? "TKA" : group === "hip" ? "HIP" : "Hallux";
+                  const interlineRows = grouped.filter((row) => row.measurementKind === "interline");
+                  const directRows = grouped.filter((row) => row.measurementKind !== "interline");
                   return (
                     <details key={group} className={styles.measurementGroup} data-landmark={group} open={measurementSearch.trim() ? true : undefined}>
                       <summary>
@@ -2429,7 +2436,17 @@ export default function PlanningWorkspace({
                           />
                         )}
                       </summary>
-                      <ul className={styles.measurementList}>{grouped.map(renderMeasurementRow)}</ul>
+                      <ul className={styles.measurementList}>{directRows.map(renderMeasurementRow)}</ul>
+                      {interlineRows.length > 0 && (
+                        <details className={styles.measurementGroup} data-landmark="interline">
+                          <summary>
+                            <span className={styles.measurementGroupLabel}>
+                              Interline <span>{interlineRows.length}</span>
+                            </span>
+                          </summary>
+                          <ul className={styles.measurementList}>{interlineRows.map(renderMeasurementRow)}</ul>
+                        </details>
+                      )}
                     </details>
                   );
                 })}
@@ -2958,7 +2975,7 @@ export default function PlanningWorkspace({
         <div className={styles.canvas}>
           {procedure === "tka" && (canProceed || !hasImage) && <div className={styles.canvasImageMode}>{tkaModeSelector}</div>}
           {children}
-          {procedure !== "tka" && analysisResultList}
+          {procedure !== "tka" && procedure !== "hip" && analysisResultList}
           {(procedure === "tka" || procedure === "foot" || procedure === "hip") &&
             hasImage &&
             !canProceed && (
@@ -3324,6 +3341,91 @@ export default function PlanningWorkspace({
             {analysisResultList}
             </div>
           )}
+          {procedure === "hip" && !guideItem && measurements.some((item) => item.metric === "ITD") && (
+            <aside
+              className={styles.preopMeasurementSummary}
+              data-minimized={!hipLegendExpanded}
+              aria-label="Garis pengukuran pra-operasi"
+            >
+              <header>
+                <span>Garis pengukuran</span>
+                <strong>pra-operasi</strong>
+                <button
+                  type="button"
+                  onClick={() => setHipLegendExpanded((value) => !value)}
+                  aria-label={hipLegendExpanded ? "Minimalkan legenda" : "Buka legenda"}
+                  aria-expanded={hipLegendExpanded}
+                >
+                  <ChevronDown size={14} />
+                </button>
+              </header>
+              {hipLegendExpanded && (
+                <ul>
+                  {HIP_LEGEND_ITEMS.map((item) => {
+                    const isEstimated = item.estimable && measurements.some(
+                      (m) => m.metric?.startsWith(item.metricPrefix) && m.estimated,
+                    );
+                    return (
+                      <li key={item.n}>
+                        <details>
+                          <summary>
+                            <i style={{ background: item.color }} aria-hidden="true" />
+                            <b>{item.n}</b>
+                            <span>
+                              {item.label}
+                              {isEstimated ? " (perkiraan)" : ""}
+                            </span>
+                          </summary>
+                          {item.detail && <small>{item.detail}</small>}
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {hipLegendExpanded && analysisResults?.length > 0 && (
+                <div className={styles.preopResultsGrid}>
+                  <div className={styles.preopResultsHeader}>
+                    <strong>Hasil pengukuran</strong>
+                    <div role="group" aria-label="Filter sisi hasil">
+                      {[["both", "Semua"], ["right", "Kanan"], ["left", "Kiri"]].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={(focusedHipSide || "both") === value}
+                          onClick={() => onFocusHipSide?.(value === "both" ? null : value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <ul>
+                    {analysisResults
+                      .filter((result) => {
+                        if (!focusedHipSide) return true;
+                        const sideSuffix = result.metric?.match(/\s([RL])$/)?.[1];
+                        if (!sideSuffix) return true;
+                        return focusedHipSide === "right" ? sideSuffix === "R" : sideSuffix === "L";
+                      })
+                      .map((result) => (
+                        <li key={result.metric}>
+                          <button
+                            type="button"
+                            style={{ "--result-color": result.color }}
+                            aria-pressed={focusedAnalysisMetric === result.metric}
+                            onClick={() => onFocusAnalysisMetric?.(result.metric)}
+                          >
+                            <span>{result.metric}</span>
+                            <b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b>
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </aside>
+          )}
           {!guideItem && hasImage && resumeGuideItem && (dismissedGuideItem || (session.step === 1 && canProceed && !resumeGuideItem.complete)) && (
             <Action
               icon={ListOrdered}
@@ -3430,6 +3532,19 @@ export default function PlanningWorkspace({
                 >
                   <Undo2 size={13} />
                   Ulang titik terakhir
+                </button>
+              )}
+              {guideItem.active && guideItem.markNextPointUncertain && (
+                <button
+                  type="button"
+                  className={styles.guideBackButton}
+                  aria-pressed={guideItem.nextPointUncertainArmed}
+                  onClick={guideItem.markNextPointUncertain}
+                >
+                  <CircleHelp size={13} />
+                  {guideItem.nextPointUncertainArmed
+                    ? "Titik berikutnya: samar"
+                    : "Tandai titik samar"}
                 </button>
               )}
               <div

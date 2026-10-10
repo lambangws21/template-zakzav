@@ -551,9 +551,18 @@ function SectionLabel({ icon: Icon, label, color = "text-slate-600" }) {
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 
+const PROCEDURE_LABEL_BY_KEY = {
+  tka: "Total Knee Arthroplasty (TKA)",
+  hip: "Total Hip Arthroplasty (THA)",
+  foot: "Hallux Valgus Correction",
+};
+
 export default function PreOpReportModal({
   isOpen,
   onClose,
+  // Current planning procedure ("tka" | "hip" | "foot") — used to default
+  // the printed "Prosedur" field correctly instead of always TKA.
+  procedure = "tka",
   measurementRows = [],
   templateInventoryRows = [],
   hkaSets = [],
@@ -571,7 +580,7 @@ export default function PreOpReportModal({
     age: "",
     gender: "L",
     diagnosis: "",
-    procedure: "Total Knee Arthroplasty (TKA)",
+    procedure: PROCEDURE_LABEL_BY_KEY[procedure] || PROCEDURE_LABEL_BY_KEY.tka,
     laterality: "Kanan",
     surgeon: "",
     institution: "",
@@ -595,8 +604,15 @@ export default function PreOpReportModal({
         surgeryDate: prefillCase.operationDate || prev.surgeryDate,
         notes: prefillCase.notes || prev.notes,
       }));
+    } else {
+      // No saved case to pull from — default the procedure field to
+      // whatever's actually being planned right now (hip/knee/foot).
+      setPatientInfo((prev) => ({
+        ...prev,
+        procedure: PROCEDURE_LABEL_BY_KEY[procedure] || prev.procedure,
+      }));
     }
-  }, [isOpen, prefillCase]);
+  }, [isOpen, prefillCase, procedure]);
 
   const set = useCallback((key) => (val) => setPatientInfo((p) => ({ ...p, [key]: val })), []);
 

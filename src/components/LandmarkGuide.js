@@ -1035,6 +1035,11 @@ const PELVIS_CARTOON_RIGHT_POINTS = {
   femoral_cortex_medial: [322, 755],
   femoral_cortex_lateral: [247, 755],
   femoral_shaft_distal_center: [306, 950],
+  ischial_tuberosity: [560, 640],
+  kohler_ilium_medial_edge: [600, 430],
+  kohler_ischium_medial_edge: [575, 585],
+  acetabular_lateral_rim: [365, 420],
+  femoral_neck_midpoint: [375, 530],
 };
 
 function PelvisCartoonGuide({ highlightId, side }) {
