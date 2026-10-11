@@ -2823,6 +2823,99 @@ export default function PlanningWorkspace({
             </ul>
           );
 
+  // Rendered twice: once as the existing desktop floating overlay (inside
+  // .canvas) and once as a static bottom panel on mobile (sibling after
+  // .canvas, inside .body) so the x-ray stays visible while results are
+  // open — on mobile the floating overlay covered the whole image, so
+  // clicking Kanan/Kiri/a result had no visible effect on the canvas
+  // underneath. CSS (not JS) decides which copy is shown per viewport.
+  const hipMeasurementPanel = procedure === "hip" && !guideItem && measurements.some((item) => item.metric === "ITD") && (
+            <aside
+              className={styles.preopMeasurementSummary}
+              data-minimized={!hipLegendExpanded}
+              aria-label="Garis pengukuran pra-operasi"
+            >
+              <header>
+                <span>Garis pengukuran</span>
+                <strong>pra-operasi</strong>
+                <button
+                  type="button"
+                  onClick={() => setHipLegendExpanded((value) => !value)}
+                  aria-label={hipLegendExpanded ? "Minimalkan legenda" : "Buka legenda"}
+                  aria-expanded={hipLegendExpanded}
+                >
+                  <ChevronDown size={14} />
+                </button>
+              </header>
+              {hipLegendExpanded && (
+                <ul>
+                  {HIP_LEGEND_ITEMS.map((item) => {
+                    const isEstimated = item.estimable && measurements.some(
+                      (m) => m.metric?.startsWith(item.metricPrefix) && m.estimated,
+                    );
+                    return (
+                      <li key={item.n}>
+                        <details>
+                          <summary>
+                            <i style={{ background: item.color }} aria-hidden="true" />
+                            <b>{item.n}</b>
+                            <span>
+                              {item.label}
+                              {isEstimated ? " (perkiraan)" : ""}
+                            </span>
+                          </summary>
+                          {item.detail && <small>{item.detail}</small>}
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {hipLegendExpanded && analysisResults?.length > 0 && (
+                <div className={styles.preopResultsGrid}>
+                  <div className={styles.preopResultsHeader}>
+                    <strong>Hasil pengukuran</strong>
+                    <div role="group" aria-label="Filter sisi hasil">
+                      {[["both", "Semua"], ["right", "Kanan"], ["left", "Kiri"]].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={(focusedHipSide || "both") === value}
+                          onClick={() => onFocusHipSide?.(value === "both" ? null : value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <ul>
+                    {analysisResults
+                      .filter((result) => {
+                        if (!focusedHipSide) return true;
+                        const sideSuffix = result.metric?.match(/\s([RL])$/)?.[1];
+                        if (!sideSuffix) return true;
+                        return focusedHipSide === "right" ? sideSuffix === "R" : sideSuffix === "L";
+                      })
+                      .map((result) => (
+                        <li key={result.metric}>
+                          <button
+                            type="button"
+                            style={{ "--result-color": result.color }}
+                            aria-pressed={focusedAnalysisMetric === result.metric}
+                            onClick={() => onFocusAnalysisMetric?.(result.metric)}
+                          >
+                            <span>{result.metric}</span>
+                            <b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b>
+                            {result.note && <small>{result.note}</small>}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </aside>
+          );
+
   return (
     <div
       className={`${styles.workspace} ${focus ? styles.focus : ""}`}
@@ -3345,91 +3438,8 @@ export default function PlanningWorkspace({
             {analysisResultList}
             </div>
           )}
-          {procedure === "hip" && !guideItem && measurements.some((item) => item.metric === "ITD") && (
-            <aside
-              className={styles.preopMeasurementSummary}
-              data-minimized={!hipLegendExpanded}
-              aria-label="Garis pengukuran pra-operasi"
-            >
-              <header>
-                <span>Garis pengukuran</span>
-                <strong>pra-operasi</strong>
-                <button
-                  type="button"
-                  onClick={() => setHipLegendExpanded((value) => !value)}
-                  aria-label={hipLegendExpanded ? "Minimalkan legenda" : "Buka legenda"}
-                  aria-expanded={hipLegendExpanded}
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </header>
-              {hipLegendExpanded && (
-                <ul>
-                  {HIP_LEGEND_ITEMS.map((item) => {
-                    const isEstimated = item.estimable && measurements.some(
-                      (m) => m.metric?.startsWith(item.metricPrefix) && m.estimated,
-                    );
-                    return (
-                      <li key={item.n}>
-                        <details>
-                          <summary>
-                            <i style={{ background: item.color }} aria-hidden="true" />
-                            <b>{item.n}</b>
-                            <span>
-                              {item.label}
-                              {isEstimated ? " (perkiraan)" : ""}
-                            </span>
-                          </summary>
-                          {item.detail && <small>{item.detail}</small>}
-                        </details>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {hipLegendExpanded && analysisResults?.length > 0 && (
-                <div className={styles.preopResultsGrid}>
-                  <div className={styles.preopResultsHeader}>
-                    <strong>Hasil pengukuran</strong>
-                    <div role="group" aria-label="Filter sisi hasil">
-                      {[["both", "Semua"], ["right", "Kanan"], ["left", "Kiri"]].map(([value, label]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          aria-pressed={(focusedHipSide || "both") === value}
-                          onClick={() => onFocusHipSide?.(value === "both" ? null : value)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <ul>
-                    {analysisResults
-                      .filter((result) => {
-                        if (!focusedHipSide) return true;
-                        const sideSuffix = result.metric?.match(/\s([RL])$/)?.[1];
-                        if (!sideSuffix) return true;
-                        return focusedHipSide === "right" ? sideSuffix === "R" : sideSuffix === "L";
-                      })
-                      .map((result) => (
-                        <li key={result.metric}>
-                          <button
-                            type="button"
-                            style={{ "--result-color": result.color }}
-                            aria-pressed={focusedAnalysisMetric === result.metric}
-                            onClick={() => onFocusAnalysisMetric?.(result.metric)}
-                          >
-                            <span>{result.metric}</span>
-                            <b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b>
-                            {result.note && <small>{result.note}</small>}
-                          </button>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              )}
-            </aside>
+          {hipMeasurementPanel && (
+            <div className={styles.hipPanelDesktopSlot}>{hipMeasurementPanel}</div>
           )}
           {!guideItem && hasImage && resumeGuideItem && (dismissedGuideItem || (session.step === 1 && canProceed && !resumeGuideItem.complete)) && (
             <Action
@@ -3763,6 +3773,9 @@ export default function PlanningWorkspace({
             </button>
           </div>
         </div>
+        {hipMeasurementPanel && (
+          <div className={styles.hipPanelMobileSlot}>{hipMeasurementPanel}</div>
+        )}
         <aside
           className={styles.inspector}
           aria-label={logOpen ? "Planning Log" : "Object properties and layers"}
