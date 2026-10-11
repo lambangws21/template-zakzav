@@ -2800,8 +2800,8 @@ export default function PlanningWorkspace({
                     data-highlight={result.highlight ? "true" : undefined}
                     data-muted={Boolean(focusedAnalysisMetric && focusedAnalysisMetric !== result.metric)}
                     aria-pressed={focusedAnalysisMetric === result.metric}
-                    aria-label={result.detail || `${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
-                    title={result.detail || `${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    aria-label={result.detail || `${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}${result.note ? ` (${result.note})` : ""}`}
+                    title={result.detail || `${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}${result.note ? ` (${result.note})` : ""}`}
                     onClick={() => onFocusAnalysisMetric?.(result.metric)}
                   >
                     <span><strong>{result.metric}</strong><b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b></span>
@@ -3422,6 +3422,7 @@ export default function PlanningWorkspace({
                           >
                             <span>{result.metric}</span>
                             <b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b>
+                            {result.note && <small>{result.note}</small>}
                           </button>
                         </li>
                       ))}

@@ -1396,18 +1396,22 @@ export default function XrayCalibrationWorkspace({
                 )
               : length(latest(lines, item.key));
         if (!Number.isFinite(measured)) return null;
-        const directionSuffix =
+        // Kept as a separate field (not appended into `value`) so result
+        // cards can render it on its own line instead of forcing one long
+        // nowrap string that overflows narrow/mobile cards.
+        const note =
           item.key === "LLD" && lldDirection
             ? lldDirection === "equal"
-              ? " (Simetris)"
+              ? "Simetris"
               : lldDirection === "right"
-                ? " (Kanan lebih panjang)"
-                : " (Kiri lebih panjang)"
-            : "";
+                ? "Kanan lebih panjang"
+                : "Kiri lebih panjang"
+            : null;
         return {
           metric: item.key,
           label: item.label,
-          value: `${measured.toFixed(1)} ${item.angleMetrics ? "°" : unit}${directionSuffix}`,
+          value: `${measured.toFixed(1)} ${item.angleMetrics ? "°" : unit}`,
+          note,
           color: item.color,
         };
       })
@@ -14650,6 +14654,20 @@ export default function XrayCalibrationWorkspace({
         showTouchHoverDetails(point, imagePoint);
       }
 
+      // A finger covers the exact spot it just tapped, so the touch-commit
+      // point for a fresh sequential landmark (hip/hallux/axis/angle/HKA) is
+      // frequently off by a few pixels. Instead of ending the gesture right
+      // after placing the point, keep the SAME touch alive as a
+      // "move-guide-draft-point" drag of the point just added — the user can
+      // slide their finger to the exact spot (with the magnifier loupe
+      // showing what's underneath) before lifting to move on to the next
+      // point. Mouse/desktop users are unaffected (two-click placement is
+      // already precise there, nothing to fix).
+      const continueTouchDraftDrag = (toolName, index) => {
+        if (!isTouchLikePointer) return;
+        interactionRef.current = { mode: "move-guide-draft-point", tool: toolName, index };
+      };
+
       if (event.button === 1 || event.button === 2) {
         interactionRef.current = {
           mode: "pan",
@@ -14669,6 +14687,7 @@ export default function XrayCalibrationWorkspace({
         pelvicAnalysis: draftPelvicAnalysisPoints,
         halluxValgus: draftHalluxValgusPoints,
         angle: draftAnglePoints,
+        centerFinder: draftCenterFinderPoints,
       };
       const activeDraftPoints = draftPointSets[tool];
       if (activeDraftPoints?.length) {
@@ -16931,6 +16950,7 @@ export default function XrayCalibrationWorkspace({
               ? `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: titik sebelumnya ditandai samar. Lanjut pilih ${landmark.label}.`
               : `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${landmark.label}.`,
           );
+          continueTouchDraftDrag("pelvicAnalysis", next.length - 1);
           return;
         }
         if (pelvicAnalysisCompletionRef.current) return;
@@ -17030,6 +17050,7 @@ export default function XrayCalibrationWorkspace({
           setNotice(
             `Hallux Valgus ${next.length + 1}/${HALLUX_VALGUS_LANDMARKS.length}: pilih ${landmark.label}.`,
           );
+          continueTouchDraftDrag("halluxValgus", next.length - 1);
           return;
         }
         if (halluxValgusCompletionRef.current) return;
@@ -17080,6 +17101,7 @@ export default function XrayCalibrationWorkspace({
           const next = [...prev, snappedPlacementPoint];
           if (next.length < 3) {
             setNotice(`Center Finder: pilih ${3 - next.length} titik lagi.`);
+            continueTouchDraftDrag("centerFinder", next.length - 1);
             return next;
           }
           const circumcircle = getCircumcircleFromThreePoints(
@@ -17135,6 +17157,7 @@ export default function XrayCalibrationWorkspace({
             setNotice(
               `Axis Builder: lanjutkan titik ${phase}. Axis dibuat dari midpoint kedua segmen.`,
             );
+            continueTouchDraftDrag("axisBuilder", next.length - 1);
             return next;
           }
           const nextAxisLine = buildAxisLineFromPoints(next);
@@ -17241,6 +17264,7 @@ export default function XrayCalibrationWorkspace({
           ];
           if (next.length < 3) {
             setNotice(`Angle: pilih ${3 - next.length} titik lagi.`);
+            continueTouchDraftDrag("angle", next.length - 1);
             return next;
           }
 
@@ -17441,6 +17465,13 @@ export default function XrayCalibrationWorkspace({
           const definition = getHkaModeDefinition(hkaInputMode);
           if (next.length < definition.points.length) {
             setNotice(getHkaDraftNotice(hkaInputMode, next.length));
+            // jla mode's hip/knee/ankle (indices 0-2) are deliberately excluded
+            // from draft-point re-grab elsewhere (see firstDraggableIndex
+            // above) — keep that same exclusion here.
+            const firstDraggableIndex = hkaInputMode === "jla" ? 3 : 0;
+            if (next.length - 1 >= firstDraggableIndex) {
+              continueTouchDraftDrag("hkaAuto", next.length - 1);
+            }
             return next;
           }
           // Guard: prevent double-fire from React StrictMode functional updater invocations
@@ -17763,6 +17794,13 @@ export default function XrayCalibrationWorkspace({
         if (draftTool === "pelvicAnalysis") setDraftPelvicAnalysisPoints(updatePoint);
         if (draftTool === "halluxValgus") setDraftHalluxValgusPoints(updatePoint);
         if (draftTool === "angle") setDraftAnglePoints(updatePoint);
+        if (draftTool === "centerFinder") setDraftCenterFinderPoints(updatePoint);
+        // Finger covers the exact spot being placed, so show the offset
+        // magnifier loupe + auto-zoom (same assist already used when
+        // dragging an existing line/circle/angle handle) while repositioning
+        // a landmark point mid-sequence.
+        beginMobilePrecisionEdit(point, nextPoint, "Titik");
+        updateMobilePrecisionOverlay(point, nextPoint, "Titik");
         return;
       }
 

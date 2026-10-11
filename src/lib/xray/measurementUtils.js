@@ -158,6 +158,8 @@ export function isMobilePrecisionInteractionMode(mode) {
     "move-free-line-curve-handle",
     "move-annotation",
     "move-annotation-pointer",
+    "move-guide-draft-point",
+    "move-landmark",
   ].includes(mode);
 }
 
@@ -173,6 +175,8 @@ export function shouldAutoZoomMobilePrecisionInteractionMode(mode) {
     "move-planning-guide-handle",
     "move-free-line-point",
     "move-free-line-curve-handle",
+    "move-guide-draft-point",
+    "move-landmark",
   ].includes(mode);
 }
 
