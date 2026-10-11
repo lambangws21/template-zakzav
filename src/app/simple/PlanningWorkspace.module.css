@@ -407,18 +407,18 @@
 .preopMeasurementSummary header button svg { transition: transform 160ms ease; }
 .preopMeasurementSummary:not([data-minimized="true"]) header button svg { transform: rotate(180deg); }
 .preopMeasurementSummary ul { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
-.preopMeasurementSummary li { font-size: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--pw-line); pointer-events: auto; }
-.preopMeasurementSummary li:last-child { padding-bottom: 0; border-bottom: 0; }
-.preopMeasurementSummary li details summary {
+.preopMeasurementSummary > ul > li { font-size: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--pw-line); pointer-events: auto; }
+.preopMeasurementSummary > ul > li:last-child { padding-bottom: 0; border-bottom: 0; }
+.preopMeasurementSummary > ul > li details summary {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 6px;
   cursor: pointer; list-style: none;
 }
-.preopMeasurementSummary li details summary::-webkit-details-marker { display: none; }
-.preopMeasurementSummary li details[open] summary { margin-bottom: 5px; }
-.preopMeasurementSummary li i { width: 10px; height: 10px; border-radius: 2px; }
-.preopMeasurementSummary li b { display: grid; place-items: center; width: 16px; height: 16px; color: var(--pw-text); background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 999px; font-size: 8px; font-variant-numeric: tabular-nums; }
-.preopMeasurementSummary li span { overflow-wrap: anywhere; font-weight: 650; }
-.preopMeasurementSummary li small { display: block; padding-left: 22px; color: var(--pw-muted); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+.preopMeasurementSummary > ul > li details summary::-webkit-details-marker { display: none; }
+.preopMeasurementSummary > ul > li details[open] summary { margin-bottom: 5px; }
+.preopMeasurementSummary > ul > li i { width: 10px; height: 10px; border-radius: 2px; }
+.preopMeasurementSummary > ul > li b { display: grid; place-items: center; width: 16px; height: 16px; color: var(--pw-text); background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 999px; font-size: 8px; font-variant-numeric: tabular-nums; }
+.preopMeasurementSummary > ul > li span { overflow-wrap: anywhere; font-weight: 650; }
+.preopMeasurementSummary > ul > li small { display: block; padding-left: 22px; color: var(--pw-muted); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
 .preopResultsGrid { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pw-line); pointer-events: auto; }
 .preopResultsHeader { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
 .preopResultsHeader > strong { color: var(--pw-accent); font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.02em; }
@@ -426,7 +426,7 @@
 .preopResultsHeader [role="group"] button { padding: 3px 7px; color: var(--pw-muted); background: transparent; border: 0; border-radius: 999px; font-size: 8px; font-weight: 700; }
 .preopResultsHeader [role="group"] button[aria-pressed="true"] { color: #fff; background: var(--pw-accent); }
 .preopResultsGrid ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
-.preopResultsGrid li { min-width: 0; }
+.preopResultsGrid li { min-width: 0; padding: 0; border: 0; }
 /* Stacked (label on top, value below) instead of a single nowrap row —
    a side-by-side row forces the value to either overflow the card or get
    clipped by the panel's own scroll container once the label+value+note
@@ -444,7 +444,7 @@
    should never need to wrap — overflow-wrap:anywhere here previously forced
    the browser to split digits mid-number ("6." / "3" / "mm") on narrow
    columns even though the text had plenty of valid break points elsewhere. */
-.preopResultsGrid li button b { max-width: 100%; overflow: hidden; color: var(--pw-text); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.preopResultsGrid li button b { display: block; width: auto; height: auto; min-width: 0; min-height: 0; max-width: 100%; margin: 0; padding: 0; overflow: visible; color: var(--pw-text); background: transparent; border: 0; border-radius: 0; font-size: 15px; font-variant-numeric: tabular-nums; line-height: 1.25; text-overflow: clip; white-space: nowrap; }
 .preopResultsGrid li button small { display: block; max-width: 100%; overflow-wrap: break-word; color: var(--pw-muted); font-size: 8px; font-weight: 650; line-height: 1.3; }
 /* hipMeasurementPanel renders twice (see PlanningWorkspace.js): the desktop
    slot keeps it exactly as before (floating overlay, absolutely positioned
