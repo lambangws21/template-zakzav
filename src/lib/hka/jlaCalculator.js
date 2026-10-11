@@ -365,10 +365,21 @@ export function computeTkaResectionPlan({
     femoralResectionMm,
     mmPerPixel,
   );
+  // buildResectionLine references whichever point projects FARTHER along the
+  // given axis as the "healthy" side (gets exactly `depthMm`), cutting more
+  // from the other. femoralAxis points proximally (knee→hip), so that's the
+  // less-worn/more-proximal condyle — correct. tibialAxis points distally
+  // (knee→ankle), the opposite sense, so passing it unflipped would instead
+  // treat the more-distal (worn/collapsed) plateau point as "healthy" and
+  // under-resect it. Flip to a proximal-pointing axis here only, so both
+  // bones reference their less-worn side the same way; tibialAxis itself is
+  // left untouched since the alignment-correction angle below depends on its
+  // original (distal) direction.
+  const tibialAxisProximal = { x: -tibialAxis.x, y: -tibialAxis.y };
   const tibial = buildResectionLine(
     hka.tibPlateauMedial,
     hka.tibPlateauLateral,
-    tibialAxis,
+    tibialAxisProximal,
     tibialResectionMm,
     mmPerPixel,
   );
@@ -392,6 +403,12 @@ export function computeTkaResectionPlan({
     : normalizedAlignmentMode === "custom"
       ? "Custom alignment target"
       : "Mechanical alignment";
+  // "custom" only specifies an overall HKA target — there's no formula here
+  // for how that should redistribute across LDFA/MPTA individually, so (like
+  // "preserve") it falls back to the currently-measured joint-line angles as
+  // the reference rather than omitting mLDFA/mMPTA/JLCA outright, which
+  // otherwise made those Planning Log rows look un-planned ("Rencana" blank)
+  // only under custom mode, inconsistent with both other modes.
   const plannedMetrics = normalizedAlignmentMode === "mechanical"
     ? { "mFA-mTA": 0, mTFA: 0, MAD: 0, mLDFA: 90, mMPTA: 90, JLCA: 0 }
     : normalizedAlignmentMode === "preserve"
@@ -402,7 +419,13 @@ export function computeTkaResectionPlan({
           mMPTA: jla.MPTA,
           JLCA: jla.JLCA,
         }
-      : { "mFA-mTA": targetHkaDeg, mTFA: targetHkaDeg };
+      : {
+          "mFA-mTA": targetHkaDeg,
+          mTFA: targetHkaDeg,
+          mLDFA: jla.LDFA,
+          mMPTA: jla.MPTA,
+          JLCA: jla.JLCA,
+        };
 
   plannedMetrics.mFCL = femoral.depthA;
   plannedMetrics.lFCL = femoral.depthB;

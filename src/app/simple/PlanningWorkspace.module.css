@@ -352,6 +352,14 @@
 .analysisResultBadge small { overflow: hidden; color: var(--pw-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .analysisResultBadge[aria-pressed="true"] { border-color: var(--result-color); border-left-width: 3px; background: var(--pw-panel); }
 .analysisResultBadge[data-muted="true"] { opacity: .55; }
+.analysisResultBadge[data-highlight="true"] {
+  border-left-width: 5px;
+  background: color-mix(in srgb, var(--result-color) 16%, var(--pw-panel));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--result-color) 45%, transparent);
+}
+.analysisResultBadge[data-highlight="true"] strong { font-size: 9px; font-weight: 750; letter-spacing: 0.03em; text-transform: uppercase; }
+.analysisResultBadge[data-highlight="true"] b { font-size: 14px; font-weight: 800; }
+.analysisResultBadge[data-highlight="true"][aria-pressed="true"] { border-left-width: 5px; }
 .analysisShowAll { width: 100%; min-height: 28px; padding: 4px 6px; color: var(--pw-accent); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
 .planningStartCard { position: absolute; z-index: 42; top: 8px; left: 8px; display: grid; width: min(224px, calc(100% - 16px)); gap: 6px; padding: 8px; color: var(--pw-text); background: color-mix(in srgb, var(--pw-panel) 94%, transparent); border: 1px solid var(--pw-procedure-border); border-radius: 8px; box-shadow: 0 8px 24px #0006; backdrop-filter: blur(12px); }
 .planningStartCard header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -453,7 +461,7 @@
 .resectionSummary button:focus-visible, .visibilityDetails summary:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 640px) {
-  .tkaCanvasPanels[data-expanded="true"] { max-height: min(52dvh, calc(100% - 136px)); }
+  .tkaCanvasPanels[data-expanded="true"] { max-height: min(70dvh, calc(100% - 136px)); }
   .resectionSummary header button { width: 36px; height: 36px; }
   .resectionActions .button, .resectionSummary > .button, .visibilityDetails summary, .visibilityDetails .axisVisibility button { min-height: 40px; }
 }
@@ -1117,8 +1125,8 @@
   .logBody { padding: 4px 6px; }
   .measurementItem { padding: 3px 0; }
   .measurementItemActions .button { min-height: 36px; }
-  .tkaCanvasPanels { top: 54px; right: 5px; width: min(156px, calc(100% - 10px)); max-height: min(34dvh, calc(100% - 120px)); gap: 4px; }
-  .tkaCanvasPanels[data-expanded="true"] { width: min(244px, calc(100% - 10px)); max-height: min(35dvh, calc(100% - 120px)); }
+  .tkaCanvasPanels { top: 54px; right: 5px; width: min(156px, calc(100% - 10px)); max-height: min(60dvh, calc(100% - 120px)); gap: 4px; }
+  .tkaCanvasPanels[data-expanded="true"] { width: min(244px, calc(100% - 10px)); max-height: min(68dvh, calc(100% - 120px)); }
   .tkaCanvasPanels > .resectionSummary { padding: 5px; }
   .resectionSummary header { gap: 4px; }
   .resectionSummary header strong { font-size: 10px; }

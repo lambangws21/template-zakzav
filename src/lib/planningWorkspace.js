@@ -38,6 +38,7 @@ export function completePlanningStep(session, step, nextStep = step + 1) {
 export const PLANNING_METRICS = {
   tka: [
     ["mTFA", "deg", "Mechanical tibiofemoral angle (mFA-mTA)"],
+    ["aHKA", "deg", "Arithmetic HKA (CPAK) dari JLA: MPTA - LDFA, estimasi HKA dari pengukuran sendi lutut saja (bukan HKA penuh hip-knee-ankle)"],
     ["FVA", "deg", "Femoral valgus angle between anatomical and mechanical axes"],
     ["mLPFA", "deg", "Mechanical lateral proximal femoral angle"],
     ["AMA", "deg", "Anatomical-mechanical angle"],

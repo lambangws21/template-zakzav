@@ -461,7 +461,7 @@ export default function PlanningWorkspace({
                             </span>
                           </span>
                         </button>
-                        {(row.sourceLineIds.length > 0 || row.sourceIntersectionKey || row.sourceAngleId) && (
+                        {(row.sourceLineIds.length > 0 || row.sourceIntersectionKey || row.sourceAngleId || row.sourceHkaId) && (
                           <div className={styles.measurementItemActions}>
                             <Action
                               icon={row.sourceHidden ? EyeOff : Eye}
@@ -471,14 +471,16 @@ export default function PlanningWorkspace({
                               aria-pressed={row.sourceHidden}
                               onClick={() => onToggleMeasurementHidden?.(row)}
                             />
-                            <Action
-                              icon={Type}
-                              active={!row.sourceShowLabel}
-                              title={row.sourceShowLabel ? "Sembunyikan angka di canvas" : "Tampilkan angka di canvas"}
-                              aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} angka ${displayName} di canvas`}
-                              aria-pressed={!row.sourceShowLabel}
-                              onClick={() => onToggleMeasurementLabel?.(row)}
-                            />
+                            {(row.sourceLineIds.length > 0 || row.sourceIntersectionKey || row.sourceAngleId) && (
+                              <Action
+                                icon={Type}
+                                active={!row.sourceShowLabel}
+                                title={row.sourceShowLabel ? "Sembunyikan angka di canvas" : "Tampilkan angka di canvas"}
+                                aria-label={`${row.sourceShowLabel ? "Sembunyikan" : "Tampilkan"} angka ${displayName} di canvas`}
+                                aria-pressed={!row.sourceShowLabel}
+                                onClick={() => onToggleMeasurementLabel?.(row)}
+                              />
+                            )}
                           </div>
                         )}
                         {isCompactLayout && metricEditor === row.key && renderMetricEditorFor(row.key, true)}
@@ -492,7 +494,8 @@ export default function PlanningWorkspace({
       (row) =>
         (row.sourceLineIds && row.sourceLineIds.length > 0) ||
         row.sourceIntersectionKey ||
-        Number.isFinite(row.sourceAngleId),
+        Number.isFinite(row.sourceAngleId) ||
+        row.sourceHkaId,
     );
 
   const toggleMeasurementGroupHidden = (rows) => {
@@ -2794,10 +2797,11 @@ export default function PlanningWorkspace({
                     className={styles.analysisResultBadge}
                     style={{ "--result-color": result.color }}
                     data-procedure={procedure}
+                    data-highlight={result.highlight ? "true" : undefined}
                     data-muted={Boolean(focusedAnalysisMetric && focusedAnalysisMetric !== result.metric)}
                     aria-pressed={focusedAnalysisMetric === result.metric}
-                    aria-label={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
-                    title={`${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    aria-label={result.detail || `${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
+                    title={result.detail || `${result.label}: ${typeof result.value === "number" ? `${result.value.toFixed(1)} derajat` : result.value}`}
                     onClick={() => onFocusAnalysisMetric?.(result.metric)}
                   >
                     <span><strong>{result.metric}</strong><b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b></span>

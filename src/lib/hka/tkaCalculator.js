@@ -69,6 +69,15 @@ export function computeTKAAlignment({
   const vTibUp = { x: kneeCenter.x - ankleCenter.x, y: kneeCenter.y - ankleCenter.y };
   // Tibial plateau line: medial → lateral (same outward convention as condyle).
   // Results: < 90° = varus (medial lower), > 90° = valgus (lateral lower). Consistent with MDFA.
+  //
+  // NOTE: this "MPTA" is intentionally NOT the same value as src/lib/hka/jlaCalculator.js's
+  // MPTA for identical input points — that file's MPTA uses the plateau vector in the
+  // OPPOSITE sense (lateral→medial) because standard LDFA/MPTA/CPAK literature defines
+  // LDFA on the lateral side and MPTA on the medial side on purpose, so their sum tracks
+  // ~180° (JLO). This file deliberately uses the same outward sense for both MDFA and MPTA
+  // instead, so a single <90°/>90° varus/valgus reading applies uniformly post-TKA — the two
+  // values are supplementary (sum to 180°), not a bug in either file. Don't "fix" one to
+  // match the other without re-deriving both tools' normal ranges/flags.
   const vPlateau = { x: plateauLateral.x - plateauMedial.x, y: plateauLateral.y - plateauMedial.y };
   const MPTA = angleDeg(vTibUp, vPlateau);
 

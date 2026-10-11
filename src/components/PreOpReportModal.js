@@ -47,6 +47,8 @@ async function generatePreOpPDF({
   imageName,
   prefillCase = null,
   cupAssessment = null,
+  tkaResectionPlan = null,
+  tkaSizePredictions = null,
 }) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -259,6 +261,65 @@ async function generatePreOpPDF({
       doc.text(`Disimpan: ${cupAssessment.savedAt}`, MARGIN + CONTENT_W - 4, cursor + 6.5, { align: "right" });
     }
     cursor += 13;
+  }
+
+  // ════════════════════════════════════════════════
+  // RENCANA RESEKSI TKA (femoral/tibial cut depths, target alignment, size)
+  // ════════════════════════════════════════════════
+  if (tkaResectionPlan) {
+    addNewPageIfNeeded(34);
+    const INDIGO = [79, 70, 229];
+    setFill(INDIGO);
+    roundRect(doc, MARGIN, cursor, CONTENT_W, 8, 2);
+    setFont(8, "bold");
+    setColor(WHITE);
+    doc.text("RENCANA RESEKSI TKA", MARGIN + 4, cursor + 5.5);
+    cursor += 11;
+
+    const quarterW = (CONTENT_W - 6) / 4;
+    const cutCells = [
+      ["Femur Medial", tkaResectionPlan.femoral?.medialMm],
+      ["Femur Lateral", tkaResectionPlan.femoral?.lateralMm],
+      ["Tibia Medial", tkaResectionPlan.tibial?.medialMm],
+      ["Tibia Lateral", tkaResectionPlan.tibial?.lateralMm],
+    ];
+    setFill(LIGHT);
+    cutCells.forEach((_, idx) => {
+      roundRect(doc, MARGIN + idx * (quarterW + 2), cursor, quarterW, 14, 2);
+    });
+    cutCells.forEach(([label, mm], idx) => {
+      const x = MARGIN + idx * (quarterW + 2);
+      setFont(6.5, "normal"); setColor([100, 116, 139]);
+      doc.text(label, x + 3, cursor + 5);
+      setFont(11, "bold"); setColor(INDIGO);
+      doc.text(Number.isFinite(mm) ? `${mm.toFixed(1)}mm` : "—", x + 3, cursor + 11.5);
+    });
+    cursor += 17;
+
+    setFill(LIGHT);
+    roundRect(doc, MARGIN, cursor, CONTENT_W, 10, 2);
+    setFont(8, "bold"); setColor(NAVY);
+    const targetText = Number.isFinite(tkaResectionPlan.targetHkaDeg)
+      ? `${tkaResectionPlan.targetLabel || "Target"}: ${tkaResectionPlan.targetHkaDeg.toFixed(1)}°`
+      : (tkaResectionPlan.targetLabel || "Target alignment");
+    doc.text(`Alignment: ${targetText}`, MARGIN + 4, cursor + 6.5);
+    cursor += 13;
+
+    if (Array.isArray(tkaSizePredictions) && tkaSizePredictions.length > 0) {
+      const halfW = (CONTENT_W - 2) / 2;
+      setFill(LIGHT);
+      tkaSizePredictions.slice(0, 2).forEach((item, idx) => {
+        roundRect(doc, MARGIN + idx * (halfW + 2), cursor, halfW, 12, 2);
+      });
+      tkaSizePredictions.slice(0, 2).forEach((item, idx) => {
+        const x = MARGIN + idx * (halfW + 2);
+        setFont(6.5, "normal"); setColor([100, 116, 139]);
+        doc.text(`Prediksi ukuran ${item.label || item.role}`, x + 3, cursor + 5);
+        setFont(10, "bold"); setColor(INDIGO);
+        doc.text(`Size ${item.size ?? "—"}`, x + 3, cursor + 10.5);
+      });
+      cursor += 15;
+    }
   }
 
   // ════════════════════════════════════════════════
@@ -571,6 +632,11 @@ export default function PreOpReportModal({
   getCanvasSnapshot,
   getHkaMeasurementResult,
   cupAssessment = null,
+  // TKA resection plan (medial/lateral cut depths, alignment target) and
+  // implant size estimates — analogous to cupAssessment for hip, previously
+  // never passed in, so the TKA report had no dedicated section for either.
+  tkaResectionPlan = null,
+  tkaSizePredictions = null,
   // Optional: pre-fill from a saved patient case
   prefillCase = null,
 }) {
@@ -618,7 +684,25 @@ export default function PreOpReportModal({
 
   const hkaSummary = useMemo(() => (hkaSets || []).map((item) => {
     const result = getHkaMeasurementResult ? getHkaMeasurementResult(item) : null;
-    if (!result || result.absoluteDeviation === null) return null;
+    if (!result) return null;
+    // For JLA-mode (knee-only) measurements, result.absoluteDeviation is
+    // JLCA (joint-line convergence, a ligament-laxity metric normally near
+    // 0°) and result.direction is an unrelated static default — neither is
+    // "HKA". The actual CPAK-estimated HKA for this mode is
+    // result.jla.cpakHKA (= MPTA - LDFA), with its own varus/valgus
+    // classification already computed in result.jla.cpakHKACategory, so use
+    // those instead of mislabeling JLCA as HKA in the printed report.
+    if (result.jla) {
+      const { cpakHKA, cpakHKACategory } = result.jla;
+      if (!Number.isFinite(cpakHKA)) return null;
+      return {
+        label: `aHKA (estimasi JLA) ${result.side?.toUpperCase() || ""}`,
+        deviation: Math.abs(cpakHKA).toFixed(1),
+        direction: cpakHKACategory === "Valgus" ? "valgus" : "varus",
+        side: result.side || "—",
+      };
+    }
+    if (result.absoluteDeviation === null) return null;
     return {
       label: `HKA ${result.side?.toUpperCase() || ""}`,
       deviation: result.absoluteDeviation.toFixed(1),
@@ -678,6 +762,8 @@ export default function PreOpReportModal({
         imageName,
         prefillCase,
         cupAssessment,
+        tkaResectionPlan,
+        tkaSizePredictions,
       });
 
       if (print) {
@@ -695,7 +781,7 @@ export default function PreOpReportModal({
     } finally {
       setGenerating(false);
     }
-  }, [patientInfo, measurementRows, templateInventoryRows, hkaSummary, selectedImplantLibraryItem, imageName, getCanvasSnapshot, prefillCase]);
+  }, [patientInfo, measurementRows, templateInventoryRows, hkaSummary, selectedImplantLibraryItem, imageName, getCanvasSnapshot, prefillCase, cupAssessment, tkaResectionPlan, tkaSizePredictions]);
 
   if (typeof document === "undefined") return null;
 

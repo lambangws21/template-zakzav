@@ -1370,6 +1370,17 @@ export default function XrayCalibrationWorkspace({
     const unit = mmPerPixel ? "mm" : "px";
     const rightHipLength = length(latest(lines, "Hip Length R"));
     const leftHipLength = length(latest(lines, "Hip Length L"));
+    // Signed so the result can say which side is longer (template §5.3: LLD =
+    // kanan - kiri), matching PostTHAAssessmentPanel.js's lldLonger pattern —
+    // the drawn LLD line/magnitude below is unsigned on its own.
+    const lldDirection =
+      rightHipLength !== null && leftHipLength !== null
+        ? Math.abs(rightHipLength - leftHipLength) < 0.5
+          ? "equal"
+          : rightHipLength > leftHipLength
+            ? "right"
+            : "left"
+        : null;
     return HIP_RESULT_DEFINITIONS
       .map((item) => {
         const angle = latest(angles, item.key);
@@ -1385,10 +1396,18 @@ export default function XrayCalibrationWorkspace({
                 )
               : length(latest(lines, item.key));
         if (!Number.isFinite(measured)) return null;
+        const directionSuffix =
+          item.key === "LLD" && lldDirection
+            ? lldDirection === "equal"
+              ? " (Simetris)"
+              : lldDirection === "right"
+                ? " (Kanan lebih panjang)"
+                : " (Kiri lebih panjang)"
+            : "";
         return {
           metric: item.key,
           label: item.label,
-          value: `${measured.toFixed(1)} ${item.angleMetrics ? "°" : unit}`,
+          value: `${measured.toFixed(1)} ${item.angleMetrics ? "°" : unit}${directionSuffix}`,
           color: item.color,
         };
       })
@@ -2402,16 +2421,48 @@ export default function XrayCalibrationWorkspace({
   }, [activeTkaJointAngles, tkaResectionPlan, lines, mmPerPixel]);
   const tkaResults = useMemo(() => {
     if (!activeTkaJointAngles) return [];
-    const result = getHkaMeasurementResult(activeTkaJointAngles).jla;
+    // activeTkaJointAngles is already fully resolved by applyTkaAxisLines
+    // (hip/knee/ankle set from manually edited mechanical-axis lines when
+    // present). getHkaMeasurementResult's own "knee-ap" branch would
+    // re-derive hip/knee/ankle from raw shaft landmarks via
+    // buildKneeApReference, silently discarding that edit — so read it as
+    // "jla" here to use the already-resolved points directly, keeping this
+    // panel in sync with the cut/implant simulation that also consumes
+    // activeTkaJointAngles.
+    const result = getHkaMeasurementResult(
+      activeTkaJointAngles.mode === "knee-ap"
+        ? { ...activeTkaJointAngles, mode: "jla" }
+        : activeTkaJointAngles,
+    ).jla;
     if (!result) return [];
     const results = [
+      // Listed first and flagged `highlight: true` so the UI can render it
+      // as the headline finding — the CPAK phenotype (MacDessi et al. 2021)
+      // was already computed (jla.cpakType/cpakJLOCategory/cpakHKACategory)
+      // but only ever shown buried in detail panels/tooltips, never in this
+      // main results rail alongside the individual angle numbers.
+      result.cpakType
+        ? {
+            metric: "CPAK",
+            label: `${result.cpakJLOCategory} · ${result.cpakHKACategory}`,
+            value: result.cpakType,
+            color: "#f472b6",
+            highlight: true,
+            // Shown as the badge's title/aria-label (hover + screen reader):
+            // what CPAK is, which lines/angles define it, and the norm —
+            // same explanation as METRIC_TOOLTIPS.CPAK, plus this specific
+            // knee's classification inputs so "norma" and the actual reading
+            // are both visible without opening a separate panel.
+            detail: `${METRIC_TOOLTIPS.CPAK.desc} Garis: sumbu mekanik femur (LDFA) + sumbu mekanik tibia (MPTA). Hasil knee ini: JLO ${result.cpakJLO}° (${result.cpakJLOCategory}), aHKA ${result.cpakHKA}° (${result.cpakHKACategory}). Norma: ${METRIC_TOOLTIPS.CPAK.normal}, JLO netral 177-183°, aHKA netral -2° s/d 2°.`,
+          }
+        : null,
       { metric: "mLDFA", label: "Distal femur", value: result.LDFA, color: "#38bdf8" },
       { metric: "mMPTA", label: "Proximal tibia", value: result.MPTA, color: "#34d399" },
       { metric: "JLCA", label: "Konvergensi sendi", value: result.JLCA, color: "#e879f9" },
       { metric: "aHKA", label: "MPTA - LDFA", value: result.cpakHKA, color: "#fbbf24" },
-    ].filter((item) => Number.isFinite(item.value));
+    ].filter((item) => item && (item.highlight || Number.isFinite(item.value)));
     return activeTkaJointAngles.axisReference === "estimated-ap"
-      ? results.filter((item) => item.metric !== "aHKA").map((item) => ({ ...item, label: item.metric === "JLCA" ? item.label : `${item.label} (estimasi)` }))
+      ? results.filter((item) => item.metric !== "aHKA").map((item) => ({ ...item, label: item.metric === "JLCA" || item.highlight ? item.label : `${item.label} (estimasi)` }))
       : results;
   }, [activeTkaJointAngles]);
   const activeTkaFocus = isPlanningLayout && planningProcedure === "tka"
@@ -8725,6 +8776,29 @@ export default function XrayCalibrationWorkspace({
       compareImageName,
       snapToLandmarks,
       snapSettings,
+      // TKA resection-plan configuration — previously present in
+      // buildStoryPayload/restoreWorkspace (autosave/reload) but absent here,
+      // so e.g. changing the resection preset mm then undoing an unrelated
+      // line edit silently left the preset un-reverted (and un-redone).
+      selectedImplantType,
+      selectedImplantLibraryId,
+      planningGuideMode,
+      valgusCutAngleDeg,
+      valgusCutSide,
+      valgusCutOffsetPx,
+      valgusCutLineLengthPx,
+      tibialSlopeDeg,
+      tibialPosteriorSide,
+      tibialSlopeOffsetPx,
+      tibialSlopeLineLengthPx,
+      tibialCutAngleDeg,
+      tibialCutDirection,
+      tibialCutOffsetPx,
+      tibialCutLineLengthPx,
+      tkaFemoralResectionMm,
+      tkaTibialResectionMm,
+      tkaAlignmentMode,
+      tkaCustomTargetHkaDeg,
     }),
     [
       actualMmInput,
@@ -8760,6 +8834,25 @@ export default function XrayCalibrationWorkspace({
       sourceZoomPercent,
       snapToLandmarks,
       snapSettings,
+      selectedImplantType,
+      selectedImplantLibraryId,
+      planningGuideMode,
+      valgusCutAngleDeg,
+      valgusCutSide,
+      valgusCutOffsetPx,
+      valgusCutLineLengthPx,
+      tibialSlopeDeg,
+      tibialPosteriorSide,
+      tibialSlopeOffsetPx,
+      tibialSlopeLineLengthPx,
+      tibialCutAngleDeg,
+      tibialCutDirection,
+      tibialCutOffsetPx,
+      tibialCutLineLengthPx,
+      tkaFemoralResectionMm,
+      tkaTibialResectionMm,
+      tkaAlignmentMode,
+      tkaCustomTargetHkaDeg,
     ],
   );
 
@@ -8791,6 +8884,13 @@ export default function XrayCalibrationWorkspace({
   const applyHistorySnapshot = useCallback((snapshot) => {
     historyApplyingRef.current = true;
     setLines(snapshot.lines.map((item) => ({ ...item })));
+    // Keep the "which pelvic analysis run is active" ref in sync with the
+    // restored lines, same derivation used on autosave restore (line ~8172)
+    // — otherwise a landmark drag right after undo/redo regenerates geometry
+    // tagged with a stale analysis id on top of the just-restored lines,
+    // which then never get matched/replaced again.
+    activePelvicAnalysisIdRef.current =
+      snapshot.lines.find((line) => line.pelvicAnalysisId)?.pelvicAnalysisId || null;
     setAngles(
       snapshot.angles.map((item) => ({
         ...item,
@@ -8870,6 +8970,43 @@ export default function XrayCalibrationWorkspace({
     setCompareImageName(snapshot.compareImageName || "");
     setSnapToLandmarks(snapshot.snapToLandmarks ?? true);
     setSnapSettings(normalizeSnapSettings(snapshot.snapSettings));
+    if (snapshot.selectedImplantType !== undefined)
+      setSelectedImplantType(snapshot.selectedImplantType);
+    if (snapshot.selectedImplantLibraryId !== undefined)
+      setSelectedImplantLibraryId(snapshot.selectedImplantLibraryId);
+    if (snapshot.planningGuideMode)
+      setPlanningGuideMode(snapshot.planningGuideMode);
+    if (Number.isFinite(snapshot.valgusCutAngleDeg))
+      setValgusCutAngleDeg(snapshot.valgusCutAngleDeg);
+    if (snapshot.valgusCutSide) setValgusCutSide(snapshot.valgusCutSide);
+    if (Number.isFinite(snapshot.valgusCutOffsetPx))
+      setValgusCutOffsetPx(snapshot.valgusCutOffsetPx);
+    if (Number.isFinite(snapshot.valgusCutLineLengthPx))
+      setValgusCutLineLengthPx(snapshot.valgusCutLineLengthPx);
+    if (Number.isFinite(snapshot.tibialSlopeDeg))
+      setTibialSlopeDeg(snapshot.tibialSlopeDeg);
+    if (snapshot.tibialPosteriorSide)
+      setTibialPosteriorSide(snapshot.tibialPosteriorSide);
+    if (Number.isFinite(snapshot.tibialSlopeOffsetPx))
+      setTibialSlopeOffsetPx(snapshot.tibialSlopeOffsetPx);
+    if (Number.isFinite(snapshot.tibialSlopeLineLengthPx))
+      setTibialSlopeLineLengthPx(snapshot.tibialSlopeLineLengthPx);
+    if (Number.isFinite(snapshot.tibialCutAngleDeg))
+      setTibialCutAngleDeg(snapshot.tibialCutAngleDeg);
+    if (snapshot.tibialCutDirection)
+      setTibialCutDirection(snapshot.tibialCutDirection);
+    if (Number.isFinite(snapshot.tibialCutOffsetPx))
+      setTibialCutOffsetPx(snapshot.tibialCutOffsetPx);
+    if (Number.isFinite(snapshot.tibialCutLineLengthPx))
+      setTibialCutLineLengthPx(snapshot.tibialCutLineLengthPx);
+    if (Number.isFinite(snapshot.tkaFemoralResectionMm))
+      setTkaFemoralResectionMm(snapshot.tkaFemoralResectionMm);
+    if (Number.isFinite(snapshot.tkaTibialResectionMm))
+      setTkaTibialResectionMm(snapshot.tkaTibialResectionMm);
+    if (snapshot.tkaAlignmentMode)
+      setTkaAlignmentMode(snapshot.tkaAlignmentMode);
+    if (Number.isFinite(snapshot.tkaCustomTargetHkaDeg))
+      setTkaCustomTargetHkaDeg(snapshot.tkaCustomTargetHkaDeg);
 
     setSelectedLineId(null);
     setSelectedAngleId(null);
@@ -11930,7 +12067,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // Femoral mechanical axis
-        overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
+        overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "aHKA", "CPAK"].includes(activeTkaFocus) ? 1 : 0.12;
         overlayCtx.strokeStyle = "#ffe600";
         overlayCtx.lineWidth = strokeWidth;
         overlayCtx.beginPath();
@@ -11939,7 +12076,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.stroke();
 
         // Tibial mechanical axis
-        overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
+        overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "aHKA", "CPAK"].includes(activeTkaFocus) ? 1 : 0.12;
         overlayCtx.strokeStyle = "#00ffcc";
         overlayCtx.lineWidth = strokeWidth;
         overlayCtx.beginPath();
@@ -11949,7 +12086,7 @@ export default function XrayCalibrationWorkspace({
 
         // Condyle line dashed (MFC–LFC extended)
         if (isSelected && !compactForResection && jlaMFC && jlaLFC) {
-          overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "JLCA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
+          overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "JLCA", "aHKA", "CPAK"].includes(activeTkaFocus) ? 1 : 0.12;
           const condExt = jlaExtendLine(jlaMFC, jlaLFC, 24);
           overlayCtx.strokeStyle = "#00b7ff";
           overlayCtx.lineWidth = strokeWidth;
@@ -11963,7 +12100,7 @@ export default function XrayCalibrationWorkspace({
 
         // Plateau line dashed (MTP–LTP extended)
         if (isSelected && !compactForResection && jlaMTP && jlaLTP) {
-          overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "JLCA", "aHKA"].includes(activeTkaFocus) ? 1 : 0.12;
+          overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "JLCA", "aHKA", "CPAK"].includes(activeTkaFocus) ? 1 : 0.12;
           const platExt = jlaExtendLine(jlaMTP, jlaLTP, 24);
           overlayCtx.strokeStyle = "#00ffcc";
           overlayCtx.lineWidth = strokeWidth;
@@ -11977,7 +12114,7 @@ export default function XrayCalibrationWorkspace({
 
         // LDFA arc at femoral axis × condyle line intersection
         overlayCtx.globalAlpha = 1;
-        if ((isSelected || activeTkaFocus) && (!activeTkaFocus || ["mLDFA", "aHKA"].includes(activeTkaFocus)) && jlaMFC && jlaLFC) {
+        if ((isSelected || activeTkaFocus) && (!activeTkaFocus || ["mLDFA", "aHKA", "CPAK"].includes(activeTkaFocus)) && jlaMFC && jlaLFC) {
           const condFar = jlaExtendLine(jlaMFC, jlaLFC, 500);
           const ldfaV = jlaLineIntersect(jlaHip, jlaKnee, condFar.a, condFar.b);
           if (ldfaV) {
@@ -12000,7 +12137,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         // MPTA arc at tibial axis × plateau line intersection
-        if ((isSelected || activeTkaFocus) && (!activeTkaFocus || ["mMPTA", "aHKA"].includes(activeTkaFocus)) && jlaMTP && jlaLTP) {
+        if ((isSelected || activeTkaFocus) && (!activeTkaFocus || ["mMPTA", "aHKA", "CPAK"].includes(activeTkaFocus)) && jlaMTP && jlaLTP) {
           const platFar = jlaExtendLine(jlaMTP, jlaLTP, 500);
           const mptaV = jlaLineIntersect(
             jlaKnee,
@@ -25300,12 +25437,26 @@ export default function XrayCalibrationWorkspace({
             value,
             unit: "deg",
             side: hka.side || "right",
+            // Lets the Planning Log's hide/show buttons (and group-hide)
+            // toggle the whole underlying HKA/JLA assessment — previously
+            // these rows had no source* fields at all, so the toggle never
+            // rendered for any TKA metric.
+            sourceHkaId: hka.id,
+            sourceHidden: Boolean(hka.hidden),
           });
         if (result.jla) {
           add("mLDFA", result.jla.LDFA);
           add("mMPTA", result.jla.MPTA);
           add("JLCA", result.jla.JLCA);
-          add("mTFA", result.jla.cpakHKA);
+          // Was "mTFA" — collided with the *different* full-leg signedDeviation
+          // value added under the same key below when both a JLA and a full
+          // HKA set exist for the same side (resolvePlanningRows then picks
+          // whichever happens to match first, non-deterministically from the
+          // user's perspective). "aHKA" matches the canvas result-card key
+          // (XrayCalibrationWorkspace.js ~2411) and canvas focus/highlight
+          // keys for this exact value (CPAK HKA = MPTA - LDFA), so it's now a
+          // single consistent name end-to-end instead of a second alias.
+          add("aHKA", result.jla.cpakHKA);
         }
         if (result.mode === "full" && result.signedDeviation !== null) {
           add("mFA-mTA", result.signedDeviation);
@@ -25328,6 +25479,8 @@ export default function XrayCalibrationWorkspace({
                   dy * (hka.knee.x - hka.hip.x)) /
                   length) *
                 mmPerPixel,
+              sourceHkaId: hka.id,
+              sourceHidden: Boolean(hka.hidden),
             });
         }
       });
@@ -25421,6 +25574,7 @@ export default function XrayCalibrationWorkspace({
       ].forEach(([metric, name, value]) =>
         entries.push({
           id: `tka-plan:${metric}`,
+          landmarkGroup: "tka",
           metric,
           name,
           unit: "mm",
@@ -43542,6 +43696,9 @@ export default function XrayCalibrationWorkspace({
               if (!["femoralResectionMm", "tibialResectionMm"].includes(key) || !Number.isFinite(Number(value)) || Number(value) < 1 || Number(value) > 20) return;
               const safeValue = Number(value);
               const role = key === "femoralResectionMm" ? "femoral" : "tibial";
+              const hadManualCutLine = lines.some((line) =>
+                line.tkaSourceId === activeTkaJointAngles?.id && line.tkaCutRole === role,
+              );
               setLines((previous) => previous.filter((line) =>
                 !(line.tkaSourceId === activeTkaJointAngles?.id && line.tkaCutRole === role),
               ));
@@ -43549,6 +43706,15 @@ export default function XrayCalibrationWorkspace({
                 setTkaFemoralResectionMm(safeValue);
               if (key === "tibialResectionMm")
                 setTkaTibialResectionMm(safeValue);
+              // Changing the preset previously deleted any already-placed/
+              // edited cut line for this role with zero feedback — a user
+              // could lose a manually-adjusted cut line without knowing why
+              // it vanished from the canvas.
+              if (hadManualCutLine) {
+                setNotice(
+                  `Garis potong ${role === "femoral" ? "femur" : "tibia"} dihapus karena preset diubah. Klik "Edit garis potong" untuk membuat ulang dari preset baru.`,
+                );
+              }
             }}
             onToggleMeasurementLabel={(source) => {
               if (source?.sourceIntersectionKey) {
@@ -43591,6 +43757,22 @@ export default function XrayCalibrationWorkspace({
               );
             }}
             onToggleMeasurementHidden={(source) => {
+              if (source?.sourceHkaId) {
+                const currentlyHiddenHka = Boolean(source.sourceHidden);
+                setHkaSets((previous) =>
+                  previous.map((item) =>
+                    item.id === source.sourceHkaId
+                      ? { ...item, hidden: !currentlyHiddenHka }
+                      : item,
+                  ),
+                );
+                setNotice(
+                  currentlyHiddenHka
+                    ? "Hasil HKA/JLA ditampilkan kembali."
+                    : "Hasil HKA/JLA disembunyikan dari canvas.",
+                );
+                return;
+              }
               if (source?.sourceIntersectionKey) {
                 toggleIntersectionAngleHidden(source.sourceIntersectionKey);
                 setNotice(
@@ -43632,8 +43814,11 @@ export default function XrayCalibrationWorkspace({
               const lineIds = new Set();
               const angleIds = new Set();
               const intersectionKeys = new Set();
+              const hkaIds = new Set();
               (sources || []).forEach((source) => {
-                if (source?.sourceIntersectionKey) {
+                if (source?.sourceHkaId) {
+                  hkaIds.add(source.sourceHkaId);
+                } else if (source?.sourceIntersectionKey) {
                   intersectionKeys.add(source.sourceIntersectionKey);
                 } else if (Number.isFinite(source?.sourceAngleId)) {
                   angleIds.add(source.sourceAngleId);
@@ -43641,6 +43826,13 @@ export default function XrayCalibrationWorkspace({
                   source.sourceLineIds.forEach((id) => lineIds.add(id));
                 }
               });
+              if (hkaIds.size) {
+                setHkaSets((previous) =>
+                  previous.map((item) =>
+                    hkaIds.has(item.id) ? { ...item, hidden } : item,
+                  ),
+                );
+              }
               if (lineIds.size) {
                 setLines((previous) =>
                   previous.map((line) =>
@@ -43664,7 +43856,7 @@ export default function XrayCalibrationWorkspace({
                   return next;
                 });
               }
-              if (lineIds.size || angleIds.size || intersectionKeys.size) {
+              if (lineIds.size || angleIds.size || intersectionKeys.size || hkaIds.size) {
                 setNotice(
                   hidden
                     ? "Grup landmark disembunyikan dari canvas."
@@ -51135,6 +51327,8 @@ export default function XrayCalibrationWorkspace({
         getCanvasSnapshot={createReportCanvasSnapshotRef.current}
         getHkaMeasurementResult={getHkaMeasurementResult}
         cupAssessment={savedCupAssessment}
+        tkaResectionPlan={planningProcedure === "tka" ? tkaResectionPlan : null}
+        tkaSizePredictions={planningProcedure === "tka" ? tkaSizePredictions : null}
       />
 
       <PatientCaseManager
