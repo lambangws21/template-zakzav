@@ -24,6 +24,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { classifyLldDirection, formatLldDirectionLabel } from "../lib/xray/measurementUtils";
 
 const STEPS = ["landmarks", "cup", "result"];
 const STEP_LABELS = ["AP Pelvis", "Cup Orientation", "Hasil"];
@@ -835,7 +836,7 @@ function buildResults(points, cupPoints, mmPerPixel, operatedSide, cupAssessment
   const lldRaw = hLenLeft !== null && hLenRight !== null ? hLenRight - hLenLeft : null;
   const lld = lldRaw !== null ? Math.abs(lldRaw) : null;
   // positive lldRaw → right LT further from teardrop line → right leg longer
-  const lldLonger = lldRaw !== null ? (Math.abs(lldRaw) < 0.5 ? "equal" : lldRaw > 0 ? "right" : "left") : null;
+  const lldLonger = hLenRight !== null && hLenLeft !== null ? classifyLldDirection(hLenRight, hLenLeft) : null;
 
   const fOffLeft = hrcLeft ? pointLineDistance(hrcLeft, points.axisLeftTop, points.axisLeftBottom) : null;
   const fOffRight = hrcRight ? pointLineDistance(hrcRight, points.axisRightTop, points.axisRightBottom) : null;
@@ -1088,7 +1089,8 @@ async function exportToPDF({ imgRef, points, cupPoints, results, mmPerPixel, ope
 
   row("COR horizontal", fmtValue(results.corDx, mmPerPixel, "length", 1, displayUnit), "Target <=5 mm", results.flags.corX);
   row("COR vertical", fmtValue(results.corDy, mmPerPixel, "length", 1, displayUnit), "Target <=3 mm superior", results.flags.corY);
-  const lldDir = results.lldLonger === "right" ? " (Kanan lebih panjang)" : results.lldLonger === "left" ? " (Kiri lebih panjang)" : results.lldLonger === "equal" ? " (Simetris)" : "";
+  const lldDirLabel = formatLldDirectionLabel(results.lldLonger);
+  const lldDir = lldDirLabel ? ` (${lldDirLabel})` : "";
   row("LLD", `${fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)}${lldDir}`, ">6 mm terasa, >10 mm bermasalah", results.flags.lld);
   row("Delta femoral offset", fmtValue(results.fOffDelta, mmPerPixel, "length", 1, displayUnit), "Target <=5 mm", results.flags.fOff);
   row("Delta global offset", fmtValue(results.gOffDelta, mmPerPixel, "length", 1, displayUnit), "Bandingkan sisi normal", results.flags.gOff);
@@ -1584,7 +1586,7 @@ export default function PostTHAAssessmentPanel({ isOpen, onClose, imageCanvasRef
                     <div className="grid gap-2">
                       <ResultCard isDark={isDark} label="COR Horizontal" value={fmtValue(results.corDx, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.corX} note="Rekonstruksi COR dibanding sisi kontralateral." />
                       <ResultCard isDark={isDark} label="COR Vertical" value={fmtValue(results.corDy, mmPerPixel, "length", 1, displayUnit)} range="Target <=3 mm superior" flag={results.flags.corY} note="Superior shift berlebih berisiko loosening/abductor insufficiency." />
-                      <ResultCard isDark={isDark} label="LLD" value={fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)} range=">6 mm dapat terasa, >10 mm bermasalah" flag={results.flags.lld} note={results.lldLonger === "right" ? "Kanan lebih panjang" : results.lldLonger === "left" ? "Kiri lebih panjang" : results.lldLonger === "equal" ? "Simetris" : undefined} />
+                      <ResultCard isDark={isDark} label="LLD" value={fmtValue(results.lld, mmPerPixel, "length", 1, displayUnit)} range=">6 mm dapat terasa, >10 mm bermasalah" flag={results.flags.lld} note={formatLldDirectionLabel(results.lldLonger) || undefined} />
                       <ResultCard isDark={isDark} label="Delta Femoral Offset" value={fmtValue(results.fOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Target <=5 mm" flag={results.flags.fOff} />
                       <ResultCard isDark={isDark} label="Delta Global Offset" value={fmtValue(results.gOffDelta, mmPerPixel, "length", 1, displayUnit)} range="Bandingkan sisi normal" flag={results.flags.gOff} />
                       <ResultCard isDark={isDark} label="Cup Inclination" value={fmtValue(results.inclination, mmPerPixel, "deg")} range="Target sekitar 45°" flag={results.flags.inc} />

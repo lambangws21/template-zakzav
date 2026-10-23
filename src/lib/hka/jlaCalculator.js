@@ -70,9 +70,14 @@ export function computeJLA({
   const LDFA = angleDeg(vFemUp, vCondyle);
 
   // ── MPTA ──────────────────────────────────────────────────────────────────
-  // Medial angle between tibial mechanical axis (up = ankle→knee reversed = knee→ankle above)
-  // and tibial plateau line (medial→lateral reversed = lateral→medial)
-  const vTibUp   = { x: kneeCenter.x - ankleCenter.x, y: kneeCenter.y - ankleCenter.y };
+  // Medial angle between tibial mechanical axis (knee→ankle, "away from the
+  // joint" — mirrors vFemUp's knee→hip convention above) and tibial plateau
+  // line (medial→lateral). angleDeg() is an unsigned acos with no >90° flip,
+  // so negating either input vector returns the SUPPLEMENT (180°−angle), not
+  // just a relabeling — vTibUp must point away from the knee the same way
+  // vFemUp does, or MPTA (and everything derived from it: cpakHKA, cpakJLO,
+  // jloHsu, the CPAK phenotype, and the Varus/Valgus label) comes out wrong.
+  const vTibUp   = { x: ankleCenter.x - kneeCenter.x, y: ankleCenter.y - kneeCenter.y };
   const vPlateau = { x: tibPlateauMedial.x - tibPlateauLateral.x, y: tibPlateauMedial.y - tibPlateauLateral.y };
   const MPTA = angleDeg(vTibUp, vPlateau);
 
@@ -90,9 +95,13 @@ export function computeJLA({
   const LDFA_r = r(LDFA);
   const MPTA_r = r(MPTA);
   const JLCA_r = r(JLCA);
-  const cpakJLO    = r(MPTA_r + LDFA_r);         // MPTA + LDFA  (sum)
-  const cpakHKA    = r(MPTA_r - LDFA_r);         // MPTA - LDFA  (difference)
-  const jloHsu     = r(90 - (LDFA_r + MPTA_r) / 2); // JLO relative to ground (Hsu et al.)
+  // Combine the unrounded LDFA/MPTA first, then round once — rounding each
+  // to 0.1° before summing/differencing can shift the combined value across
+  // a classification boundary (e.g. true JLO 176.96° rounds "normal" via
+  // 87.0+90.0=177.0 instead of the correct <177 Apex Distal bucket).
+  const cpakJLO    = r(MPTA + LDFA);         // MPTA + LDFA  (sum)
+  const cpakHKA    = r(MPTA - LDFA);         // MPTA - LDFA  (difference)
+  const jloHsu     = r(90 - (LDFA + MPTA) / 2); // JLO relative to ground (Hsu et al.)
 
   // ── CPAK phenotype ────────────────────────────────────────────────────────
   const cpak = cpakClassify(cpakHKA, cpakJLO);
@@ -103,16 +112,16 @@ export function computeJLA({
   let dloRisk, dloText;
   if (jloHsu >= 3 && JLCA_r >= 5) {
     dloRisk = 'high';
-    dloText = 'Waspada — DLO sebaiknya dipertimbangkan (JLO≥3° + JLCA≥5°; risiko MPTA>95° post-MOWPTO ≈80%).';
+    dloText = 'Waspada — DLO sebaiknya dipertimbangkan (JLA≥3° + JLCA≥5°; risiko MPTA>95° post-MOWPTO ≈80%).';
   } else if (jloHsu >= 5) {
     dloRisk = 'moderate';
-    dloText = 'Periksa ulang — JLO ≥5° melebihi threshold DLO guidelines. Evaluasi MPTA target post-op.';
+    dloText = 'Periksa ulang — JLA ≥5° melebihi threshold DLO guidelines. Evaluasi MPTA target post-op.';
   } else if (JLCA_r >= 5) {
     dloRisk = 'moderate';
     dloText = 'Periksa ulang — JLCA ≥5° berisiko overcorrection; terapkan koreksi Micicoi.';
   } else {
     dloRisk = 'low';
-    dloText = 'Risiko rendah — single-level osteotomy kemungkinan dapat mempertahankan JLO yang baik.';
+    dloText = 'Risiko rendah — single-level osteotomy kemungkinan dapat mempertahankan JLA yang baik.';
   }
 
   // ── Micicoi overcorrection formula ────────────────────────────────────────
@@ -498,7 +507,7 @@ export function applyTkaCutLines(plan, hka, lines, mmPerPixel) {
 }
 
 export function estimateTkaMlSize(cut, medial, lateral, mmPerPixel, sizes, useCutSpan = false) {
-  if (!cut || !medial || !lateral || !(mmPerPixel > 0) || !sizes.length) return null;
+  if (!cut || !medial || !lateral || !(mmPerPixel > 0) || !sizes?.length) return null;
   const dx = cut.end.x - cut.start.x;
   const dy = cut.end.y - cut.start.y;
   const span = Math.hypot(dx, dy);

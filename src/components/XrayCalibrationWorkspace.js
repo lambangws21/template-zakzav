@@ -129,10 +129,14 @@ import {
   buildPelvicAnalysisMeasurements,
   getHipLineLabelOffset,
   getHipMetricLabelOffset,
+  getMissingPelvicLines,
+  getPelvicLandmarkSet,
   HIP_RESULT_DEFINITIONS,
   isHipResultMeasurementRelevant,
+  PELVIC_ADDABLE_LINES,
   PELVIC_ANALYSIS_LANDMARKS,
 } from "../lib/xray/pelvicAnalysis";
+import { refineFemoralHeadCircle } from "../lib/xray/autoLandmarkDetection";
 import {
   buildHalluxValgusMeasurements,
   HALLUX_VALGUS_LANDMARKS,
@@ -292,6 +296,8 @@ import {
   getAngleCanvasLabelText,
   getCircleDiameterText,
   getCircleCanvasLabelText,
+  classifyLldDirection,
+  formatLldDirectionLabel,
 } from "../lib/xray/measurementUtils";
 import {
   constrainLineByPreset,
@@ -640,8 +646,8 @@ const METRIC_TOOLTIPS = {
     desc: "Konvergensi garis sendi femur dan tibia. > 2°: kurangi koreksi sebesar (JLCA−2)/2° (Micicoi).",
     color: "#6b21a8",
   },
-  JLO: {
-    title: "JLO — Joint Line Obliquity (Hsu)",
+  JLA: {
+    title: "JLA — Joint Line Obliquity (Hsu)",
     normal: "≤ 3°",
     desc: "Kemiringan garis sendi. Formula: 90° − (LDFA+MPTA)/2. ≥ 3° bersama JLCA ≥ 5° → indikasi DLO.",
     color: "#92400e",
@@ -649,7 +655,7 @@ const METRIC_TOOLTIPS = {
   CPAK: {
     title: "CPAK — Coronal Plane Alignment",
     normal: "9 fenotipe",
-    desc: "Fenotipe biomekanik lutut (MacDessi 2021). 9 tipe dari HKA × JLO. CPAK I (~26%) paling umum.",
+    desc: "Fenotipe biomekanik lutut (MacDessi 2021). 9 tipe dari HKA × JLA. CPAK I (~26%) paling umum.",
     color: "#4338ca",
   },
 };
@@ -774,14 +780,14 @@ const HKA_INFO_BUBBLES = {
       { label: "LDFA", value: "87° ±3°", color: "#1e40af", bg: "#dbeafe" },
       { label: "MPTA", value: "87° ±3°", color: "#065f46", bg: "#d1fae5" },
       { label: "JLCA", value: "0° ±2°", color: "#6b21a8", bg: "#f3e8ff" },
-      { label: "JLO", value: "≤ 3°", color: "#92400e", bg: "#fef3c7" },
+      { label: "JLA", value: "≤ 3°", color: "#92400e", bg: "#fef3c7" },
     ],
     clinical: [
       "LDFA > 90° → varus femur · < 84° → valgus femur",
       "MPTA < 84° → varus tibia · > 90° → valgus tibia",
       "JLCA > 2° → kurangi koreksi (JLCA−2)/2° (Micicoi)",
-      "JLCA ≥ 5° + JLO ≥ 3° → pertimbangkan DLO",
-      "CPAK: 9 fenotipe HKA×JLO (MacDessi 2021) panduan osteotomi",
+      "JLCA ≥ 5° + JLA ≥ 3° → pertimbangkan DLO",
+      "CPAK: 9 fenotipe HKA×JLA (MacDessi 2021) panduan osteotomi",
     ],
     ref: "Pratobevera EFORT 2024 · MacDessi 2021 · Micicoi 2020 · Hsu 1990",
   },
@@ -807,6 +813,13 @@ const MOBILE_LONG_PRESS_MS = 460;
 const MOBILE_DOUBLE_TAP_MS_RESET = 360;
 const MOBILE_DOUBLE_TAP_DISTANCE_SCREEN = 28;
 const DEFAULT_LINE_STROKE_WIDTH = 2;
+// Thinner than DEFAULT_LINE_STROKE_WIDTH/DEFAULT_ANGLE_STROKE_WIDTH/
+// DEFAULT_CIRCLE_STROKE_WIDTH — a completed pelvic analysis draws up to 13
+// lines/angles/circles over a small femoral-head area at once, so the
+// shared app-wide defaults (sized for a handful of lines on a full-image
+// ruler) read as visually heavy there. Used only for pelvic-analysis-
+// generated lines/angles/circles, not the shared defaults other tools use.
+const HIP_LINE_STROKE_WIDTH = 1.3;
 const MIN_CALIBRATION_REFERENCE_MM = 0.1;
 const DEFAULT_LINE_COLOR = "#38bdf8";
 const LINE_MEASUREMENT_MODES = [
@@ -956,6 +969,13 @@ export default function XrayCalibrationWorkspace({
   const nextHkaIdRef = useRef(1);
   const hkaCompletionFiredRef = useRef(false);
   const pendingHkaUpdateIdRef = useRef(null);
+  // How many jla draft points were pre-filled (reused from a completed
+  // Mechanical Axis) when the current hkaAuto draft session began. Only
+  // those indices should be excluded from re-grab/touch-drag-continue —
+  // entering jla mode without a reused axis (draftHkaPoints starting empty)
+  // means the user places all points by hand and should get the same
+  // touch-drag assist as every other mode.
+  const jlaInitialReusedCountRef = useRef(0);
   const nextCutLayerIdRef = useRef(1);
   const nextAnnotationIdRef = useRef(1);
   const historyPastRef = useRef([]);
@@ -1059,7 +1079,82 @@ export default function XrayCalibrationWorkspace({
   const [draftPelvicAnalysisPoints, setDraftPelvicAnalysisPoints] = useState(
     [],
   );
+  // "quick" collects only the 14 landmarks the 4 core metrics (LLD, FO, CCD,
+  // FHD) need; "detailed" collects the full 26 (adds Kohler/Shenton/GT
+  // height/CEA); "continuation" collects just the 12 detailed-only landmarks
+  // on top of an already-completed quick run (see continueToDetailedPelvicAnalysis
+  // below). Switching modes only takes effect on the next pelvic analysis
+  // run — it doesn't retroactively change points already placed.
+  const [pelvicAnalysisMode, setPelvicAnalysisMode] = useState("quick");
+  const activePelvicLandmarks = getPelvicLandmarkSet(pelvicAnalysisMode);
+  // Mirrors activePelvicLandmarks for synchronous reads inside memoized
+  // callbacks whose dependency array doesn't include pelvicAnalysisMode —
+  // same reasoning/pattern as pelvicLandmarksRef below.
+  const activePelvicLandmarksRef = useRef(activePelvicLandmarks);
+  activePelvicLandmarksRef.current = activePelvicLandmarks;
   const pelvicAnalysisCompletionRef = useRef(false);
+  // Switching quick/detailed mid-sequence would misalign already-placed
+  // points against the new list's positions (e.g. quick's index 4 is HC,
+  // detailed's index 4 is Kohler-ilium) — so changing mode always restarts
+  // the current draft rather than letting the two interleave. `choice` is
+  // the wizard-start confirmation: "normal" and "continuation" both start
+  // quick (the 12 extra landmarks can always be added afterward via
+  // "Lanjutkan ke Detailed" regardless of which was picked — there's no
+  // good reason "Normal" should permanently forbid adding more later), or
+  // "ddh" to go straight to the full 26 — dysplasia workup needs
+  // Kohler/Shenton/CEA from the start, not as an afterthought.
+  const chooseHipWizardStart = useCallback((choice) => {
+    setPelvicAnalysisMode(choice === "ddh" ? "detailed" : "quick");
+    setDraftPelvicAnalysisPoints([]);
+    pelvicAnalysisCompletionRef.current = false;
+  }, []);
+  // "Lanjutkan ke Detailed": re-prompts only for the 12 landmarks a quick
+  // run skipped, rather than restarting all 26 from scratch. Computes the
+  // landmark list directly instead of via activePelvicLandmarksRef, which
+  // would still read the *old* mode until the next render.
+  const continueToDetailedPelvicAnalysis = useCallback(() => {
+    const continuationLandmarks = getPelvicLandmarkSet("continuation");
+    setPelvicAnalysisMode("continuation");
+    setDraftPelvicAnalysisPoints([]);
+    pelvicAnalysisCompletionRef.current = false;
+    // Completing an analysis resets `tool` to idle, so without this a click
+    // on canvas right after pressing this button wouldn't route anywhere.
+    setTool("pelvicAnalysis");
+    setHipGuideOpenSignal((value) => value + 1);
+    const first = continuationLandmarks[0];
+    if (first) {
+      setNotice(
+        `Lanjutan Detailed 1/${continuationLandmarks.length}: pilih ${first.label}.`,
+      );
+    }
+  }, []);
+  // Per-line addition: unlike "Lanjutkan ke Detailed" (which always asks
+  // for all 12 remaining landmarks), this prompts for only the 1-2
+  // landmarks one specific missing line/angle needs — e.g. just "amRight"
+  // to add Shenton R, not the whole detailed batch.
+  const [addingPelvicLineId, setAddingPelvicLineId] = useState(null);
+  const [pelvicLineAdditionPoints, setPelvicLineAdditionPoints] = useState([]);
+  // PlanningWorkspace.js owns the floating reference-image panel's open/
+  // closed state locally (guideItemId) and only auto-opens it for items
+  // that aren't complete yet — "pelvic" already is, so nothing there would
+  // open it for an add-one-line sub-task on its own. Bumping this counter
+  // is how this component asks PlanningWorkspace.js to open it anyway.
+  const [hipGuideOpenSignal, setHipGuideOpenSignal] = useState(0);
+  const startAddingPelvicLine = useCallback((lineId) => {
+    const definition = PELVIC_ADDABLE_LINES.find((item) => item.id === lineId);
+    if (!definition) return;
+    setAddingPelvicLineId(lineId);
+    setPelvicLineAdditionPoints([]);
+    // Completing an analysis resets `tool` to idle, so without this a click
+    // on canvas right after pressing "Tambahkan" wouldn't route anywhere.
+    setTool("pelvicAnalysis");
+    setHipGuideOpenSignal((value) => value + 1);
+    const firstKey = definition.landmarkKeys[0];
+    const firstLandmark = PELVIC_ANALYSIS_LANDMARKS.find((item) => item.key === firstKey);
+    setNotice(
+      `Tambah ${definition.label} 1/${definition.landmarkKeys.length}: pilih ${firstLandmark?.label || firstKey}.`,
+    );
+  }, []);
   // One-shot flag: when set, the NEXT pelvic-analysis click is tagged
   // confidence:"samar" (consumed/reset immediately after that click).
   const pelvicNextPointUncertainRef = useRef(false);
@@ -1079,10 +1174,21 @@ export default function XrayCalibrationWorkspace({
   // double-invoke).
   const pelvicLandmarksRef = useRef([]);
   const activePelvicAnalysisIdRef = useRef(null);
+  const missingPelvicLines = useMemo(
+    () => getMissingPelvicLines(pelvicLandmarks),
+    [pelvicLandmarks],
+  );
   const [draftHalluxValgusPoints, setDraftHalluxValgusPoints] = useState([]);
   const halluxValgusCompletionRef = useRef(false);
   const halluxCorrectionFreeCutRef = useRef(null);
   const neckOsteotomyLinePendingRef = useRef(false);
+  // When set, the next line that Axis Builder produces (2 proximal-cortex
+  // points + 2 distal-cortex points -> midpoint-to-midpoint centerline) is
+  // tagged as this TKA source's anatomical axis instead of a generic
+  // untagged "axis" line — giving the AP-short-leg estimate a true
+  // intramedullary/diaphyseal centerline instead of two single eyeballed
+  // shaft-center clicks.
+  const tkaAxisBuilderTargetRef = useRef(null);
   const neckOsteotomyFreeCutRef = useRef(null);
   const [guideBuilderMode, setGuideBuilderMode] = useState("parallel");
   const [guideBuilderPreviewPoint, setGuideBuilderPreviewPoint] =
@@ -1371,16 +1477,9 @@ export default function XrayCalibrationWorkspace({
     const rightHipLength = length(latest(lines, "Hip Length R"));
     const leftHipLength = length(latest(lines, "Hip Length L"));
     // Signed so the result can say which side is longer (template §5.3: LLD =
-    // kanan - kiri), matching PostTHAAssessmentPanel.js's lldLonger pattern —
-    // the drawn LLD line/magnitude below is unsigned on its own.
-    const lldDirection =
-      rightHipLength !== null && leftHipLength !== null
-        ? Math.abs(rightHipLength - leftHipLength) < 0.5
-          ? "equal"
-          : rightHipLength > leftHipLength
-            ? "right"
-            : "left"
-        : null;
+    // kanan - kiri) — the drawn LLD line/magnitude below is unsigned on its
+    // own. Shared with PostTHAAssessmentPanel.js's identical classification.
+    const lldDirection = classifyLldDirection(rightHipLength, leftHipLength);
     return HIP_RESULT_DEFINITIONS
       .map((item) => {
         const angle = latest(angles, item.key);
@@ -1401,11 +1500,7 @@ export default function XrayCalibrationWorkspace({
         // nowrap string that overflows narrow/mobile cards.
         const note =
           item.key === "LLD" && lldDirection
-            ? lldDirection === "equal"
-              ? "Simetris"
-              : lldDirection === "right"
-                ? "Kanan lebih panjang"
-                : "Kiri lebih panjang"
+            ? formatLldDirectionLabel(lldDirection)
             : null;
         return {
           metric: item.key,
@@ -2372,13 +2467,34 @@ export default function XrayCalibrationWorkspace({
   }, [selectedHka]);
   const activeTkaJointAngles = useMemo(() => {
     const requestedMode = planningSessions.tka?.tkaImageMode === "ap" ? "knee-ap" : "jla";
+    // Bug: this never consulted which side (L/R) is currently selected, and
+    // planningSession.side wasn't even in the dependency list — so the
+    // pre-cut axis lines stayed on whichever HKA set was last touched
+    // regardless of switching sides in the UI ("tidak berubah" report).
+    const requestedSide = normalizeHkaSide(planningSessions.tka?.side);
     const eligible = (item) => item?.mode === requestedMode;
-    const source = (eligible(selectedHka) ? selectedHka : null) ||
-      hkaSets.find((item) => item.id === activeTkaSourceId && eligible(item)) ||
+    const matchesSide = (item) =>
+      !requestedSide || !item?.side || normalizeHkaSide(item.side) === requestedSide;
+    const source =
+      (eligible(selectedHka) && matchesSide(selectedHka) ? selectedHka : null) ||
+      hkaSets.find(
+        (item) => item.id === activeTkaSourceId && eligible(item) && matchesSide(item),
+      ) ||
+      [...hkaSets].reverse().find((item) => eligible(item) && matchesSide(item)) ||
+      // Last resort: no set matches the current side at all (e.g. only the
+      // other side has been placed yet) — better to show something than
+      // nothing, same as the original fallback.
       [...hkaSets].reverse().find(eligible);
     const shaft = [...hkaSets].reverse().find((item) => item.mode === "fta" && item.side === source?.side);
     return applyTkaAxisLines(source, lines, shaft);
-  }, [hkaSets, selectedHka, activeTkaSourceId, planningSessions.tka?.tkaImageMode, lines]);
+  }, [
+    hkaSets,
+    selectedHka,
+    activeTkaSourceId,
+    planningSessions.tka?.tkaImageMode,
+    planningSessions.tka?.side,
+    lines,
+  ]);
   useEffect(() => {
     if (["jla", "knee-ap"].includes(selectedHka?.mode)) setActiveTkaSourceId(selectedHka.id);
   }, [selectedHka]);
@@ -6172,6 +6288,60 @@ export default function XrayCalibrationWorkspace({
     setMobilePrecisionOverlay(null);
   }, []);
 
+  // Pans/zooms the canvas so a given image point sits at the viewport
+  // center. On a small touch screen, landmarks placed close together
+  // (e.g. MFC/LFC a few mm apart) are hard to re-grab precisely by tapping
+  // the zoomed-out canvas directly — this lets a list/checklist tap bring
+  // the exact point into view, large and isolated, before the existing
+  // tap-to-regrab hit-test takes over.
+  const centerViewOnImagePoint = useCallback(
+    (imagePoint, { scale } = {}) => {
+      if (!Number.isFinite(imagePoint?.x) || !Number.isFinite(imagePoint?.y)) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const nextScale = clamp(
+        scale ?? Math.max(view.scale, MOBILE_PRECISION_AUTO_ZOOM_SCALE),
+        MIN_SCALE,
+        MAX_SCALE,
+      );
+      setView((prev) =>
+        clampViewToViewport(
+          {
+            scale: nextScale,
+            panX: rect.width / 2 - imagePoint.x * nextScale,
+            panY: rect.height / 2 - imagePoint.y * nextScale,
+          },
+          { relaxed: true },
+        ),
+      );
+    },
+    [clampViewToViewport, view.scale],
+  );
+
+  const focusGuidePoint = useCallback(
+    (toolName, index) => {
+      const pointsByTool = {
+        hkaAuto: draftHkaPoints,
+        axisBuilder: draftAxisBuilderPoints,
+        pelvicAnalysis: draftPelvicAnalysisPoints,
+        halluxValgus: draftHalluxValgusPoints,
+        angle: draftAnglePoints,
+        centerFinder: draftCenterFinderPoints,
+      };
+      const point = pointsByTool[toolName]?.[index];
+      centerViewOnImagePoint(point);
+    },
+    [
+      draftHkaPoints,
+      draftAxisBuilderPoints,
+      draftPelvicAnalysisPoints,
+      draftHalluxValgusPoints,
+      draftAnglePoints,
+      draftCenterFinderPoints,
+      centerViewOnImagePoint,
+    ],
+  );
+
   const resetCanvasInteractionState = useCallback(
     (
       message = "Canvas di-unlock. State drag/rotate/scale dan selection direset.",
@@ -6972,6 +7142,8 @@ export default function XrayCalibrationWorkspace({
           ? options.initialHkaPoints.map((point) => ({ ...point }))
           : [];
         const activeMode = options?.hkaMode || hkaInputMode;
+        jlaInitialReusedCountRef.current =
+          activeMode === "jla" ? initialPoints.length : 0;
         setDraftHkaPoints(initialPoints);
         setNotice(getHkaDraftNotice(activeMode, initialPoints.length));
       } else if (nextTool === "centerFinder") {
@@ -6985,9 +7157,10 @@ export default function XrayCalibrationWorkspace({
       } else if (nextTool === "pelvicAnalysis") {
         setDraftPelvicAnalysisPoints([]);
         pelvicAnalysisCompletionRef.current = false;
-        const first = PELVIC_ANALYSIS_LANDMARKS[0];
+        const activeLandmarks = activePelvicLandmarksRef.current;
+        const first = activeLandmarks[0];
         setNotice(
-          `Pelvic Analysis 1/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${first.label}.`,
+          `Pelvic Analysis 1/${activeLandmarks.length}: pilih ${first.label}.`,
         );
       } else if (nextTool === "halluxValgus") {
         setDraftHalluxValgusPoints([]);
@@ -7694,6 +7867,10 @@ export default function XrayCalibrationWorkspace({
 
   useEffect(() => {
     if (tool !== "draw") neckOsteotomyLinePendingRef.current = false;
+  }, [tool]);
+
+  useEffect(() => {
+    if (tool !== "axisBuilder") tkaAxisBuilderTargetRef.current = null;
   }, [tool]);
 
   useEffect(() => {
@@ -9414,7 +9591,11 @@ export default function XrayCalibrationWorkspace({
             labelOffsetX: fanOffset ? fanOffset.x : DEFAULT_LINE_LABEL_OFFSET_X,
             labelOffsetY: fanOffset ? fanOffset.y : DEFAULT_LINE_LABEL_OFFSET_Y,
             labelOpacity: DEFAULT_LABEL_OPACITY,
-            strokeWidth: DEFAULT_LINE_STROKE_WIDTH,
+            // Thinner than DEFAULT_LINE_STROKE_WIDTH (2) on purpose — a
+            // completed pelvic analysis draws up to 13 lines at once, and
+            // at the default width they visually crowd a small femoral
+            // head. Scoped to pelvic lines only, not the shared default.
+            strokeWidth: HIP_LINE_STROKE_WIDTH,
             color: HIP_RESULT_DEFINITIONS.find((item) => item.key === line.metric)?.color || line.color,
           };
         });
@@ -9447,7 +9628,7 @@ export default function XrayCalibrationWorkspace({
             labelOffsetX: fanOffset ? fanOffset.x : DEFAULT_ANGLE_LABEL_OFFSET_X,
             labelOffsetY: fanOffset ? fanOffset.y : DEFAULT_ANGLE_LABEL_OFFSET_Y,
             resultOpacity: DEFAULT_LABEL_OPACITY,
-            strokeWidth: DEFAULT_ANGLE_STROKE_WIDTH,
+            strokeWidth: HIP_LINE_STROKE_WIDTH,
           };
         });
         return [...kept, ...rebuilt];
@@ -9480,7 +9661,7 @@ export default function XrayCalibrationWorkspace({
             labelOffsetX: fanOffset ? fanOffset.x : 0,
             labelOffsetY: fanOffset ? fanOffset.y : 0,
             resultOpacity: DEFAULT_LABEL_OPACITY,
-            strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
+            strokeWidth: HIP_LINE_STROKE_WIDTH,
           };
         });
         return [...kept, ...rebuilt];
@@ -10743,7 +10924,7 @@ export default function XrayCalibrationWorkspace({
       }
       if (opts.contrastOutline) {
         overlayCtx.strokeStyle = "rgba(5, 8, 12, 0.7)";
-        overlayCtx.lineWidth = opts.width + 1.4;
+        overlayCtx.lineWidth = opts.width + 0.8;
         overlayCtx.lineCap = "round";
         overlayCtx.setLineDash([]);
         overlayCtx.beginPath();
@@ -10794,10 +10975,10 @@ export default function XrayCalibrationWorkspace({
       if (extendRatio > 0) {
         overlayCtx.fillStyle = opts.color;
         overlayCtx.beginPath();
-        overlayCtx.arc(start.x, start.y, 3, 0, Math.PI * 2);
+        overlayCtx.arc(start.x, start.y, 2, 0, Math.PI * 2);
         overlayCtx.fill();
         overlayCtx.beginPath();
-        overlayCtx.arc(end.x, end.y, 3, 0, Math.PI * 2);
+        overlayCtx.arc(end.x, end.y, 2, 0, Math.PI * 2);
         overlayCtx.fill();
       }
 
@@ -11783,9 +11964,11 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.save();
         overlayCtx.globalAlpha = isEditingLandmarks ? 1 : 0.45;
         drawCleanHandleRings(
-          [{ x: point.x, y: point.y, radius: isEditingLandmarks ? (isCoarsePointer ? 20 : 11) : 5 }],
+          // Only the static (non-editing) radius is shrunk — 20/11 while
+          // editing are functional touch/drag targets, not just visual.
+          [{ x: point.x, y: point.y, radius: isEditingLandmarks ? (isCoarsePointer ? 20 : 11) : 3.5 }],
           markerColor,
-          { strokeWidth: isActiveDrag ? 3 : 2 },
+          { strokeWidth: isActiveDrag ? 3 : 1.5 },
         );
         if (isEditingLandmarks) {
           drawTag(overlayCtx, point.x, point.y - 16, definition.shortLabel, markerColor, {
@@ -12088,12 +12271,16 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.lineTo(jlaAnkle.x, jlaAnkle.y);
         overlayCtx.stroke();
 
-        // Condyle line dashed (MFC–LFC extended)
-        if (isSelected && !compactForResection && jlaMFC && jlaLFC) {
+        // Condyle line (MFC–LFC extended) — this IS the line LDFA is measured
+        // against, so it stays visible whenever the item is drawn at all, not
+        // only while selected; bumped past the thin 0.5px axis-line width so
+        // it reads clearly at a glance instead of needing a tap first.
+        const referenceLineWidth = Math.max(strokeWidth, 1.6);
+        if (!compactForResection && jlaMFC && jlaLFC) {
           overlayCtx.globalAlpha = !activeTkaFocus || ["mLDFA", "JLCA", "aHKA", "CPAK"].includes(activeTkaFocus) ? 1 : 0.12;
           const condExt = jlaExtendLine(jlaMFC, jlaLFC, 24);
           overlayCtx.strokeStyle = "#00b7ff";
-          overlayCtx.lineWidth = strokeWidth;
+          overlayCtx.lineWidth = referenceLineWidth;
           overlayCtx.setLineDash([]);
           overlayCtx.beginPath();
           overlayCtx.moveTo(condExt.a.x, condExt.a.y);
@@ -12102,12 +12289,13 @@ export default function XrayCalibrationWorkspace({
           overlayCtx.setLineDash([]);
         }
 
-        // Plateau line dashed (MTP–LTP extended)
-        if (isSelected && !compactForResection && jlaMTP && jlaLTP) {
+        // Plateau line (MTP–LTP extended) — the line MPTA (part of mTFA/aHKA)
+        // is measured against; same always-visible + bolder treatment.
+        if (!compactForResection && jlaMTP && jlaLTP) {
           overlayCtx.globalAlpha = !activeTkaFocus || ["mMPTA", "JLCA", "aHKA", "CPAK"].includes(activeTkaFocus) ? 1 : 0.12;
           const platExt = jlaExtendLine(jlaMTP, jlaLTP, 24);
           overlayCtx.strokeStyle = "#00ffcc";
-          overlayCtx.lineWidth = strokeWidth;
+          overlayCtx.lineWidth = referenceLineWidth;
           overlayCtx.setLineDash([]);
           overlayCtx.beginPath();
           overlayCtx.moveTo(platExt.a.x, platExt.a.y);
@@ -12116,9 +12304,10 @@ export default function XrayCalibrationWorkspace({
           overlayCtx.setLineDash([]);
         }
 
-        // LDFA arc at femoral axis × condyle line intersection
+        // LDFA arc at femoral axis × condyle line intersection — always
+        // drawn (not only when selected) so the angle itself is clear.
         overlayCtx.globalAlpha = 1;
-        if ((isSelected || activeTkaFocus) && (!activeTkaFocus || ["mLDFA", "aHKA", "CPAK"].includes(activeTkaFocus)) && jlaMFC && jlaLFC) {
+        if ((!activeTkaFocus || ["mLDFA", "aHKA", "CPAK"].includes(activeTkaFocus)) && jlaMFC && jlaLFC) {
           const condFar = jlaExtendLine(jlaMFC, jlaLFC, 500);
           const ldfaV = jlaLineIntersect(jlaHip, jlaKnee, condFar.a, condFar.b);
           if (ldfaV) {
@@ -12140,8 +12329,8 @@ export default function XrayCalibrationWorkspace({
           }
         }
 
-        // MPTA arc at tibial axis × plateau line intersection
-        if ((isSelected || activeTkaFocus) && (!activeTkaFocus || ["mMPTA", "aHKA", "CPAK"].includes(activeTkaFocus)) && jlaMTP && jlaLTP) {
+        // MPTA arc at tibial axis × plateau line intersection — always drawn.
+        if ((!activeTkaFocus || ["mMPTA", "aHKA", "CPAK"].includes(activeTkaFocus)) && jlaMTP && jlaLTP) {
           const platFar = jlaExtendLine(jlaMTP, jlaLTP, 500);
           const mptaV = jlaLineIntersect(
             jlaKnee,
@@ -12224,7 +12413,7 @@ export default function XrayCalibrationWorkspace({
           drawTag(
             overlayCtx,
             jlaKnee.x + labelOffsetX,
-            jlaKnee.y + labelOffsetY,
+            Math.max(jlaKnee.y + labelOffsetY, isNativeMobileSimpleUi ? 58 : 0),
             getHkaCanvasLabelText(measurement, showExpandedInfo),
             color,
             {
@@ -12397,7 +12586,10 @@ export default function XrayCalibrationWorkspace({
       drawTag(
         overlayCtx,
         knee.x + labelOffsetX,
-        knee.y + labelOffsetY,
+        // Panning/zooming can put the knee point near the top of the
+        // canvas, which in Simple UI sits directly under the fixed mobile
+        // toolbar — clamp so the label never renders underneath it.
+        Math.max(knee.y + labelOffsetY, isNativeMobileSimpleUi ? 58 : 0),
         getHkaCanvasLabelText(measurement, showExpandedInfo),
         color,
         {
@@ -13245,15 +13437,30 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.save();
       overlayCtx.lineWidth = 1.8;
       overlayCtx.setLineDash([7, 4]);
-      const previewPairs = [
-        [0, 1],
-        [2, 4],
-        [3, 5],
-        [2, 6],
-        [3, 7],
-        [8, 9],
-        [10, 11],
-      ];
+      // Index pairs are positional within whichever landmark set is active
+      // (quick's 14 vs detailed's 26) — they mean completely different
+      // landmarks depending on mode, so each needs its own list rather than
+      // reusing detailed's indices against a shorter quick sequence.
+      const previewPairs =
+        activePelvicLandmarksRef.current.length <= 14
+          ? [
+              [0, 1], // ITD
+              [2, 3], // LT comparison
+              [4, 5], // HC comparison
+              [4, 6], // HC -> head edge (right)
+              [5, 7], // HC -> head edge (left)
+              [8, 10], // femoral axis (right)
+              [9, 11], // femoral axis (left)
+            ]
+          : [
+              [0, 1],
+              [2, 4],
+              [3, 5],
+              [2, 6],
+              [3, 7],
+              [8, 9],
+              [10, 11],
+            ];
       previewPairs.forEach(([startIndex, endIndex]) => {
         if (!draftPelvicAnalysisPoints[endIndex]) return;
         const start = imageToScreenPoint(
@@ -13273,28 +13480,36 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.setLineDash([]);
       draftPelvicAnalysisPoints.forEach((point, index) => {
         const screenPoint = imageToScreenPoint(point.x, point.y);
-        const definition = PELVIC_ANALYSIS_LANDMARKS[index];
+        const definition = activePelvicLandmarksRef.current[index];
+        if (!definition) return;
         const color = definition.side === "right" ? "#22d3ee" : "#a78bfa";
         overlayCtx.fillStyle = color;
         overlayCtx.strokeStyle = "rgba(2,6,23,0.9)";
-        overlayCtx.lineWidth = 2;
+        overlayCtx.lineWidth = 1.5;
         overlayCtx.beginPath();
         overlayCtx.arc(
           screenPoint.x,
           screenPoint.y,
-          isCoarsePointer ? 7 : 5,
+          isCoarsePointer ? 5 : 4,
           0,
           Math.PI * 2,
         );
         overlayCtx.fill();
         overlayCtx.stroke();
-        drawTag(
-          overlayCtx,
-          screenPoint.x,
-          screenPoint.y - 15,
-          definition.shortLabel,
-          color,
-        );
+        // With up to 26 landmarks, labeling every dot at once buries them
+        // under overlapping text pills — only the most recently placed
+        // points (the ones the user is actively fine-tuning) get a label,
+        // same windowing Hallux Valgus already uses below.
+        if (index >= draftPelvicAnalysisPoints.length - 2) {
+          drawTag(
+            overlayCtx,
+            screenPoint.x,
+            screenPoint.y - 13,
+            definition.shortLabel,
+            color,
+            { fontSize: 8, paddingX: 3, paddingY: 1.5 },
+          );
+        }
       });
       overlayCtx.restore();
     }
@@ -13338,12 +13553,12 @@ export default function XrayCalibrationWorkspace({
         )?.[2] || "#22d3ee";
         overlayCtx.fillStyle = color;
         overlayCtx.strokeStyle = "rgba(2,6,23,0.9)";
-        overlayCtx.lineWidth = 2;
+        overlayCtx.lineWidth = 1.5;
         overlayCtx.beginPath();
         overlayCtx.arc(
           screenPoint.x,
           screenPoint.y,
-          isCoarsePointer ? 7 : 5,
+          isCoarsePointer ? 5 : 4,
           0,
           Math.PI * 2,
         );
@@ -13353,9 +13568,10 @@ export default function XrayCalibrationWorkspace({
           drawTag(
             overlayCtx,
             screenPoint.x,
-            screenPoint.y - 15,
+            screenPoint.y - 13,
             definition.shortLabel,
             color,
+            { fontSize: 8, paddingX: 3, paddingY: 1.5 },
           );
         }
       });
@@ -14216,7 +14432,13 @@ export default function XrayCalibrationWorkspace({
           (shouldMatchBase || sameCanvasSize ? Math.min(opacity, 0.6) : opacity),
         contrast: placement?.contrast ?? 100,
         level: placement?.level ?? 100,
-        lockScale: Boolean(placement),
+        // Any placement-driven add (auto-cut, TKA size recommendation, ...)
+        // defaults to locked, on the assumption a computed placement implies
+        // a computed size too — but callers can opt out via placement.lockScale
+        // when that's not true (e.g. the TKA ML-size recommendation only
+        // computes x/y/rotation, not a size the user shouldn't be able to
+        // adjust afterward).
+        lockScale: placement?.lockScale ?? Boolean(placement),
         lockRotation: false,
         hidden: false,
         autoScaleFromCalibration: Boolean(autoScaleFromCalibration),
@@ -14692,7 +14914,10 @@ export default function XrayCalibrationWorkspace({
       const activeDraftPoints = draftPointSets[tool];
       if (activeDraftPoints?.length) {
         const hitRadius = isTouchLikePointer ? 18 : 11;
-        const firstDraggableIndex = tool === "hkaAuto" && hkaInputMode === "jla" ? 3 : 0;
+        const firstDraggableIndex =
+          tool === "hkaAuto" && hkaInputMode === "jla"
+            ? jlaInitialReusedCountRef.current
+            : 0;
         for (let index = activeDraftPoints.length - 1; index >= firstDraggableIndex; index -= 1) {
           const draftPoint = imageToScreenPoint(
             activeDraftPoints[index].x,
@@ -16934,6 +17159,98 @@ export default function XrayCalibrationWorkspace({
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
         setSelectedPlanningGuideId(null);
+
+        if (addingPelvicLineId) {
+          const definition = PELVIC_ADDABLE_LINES.find(
+            (item) => item.id === addingPelvicLineId,
+          );
+          if (!definition) {
+            setAddingPelvicLineId(null);
+            return;
+          }
+          const nextPoints = [...pelvicLineAdditionPoints, { ...snappedPlacementPoint }];
+          if (nextPoints.length < definition.landmarkKeys.length) {
+            setPelvicLineAdditionPoints(nextPoints);
+            const nextKey = definition.landmarkKeys[nextPoints.length];
+            const nextLandmark = PELVIC_ANALYSIS_LANDMARKS.find((item) => item.key === nextKey);
+            setNotice(
+              `Tambah ${definition.label} ${nextPoints.length + 1}/${definition.landmarkKeys.length}: pilih ${nextLandmark?.label || nextKey}.`,
+            );
+            return;
+          }
+          // Merge the newly-collected point(s) into the existing key-based
+          // store and rebuild the full analysis from it — same merge+rebuild
+          // shape as "Lanjutkan ke Detailed", just for 1-2 keys instead of 12.
+          const newEntries = definition.landmarkKeys.map((key, index) => ({
+            key,
+            x: nextPoints[index].x,
+            y: nextPoints[index].y,
+            confidence: nextPoints[index].confidence || "jelas",
+          }));
+          const seededLandmarks = [
+            ...pelvicLandmarksRef.current.filter(
+              (item) => !definition.landmarkKeys.includes(item.key),
+            ),
+            ...newEntries,
+          ];
+          const orderedPoints = PELVIC_ANALYSIS_LANDMARKS.map((item) => {
+            const found = seededLandmarks.find((entry) => entry.key === item.key);
+            return found ? { x: found.x, y: found.y, confidence: found.confidence } : null;
+          });
+          const analysisId = `pelvic-${Date.now()}`;
+          const generated = buildPelvicAnalysisMeasurements(orderedPoints, analysisId);
+          activePelvicAnalysisIdRef.current = analysisId;
+          pelvicLandmarksRef.current = seededLandmarks;
+          setPelvicLandmarks(seededLandmarks);
+          setLines((previous) => previous.filter((line) => !line.pelvicAnalysisId));
+          setAngles((previous) => previous.filter((angle) => !angle.pelvicAnalysisId));
+          setCircles((previous) => previous.filter((circle) => !circle.pelvicAnalysisId));
+          generated.lines.forEach((line) => {
+            const fanOffset = getHipLineLabelOffset(line.type, line.side);
+            appendLineMeasurement({
+              ...line,
+              color: HIP_RESULT_DEFINITIONS.find((item) => item.key === line.metric)?.color || line.color,
+              ...(fanOffset
+                ? { labelOffsetX: fanOffset.x, labelOffsetY: fanOffset.y }
+                : {}),
+            });
+          });
+          const generatedAngles = generated.angles.map((angle) => {
+            const fanOffset = getHipMetricLabelOffset(angle.metric, angle.side);
+            return {
+              ...angle,
+              id: nextAngleIdRef.current++,
+              color: HIP_RESULT_DEFINITIONS.find((item) => item.key === angle.metric)?.color || DEFAULT_ANGLE_COLOR,
+              labelOffsetX: fanOffset ? fanOffset.x : DEFAULT_ANGLE_LABEL_OFFSET_X,
+              labelOffsetY: fanOffset ? fanOffset.y : DEFAULT_ANGLE_LABEL_OFFSET_Y,
+              resultOpacity: DEFAULT_LABEL_OPACITY,
+              strokeWidth: Number.isFinite(angle.strokeWidth)
+                ? angle.strokeWidth
+                : DEFAULT_ANGLE_STROKE_WIDTH,
+            };
+          });
+          const generatedCircles = generated.circles.map((circle) => {
+            const fanOffset = getHipMetricLabelOffset(circle.metric, circle.side);
+            return {
+              ...circle,
+              id: nextCircleIdRef.current++,
+              color: HIP_RESULT_DEFINITIONS.find((item) => item.key === circle.metric)?.color || DEFAULT_CIRCLE_COLOR,
+              labelOffsetX: fanOffset ? fanOffset.x : 0,
+              labelOffsetY: fanOffset ? fanOffset.y : 0,
+              resultOpacity: DEFAULT_LABEL_OPACITY,
+              strokeWidth: DEFAULT_CIRCLE_STROKE_WIDTH,
+            };
+          });
+          setAngles((previous) => [...previous, ...generatedAngles]);
+          setCircles((previous) => [...previous, ...generatedCircles]);
+          setAddingPelvicLineId(null);
+          setPelvicLineAdditionPoints([]);
+          setNotice(`${definition.label} ditambahkan.`);
+          setTool(getIdleTool());
+          if (shouldUseMobileOneShotTool) setMobileControlsOpen(false);
+          return;
+        }
+
         const pointWasUncertain = pelvicNextPointUncertainRef.current;
         pelvicNextPointUncertainRef.current = false;
         setPelvicNextPointUncertainArmed(false);
@@ -16941,14 +17258,57 @@ export default function XrayCalibrationWorkspace({
           ...snappedPlacementPoint,
           confidence: pointWasUncertain ? "samar" : "jelas",
         };
+        // Femoral head center (HC) is the one pelvic landmark classical CV
+        // can reliably refine: it's a near-perfect circle with strong edge
+        // contrast. Treat the click as a rough seed and snap it to the best
+        // matching circle nearby; leave the point untouched if nothing
+        // confident is found or the user tagged it "samar" on purpose.
+        const currentLandmark = activePelvicLandmarksRef.current[draftPelvicAnalysisPoints.length];
+        if (
+          !pointWasUncertain &&
+          (currentLandmark?.key === "hcRight" || currentLandmark?.key === "hcLeft") &&
+          image
+        ) {
+          // Images here can come from remote sources (Firebase/Drive/appwrite
+          // proxies), not just local file blobs like HKAPlanner — if one
+          // lacks CORS headers, drawing it taints the canvas and
+          // getImageData() throws a SecurityError. That must never escape
+          // into this click handler and abort the rest of the landmark flow
+          // (clearing selection, advancing the step, etc. all happen below),
+          // so this assist is best-effort: on any failure, fall back to the
+          // raw click exactly as if auto-detect didn't exist.
+          try {
+            const headWidth = image.naturalWidth || image.width || 0;
+            const headHeight = image.naturalHeight || image.height || 0;
+            if (headWidth && headHeight) {
+              const offCanvas = document.createElement("canvas");
+              offCanvas.width = headWidth;
+              offCanvas.height = headHeight;
+              const offCtx = offCanvas.getContext("2d");
+              offCtx.drawImage(image, 0, 0);
+              const imageData = offCtx.getImageData(0, 0, headWidth, headHeight);
+              const detectedHead = refineFemoralHeadCircle(imageData, {
+                x: taggedPoint.x,
+                y: taggedPoint.y,
+              });
+              if (detectedHead) {
+                taggedPoint.x = detectedHead.center.x;
+                taggedPoint.y = detectedHead.center.y;
+              }
+            }
+          } catch (error) {
+            console.warn("Femoral head auto-detect skipped:", error);
+          }
+        }
         const next = [...draftPelvicAnalysisPoints, taggedPoint];
-        if (next.length < PELVIC_ANALYSIS_LANDMARKS.length) {
-          const landmark = PELVIC_ANALYSIS_LANDMARKS[next.length];
+        const activeLandmarks = activePelvicLandmarksRef.current;
+        if (next.length < activeLandmarks.length) {
+          const landmark = activeLandmarks[next.length];
           setDraftPelvicAnalysisPoints(next);
           setNotice(
             pointWasUncertain
-              ? `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: titik sebelumnya ditandai samar. Lanjut pilih ${landmark.label}.`
-              : `Pelvic Analysis ${next.length + 1}/${PELVIC_ANALYSIS_LANDMARKS.length}: pilih ${landmark.label}.`,
+              ? `Pelvic Analysis ${next.length + 1}/${activeLandmarks.length}: titik sebelumnya ditandai samar. Lanjut pilih ${landmark.label}.`
+              : `Pelvic Analysis ${next.length + 1}/${activeLandmarks.length}: pilih ${landmark.label}.`,
           );
           continueTouchDraftDrag("pelvicAnalysis", next.length - 1);
           return;
@@ -16956,14 +17316,39 @@ export default function XrayCalibrationWorkspace({
         if (pelvicAnalysisCompletionRef.current) return;
         pelvicAnalysisCompletionRef.current = true;
         const analysisId = `pelvic-${Date.now()}`;
-        const generated = buildPelvicAnalysisMeasurements(next, analysisId);
-        activePelvicAnalysisIdRef.current = analysisId;
-        const seededLandmarks = PELVIC_ANALYSIS_LANDMARKS.map((definition, index) => ({
+        const isContinuation = pelvicAnalysisMode === "continuation";
+        // Continuation only ever collects the 12 detailed-only landmarks —
+        // merge them with the 14 already stored from the prior quick run
+        // (disjoint key sets, verified by test) so the builder functions see
+        // the full 26-point set, rather than treating these 12 alone as a
+        // complete analysis.
+        const newlyCollected = activeLandmarks.map((definition, index) => ({
           key: definition.key,
           x: next[index].x,
           y: next[index].y,
           confidence: next[index].confidence || "jelas",
         }));
+        const seededLandmarks = isContinuation
+          ? [...pelvicLandmarksRef.current, ...newlyCollected]
+          : newlyCollected;
+        const orderedPoints = isContinuation
+          ? PELVIC_ANALYSIS_LANDMARKS.map((definition) => {
+              const found = seededLandmarks.find((item) => item.key === definition.key);
+              return found ? { x: found.x, y: found.y, confidence: found.confidence } : null;
+            })
+          : next;
+        const generated = buildPelvicAnalysisMeasurements(
+          orderedPoints,
+          analysisId,
+          isContinuation ? PELVIC_ANALYSIS_LANDMARKS : activeLandmarks,
+        );
+        if (isContinuation) {
+          // The full set is now active/complete — a later restart via the
+          // normal "Pelvic Mechanical Analysis" action should re-collect all
+          // 26, not just the continuation's 12.
+          setPelvicAnalysisMode("detailed");
+        }
+        activePelvicAnalysisIdRef.current = analysisId;
         pelvicLandmarksRef.current = seededLandmarks;
         setPelvicLandmarks(seededLandmarks);
         // Re-running Pelvic Mechanical Analysis should replace the previous
@@ -17033,6 +17418,29 @@ export default function XrayCalibrationWorkspace({
         setSelectedCircleId(null);
         setHistoryPaused(true);
         interactionRef.current = { mode: "move-landmark", landmarkKey: hit.key };
+        return;
+      }
+
+      // Persistent alternative to "Gambar ulang HKA" (handleUpdateHka): that
+      // path only allows dragging a point once pendingHkaUpdateIdRef is set
+      // by clicking the Redraw icon in LineManager first, and a miss-click
+      // during that window falls through to starting a fresh HKA sequence
+      // instead of grabbing the point. This tool reuses the same
+      // findClosestHkaHandle/move-hka-handle drag machinery directly,
+      // without that gate, mirroring editPelvicLandmark above.
+      if (tool === "editHkaHandle") {
+        const hit = findClosestHkaHandle(boundedPoint);
+        if (!hit) return;
+        setSelectedHkaId(hit.hkaId);
+        setSelectedLineId(null);
+        setSelectedAngleId(null);
+        setSelectedCircleId(null);
+        setHistoryPaused(true);
+        interactionRef.current = {
+          mode: "move-hka-handle",
+          hkaId: hit.hkaId,
+          handleKey: hit.handleKey,
+        };
         return;
       }
 
@@ -17167,16 +17575,43 @@ export default function XrayCalibrationWorkspace({
             );
             return [];
           }
-          appendLineMeasurement(
-            {
-              ...nextAxisLine,
-              type: "axis",
-            },
-            { mobileHandleAssistEnd: true },
-          );
-          setNotice(
-            "Axis Builder selesai. Axis dibuat dari midpoint segmen proximal dan distal.",
-          );
+          const tkaTarget = tkaAxisBuilderTargetRef.current;
+          tkaAxisBuilderTargetRef.current = null;
+          if (tkaTarget) {
+            const existing = lines.find((line) => line.tkaSourceId === tkaTarget.sourceId &&
+              line.tkaAxisRole === "anatomical" && line.tkaAxisBone === tkaTarget.bone);
+            setLines((previous) => [
+              ...previous.filter((line) => line.id !== existing?.id),
+              {
+                ...nextAxisLine,
+                id: existing?.id ?? nextLineIdRef.current++,
+                type: "normal",
+                name: `${tkaTarget.bone} anatomical (diameter)`,
+                tkaSourceId: tkaTarget.sourceId,
+                tkaAxisRole: "anatomical",
+                tkaAxisBone: tkaTarget.bone,
+                color: existing?.color || "#fb7185",
+                strokeWidth: existing?.strokeWidth ?? 0.5,
+                hidden: false,
+                showLabel: true,
+              },
+            ]);
+            setActiveTkaSourceId(tkaTarget.sourceId);
+            setNotice(
+              `Axis ${tkaTarget.bone === "Femoral" ? "femur" : "tibia"} diperbarui dari midpoint diameter korteks.`,
+            );
+          } else {
+            appendLineMeasurement(
+              {
+                ...nextAxisLine,
+                type: "axis",
+              },
+              { mobileHandleAssistEnd: true },
+            );
+            setNotice(
+              "Axis Builder selesai. Axis dibuat dari midpoint segmen proximal dan distal.",
+            );
+          }
           setTool(getIdleTool());
           if (shouldUseMobileOneShotTool) {
             setMobileControlsOpen(false);
@@ -17465,10 +17900,13 @@ export default function XrayCalibrationWorkspace({
           const definition = getHkaModeDefinition(hkaInputMode);
           if (next.length < definition.points.length) {
             setNotice(getHkaDraftNotice(hkaInputMode, next.length));
-            // jla mode's hip/knee/ankle (indices 0-2) are deliberately excluded
-            // from draft-point re-grab elsewhere (see firstDraggableIndex
-            // above) — keep that same exclusion here.
-            const firstDraggableIndex = hkaInputMode === "jla" ? 3 : 0;
+            // jla mode's hip/knee/ankle (indices 0-2) are only pre-filled
+            // (reused from a completed Mechanical Axis) when the draft
+            // session actually started that way — see jlaInitialReusedCountRef.
+            // Entering jla without a reused axis means those points are
+            // placed by hand too and should get the same touch-drag assist.
+            const firstDraggableIndex =
+              hkaInputMode === "jla" ? jlaInitialReusedCountRef.current : 0;
             if (next.length - 1 >= firstDraggableIndex) {
               continueTouchDraftDrag("hkaAuto", next.length - 1);
             }
@@ -17525,6 +17963,16 @@ export default function XrayCalibrationWorkspace({
               labelOffsetX: DEFAULT_HKA_LABEL_OFFSET_X,
               labelOffsetY: DEFAULT_HKA_LABEL_OFFSET_Y,
               showArc: hkaInputMode === "full",
+              // Short AP knee films can't show hip/ankle, so the mechanical
+              // axis is estimated by rotating the anatomical femoral axis by
+              // this offset. Default to the literature-validated correction
+              // (anatomical-to-mechanical LDFA bias ~6.3°, but +5° gives the
+              // best CPAK agreement at the classification-boundary level):
+              // Bradbury et al. 2025 (J Orthop Res Ther 10:1407) — 5° slLDFA
+              // correction = 66% exact CPAK / 88% JLO / 75% aHKA agreement
+              // vs long-leg films; consistent with Cooke 2009 (4-5°) and
+              // Luís & Varatojo 2021 (4-6°). Still user-adjustable (-15..15).
+              ...(hkaInputMode === "knee-ap" ? { femoralOffsetDeg: 5 } : {}),
             },
           );
           if (hkaInputMode === "full") {
@@ -17789,18 +18237,22 @@ export default function XrayCalibrationWorkspace({
         const nextPoint = clampToImageBounds(screenToImagePoint(point.x, point.y));
         const updatePoint = (points) =>
           points.map((item, itemIndex) => itemIndex === index ? nextPoint : item);
-        if (draftTool === "hkaAuto") setDraftHkaPoints(updatePoint);
-        if (draftTool === "axisBuilder") setDraftAxisBuilderPoints(updatePoint);
-        if (draftTool === "pelvicAnalysis") setDraftPelvicAnalysisPoints(updatePoint);
-        if (draftTool === "halluxValgus") setDraftHalluxValgusPoints(updatePoint);
-        if (draftTool === "angle") setDraftAnglePoints(updatePoint);
-        if (draftTool === "centerFinder") setDraftCenterFinderPoints(updatePoint);
+        // Keep this key set in sync with the draftPointSets map in
+        // handlePointerDown (re-grab hit-test) — same tools, same keys.
+        const draftPointSetters = {
+          hkaAuto: setDraftHkaPoints,
+          axisBuilder: setDraftAxisBuilderPoints,
+          pelvicAnalysis: setDraftPelvicAnalysisPoints,
+          halluxValgus: setDraftHalluxValgusPoints,
+          angle: setDraftAnglePoints,
+          centerFinder: setDraftCenterFinderPoints,
+        };
+        draftPointSetters[draftTool]?.(updatePoint);
         // Finger covers the exact spot being placed, so show the offset
         // magnifier loupe + auto-zoom (same assist already used when
         // dragging an existing line/circle/angle handle) while repositioning
         // a landmark point mid-sequence.
         beginMobilePrecisionEdit(point, nextPoint, "Titik");
-        updateMobilePrecisionOverlay(point, nextPoint, "Titik");
         return;
       }
 
@@ -21635,7 +22087,11 @@ export default function XrayCalibrationWorkspace({
           ? { ...placement, contrast: 150, level: 150, opacity: 1,
               tkaImplantBone: String(implantItem.id).startsWith("normmed-femoral-") ? "femoral" : "tibial",
               tkaImplantSide: normalizeHkaSide(hkaSide),
-              flipX: String(implantItem.id).startsWith("normmed-femoral-") && normalizeHkaSide(hkaSide) === "left" }
+              flipX: String(implantItem.id).startsWith("normmed-femoral-") && normalizeHkaSide(hkaSide) === "left",
+              // The ML-size recommendation only computes x/y/rotation, not
+              // a size the surgeon shouldn't be able to adjust — unlike
+              // other placement-driven adds, this one should stay resizable.
+              lockScale: false }
           : placement,
       }).then((added) => {
         if (!added || mmPerPixel !== null) return added;
@@ -22640,6 +23096,29 @@ export default function XrayCalibrationWorkspace({
     setNotice("Sumbu siap diedit. Garis cut manual tetap tersimpan; periksa posisinya dan jalankan ulang cutting setelah perubahan.");
   }, [activeTkaJointAngles, lines, handleToolChange]);
 
+  // Lets the user re-derive the femoral/tibial anatomical (intramedullary)
+  // axis from two cortex-diameter clicks per level instead of one eyeballed
+  // shaft-center click each — same midpoint-to-midpoint math Axis Builder
+  // already uses, just tagged so it feeds straight into this TKA source's
+  // axis (XrayCalibrationWorkspace applyTkaAxisLines / useMemo above).
+  const startTkaAxisBuilder = useCallback(
+    (bone) => {
+      if (!activeTkaJointAngles) {
+        setNotice("Lengkapi landmark AP Knee terlebih dahulu.");
+        return;
+      }
+      tkaAxisBuilderTargetRef.current = {
+        sourceId: activeTkaJointAngles.id,
+        bone,
+      };
+      handleToolChange("axisBuilder");
+      setNotice(
+        `Axis ${bone === "Femoral" ? "femur" : "tibia"} dari diameter: klik 2 titik tepi korteks proksimal, lalu 2 titik distal. Garis tengah dihitung otomatis dari midpoint.`,
+      );
+    },
+    [activeTkaJointAngles, handleToolChange],
+  );
+
   const editTkaCutLines = useCallback(() => {
     if (!activeTkaJointAngles || !automaticTkaResectionPlan) {
       setNotice("Lengkapi landmark dan kalibrasi terlebih dahulu.");
@@ -23027,15 +23506,19 @@ export default function XrayCalibrationWorkspace({
       id: nextLineIdRef.current++, type: "normal",
       name: `${bone} ${role}${role === "mechanical" && activeTkaJointAngles.mode === "knee-ap" ? " (estimasi)" : ""} - pre-cut`,
       x1: start.x, y1: start.y, x2: end.x, y2: end.y,
-      strokeWidth: 0.5, color: role === "mechanical" ? "#fbbf24" : "#38bdf8",
+      // Was 0.5px with showLabel:false — all but invisible, and with no
+      // label there was no way to tell what the line even was (reported as
+      // "garis orange ... itu apa?"). The `name` above already describes it
+      // correctly; it just never reached the screen.
+      strokeWidth: 1.2, color: role === "mechanical" ? "#fbbf24" : "#38bdf8",
       tkaAxisRole: role, tkaAxisBone: bone, tkaSourceId: activeTkaJointAngles.id,
-      showLabel: false, hidden: true,
+      showLabel: true, hidden: true,
     }));
     const correctedAxes = correctedTkaMechanicalAxes(activeTkaJointAngles, rotation).map(({ bone, start, end }) => ({
       id: nextLineIdRef.current++, type: "normal",
       name: `${bone} mekanikal - hasil koreksi${activeTkaJointAngles.mode === "knee-ap" ? " (estimasi)" : ""}`,
       x1: start.x, y1: start.y, x2: end.x, y2: end.y,
-      strokeWidth: 0.5, color: "#34d399", showLabel: false, hidden: false,
+      strokeWidth: 1.2, color: "#34d399", showLabel: true, hidden: false,
       tkaCorrectedAxis: true, tkaSourceId: activeTkaJointAngles.id,
       alignmentSimulation: previewToken,
     }));
@@ -24072,7 +24555,7 @@ export default function XrayCalibrationWorkspace({
             : tool === "hkaAuto"
               ? "Mode: HKA"
               : tool === "pelvicAnalysis"
-                ? `Mode: Pelvic ${draftPelvicAnalysisPoints.length}/${PELVIC_ANALYSIS_LANDMARKS.length}`
+                ? `Mode: Pelvic ${draftPelvicAnalysisPoints.length}/${activePelvicLandmarksRef.current.length}`
                 : tool === "halluxValgus"
                   ? `Mode: Hallux ${draftHalluxValgusPoints.length}/${HALLUX_VALGUS_LANDMARKS.length}`
                 : tool === "freeLine"
@@ -24327,7 +24810,7 @@ export default function XrayCalibrationWorkspace({
       return `Circle ${Math.min(draftCirclePoints.length, 1)}/2`;
     if (tool === "hkaAuto") return `HKA ${draftHkaPoints.length}`;
     if (tool === "pelvicAnalysis")
-      return `Pelvic ${draftPelvicAnalysisPoints.length}/${PELVIC_ANALYSIS_LANDMARKS.length}`;
+      return `Pelvic ${draftPelvicAnalysisPoints.length}/${activePelvicLandmarksRef.current.length}`;
     if (tool === "halluxValgus")
       return `Hallux ${draftHalluxValgusPoints.length}/${HALLUX_VALGUS_LANDMARKS.length}`;
     if (tool === "annotation") return "Text";
@@ -26180,6 +26663,7 @@ export default function XrayCalibrationWorkspace({
         ? {
             pointCount: Math.max(0, draftHkaPoints.length - (mode === "jla" ? 3 : 0)),
             backPoint: () => backPlanningDraftPoint("hka"),
+            onFocusPoint: (index) => focusGuidePoint("hkaAuto", index),
             activePoint: nextPoint
               ? `${nextPoint.shortLabel}: ${nextPoint.promptLabel}`
               : "Titik lengkap",
@@ -26213,6 +26697,23 @@ export default function XrayCalibrationWorkspace({
     side,
     ...extra,
   });
+  // Guide steps for whichever single line is currently being added via
+  // "Garis yang belum ada" — same pelvicGuideStep shape as the main 14/26
+  // sequence, just scoped to that one line's 1-2 landmarks, so the same
+  // step-list/guide-image rendering can show the right highlight for it.
+  const pelvicLineAdditionDefinition = addingPelvicLineId
+    ? PELVIC_ADDABLE_LINES.find((item) => item.id === addingPelvicLineId)
+    : null;
+  const pelvicLineAdditionGuideSteps = pelvicLineAdditionDefinition
+    ? pelvicLineAdditionDefinition.landmarkKeys
+        .map((key) => PELVIC_ANALYSIS_LANDMARKS.find((item) => item.key === key))
+        .filter(Boolean)
+        .map((item) =>
+          pelvicGuideStep(item.guideKey, item.label, item.side, {
+            shortLabel: item.shortLabel,
+          }),
+        )
+    : [];
   const planningAnalysisTools =
     planningProcedure === "tka"
       ? [
@@ -26298,6 +26799,7 @@ export default function XrayCalibrationWorkspace({
                   active: true,
                   pointCount: draftAxisBuilderPoints.length,
                   backPoint: () => backPlanningDraftPoint("axis"),
+                  onFocusPoint: (index) => focusGuidePoint("axisBuilder", index),
                   activePoint:
                     draftAxisBuilderPoints.length < 2
                       ? `Segmen proksimal: titik ${draftAxisBuilderPoints.length + 1} dari 2`
@@ -26355,6 +26857,7 @@ export default function XrayCalibrationWorkspace({
                     active: true,
                     pointCount: draftHalluxValgusPoints.length,
                     backPoint: () => backPlanningDraftPoint("hallux"),
+                    onFocusPoint: (index) => focusGuidePoint("halluxValgus", index),
                     activePoint: HALLUX_VALGUS_LANDMARKS[draftHalluxValgusPoints.length]?.shortLabel || "Titik lengkap",
                     liveProgress: planningGuideProgress(
                       draftHalluxValgusPoints.length,
@@ -26386,31 +26889,54 @@ export default function XrayCalibrationWorkspace({
             label: "Pelvic Mechanical Analysis",
             icon: Target,
             action: () => handleToolChange("pelvicAnalysis"),
+            // While adding one missing line (addingPelvicLineId set), the
+            // step list / guide image below should track THAT 1-2-landmark
+            // sub-task instead of the original 14/26-point sequence — same
+            // guideStep shape (pelvicGuideStep), just a shorter list.
             ...(tool === "pelvicAnalysis"
               ? {
                   active: true,
-                  pointCount: draftPelvicAnalysisPoints.length,
-                  backPoint: () => backPlanningDraftPoint("pelvic"),
-                  activePoint: PELVIC_ANALYSIS_LANDMARKS[draftPelvicAnalysisPoints.length]?.shortLabel || "Titik lengkap",
-                  liveProgress: planningGuideProgress(
-                    draftPelvicAnalysisPoints.length,
-                    PELVIC_ANALYSIS_LANDMARKS.length,
-                  ),
+                  pointCount: addingPelvicLineId
+                    ? pelvicLineAdditionPoints.length
+                    : draftPelvicAnalysisPoints.length,
+                  backPoint: addingPelvicLineId
+                    ? undefined
+                    : () => backPlanningDraftPoint("pelvic"),
+                  onFocusPoint: addingPelvicLineId
+                    ? undefined
+                    : (index) => focusGuidePoint("pelvicAnalysis", index),
+                  activePoint: addingPelvicLineId
+                    ? pelvicLineAdditionGuideSteps[pelvicLineAdditionPoints.length]?.shortLabel || "Titik lengkap"
+                    : activePelvicLandmarksRef.current[draftPelvicAnalysisPoints.length]?.shortLabel || "Titik lengkap",
+                  liveProgress: addingPelvicLineId
+                    ? planningGuideProgress(
+                        pelvicLineAdditionPoints.length,
+                        pelvicLineAdditionGuideSteps.length,
+                      )
+                    : planningGuideProgress(
+                        draftPelvicAnalysisPoints.length,
+                        activePelvicLandmarksRef.current.length,
+                      ),
                   markNextPointUncertain: togglePelvicNextPointUncertain,
                   nextPointUncertainArmed: pelvicNextPointUncertainArmed,
                 }
               : {}),
             complete: lines.some((item) => Boolean(item.pelvicAnalysisId)),
-            instruction:
-              "Tandai 26 titik pelvis dan femur kanan/kiri.",
+            instruction: addingPelvicLineId
+              ? `Menandai ${PELVIC_ADDABLE_LINES.find((item) => item.id === addingPelvicLineId)?.label || "garis"} yang belum ada.`
+              : pelvicAnalysisMode === "quick"
+                ? "Tandai 14 titik inti (LLD, Offset, CCD, FHD). Bisa lanjut ke Detailed untuk 12 titik tambahan."
+                : "Tandai 26 titik pelvis dan femur kanan/kiri.",
             guideView: "ap_pelvis_cartoon",
             guideImage:
               "/images/jurnal-scheerlinck/fig3-mechanical-references.jpeg",
-            guideSteps: PELVIC_ANALYSIS_LANDMARKS.map((item) =>
-              pelvicGuideStep(item.guideKey, item.label, item.side, {
-                shortLabel: item.shortLabel,
-              }),
-            ),
+            guideSteps: addingPelvicLineId
+              ? pelvicLineAdditionGuideSteps
+              : activePelvicLandmarks.map((item) =>
+                  pelvicGuideStep(item.guideKey, item.label, item.side, {
+                    shortLabel: item.shortLabel,
+                  }),
+                ),
             points: [],
           },
         ];
@@ -27387,7 +27913,7 @@ export default function XrayCalibrationWorkspace({
                     Panduan Kine Line
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    7 landmark · LDFA · MPTA · JLCA · JLO · CPAK · Micicoi · DLO
+                    7 landmark · LDFA · MPTA · JLCA · JLA · CPAK · Micicoi · DLO
                   </p>
                 </div>
                 <button
@@ -27572,7 +28098,7 @@ export default function XrayCalibrationWorkspace({
                             i: "3–4° = borderline · ≥ 5° = tinggi (Micicoi)",
                           },
                           {
-                            p: "JLO",
+                            p: "JLA",
                             n: "≤ 3°",
                             i: "≥ 3° + JLCA ≥ 5° → pertimbangkan DLO",
                           },
@@ -27599,7 +28125,7 @@ export default function XrayCalibrationWorkspace({
                   </div>
                   <p className="mt-1 text-[10px] leading-relaxed text-slate-600">
                     Sistem mengklasifikasikan 9 fenotipe dari kombinasi{" "}
-                    <span className="font-bold">JLO = MPTA + LDFA</span> (Apex
+                    <span className="font-bold">JLA = MPTA + LDFA</span> (Apex
                     Distal / Neutral / Proximal) dan{" "}
                     <span className="font-bold">HKA = MPTA − LDFA</span> (Varus
                     / Neutral / Valgus).
@@ -27609,7 +28135,7 @@ export default function XrayCalibrationWorkspace({
                       <thead>
                         <tr className="bg-slate-100">
                           <th className="px-2 py-1.5 text-left font-black text-slate-500 uppercase">
-                            JLO \ HKA
+                            JLA \ HKA
                           </th>
                           <th className="px-2 py-1.5 text-center font-black text-red-600">
                             Varus
@@ -27687,7 +28213,7 @@ export default function XrayCalibrationWorkspace({
                     <div className="flex items-start gap-2">
                       <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-red-500" />
                       <span>
-                        <span className="font-bold">JLCA ≥ 5° + JLO ≥ 3°</span>{" "}
+                        <span className="font-bold">JLCA ≥ 5° + JLA ≥ 3°</span>{" "}
                         → ~80% risiko MPTA &gt; 95° post-MOWPTO (Sohn et al.) →
                         DLO sangat direkomendasikan.
                       </span>
@@ -27695,7 +28221,7 @@ export default function XrayCalibrationWorkspace({
                     <div className="flex items-start gap-2">
                       <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
                       <span>
-                        <span className="font-bold">JLO ≥ 5°</span> saja →
+                        <span className="font-bold">JLA ≥ 5°</span> saja →
                         evaluasi target MPTA post-op, pertimbangkan DLO.
                       </span>
                     </div>
@@ -28018,7 +28544,7 @@ export default function XrayCalibrationWorkspace({
                               color: "#6b21a8",
                             },
                             {
-                              label: "JLO",
+                              label: "JLA",
                               value:
                                 result.jla.JLO_hsu !== undefined
                                   ? `${result.jla.JLO_hsu}°`
@@ -41922,7 +42448,7 @@ export default function XrayCalibrationWorkspace({
                                   flag: selectedHkaMetrics.jla.jlcaFlag,
                                 },
                                 {
-                                  l: "JLO",
+                                  l: "JLA",
                                   v: `${selectedHkaMetrics.jla.JLO_hsu}°`,
                                   flag: selectedHkaMetrics.jla.jloFlag,
                                 },
@@ -43361,6 +43887,8 @@ export default function XrayCalibrationWorkspace({
             tools={planningTools}
             actions={planningActions}
             analysisTools={planningAnalysisTools}
+            onHipWizardStartChoice={chooseHipWizardStart}
+            openHipGuideSignal={hipGuideOpenSignal}
             analysisResults={planningProcedure === "tka" ? tkaResults : planningProcedure === "hip" ? hipResults : halluxResults}
             focusedAnalysisMetric={planningProcedure === "tka" ? activeTkaFocus : planningProcedure === "hip" ? activeHipFocus : activeHalluxFocus}
             onFocusAnalysisMetric={(metric) => {
@@ -43387,32 +43915,53 @@ export default function XrayCalibrationWorkspace({
             }}
             correctionControls={
               planningProcedure === "tka" ? (
-                <PlanningCorrectionControls
-                  modes={[
-                    { key: "valgusCut", label: "Distal Femoral Cut" },
-                    { key: "tibialCut", label: "Proximal Tibial Cut" },
-                    { key: "tibialSlope", label: "Tibia Slope [LAT]" },
-                  ]}
-                  mode={planningGuideMode}
-                  onMode={setPlanningGuideMode}
-                  fields={planningCorrectionFields}
-                  canApply={Boolean(
-                    selectedPlanningGuide || selectedLine || tkaResectionPlan,
-                  )}
-                  editing={Boolean(selectedPlanningGuide)}
-                  applyLabel={
-                    !selectedLine && tkaResectionPlan
-                      ? "Buat dari Kine Line"
-                      : undefined
-                  }
-                  onApply={
-                    selectedPlanningGuide
-                      ? () => updateSelectedPlanningGuide()
-                      : selectedLine
-                        ? addPlanningGuideFromSelectedLine
-                        : addPlanningGuideFromJointAngles
-                  }
-                />
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    className="planning-inline-action"
+                    disabled={!hkaSets.length}
+                    aria-pressed={tool === "editHkaHandle"}
+                    onClick={() => {
+                      if (tool === "editHkaHandle") {
+                        setTool(getIdleTool());
+                        setNotice("Edit HKA Points nonaktif.");
+                      } else {
+                        setTool("editHkaHandle");
+                        setNotice(
+                          "Edit HKA Points aktif. Geser titik (CFH/CK/CA, kondilus, plateau) — sumbu mekanikal/anatomis dan hasil perhitungan ikut diperbarui.",
+                        );
+                      }
+                    }}
+                  >
+                    {tool === "editHkaHandle" ? "Edit HKA Points aktif — ketuk untuk selesai" : "Edit HKA Points (geser titik)"}
+                  </button>
+                  <PlanningCorrectionControls
+                    modes={[
+                      { key: "valgusCut", label: "Distal Femoral Cut" },
+                      { key: "tibialCut", label: "Proximal Tibial Cut" },
+                      { key: "tibialSlope", label: "Tibia Slope [LAT]" },
+                    ]}
+                    mode={planningGuideMode}
+                    onMode={setPlanningGuideMode}
+                    fields={planningCorrectionFields}
+                    canApply={Boolean(
+                      selectedPlanningGuide || selectedLine || tkaResectionPlan,
+                    )}
+                    editing={Boolean(selectedPlanningGuide)}
+                    applyLabel={
+                      !selectedLine && tkaResectionPlan
+                        ? "Buat dari Kine Line"
+                        : undefined
+                    }
+                    onApply={
+                      selectedPlanningGuide
+                        ? () => updateSelectedPlanningGuide()
+                        : selectedLine
+                          ? addPlanningGuideFromSelectedLine
+                          : addPlanningGuideFromJointAngles
+                    }
+                  />
+                </div>
               ) : planningProcedure === "foot" ? (
                 <div className="grid gap-2">
                   <button
@@ -43465,6 +44014,38 @@ export default function XrayCalibrationWorkspace({
                   >
                     {tool === "editPelvicLandmark" ? "Edit Landmark aktif — ketuk untuk selesai" : "Edit Landmark (geser titik)"}
                   </button>
+                  {pelvicAnalysisMode === "quick" &&
+                    lines.some((line) => Boolean(line.pelvicAnalysisId)) && (
+                      <button
+                        type="button"
+                        className="planning-inline-action"
+                        onClick={continueToDetailedPelvicAnalysis}
+                      >
+                        Lanjutkan ke Detailed (+12 titik)
+                      </button>
+                    )}
+                  {missingPelvicLines.length > 0 && (
+                    <div className="grid gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                        Garis yang belum ada
+                      </span>
+                      <div className="grid gap-1">
+                        {missingPelvicLines.map((line) => (
+                          <button
+                            key={line.id}
+                            type="button"
+                            className="planning-inline-action"
+                            aria-pressed={addingPelvicLineId === line.id}
+                            onClick={() => startAddingPelvicLine(line.id)}
+                          >
+                            {addingPelvicLineId === line.id
+                              ? `Menandai ${line.label}… (${pelvicLineAdditionPoints.length}/${line.landmarkKeys.length})`
+                              : `+ ${line.label}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="planning-inline-action"
@@ -43667,6 +44248,14 @@ export default function XrayCalibrationWorkspace({
                 setActiveTkaSourceId(activeTkaJointAngles.id);
                 setTool(getIdleTool());
                 setNotice("Geser ujung hijau IM mengikuti kanal femur. Tidak diperlukan landmark baru.");
+                return;
+              }
+              if (key === "axisBuilderFemoral") {
+                startTkaAxisBuilder("Femoral");
+                return;
+              }
+              if (key === "axisBuilderTibial") {
+                startTkaAxisBuilder("Tibial");
                 return;
               }
               if (key === "femoralAtKnee") {

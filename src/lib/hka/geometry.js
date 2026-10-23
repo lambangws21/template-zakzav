@@ -56,9 +56,18 @@ export function signedCoronalAngle(femurTop, knee, ankle) {
 
 export function screenToImagePoint(event, canvas, transform) {
   const rect = canvas.getBoundingClientRect();
+  // canvas.width/height is the drawing-buffer resolution; rect.width/height
+  // is however big the element actually renders on screen (CSS can stretch
+  // it to any size). Click coordinates arrive in the rect's CSS-pixel space,
+  // but `transform` was computed against the buffer, so the ratio between
+  // the two must be undone before applying it — otherwise clicks drift off
+  // the clicked point whenever the element is rendered at a different size
+  // than its width/height attributes (e.g. two canvases sharing a row).
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
   return {
-    x: (event.clientX - rect.left - transform.offsetX) / transform.scale,
-    y: (event.clientY - rect.top - transform.offsetY) / transform.scale,
+    x: ((event.clientX - rect.left) * scaleX - transform.offsetX) / transform.scale,
+    y: ((event.clientY - rect.top) * scaleY - transform.offsetY) / transform.scale,
   };
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { drawLine, drawPoint, screenToImagePoint } from "@/lib/hka/geometry";
+import { refineFemoralHeadCircle } from "@/lib/xray/autoLandmarkDetection";
 
 // ─── JLA drawing helpers ─────────────────────────────────────────────────────
 
@@ -238,11 +239,33 @@ function drawHKAShadow(ctx, fh, kc, ac, deviation, direction, scale) {
   ctx.restore();
 }
 
+// Dashed outline showing the circle the auto-detect assist actually matched,
+// so the surgeon can see at a glance whether the snap looks right before
+// trusting it (vs. silently moving the point and hoping it's correct).
+function drawDetectedHeadCircle(ctx, point, scale) {
+  if (!point?.radius) return;
+  ctx.save();
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 1.5 / scale;
+  ctx.setLineDash([5 / scale, 4 / scale]);
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, point.radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hkaDeviation = null, direction = "varus" }) {
   const canvasRef  = useRef(null);
   const imageRef   = useRef(null);
+  // Off-screen, 1:1 copy of the loaded image in raw image-space pixels —
+  // the visible canvas is drawn through a pan/zoom transform, so reading
+  // pixel data back out of it would need to undo that transform too.
+  // screenToImagePoint already hands us image-space coordinates, so this
+  // keeps pixel lookups for auto-detection trivial.
+  const offscreenCanvasRef = useRef(null);
   const [imageReady, setImageReady] = useState(false);
   const [transform, setTransform]   = useState({ scale: 1, offsetX: 0, offsetY: 0 });
 
@@ -256,6 +279,11 @@ export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hk
     const img = new Image();
     img.onload = () => {
       imageRef.current = img;
+      const offscreen = document.createElement("canvas");
+      offscreen.width = img.width;
+      offscreen.height = img.height;
+      offscreen.getContext("2d").drawImage(img, 0, 0);
+      offscreenCanvasRef.current = offscreen;
       setImageReady(true);
       const canvas = canvasRef.current;
       if (canvas) {
@@ -286,6 +314,7 @@ export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hk
       ctx.translate(transform.offsetX, transform.offsetY);
       ctx.scale(transform.scale, transform.scale);
       ctx.drawImage(img, 0, 0);
+      drawDetectedHeadCircle(ctx, points.femoralHead, transform.scale);
 
       if (mode === "full") {
         drawHKAShadow(ctx, points.femoralHead, points.kneeCenter, points.ankleCenter, hkaDeviation, direction, transform.scale);
@@ -321,6 +350,22 @@ export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hk
     const canvas = canvasRef.current;
     if (!canvas || !activePoint || !imageReady) return;
     const point = screenToImagePoint(event, canvas, transform);
+
+    if (activePoint === "femoralHead" && offscreenCanvasRef.current) {
+      // Classical-CV assist: treat the click as a rough seed and snap to the
+      // best-matching circle nearby, rather than trusting the raw click
+      // pixel-for-pixel. Falls back to the raw click when nothing confident
+      // is found — this never blocks manual placement.
+      const offCtx = offscreenCanvasRef.current.getContext("2d");
+      const imageData = offCtx.getImageData(0, 0, offscreenCanvasRef.current.width, offscreenCanvasRef.current.height);
+      const detected = refineFemoralHeadCircle(imageData, point);
+      setPoints((prev) => ({
+        ...prev,
+        femoralHead: detected ? { x: detected.center.x, y: detected.center.y, radius: detected.radius } : point,
+      }));
+      return;
+    }
+
     setPoints((prev) => ({ ...prev, [activePoint]: point }));
   }
 
@@ -344,7 +389,10 @@ export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hk
         className="h-[72vh] w-full cursor-crosshair rounded-xl bg-slate-900 object-contain"
       />
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-        <span>Scroll untuk zoom. Klik canvas untuk memasang landmark aktif.</span>
+        <span>
+          Scroll untuk zoom. Klik canvas untuk memasang landmark aktif.
+          {activePoint === "femoralHead" && " Klik kasar di femoral head — auto-detect akan snap ke center & tepi presisi (garis putus-putus kuning)."}
+        </span>
         {mode === "jla" && (
           <span className="rounded-lg bg-indigo-50 px-2 py-1 text-indigo-600 text-[10px] font-medium">
             JLA Mode — 7 landmark

@@ -22,7 +22,7 @@ import {
   FileText,
   Focus,
   Footprints,
-  GripVertical,
+  HandGrab,
   ImagePlus,
   Layers,
   Link2,
@@ -253,6 +253,8 @@ export default function PlanningWorkspace({
   onFocusAnalysisMetric,
   focusedHipSide,
   onFocusHipSide,
+  onHipWizardStartChoice,
+  openHipGuideSignal,
   correctionControls,
   catalog,
   selectedImplantId,
@@ -1382,6 +1384,22 @@ export default function PlanningWorkspace({
     if (splitGuide) setSheet(null);
   }, [activeAnalysisItem?.id, canProceed, dismissedGuideId, enabled, procedure, session.step]);
   useEffect(() => {
+    // The effect above only auto-opens the guide for items that aren't
+    // complete yet — "pelvic" already is by the time "Lanjutkan ke
+    // Detailed" / "Tambahkan" (a missing line) gets clicked, so nothing
+    // would otherwise reopen the reference-image panel for that add-on
+    // sub-task. XrayCalibrationWorkspace.js bumps this counter to ask for
+    // it explicitly; 0 (the initial value) is a no-op so this doesn't fire
+    // on mount.
+    if (!openHipGuideSignal) return;
+    setGuideItemId("pelvic");
+    setDismissedGuideId(null);
+    setGuideMinimized(false);
+    setGuideVisualOpen(true);
+    setGuideStepIndex(0);
+    setSheet(null);
+  }, [openHipGuideSignal]);
+  useEffect(() => {
     if (!Number.isFinite(liveGuideStep) || guideSteps.length === 0) return;
     setGuideStepIndex(Math.min(liveGuideStep, guideSteps.length - 1));
   }, [guideItemId, guideSteps.length, liveGuideStep]);
@@ -1503,11 +1521,16 @@ export default function PlanningWorkspace({
     return runCalibrated(() => {
       if (session.step !== 1) onSession({ ...session, step: 1 });
       if (item.complete) {
+        setSheet(null);
         setGuideItemId(null);
         setDismissedGuideId(item.id);
         item.action?.();
         return;
       }
+      // Match openAnalysisGuide: the floating guide panel takes over once a
+      // tool is active, so the Workflow sheet underneath it closes instead
+      // of both staying open and stacking on a small mobile screen.
+      setSheet(null);
       setGuideItemId(item.id);
       setDismissedGuideId(null);
       setGuideMinimized(false);
@@ -1897,8 +1920,7 @@ export default function PlanningWorkspace({
                                   <ArrowRight size={14} />
                                 )}
                               </button>
-                              {procedure === "tka" &&
-                                current &&
+                              {current &&
                                 itemGuideSteps.length > 0 && (
                                   <div className={styles.inlineLandmarkWizard}>
                                     <div className={styles.inlineWizardStatus}>
@@ -1913,6 +1935,27 @@ export default function PlanningWorkspace({
                                           : `${activeLandmark?.shortLabel || ""} · ${activeLandmark?.label || "Pilih landmark"}`}
                                       </strong>
                                     </div>
+                                    {item.id === "pelvic" &&
+                                      onHipWizardStartChoice &&
+                                      completedLandmarks === 0 &&
+                                      !item.complete && (
+                                        <div className={styles.inlineWizardModeToggle}>
+                                          <p>Mulai dengan:</p>
+                                          {[
+                                            { value: "normal", label: "Normal (14 titik)" },
+                                            { value: "continuation", label: "Dengan Lanjutan" },
+                                            { value: "ddh", label: "DDH / Abnormal (26 titik)" },
+                                          ].map((option) => (
+                                            <button
+                                              key={option.value}
+                                              type="button"
+                                              onClick={() => onHipWizardStartChoice(option.value)}
+                                            >
+                                              {option.label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
                                     <div
                                       className={styles.inlineWizardProgress}
                                       aria-hidden="true"
@@ -1935,8 +1978,47 @@ export default function PlanningWorkspace({
                                             : stepIndex === completedLandmarks
                                               ? "active"
                                               : "pending";
+                                        const canFocusPoint =
+                                          state === "done" &&
+                                          !item.complete &&
+                                          Boolean(item.onFocusPoint);
                                         return (
-                                          <li key={step.id} data-state={state}>
+                                          <li
+                                            key={step.id}
+                                            data-state={state}
+                                            data-focusable={canFocusPoint || undefined}
+                                            role={canFocusPoint ? "button" : undefined}
+                                            tabIndex={canFocusPoint ? 0 : undefined}
+                                            onClick={
+                                              canFocusPoint
+                                                ? () => item.onFocusPoint(stepIndex)
+                                                : undefined
+                                            }
+                                            onKeyDown={
+                                              canFocusPoint
+                                                ? (event) => {
+                                                    if (event.key === "Enter" || event.key === " ") {
+                                                      event.preventDefault();
+                                                      item.onFocusPoint(stepIndex);
+                                                    }
+                                                  }
+                                                : undefined
+                                            }
+                                            aria-label={
+                                              canFocusPoint
+                                                ? `Perbesar dan edit ulang titik ${step.shortLabel}`
+                                                : undefined
+                                            }
+                                            ref={
+                                              state === "active"
+                                                ? (el) =>
+                                                    el?.scrollIntoView({
+                                                      block: "nearest",
+                                                      behavior: "smooth",
+                                                    })
+                                                : undefined
+                                            }
+                                          >
                                             <span>
                                               {state === "done" ? (
                                                 <Check size={10} />
@@ -2805,6 +2887,7 @@ export default function PlanningWorkspace({
                     onClick={() => onFocusAnalysisMetric?.(result.metric)}
                   >
                     <span><strong>{result.metric}</strong><b>{typeof result.value === "number" ? `${result.value.toFixed(1)}°` : result.value}</b></span>
+                    {result.note && <em>{result.note}</em>}
                     <small>{result.label}</small>
                   </button>
                 </li>
@@ -2849,7 +2932,9 @@ export default function PlanningWorkspace({
               </header>
               {hipLegendExpanded && (
                 <ul>
-                  {HIP_LEGEND_ITEMS.map((item) => {
+                  {HIP_LEGEND_ITEMS.filter((item) =>
+                    measurements.some((m) => m.metric?.startsWith(item.metricPrefix)),
+                  ).map((item) => {
                     const isEstimated = item.estimable && measurements.some(
                       (m) => m.metric?.startsWith(item.metricPrefix) && m.estimated,
                     );
@@ -3228,6 +3313,12 @@ export default function PlanningWorkspace({
                     <Action icon={PencilLine} onClick={() => { onAlignmentSetting?.("editAxes"); setResectionExpanded(false); }}>Edit sumbu</Action>
                     <Action icon={Move} onClick={() => { onEditAlignmentLines?.(); setResectionExpanded(false); }}>Edit garis potong</Action>
                   </div>
+                  {alignmentSettings?.estimatedAp && (
+                    <div className={styles.resectionActions}>
+                      <Action icon={Target} onClick={() => { onAlignmentSetting?.("axisBuilderFemoral"); setResectionExpanded(false); }}>Axis femur dari diameter</Action>
+                      <Action icon={Target} onClick={() => { onAlignmentSetting?.("axisBuilderTibial"); setResectionExpanded(false); }}>Axis tibia dari diameter</Action>
+                    </div>
+                  )}
                   <Action icon={Target} onClick={() => { onAlignmentSetting?.("femoralAtKnee"); setResectionExpanded(false); }}>
                     Pusatkan distal cut di lutut
                   </Action>
@@ -3297,6 +3388,7 @@ export default function PlanningWorkspace({
                           onChange={(event) => onAlignmentSetting?.("femoralOffsetDeg", event.target.value)} />
                         deg
                       </span>
+                      <small>Default 5° (Bradbury 2025)</small>
                     </label>}
                     <label>
                       Preset femur
@@ -3481,6 +3573,20 @@ export default function PlanningWorkspace({
               style={isSplitGuide && splitGuideTop !== null ? { top: splitGuideTop } : undefined}
             >
               <div className={styles.canvasGuideHeader}>
+                {isSplitGuide && (
+                  <button
+                    type="button"
+                    className={styles.splitGuideDragHandle}
+                    aria-label="Geser panduan landmark"
+                    title="Geser panduan"
+                    onPointerDown={startSplitGuideDrag}
+                    onPointerMove={moveSplitGuideDrag}
+                    onPointerUp={endSplitGuideDrag}
+                    onPointerCancel={endSplitGuideDrag}
+                  >
+                    <HandGrab size={14} />
+                  </button>
+                )}
                 <span>
                   <Target size={15} />
                   <span>
@@ -3491,20 +3597,6 @@ export default function PlanningWorkspace({
                   </span>
                 </span>
                 <div>
-                  {isSplitGuide && (
-                    <button
-                      type="button"
-                      className={styles.splitGuideDragHandle}
-                      aria-label="Geser panduan landmark"
-                      title="Geser panduan"
-                      onPointerDown={startSplitGuideDrag}
-                      onPointerMove={moveSplitGuideDrag}
-                      onPointerUp={endSplitGuideDrag}
-                      onPointerCancel={endSplitGuideDrag}
-                    >
-                      <GripVertical size={14} />
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => setGuideMinimized((value) => !value)}

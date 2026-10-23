@@ -9,6 +9,24 @@ const DEFAULT_HKA_LINE_COLOR = "#14b8a6";
 const DEFAULT_HKA_LABEL_OFFSET_X = 0;
 const DEFAULT_HKA_LABEL_OFFSET_Y = -16;
 
+// Shared LLD "which side is longer" classification + label, used by both the
+// hip planning panel (XrayCalibrationWorkspace.js) and
+// PostTHAAssessmentPanel.js so the 0.5mm "equal" threshold and Indonesian
+// wording can't drift out of sync between the two independent copies.
+export function classifyLldDirection(rightLengthMm, leftLengthMm, thresholdMm = 0.5) {
+  if (!Number.isFinite(rightLengthMm) || !Number.isFinite(leftLengthMm)) return null;
+  const delta = rightLengthMm - leftLengthMm;
+  if (Math.abs(delta) < thresholdMm) return "equal";
+  return delta > 0 ? "right" : "left";
+}
+
+export function formatLldDirectionLabel(direction) {
+  if (direction === "equal") return "Simetris";
+  if (direction === "right") return "Kanan lebih panjang";
+  if (direction === "left") return "Kiri lebih panjang";
+  return "";
+}
+
 export const HKA_MODE_DEFINITIONS = {
   "knee-ap": {
     key: "knee-ap",
@@ -158,7 +176,6 @@ export function isMobilePrecisionInteractionMode(mode) {
     "move-free-line-curve-handle",
     "move-annotation",
     "move-annotation-pointer",
-    "move-guide-draft-point",
     "move-landmark",
   ].includes(mode);
 }
@@ -175,13 +192,13 @@ export function shouldAutoZoomMobilePrecisionInteractionMode(mode) {
     "move-planning-guide-handle",
     "move-free-line-point",
     "move-free-line-curve-handle",
-    "move-guide-draft-point",
     "move-landmark",
   ].includes(mode);
 }
 
 export function getMobileInteractionLabel(mode) {
   if (!mode) return "Edit";
+  if (mode.includes("landmark") || mode.includes("guide-draft-point")) return "Titik";
   if (mode.includes("hka")) return "HKA";
   if (mode.includes("angle")) return "Angle";
   if (mode.includes("circle")) return "Circle";

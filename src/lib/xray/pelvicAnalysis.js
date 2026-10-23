@@ -27,6 +27,70 @@ export const PELVIC_ANALYSIS_LANDMARKS = [
   { key: "n1Left", label: "Titik tengah neck kiri", shortLabel: "N1-L", side: "left", guideKey: "femoral_neck_midpoint" },
 ];
 
+// The 14 landmarks that feed the four core metrics (LLD, Femoral Offset,
+// CCD, FHD) — everything else here (Kohler, bi-ischial, GT height, CEA) is
+// a secondary/advanced check. "Quick" mode collects only these, roughly
+// halving the click count; "Detailed" collects the full list below.
+export const PELVIC_QUICK_LANDMARK_KEYS = [
+  "tdRight", "tdLeft",
+  "ltRight", "ltLeft",
+  "hcRight", "hcLeft",
+  "headEdgeRight", "headEdgeLeft",
+  "s1Right", "s1Left",
+  "s2Right", "s2Left",
+  "n1Right", "n1Left",
+];
+
+// The 12 landmarks NOT in the quick set — what "Lanjutkan ke Detailed" asks
+// for after a quick run, so it only re-prompts for what's missing instead
+// of restarting the whole 26 from scratch.
+export const PELVIC_CONTINUATION_LANDMARK_KEYS = PELVIC_ANALYSIS_LANDMARKS
+  .map((item) => item.key)
+  .filter((key) => !PELVIC_QUICK_LANDMARK_KEYS.includes(key));
+
+export function getPelvicLandmarkSet(mode) {
+  if (mode === "quick") {
+    return PELVIC_ANALYSIS_LANDMARKS.filter((item) =>
+      PELVIC_QUICK_LANDMARK_KEYS.includes(item.key),
+    );
+  }
+  if (mode === "continuation") {
+    return PELVIC_ANALYSIS_LANDMARKS.filter((item) =>
+      PELVIC_CONTINUATION_LANDMARK_KEYS.includes(item.key),
+    );
+  }
+  return PELVIC_ANALYSIS_LANDMARKS;
+}
+
+// Every optional (non-quick) line/angle, with exactly the landmark keys it
+// needs. Most only need ONE new point — the "other half" of the pair is
+// already part of the quick set (e.g. Shenton needs amRight, but n1Right is
+// collected in quick mode already) — so adding a single missing line is
+// usually a 1-click prompt, not the full 12-landmark continuation batch.
+export const PELVIC_ADDABLE_LINES = [
+  { id: "biischial", label: "Garis bi-ischial", metric: "Bi-ischial", landmarkKeys: ["isRight", "isLeft"] },
+  { id: "kohlerRight", label: "Garis Köhler kanan", metric: "Köhler R", landmarkKeys: ["kiRight", "ksRight"] },
+  { id: "kohlerLeft", label: "Garis Köhler kiri", metric: "Köhler L", landmarkKeys: ["kiLeft", "ksLeft"] },
+  { id: "shentonRight", label: "Garis Shenton kanan", metric: "Shenton R", landmarkKeys: ["amRight"] },
+  { id: "shentonLeft", label: "Garis Shenton kiri", metric: "Shenton L", landmarkKeys: ["amLeft"] },
+  { id: "gtHeightRight", label: "GT Height kanan", metric: "GT Height R", landmarkKeys: ["gtRight"] },
+  { id: "gtHeightLeft", label: "GT Height kiri", metric: "GT Height L", landmarkKeys: ["gtLeft"] },
+  { id: "ceaRight", label: "Center-Edge Angle kanan", metric: "CEA R", landmarkKeys: ["alRight"] },
+  { id: "ceaLeft", label: "Center-Edge Angle kiri", metric: "CEA L", landmarkKeys: ["alLeft"] },
+];
+
+/**
+ * Which PELVIC_ADDABLE_LINES entries can't be drawn yet because at least one
+ * of their required landmarks is missing from `landmarks` (the key-based
+ * store, shaped like pelvicLandmarksRef.current: {key,x,y,confidence}[]).
+ */
+export function getMissingPelvicLines(landmarks) {
+  const havingKeys = new Set((landmarks || []).map((item) => item.key));
+  return PELVIC_ADDABLE_LINES.filter((line) =>
+    line.landmarkKeys.some((key) => !havingKeys.has(key)),
+  );
+}
+
 export const HIP_RESULT_DEFINITIONS = [
   { key: "LLD", label: "Selisih panjang tungkai", color: "#f472b6", lineMetrics: ["ITD", "LLD", "Hip Length R", "Hip Length L"] },
   { key: "Hip Length R", label: "Panjang hip kanan", color: "#f472b6", lineMetrics: ["ITD", "Hip Length R"] },
@@ -57,36 +121,42 @@ export const HIP_LEGEND_ITEMS = [
     n: 1,
     label: "Garis inter-teardrop",
     color: "#f2c200",
+    metricPrefix: "ITD",
     detail: "Acuan horizontal utama pelvis. Dipakai sebagai bidang nol untuk mengukur inklinasi cup dan sebagai baseline semua jarak vertikal lain (LLD, pusat rotasi).",
   },
   {
     n: 2,
     label: "Garis bi-ischial",
     color: "#22d3ee",
+    metricPrefix: "Bi-ischial",
     detail: "Acuan horizontal kedua untuk menyilangkan garis 1 — selisih kemiringan besar berarti salah satu titik teardrop/ischium perlu ditandai ulang sebelum cup diposisikan.",
   },
   {
     n: 3,
     label: "Tinggi trokanter minor (LLD)",
     color: "#f472b6",
+    metricPrefix: "LLD",
     detail: "Selisih tinggi LT kanan-kiri terhadap garis 1 = perkiraan selisih panjang tungkai. Dipakai untuk menentukan target koreksi panjang saat memilih level reseksi neck dan ukuran head/neck implan.",
   },
   {
     n: 4,
     label: "Garis Köhler (ilioischial)",
     color: "#fb923c",
+    metricPrefix: "Köhler",
     detail: "Batas medial true acetabulum. Jika dasar asetabulum melewati garis ini (protrusio), cup berisiko medialisasi berlebih — pertimbangkan ukuran cup lebih kecil atau graft medial.",
   },
   {
     n: 5,
     label: "Garis Shenton",
     color: "#4ade80",
+    metricPrefix: "Shenton",
     detail: "Kontinuitas lengkung ramus pubis ke neck medial. Garis yang terputus menandakan subluksasi/dislokasi — reduksi harus dikoreksi dulu sebelum posisi cup dinilai dari foto ini.",
   },
   {
     n: 6,
     label: "Sumbu anatomis femur",
     color: "#e5e7eb",
+    metricPrefix: "Femoral Axis",
     detail: "Sumbu shaft femur (S1-S2), diperpanjang agar terlihat jelas sampai titik jatuh Femoral Offset. Acuan untuk CCD dan untuk menyelaraskan sumbu stem terhadap kanal saat templating.",
   },
   {
@@ -157,9 +227,13 @@ export function isHipResultMeasurementRelevant(item, resultKey, kind) {
   return Boolean(metrics?.includes(item?.metric));
 }
 
-function pointMap(points) {
+// `landmarks` must be the exact ordered key list points[] was collected
+// against (the full 26 by default, or the quick 14-key subset) — points are
+// zipped to keys by position, so passing the wrong list silently mismatches
+// every point to the wrong key.
+function pointMap(points, landmarks = PELVIC_ANALYSIS_LANDMARKS) {
   return Object.fromEntries(
-    PELVIC_ANALYSIS_LANDMARKS.map((definition, index) => [definition.key, points[index]]),
+    landmarks.map((definition, index) => [definition.key, points[index]]),
   );
 }
 
@@ -269,9 +343,13 @@ function anyEstimated(...points) {
   return points.some((point) => isEstimated(point));
 }
 
-export function buildPelvicAnalysisLines(points, analysisId = `pelvic-${Date.now()}`) {
-  if (!Array.isArray(points) || points.length < PELVIC_ANALYSIS_LANDMARKS.length) return [];
-  const p = pointMap(points);
+export function buildPelvicAnalysisLines(
+  points,
+  analysisId = `pelvic-${Date.now()}`,
+  landmarks = PELVIC_ANALYSIS_LANDMARKS,
+) {
+  if (!Array.isArray(points) || points.length < landmarks.length) return [];
+  const p = pointMap(points, landmarks);
   const rightHipFoot = projectPointToLine(p.ltRight, p.tdRight, p.tdLeft);
   const leftHipFoot = projectPointToLine(p.ltLeft, p.tdRight, p.tdLeft);
   const rightFemoralFoot = projectPointToLine(p.hcRight, p.s1Right, p.s2Right);
@@ -281,8 +359,14 @@ export function buildPelvicAnalysisLines(points, analysisId = `pelvic-${Date.now
   const lldComparison = buildLldComparisonLine(p.ltRight, p.ltLeft, p.tdRight, p.tdLeft);
   const rightCorVFoot = projectPointToLine(p.hcRight, p.tdRight, p.tdLeft);
   const leftCorVFoot = projectPointToLine(p.hcLeft, p.tdRight, p.tdLeft);
-  const rightGtHeightFoot = projectPointToParallelLineThroughPoint(p.gtRight, p.hcRight, p.tdRight, p.tdLeft);
-  const leftGtHeightFoot = projectPointToParallelLineThroughPoint(p.gtLeft, p.hcLeft, p.tdRight, p.tdLeft);
+  // gt{Right,Left} is a quick-mode-optional landmark — only project it when
+  // actually collected, since the helper dereferences .x/.y unconditionally.
+  const rightGtHeightFoot = p.gtRight
+    ? projectPointToParallelLineThroughPoint(p.gtRight, p.hcRight, p.tdRight, p.tdLeft)
+    : null;
+  const leftGtHeightFoot = p.gtLeft
+    ? projectPointToParallelLineThroughPoint(p.gtLeft, p.hcLeft, p.tdRight, p.tdLeft)
+    : null;
 
   return [
     makeLine(p.tdRight, p.tdLeft, { type: "interteardrop", name: "ITD", metric: "ITD", side: "bilateral", color: "#f2c200", estimated: anyEstimated(p.tdRight, p.tdLeft) }),
@@ -315,11 +399,15 @@ export function buildPelvicAnalysisLines(points, analysisId = `pelvic-${Date.now
   ].filter(Boolean).map((line) => ({ ...line, pelvicAnalysisId: analysisId }));
 }
 
-export function buildPelvicAnalysisMeasurements(points, analysisId = `pelvic-${Date.now()}`) {
-  if (!Array.isArray(points) || points.length < PELVIC_ANALYSIS_LANDMARKS.length) {
+export function buildPelvicAnalysisMeasurements(
+  points,
+  analysisId = `pelvic-${Date.now()}`,
+  landmarks = PELVIC_ANALYSIS_LANDMARKS,
+) {
+  if (!Array.isArray(points) || points.length < landmarks.length) {
     return { lines: [], angles: [], circles: [] };
   }
-  const p = pointMap(points);
+  const p = pointMap(points, landmarks);
   // CCD = angle between line(HC,N1) and the femoral axis line(S1,S2). These
   // two lines don't share an endpoint, so the angle is only well-defined by
   // vertexing it at their (possibly off-canvas) infinite-line intersection.
@@ -348,6 +436,9 @@ export function buildPelvicAnalysisMeasurements(points, analysisId = `pelvic-${D
   // the foot flips to the opposite side, silently swapping the acute angle
   // for its ~180°-complement. A fixed-direction "always up" ray avoids that.
   const makeCeaAngle = (side, hc, al, tdRight, tdLeft) => {
+    // al (acetabular lateral rim) is quick-mode-optional — skip rather than
+    // dereference .x/.y on a missing point.
+    if (!al) return null;
     const verticalPoint = getUpwardPerpendicularPoint(
       hc,
       tdRight,
@@ -380,7 +471,7 @@ export function buildPelvicAnalysisMeasurements(points, analysisId = `pelvic-${D
   });
 
   return {
-    lines: buildPelvicAnalysisLines(points, analysisId),
+    lines: buildPelvicAnalysisLines(points, analysisId, landmarks),
     angles: [
       makeCcdAngle("right", p.hcRight, p.n1Right, p.s1Right, p.s2Right),
       makeCcdAngle("left", p.hcLeft, p.n1Left, p.s1Left, p.s2Left),
