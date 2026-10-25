@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
+import RichTextEditor from "./RichTextEditor";
 
 const APPS_SCRIPT_URL = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 
@@ -494,14 +495,14 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
                           {postOpPhotos.map((src, idx) => (
                             <div key={idx} className="group relative aspect-square overflow-hidden rounded-xl border border-teal-200 bg-white">
                               <img src={src} alt={`foto-${idx + 1}`} className="h-full w-full object-cover" />
-                              <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/40 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                                 <button type="button" onClick={() => setLightboxPhoto(src)}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700">
-                                  <ZoomIn className="h-3 w-3" />
+                                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-700 sm:h-6 sm:w-6">
+                                  <ZoomIn className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
                                 </button>
                                 <button type="button" onClick={() => removePhoto(idx)}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500/90 text-white">
-                                  <Trash2 className="h-3 w-3" />
+                                  className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/90 text-white sm:h-6 sm:w-6">
+                                  <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
                                 </button>
                               </div>
                             </div>
@@ -652,10 +653,9 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
                         <FileText className="h-3 w-3 text-slate-400" />
                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Catatan Post-Op</span>
                       </div>
-                      <textarea value={postOpNotes} onChange={(e) => setPostOpNotes(e.target.value)}
+                      <RichTextEditor value={postOpNotes} onChange={setPostOpNotes}
                         placeholder="Temuan intraoperatif, alasan perubahan ukuran, dll..."
-                        rows={2}
-                        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+                        minHeightClass="min-h-[56px]" />
                     </label>
 
                     {error && (

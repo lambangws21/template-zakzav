@@ -36,6 +36,7 @@ import {
   Maximize2,
   RotateCcw,
   ImageIcon,
+  ImagePlus,
   LayoutTemplate,
   LogOut,
   Settings,
@@ -49,6 +50,7 @@ import CaseCompareModal from "./CaseCompareModal";
 import ThemeToggle from "./ThemeToggle";
 import UserProfileBadge from "./UserProfileBadge";
 import CaseAccessGate from "./CaseAccessGate";
+import RichTextEditor, { richTextToPlainText } from "./RichTextEditor";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
 
@@ -354,6 +356,7 @@ function buildCloudCreatePayload(caseData) {
     hkaSummaryJson: JSON.stringify(caseData?.hkaSummary || []),
     cupAssessmentJson: caseData?.cupAssessment ? JSON.stringify(caseData.cupAssessment) : "",
     postOpPhotosJson: JSON.stringify(caseData?.postOpPhotos || []),
+    prePhotosJson: JSON.stringify(caseData?.prePhotos || []),
   };
 }
 
@@ -370,6 +373,7 @@ function buildCloudUpdatePayload(caseData) {
     postOpHka: caseData?.postOpHka ?? null,
     postOpNotes: caseData?.postOpNotes || "",
     postOpPhotos: Array.isArray(caseData?.postOpPhotos) ? caseData.postOpPhotos : [],
+    prePhotos: Array.isArray(caseData?.prePhotos) ? caseData.prePhotos : [],
   };
 }
 
@@ -393,7 +397,8 @@ async function syncPendingCases(localCases, remoteCases = []) {
       if (
         caseData.operationDate || caseData.actualImplantLabel ||
         caseData.actualSizeNum != null || caseData.postOpHka != null ||
-        caseData.postOpNotes || caseData.postOpPhotos?.length
+        caseData.postOpNotes || caseData.postOpPhotos?.length ||
+        caseData.prePhotos?.length
       ) {
         await apiUpdateCase(caseData.id, buildCloudUpdatePayload(caseData));
       }
@@ -422,6 +427,8 @@ function mapCloudCase(raw) {
   try { cupAssessment = raw.cupAssessmentJson ? JSON.parse(raw.cupAssessmentJson) : null; } catch {}
   let postOpPhotos = [];
   try { postOpPhotos = raw.postOpPhotosJson ? JSON.parse(raw.postOpPhotosJson) : []; } catch {}
+  let prePhotos = [];
+  try { prePhotos = raw.prePhotosJson ? JSON.parse(raw.prePhotosJson) : []; } catch {}
   return {
     id: raw.id,
     patientName: raw.patientName || "",
@@ -450,6 +457,7 @@ function mapCloudCase(raw) {
     postOpNotes: raw.postOpNotes || "",
     postOpPhotos,
     postOpUpdatedAt: raw.postOpUpdatedAt || "",
+    prePhotos,
   };
 }
 
@@ -749,7 +757,7 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
         layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`hidden min-h-[70px] grid-cols-[34px_62px_minmax(150px,1.25fr)_minmax(120px,.9fr)_minmax(140px,1fr)_92px_96px_98px] items-center gap-2 rounded-lg border px-2 transition sm:grid ${
+        className={`hidden min-h-[70px] grid-cols-[34px_62px_minmax(150px,1.25fr)_minmax(120px,.9fr)_minmax(140px,1fr)_92px_96px_98px] items-center gap-2 rounded-lg border px-2 transition xl:grid ${
           selected
             ? "border-violet-500 bg-violet-500/10"
             : "border-slate-700/80 bg-[#111d2d] hover:border-slate-600 hover:bg-[#142236]"
@@ -774,7 +782,7 @@ function CaseCard({ c, onSelect, onDelete, selected, onUpdateSnapshot }) {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, x: -20 }}
-        className={`group relative overflow-hidden rounded-lg border transition-all sm:hidden ${
+        className={`group relative overflow-hidden rounded-lg border transition-all xl:hidden ${
           selected
             ? "border-cyan-400 bg-cyan-500/10 ring-1 ring-cyan-400/30"
             : c.actualImplantLabel || c.actualSizeNum != null
@@ -1126,13 +1134,11 @@ function SaveForm({ currentSession, onSave, onCancel }) {
             {/* Catatan */}
             <label className="flex flex-col gap-1">
               <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "var(--soft-text)" }}>Catatan</span>
-              <input
-                type="text"
+              <RichTextEditor
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={setNotes}
                 placeholder="Catatan singkat (opsional)"
-                className="w-full rounded-xl border px-2.5 py-2 text-base outline-none transition sm:text-xs"
-                style={{ borderColor: "var(--soft-border)", background: "var(--soft-inset-bg)", color: "var(--soft-text-hi)" }}
+                minHeightClass="min-h-[64px]"
               />
             </label>
           </div>
@@ -1354,12 +1360,11 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
               {/* Catatan */}
               <label className="flex flex-col gap-1">
                 <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Catatan</span>
-                <input
-                  type="text"
+                <RichTextEditor
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={setNotes}
                   placeholder="Catatan singkat (opsional)"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-base text-slate-800 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100 sm:text-xs"
+                  minHeightClass="min-h-[64px]"
                 />
               </label>
 
@@ -1392,420 +1397,31 @@ function EditCaseModal({ isOpen, caseData, onSave, onClose, onMinimize }) {
 
 // ─── Case Detail Modal ─────────────────────────────────────────────────────────
 
-function LegacyCaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onPreOpReport, onFullReport, onCompare, onLightbox }) {
-  const [postOpPhotoIdx, setPostOpPhotoIdx] = useState(0);
-  const [exportingXray, setExportingXray] = useState(false);
-  useEffect(() => { setPostOpPhotoIdx(0); }, [caseData?.id]);
-
-  if (!caseData) return null;
-
-  async function handleExportXray() {
-    setExportingXray(true);
-    try {
-      const snap = caseData.snapshot;
-      const snapUrl = caseData.snapshotUrl;
-      let href, ext = "jpg";
-      if (snap?.startsWith("data:")) {
-        href = snap;
-        ext = snap.startsWith("data:image/png") ? "png" : "jpg";
-      } else {
-        const src = snapUrl || snap;
-        const proxyUrl = src?.startsWith("http")
-          ? `/api/google-drive-image?src=${encodeURIComponent(src)}`
-          : src;
-        if (!proxyUrl) return;
-        const r = await fetch(proxyUrl);
-        const blob = await r.blob();
-        href = URL.createObjectURL(blob);
-        ext = blob.type.includes("png") ? "png" : "jpg";
-      }
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = `${(caseData.patientName || "xray").replace(/[^a-zA-Z0-9]/g, "-")}-xray.${ext}`;
-      a.click();
-      if (!snap?.startsWith("data:")) setTimeout(() => URL.revokeObjectURL(href), 1500);
-    } catch {} finally {
-      setExportingXray(false);
-    }
-  }
-
-  const preComponents = caseData.implantLabel
-    ? caseData.implantLabel.split(" · ").map((s) => s.trim()).filter(Boolean)
-    : [];
-  const hkaList = caseData.hkaSummary || [];
-  const hasPostOp = Boolean(caseData.actualImplantLabel || caseData.actualSizeNum != null);
-  const diff = caseData.preOpSizeNum != null && caseData.actualSizeNum != null
-    ? caseData.actualSizeNum - caseData.preOpSizeNum : null;
-  const accuracyLabel = diff === null ? null
-    : diff === 0 ? { text: "Exact match", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-    : Math.abs(diff) <= 1 ? { text: `Selisih ${diff > 0 ? "+" : ""}${diff} size`, cls: "bg-amber-50 text-amber-700 border-amber-200" }
-    : { text: `Selisih besar ${diff > 0 ? "+" : ""}${diff}`, cls: "bg-red-50 text-red-700 border-red-200" };
-
-  const preOpSrc = (caseData.snapshot || caseData.snapshotUrl)
-    ? snapshotSrc(caseData.snapshot || caseData.snapshotUrl)
-    : null;
-  const postPhotos = caseData.postOpPhotos || [];
-  const hasBoth = preOpSrc && postPhotos.length > 0;
-  const curPostIdx = Math.min(postOpPhotoIdx, Math.max(0, postPhotos.length - 1));
-
-  return createPortal(
-    <AnimatePresence>
-      <motion.div
-        key="case-detail-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 z-[9990] flex items-end justify-center sm:items-center sm:p-6"
-        style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}
-      >
-        <motion.div
-          initial={{ y: 60, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 40, opacity: 0 }}
-          transition={{ type: "spring", damping: 26, stiffness: 300 }}
-          onClick={(e) => e.stopPropagation()}
-          className="glass-panel w-full overflow-hidden rounded-t-[24px] shadow-2xl sm:max-w-[520px] sm:rounded-[24px] border border-[var(--soft-border)]"
-          style={{ maxHeight: "94dvh", overflowY: "auto", background: "var(--soft-raised-bg)" }}
-        >
-          {/* Drag pill — mobile only */}
-          <div className="flex justify-center pt-3 pb-1 sm:hidden">
-            <div className="h-1 w-10 rounded-full bg-white/20" />
-          </div>
-
-          {/* Header */}
-          <div className="flex items-start justify-between gap-3 bg-[#1e1033] px-4 py-3 shrink-0">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-black text-white">{caseData.patientName}</p>
-              <p className="truncate text-[10px] text-purple-300">{caseData.procedure}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {hasPostOp && (
-                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[8px] font-black text-emerald-300">
-                  POST-OP ✓
-                </span>
-              )}
-              <button type="button" onClick={onMinimize}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-purple-300 hover:bg-white/20"
-                title="Minimize">
-                <Minus className="h-3 w-3" />
-              </button>
-              <button type="button" onClick={onClose}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-purple-300 hover:bg-white/20"
-                title="Tutup">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          </div>
-
-          <div className="divide-y divide-[var(--soft-border)]">
-            {/* Photo comparison */}
-            {(preOpSrc || postPhotos.length > 0) && (
-              <div style={{ background: "#0a0f1c" }}>
-                {hasBoth ? (
-                  <div className="grid grid-cols-2 divide-x divide-white/10" style={{ height: 200 }}>
-                    {/* Kiri: Pre-Op */}
-                    <div className="relative overflow-hidden">
-                      <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
-                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
-                      <div className="absolute left-1.5 top-1.5 rounded-full bg-sky-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
-                        📷 Pre-Op
-                      </div>
-                      <button type="button"
-                        onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)}
-                        className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 text-[7px] font-black text-white hover:bg-black/70">
-                        <Maximize2 className="h-2.5 w-2.5" /> Besar
-                      </button>
-                    </div>
-                    {/* Kanan: Post-Op */}
-                    <div className="relative overflow-hidden">
-                      <img src={snapshotSrc(postPhotos[curPostIdx])} alt={`Post-Op ${curPostIdx + 1}`} className="h-full w-full object-cover" />
-                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 40%,rgba(10,15,28,0.7))" }} />
-                      <div className="absolute left-1.5 top-1.5 rounded-full bg-emerald-500/85 px-1.5 py-0.5 text-[7px] font-black text-white backdrop-blur-sm">
-                        📸 Post-Op
-                      </div>
-                      {postPhotos.length > 1 && (
-                        <div className="absolute bottom-1.5 left-0 right-0 flex items-center justify-center gap-1.5">
-                          <button type="button"
-                            onClick={() => setPostOpPhotoIdx(i => (i - 1 + postPhotos.length) % postPhotos.length)}
-                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
-                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M5 1L2 4l3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
-                          </button>
-                          <span className="rounded-full bg-black/50 px-2 py-0.5 text-[7px] font-black text-white">
-                            {curPostIdx + 1}/{postPhotos.length}
-                          </span>
-                          <button type="button"
-                            onClick={() => setPostOpPhotoIdx(i => (i + 1) % postPhotos.length)}
-                            className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80">
-                            <svg className="h-2.5 w-2.5" viewBox="0 0 8 8" fill="currentColor"><path d="M3 1l3 3-3 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
-                          </button>
-                        </div>
-                      )}
-                      <button type="button"
-                        onClick={() => onLightbox(snapshotSrc(postPhotos[curPostIdx]), caseData.patientName, null)}
-                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70">
-                        <ZoomIn className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </div>
-                ) : preOpSrc ? (
-                  <div className="relative overflow-hidden" style={{ height: 180 }}>
-                    <div className="absolute left-2 top-2 z-10 rounded-full bg-sky-500/80 px-2 py-0.5 text-[8px] font-black text-white">
-                      📷 X-Ray Pre-Op
-                    </div>
-                    <img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-cover opacity-85" />
-                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,transparent 50%,rgba(10,15,28,0.85))" }} />
-                    <button type="button"
-                      onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)}
-                      className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-sky-500/85 px-3 py-1.5 text-[9px] font-black text-white">
-                      <Maximize2 className="h-3 w-3" /> Perbesar
-                    </button>
-                  </div>
-                ) : (
-                  <div className="px-3 pb-3 pt-2">
-                    <p className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-400">
-                      📸 Foto Post-Op ({postPhotos.length})
-                    </p>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {postPhotos.map((src, idx) => (
-                        <button key={idx} type="button"
-                          onClick={() => onLightbox(snapshotSrc(src), caseData.patientName, null)}
-                          className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-slate-800">
-                          <img src={snapshotSrc(src)} alt={`post-op-${idx + 1}`} className="h-full w-full object-cover transition-opacity group-hover:opacity-70" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Date + notes */}
-            <div className="flex items-start gap-3 px-4 py-2.5">
-              <div className="min-w-0 space-y-1 w-full">
-                <div className="flex items-center gap-1.5 text-[9px] [color:var(--soft-text)] opacity-70">
-                  <Calendar className="h-3 w-3 shrink-0" />
-                  <span>Templating: {formatDate(caseData.savedAt)}</span>
-                </div>
-                {caseData.notes && (
-                  <p className="text-[10px] italic [color:var(--soft-text)] opacity-60">"{caseData.notes}"</p>
-                )}
-                <div className="flex flex-wrap gap-1">
-                  {caseData.measurementCount > 0 && (
-                    <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[8px] font-black text-blue-400">
-                      {caseData.measurementCount} ukur
-                    </span>
-                  )}
-                  {caseData.templateCount > 0 && (
-                    <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[8px] font-black text-purple-400">
-                      {caseData.templateCount} tmpl
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Cup Assessment */}
-            {caseData.cupAssessment && (
-              <div className="px-4 py-2.5 space-y-1.5 bg-amber-500/5">
-                <p className="text-[9px] font-black uppercase tracking-widest text-amber-500">⊙ Cup Assessment</p>
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-black text-amber-400">
-                    INC {parseFloat(caseData.cupAssessment.inclination).toFixed(1)}°
-                  </span>
-                  <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[9px] font-black text-sky-400">
-                    AV {parseFloat(caseData.cupAssessment.anteversion).toFixed(1)}°
-                  </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${caseData.cupAssessment.side === "left" ? "bg-sky-500/15 text-sky-400" : "bg-orange-500/15 text-orange-400"}`}>
-                    {caseData.cupAssessment.side === "left" ? "◁ Kiri" : "Kanan ▷"}
-                  </span>
-                  {caseData.cupAssessment.zone && (
-                    <span className="rounded-full bg-[var(--soft-inset-bg)] px-2 py-0.5 text-[9px] font-bold [color:var(--soft-text)]">
-                      {caseData.cupAssessment.zone}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Pre-Op plan */}
-            <div className="px-4 py-2.5 space-y-1.5">
-              <p className="text-[9px] font-black uppercase tracking-widest text-blue-400">Rencana Pre-Op</p>
-              {preComponents.length > 0 ? (
-                <div className="space-y-1">
-                  {preComponents.map((part, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
-                      <span className="text-[10px] [color:var(--soft-text)]">{part}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[10px] italic [color:var(--soft-text)] opacity-40">Belum ada komponen tersimpan</p>
-              )}
-              {caseData.preOpSizeNum != null && (
-                <div className="flex items-center gap-1.5 pt-0.5">
-                  <span className="text-[9px] [color:var(--soft-text)] opacity-60">Ukuran primer:</span>
-                  <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[9px] font-black text-blue-400">
-                    {caseData.preOpSizeNum}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* HKA pre-op */}
-            {hkaList.length > 0 && (
-              <div className="px-4 py-2.5 space-y-1.5">
-                <p className="text-[9px] font-black uppercase tracking-widest [color:var(--soft-text)] opacity-50">HKA Pre-Op</p>
-                <div className="flex flex-wrap gap-1">
-                  {hkaList.map((h, i) => (
-                    <span key={i} className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
-                      h.direction === "varus" ? "bg-red-500/15 text-red-400" : "bg-green-500/15 text-green-400"
-                    }`}>
-                      {h.absoluteDeviation?.toFixed?.(1) ?? h.absoluteDeviation}° {h.direction}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Post-op data */}
-            {hasPostOp ? (
-              <div className="px-4 py-2.5 space-y-1.5">
-                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Data Post-Op</p>
-                {caseData.operationDate && (
-                  <div className="flex items-center gap-1.5 text-[9px] [color:var(--soft-text)] opacity-60">
-                    <Calendar className="h-3 w-3 shrink-0" />
-                    Operasi: {caseData.operationDate}
-                  </div>
-                )}
-                {caseData.actualImplantLabel && (
-                  <div className="space-y-0.5">
-                    {caseData.actualImplantLabel.split(" · ").map((part, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
-                        <span className="text-[10px] [color:var(--soft-text)]">{part.trim()}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {accuracyLabel && (
-                  <div className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[9px] font-black ${accuracyLabel.cls}`}>
-                    {accuracyLabel.text}
-                    <span className="font-normal opacity-70">
-                      (pre: {caseData.preOpSizeNum} → actual: {caseData.actualSizeNum})
-                    </span>
-                  </div>
-                )}
-                {caseData.postOpHka != null && (
-                  <p className="text-[9px] [color:var(--soft-text)] opacity-60">HKA post-op: <strong>{caseData.postOpHka}°</strong></p>
-                )}
-                {caseData.postOpNotes && (
-                  <p className="text-[10px] italic [color:var(--soft-text)] opacity-60">"{caseData.postOpNotes}"</p>
-                )}
-              </div>
-            ) : (
-              <div className="px-4 py-2 text-[10px] italic [color:var(--soft-text)] opacity-40">
-                Belum ada data post-op
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div className="border-t border-[var(--soft-border)] px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)] space-y-2">
-              <button
-                type="button"
-                onClick={() => onEdit(caseData.id)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100"
-              >
-                <Pencil className="h-3 w-3" />
-                Edit Data Kasus
-              </button>
-              <button
-                type="button"
-                onClick={() => onPostOp(caseData)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-[10px] font-black text-white"
-              >
-                <ClipboardCheck className="h-3 w-3" />
-                {hasPostOp ? "Edit Data Post-Op" : "Input Data Post-Op"}
-              </button>
-              {onLoadAsLayer && (caseData.snapshot || caseData.snapshotUrl) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const url = snapshotSrc(caseData.snapshot || caseData.snapshotUrl);
-                    const name = `${caseData.patientName || "Kasus"} — ${caseData.procedure || ""}`.trim().replace(/—\s*$/, "");
-                    onLoadAsLayer(url, name);
-                    onClose();
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 py-2 text-[10px] font-black text-purple-700 hover:bg-purple-100"
-                >
-                  <Layers className="h-3 w-3" />
-                  Buka sebagai Layer Perbandingan
-                </button>
-              )}
-              {(caseData.snapshot || caseData.snapshotUrl) && (
-                <button
-                  type="button"
-                  onClick={handleExportXray}
-                  disabled={exportingXray}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 py-2 text-[10px] font-black text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-                >
-                  {exportingXray
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <ImageIcon className="h-3 w-3" />}
-                  Ekspor X-Ray (Gambar)
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => { onPreOpReport(caseData); onClose(); }}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 py-2 text-[10px] font-black text-blue-700"
-              >
-                <FileText className="h-3 w-3" />
-                Laporan Pre-Op (PDF)
-              </button>
-              <button
-                type="button"
-                onClick={() => { onFullReport(caseData); onClose(); }}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 py-2 text-[10px] font-black text-sky-700"
-              >
-                <Download className="h-3 w-3" />
-                Laporan Lengkap PDF
-              </button>
-              {onCompare && (
-                <button
-                  type="button"
-                  onClick={() => { onCompare(caseData); onClose(); }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 py-2 text-[10px] font-black text-violet-700"
-                >
-                  <BarChart2 className="h-3 w-3" />
-                  Bandingkan Kasus
-                </button>
-              )}
-            </div>
-          </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>,
-    document.body
-  );
-}
-
-function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onOpenInTemplating, onPreOpReport, onFullReport, onCompare, onLightbox, onDelete }) {
+function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLoadAsLayer, onOpenInTemplating, onPreOpReport, onFullReport, onCompare, onLightbox, onDelete, onPrePhotosChange }) {
   const [activeTab, setActiveTab] = useState("preop");
   const [activeImage, setActiveImage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [opening, setOpening] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [prePhotoBusy, setPrePhotoBusy] = useState(false);
+  const prePhotoInputRef = useRef(null);
+  // Compare tab: indices into `availableImages` ([preOp, ...postOp]) for
+  // each side of the 2-up view — was hardcoded to preOp vs postOp[0] with
+  // no way to pick among several uploaded photos.
+  const [compareSlotA, setCompareSlotA] = useState(0);
+  const [compareSlotB, setCompareSlotB] = useState(1);
 
   useEffect(() => {
     setActiveTab("preop");
     setActiveImage(0);
+    setCompareSlotA(0);
+    setCompareSlotB(1);
   }, [caseData?.id]);
 
   if (!caseData) return null;
 
   const preOpSrc = snapshotSrc(caseData.snapshot || caseData.snapshotUrl || null);
+  const prePhotoSources = (caseData.prePhotos || []).map(snapshotSrc).filter(Boolean);
   const postOpSources = (caseData.postOpPhotos || []).map(snapshotSrc).filter(Boolean);
   const hasPostOp = Boolean(caseData.actualImplantLabel || caseData.actualSizeNum != null || postOpSources.length);
   const components = (caseData.implantLabel || "")
@@ -1814,10 +1430,64 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
     .filter(Boolean);
   const anatomySide = caseData.cupAssessment?.side || caseData.hkaSummary?.[0]?.side || "-";
   const patientId = String(caseData.id || "-").replace(/^case-/, "").slice(0, 18);
-  const availableImages = [preOpSrc, ...postOpSources].filter(Boolean);
+  // Labeled alongside src (not just index position) so labels stay correct
+  // even when preOpSrc is missing and filter(Boolean) below drops it.
+  const imageOptions = [
+    { label: "Pre-Op", src: preOpSrc },
+    ...prePhotoSources.map((src, index) => ({ label: `Pre-Op Foto ${index + 1}`, src })),
+    ...postOpSources.map((src, index) => ({ label: `Post-Op ${index + 1}`, src })),
+  ].filter((item) => Boolean(item.src));
+  const availableImages = imageOptions.map((item) => item.src);
+  const preGroupCount = (preOpSrc ? 1 : 0) + prePhotoSources.length;
   const shownImage = availableImages[Math.min(activeImage, Math.max(availableImages.length - 1, 0))] || null;
-  const selectedPostIndex = Math.max(0, Math.min(activeImage - 1, Math.max(postOpSources.length - 1, 0)));
-  const displayImage = activeTab === "postop" ? postOpSources[selectedPostIndex] || null : activeTab === "preop" ? preOpSrc : shownImage;
+  const selectedPostIndex = Math.max(0, Math.min(activeImage - preGroupCount, Math.max(postOpSources.length - 1, 0)));
+  const displayImage = activeTab === "postop" ? postOpSources[selectedPostIndex] || null : activeTab === "preop" ? (shownImage && activeImage < preGroupCount ? shownImage : preOpSrc) : shownImage;
+
+  const readPrePhotoAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("Gagal membaca file"));
+    reader.readAsDataURL(file);
+  });
+
+  // Kompres ke maks 1024px dan JPEG 78% — sama seperti pattern di PostOpDataModal
+  const compressPrePhoto = (dataUrl) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1024;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+  async function handleAddPrePhotos(files) {
+    const valid = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
+    if (!valid.length) return;
+    setPrePhotoBusy(true);
+    try {
+      const compressed = await Promise.all(
+        valid.map(async (f) => compressPrePhoto(await readPrePhotoAsDataUrl(f)))
+      );
+      const next = [...(caseData.prePhotos || []), ...compressed].slice(0, 10);
+      await onPrePhotosChange?.(caseData.id, next);
+    } finally {
+      setPrePhotoBusy(false);
+    }
+  }
+
+  async function handleRemovePrePhoto(idx) {
+    const next = (caseData.prePhotos || []).filter((_, i) => i !== idx);
+    await onPrePhotosChange?.(caseData.id, next);
+  }
 
   async function openActiveImage() {
     if (!displayImage || !onOpenInTemplating || opening) return;
@@ -1922,10 +1592,53 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
             <div className="grid min-h-full gap-2 p-2 sm:gap-3 sm:p-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-4">
               <main className="min-w-0 space-y-2 sm:space-y-3">
                 <section className="overflow-hidden rounded-lg border border-slate-700 bg-black">
-                  {activeTab === "compare" && preOpSrc && postOpSources.length ? (
-                    <div className="grid min-h-[240px] grid-cols-2 divide-x divide-slate-700 sm:min-h-[440px]">
-                      <button type="button" onClick={() => onLightbox(preOpSrc, caseData.patientName, caseData.id)} className="relative overflow-hidden"><img src={preOpSrc} alt="Pre-Op" className="h-full w-full object-contain" /><span className="absolute left-3 top-3 rounded-full bg-slate-950/80 px-3 py-1 text-[9px] font-black">Pre-Op</span></button>
-                      <button type="button" onClick={() => onLightbox(postOpSources[0], caseData.patientName, null)} className="relative overflow-hidden"><img src={postOpSources[0]} alt="Post-Op" className="h-full w-full object-contain" /><span className="absolute left-3 top-3 rounded-full bg-emerald-600/90 px-3 py-1 text-[9px] font-black">Post-Op</span></button>
+                  {activeTab === "compare" && imageOptions.length >= 2 ? (
+                    <div>
+                      <div className="grid grid-cols-1 gap-1.5 border-b border-slate-800 bg-[#08111f] p-1.5 sm:grid-cols-2 sm:gap-2 sm:p-2">
+                        {[
+                          { value: compareSlotA, setValue: setCompareSlotA, fallback: compareSlotB },
+                          { value: compareSlotB, setValue: setCompareSlotB, fallback: compareSlotA },
+                        ].map((slot, slotIndex) => (
+                          <select
+                            key={slotIndex}
+                            value={slot.value}
+                            onChange={(event) => slot.setValue(Number(event.target.value))}
+                            className="w-full rounded border border-slate-700 bg-[#101c2d] px-2 py-1.5 text-[10px] font-black text-slate-200"
+                          >
+                            {imageOptions.map((option, index) => (
+                              <option key={`${option.label}-${index}`} value={index}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-1 divide-y divide-slate-700 sm:min-h-[400px] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                        {[compareSlotA, compareSlotB].map((slotValue, slotIndex) => {
+                          const option = imageOptions[slotValue] || imageOptions[slotIndex] || imageOptions[0];
+                          return (
+                            <button
+                              key={slotIndex}
+                              type="button"
+                              onClick={() => onLightbox(option.src, caseData.patientName, option.label.startsWith("Pre-Op") ? caseData.id : null)}
+                              className="relative min-h-[220px] overflow-hidden sm:min-h-0"
+                            >
+                              <img src={option.src} alt={option.label} className="h-full w-full object-contain" />
+                              <span className={`absolute left-3 top-3 rounded-full px-3 py-1 text-[9px] font-black ${option.label.startsWith("Pre-Op") ? "bg-slate-950/80" : "bg-emerald-600/90"}`}>
+                                {option.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : activeTab === "compare" ? (
+                    <div className="grid min-h-[240px] place-items-center p-5 text-center sm:min-h-[320px] sm:p-8">
+                      <div>
+                        <ImageIcon className="mx-auto mb-2 h-5 w-5 text-slate-500" />
+                        <strong className="block text-xs sm:text-sm">Belum cukup foto untuk dibandingkan</strong>
+                        <p className="mt-1.5 text-[9px] text-slate-400 sm:mt-2 sm:text-[11px]">Butuh minimal 2 foto (Pre-Op dan/atau Post-Op).</p>
+                      </div>
                     </div>
                   ) : activeTab === "history" ? (
                     <div className="grid min-h-[240px] place-items-center p-5 text-center sm:min-h-[320px] sm:p-8"><div><Clock className="mx-auto mb-2 h-5 w-5 text-violet-400 sm:mb-3 sm:h-6 sm:w-6" /><strong className="block text-xs sm:text-sm">Riwayat Kasus</strong><p className="mt-1.5 text-[9px] text-slate-400 sm:mt-2 sm:text-[11px]">Kasus dibuat atau terakhir diperbarui pada {formatDate(caseData.savedAt)}.</p></div></div>
@@ -1938,7 +1651,7 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                       {displayImage && <button type="button" onClick={() => onLightbox(displayImage, caseData.patientName, activeTab === "preop" ? caseData.id : null)} className="absolute bottom-2 right-2 grid h-8 w-8 place-items-center rounded-md bg-slate-950/80 text-white sm:bottom-3 sm:right-3 sm:h-10 sm:w-10 sm:rounded-lg" aria-label="Perbesar gambar"><Maximize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></button>}
                     </div>
                   )}
-                  {availableImages.length > 0 && activeTab !== "history" && activeTab !== "report" && <div className="flex gap-1.5 overflow-x-auto border-t border-slate-800 bg-[#08111f] p-1.5 sm:gap-2 sm:p-2">{availableImages.map((source, index) => <button key={`${source.slice(0, 24)}-${index}`} type="button" onClick={() => { setActiveImage(index); setActiveTab(index === 0 ? "preop" : "postop"); }} className={`relative h-11 w-12 shrink-0 overflow-hidden rounded border-2 sm:h-14 sm:w-16 ${activeImage === index ? "border-violet-500" : "border-slate-700"}`}><img src={source} alt={index === 0 ? "Pre-Op" : `Post-Op ${index}`} className="h-full w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-[6px] font-black sm:text-[7px]">{index === 0 ? "PRE" : `POST ${index}`}</span></button>)}</div>}
+                  {availableImages.length > 0 && activeTab !== "history" && activeTab !== "report" && <div className="flex gap-1.5 overflow-x-auto border-t border-slate-800 bg-[#08111f] p-1.5 sm:gap-2 sm:p-2">{imageOptions.map((option, index) => <button key={`${option.label}-${index}`} type="button" onClick={() => { setActiveImage(index); setActiveTab(index < preGroupCount ? "preop" : "postop"); }} className={`relative h-11 w-12 shrink-0 overflow-hidden rounded border-2 sm:h-14 sm:w-16 ${activeImage === index ? "border-violet-500" : "border-slate-700"}`}><img src={option.src} alt={option.label} className="h-full w-full object-cover" /><span className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-[6px] font-black sm:text-[7px]">{option.label.replace("Post-Op ", "POST ").replace("Pre-Op Foto ", "PRE ").replace("Pre-Op", "PRE")}</span></button>)}</div>}
                 </section>
 
                 <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2 sm:rounded-lg sm:p-3">
@@ -1946,7 +1659,58 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                   <div className="grid grid-cols-2 gap-1.5 sm:gap-2 xl:grid-cols-4">{(components.length ? components : ["Belum ada implant"]).slice(0, 4).map((component, index) => <div key={`${component}-${index}`} className="min-w-0 rounded-md border border-slate-700 bg-[#101c2d] p-2 sm:p-3"><small className="text-[7px] uppercase text-slate-500 sm:text-[8px]">Komponen {index + 1}</small><strong className="mt-0.5 block break-words text-[10px] text-slate-100 sm:mt-1 sm:text-xs">{component}</strong></div>)}{caseData.preOpSizeNum != null && <div className="rounded-md border border-violet-500/30 bg-violet-500/10 p-2 sm:p-3"><small className="text-[7px] uppercase text-violet-300 sm:text-[8px]">Ukuran Primer</small><strong className="mt-0.5 block text-sm text-violet-300 sm:mt-1 sm:text-lg">{caseData.preOpSizeNum}</strong></div>}</div>
                 </section>
 
-                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2 sm:rounded-lg sm:p-3"><h3 className="mb-1.5 text-[10px] font-black sm:mb-2 sm:text-xs">Catatan</h3><p className="min-h-10 rounded-md border border-slate-700 bg-[#101c2d] p-2 text-[9px] leading-relaxed text-slate-400 sm:min-h-14 sm:p-3 sm:text-[10px]">{caseData.notes || "Belum ada catatan untuk kasus ini."}</p></section>
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2 sm:rounded-lg sm:p-3">
+                  <div className="mb-2 flex items-center justify-between sm:mb-3">
+                    <h3 className="flex items-center gap-1.5 text-[10px] font-black sm:text-xs">
+                      Foto Pre-Op Tambahan
+                      <span className="font-normal normal-case text-slate-500">({(caseData.prePhotos || []).length}/10)</span>
+                    </h3>
+                    <button type="button" onClick={() => prePhotoInputRef.current?.click()} disabled={prePhotoBusy || (caseData.prePhotos || []).length >= 10}
+                      className="flex min-h-8 items-center gap-1 rounded-md border border-violet-600/40 bg-violet-600/10 px-2.5 text-[8px] font-black text-violet-300 disabled:opacity-50 sm:min-h-9 sm:px-3 sm:text-[9px]">
+                      {prePhotoBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin sm:h-3 sm:w-3" /> : <ImagePlus className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
+                      Tambah Foto
+                    </button>
+                    <input ref={prePhotoInputRef} type="file" accept="image/*" multiple className="hidden"
+                      onChange={(e) => { handleAddPrePhotos(e.target.files); e.target.value = ""; }} />
+                  </div>
+                  {(caseData.prePhotos || []).length > 0 ? (
+                    <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                      {(caseData.prePhotos || []).map((photo, idx) => {
+                        const src = snapshotSrc(photo);
+                        return (
+                          <div key={idx} className="group relative aspect-square overflow-hidden rounded-md border border-slate-700 bg-[#101c2d]">
+                            <img src={src} alt={`Pre-Op Foto ${idx + 1}`} className="h-full w-full object-cover" />
+                            <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/40 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                              <button type="button" onClick={() => onLightbox(src, caseData.patientName, caseData.id)}
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-700 sm:h-6 sm:w-6">
+                                <ZoomIn className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
+                              </button>
+                              <button type="button" onClick={() => handleRemovePrePhoto(idx)}
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/90 text-white sm:h-6 sm:w-6">
+                                <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {(caseData.prePhotos || []).length < 10 && (
+                        <button type="button" onClick={() => prePhotoInputRef.current?.click()} disabled={prePhotoBusy}
+                          className="flex aspect-square flex-col items-center justify-center gap-0.5 rounded-md border-2 border-dashed border-slate-700 bg-[#101c2d] text-slate-500 hover:bg-[#0f1a2a] disabled:opacity-50">
+                          {prePhotoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                          <span className="text-[7px] font-bold">Tambah</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => prePhotoInputRef.current?.click()} disabled={prePhotoBusy}
+                      className="flex w-full flex-col items-center gap-1.5 rounded-md border-2 border-dashed border-slate-700 bg-[#101c2d] py-4 text-slate-500 hover:bg-[#0f1a2a] disabled:opacity-50">
+                      {prePhotoBusy ? <Loader2 className="h-6 w-6 animate-spin" /> : <ImagePlus className="h-6 w-6" />}
+                      <span className="text-[9px] font-bold">Tap untuk tambah foto pre-op lainnya</span>
+                    </button>
+                  )}
+                </section>
+
+                <section className="rounded-md border border-slate-700 bg-[#0b1727] p-2 sm:rounded-lg sm:p-3"><h3 className="mb-1.5 text-[10px] font-black sm:mb-2 sm:text-xs">Catatan</h3><p className="min-h-10 rounded-md border border-slate-700 bg-[#101c2d] p-2 text-[9px] leading-relaxed text-slate-400 sm:min-h-14 sm:p-3 sm:text-[10px]">{richTextToPlainText(caseData.notes) || "Belum ada catatan untuk kasus ini."}</p></section>
               </main>
 
               <aside className="space-y-2 sm:space-y-3">
@@ -2160,6 +1924,9 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
         postOpNotes: "",
         postOpPhotos: [],
         postOpUpdatedAt: "",
+        // Pre-op reference photos beyond the single auto-captured snapshot
+        // (e.g. extra view angles) — added after creation via CaseDetailModal.
+        prePhotos: [],
       };
 
       if (hasCloud) {
@@ -2169,6 +1936,7 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
             snapshotDataUrl: snapshot,
             cupAssessmentJson: caseData.cupAssessment ? JSON.stringify(caseData.cupAssessment) : "",
             postOpPhotosJson: "[]",
+            prePhotosJson: "[]",
           });
           caseData.snapshotUrl = result.snapshotUrl || null;
           caseData.snapshot = caseData.snapshotUrl || snapshot;
@@ -2236,7 +2004,8 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
             if (
               targetCase.operationDate || targetCase.actualImplantLabel ||
               targetCase.actualSizeNum != null || targetCase.postOpHka != null ||
-              targetCase.postOpNotes || targetCase.postOpPhotos?.length
+              targetCase.postOpNotes || targetCase.postOpPhotos?.length ||
+              targetCase.prePhotos?.length
             ) {
               await apiUpdateCase(id, buildCloudUpdatePayload(targetCase));
             }
@@ -2252,6 +2021,52 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
           setCloudError(`Gagal update cloud: ${err.message}`);
           setTimeout(() => setCloudError(""), 4000);
         }
+      }
+    },
+    [cases, hasCloud],
+  );
+
+  const handlePrePhotosChange = useCallback(
+    async (id, nextPrePhotos) => {
+      // Optimistic local update — jangan simpan dataURL ke localStorage
+      // (terlalu besar, bisa corrupt), hanya Drive URLs (http/https) yang
+      // di-persist. In-memory tetap punya dataURL untuk tampil sesi ini.
+      const updated = cases.map((c) => (c.id === id ? { ...c, prePhotos: nextPrePhotos } : c));
+      setCases(updated);
+      saveCases(updated.map((c) => ({
+        ...c,
+        prePhotos: (c.prePhotos || []).filter((p) => typeof p === "string" && p.startsWith("http")),
+      })));
+
+      if (!hasCloud) return;
+      try {
+        const targetCase = updated.find((item) => item.id === id);
+        let remote = null;
+        if (targetCase?._cloud) {
+          remote = await apiUpdateCase(id, { prePhotos: nextPrePhotos });
+        } else if (targetCase) {
+          await apiCreateCase(buildCloudCreatePayload(targetCase));
+          remote = await apiUpdateCase(id, buildCloudUpdatePayload(targetCase));
+        }
+        let savedPrePhotos = nextPrePhotos;
+        if (remote?.prePhotosJson) {
+          try { savedPrePhotos = JSON.parse(remote.prePhotosJson); } catch {}
+        }
+        setCases((prev) => {
+          const next = prev.map((item) =>
+            item.id === id ? { ...item, prePhotos: savedPrePhotos, _cloud: true } : item
+          );
+          saveCases(next.map((c) => ({
+            ...c,
+            prePhotos: (c.prePhotos || []).filter((p) => typeof p === "string" && p.startsWith("http")),
+          })));
+          return next;
+        });
+        setSyncOk(true);
+        setTimeout(() => setSyncOk(false), 2500);
+      } catch (err) {
+        setCloudError(`Gagal upload foto ke cloud: ${err.message}`);
+        setTimeout(() => setCloudError(""), 4000);
       }
     },
     [cases, hasCloud],
@@ -2369,7 +2184,7 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
             </aside>
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
             {/* header */}
-            <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-700/80 bg-[#0b1627] px-3 py-3 sm:px-5">
+            <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-slate-700/80 bg-[#0b1627] px-3 py-3 sm:px-5">
               {/* Icon */}
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600">
                 <FolderOpen className="h-4 w-4 text-white" />
@@ -2377,18 +2192,18 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
 
               {/* Title + meta */}
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-black text-white leading-tight">Kasus Pasien</span>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[13px] font-black text-white leading-tight">Kasus Pasien</span>
                   {incompleteCases.length > 0 && (
-                    <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[7px] font-black text-white leading-none">
+                    <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-500 px-1.5 py-0.5 text-[7px] font-black text-white leading-none">
                       {incompleteCases.length} pending
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1 text-[9px] leading-tight text-slate-400">
-                  <span>{cases.length} kasus</span>
-                  <span>·</span>
-                  <span>{hasCloud ? "Google Sheets" : "Lokal"}</span>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[9px] leading-tight text-slate-400">
+                  <span className="whitespace-nowrap">{cases.length} kasus</span>
+                  <span className="shrink-0">·</span>
+                  <span className="truncate">{hasCloud ? "Google Sheets" : "Lokal"}</span>
                   {hasCloud && (
                     loading || syncing
                       ? <Loader2 className="h-2.5 w-2.5 animate-spin text-purple-300" />
@@ -2473,10 +2288,10 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
                     <button
                       type="button"
                       onClick={() => setAnalyticsOpen(true)}
-                      className="relative flex h-7 w-7 items-center justify-center rounded-full border border-violet-400/20 bg-violet-600/20 text-violet-300 transition hover:bg-violet-600/30"
+                      className="relative flex h-9 w-9 items-center justify-center rounded-full border border-violet-400/20 bg-violet-600/20 text-violet-300 transition hover:bg-violet-600/30 sm:h-7 sm:w-7"
                       title={isUnlocked ? "Analitik Kasus" : "Analitik Kasus (terkunci)"}
                     >
-                      <BarChart2 className="h-3.5 w-3.5" />
+                      <BarChart2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       {!isUnlocked && (
                         <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#1a0d2e] ring-1 ring-purple-900/60">
                           <Lock className="h-2 w-2 text-violet-400" />
@@ -2505,9 +2320,9 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/8 text-purple-200/70 hover:bg-white/15 hover:text-white transition"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-purple-200/70 hover:bg-white/15 hover:text-white transition sm:h-7 sm:w-7"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                 </button>
               </div>
             </div>
@@ -2855,6 +2670,7 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
           onCompare={(c) => setCompareCases([c])}
           onDelete={(c) => setDeleteTarget(c)}
           onLightbox={(src, name, caseId) => { setLightboxSrc(src); setLightboxName(name); setLightboxCaseId(caseId ?? null); }}
+          onPrePhotosChange={handlePrePhotosChange}
         />,
         document.body
       )}

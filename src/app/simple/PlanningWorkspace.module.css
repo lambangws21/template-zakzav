@@ -158,7 +158,7 @@
 .inlineWizardStatus strong { color: var(--pw-text); font-size: 11px; line-height: 1.35; }
 .inlineWizardModeToggle { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
 .inlineWizardModeToggle p { flex: 1 0 100%; margin: 0 0 2px; color: var(--pw-muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
-.inlineWizardModeToggle button { flex: 1; min-width: 88px; padding: 6px 6px; color: var(--pw-muted); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
+.inlineWizardModeToggle button { flex: 1; min-width: 88px; min-height: 40px; padding: 6px 6px; color: var(--pw-muted); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
 .inlineWizardModeToggle button:hover { color: var(--pw-text); border-color: var(--pw-accent); }
 .inlineWizardProgress { height: 4px; margin: 7px 0; overflow: hidden; background: var(--pw-raised); border-radius: 4px; }
 .inlineWizardProgress span { display: block; height: 100%; min-width: 2px; background: var(--pw-accent); border-radius: inherit; transition: width 160ms ease-out; }
@@ -196,7 +196,7 @@
   .inlineLandmarkSteps li > span { width: 18px; height: 18px; font-size: 8px; }
   .inlineLandmarkSteps li strong { font-size: 8px; }
   .inlineLandmarkSteps li small { font-size: 7px; }
-  .inlineLandmarkSteps li[data-focusable="true"] { min-height: 30px; }
+  .inlineLandmarkSteps li[data-focusable="true"] { min-height: 34px; }
   .analysisBypass { padding: 6px; font-size: 8px; }
 }
 .tkaPlanSummary { display: grid; gap: 8px; padding: 9px; background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 7px; }
@@ -230,7 +230,7 @@
 .measurementModeBadge[data-mode="diameter"] { color: #b45309; background: #fef3c7; border-color: #fbbf24; }
 .measurementModalTitle { display: flex; min-width: 0; align-items: center; gap: 7px; }
 .measurementModalTitle h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.measurements th .metricLabelToggle { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; color: var(--pw-accent); border: 1px solid var(--pw-line); border-radius: 5px; }
+.measurements th .metricLabelToggle { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; color: var(--pw-accent); border: 1px solid var(--pw-line); border-radius: 5px; }
 .metricNameCell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .measurements .emptyMeasurement { padding: 18px 6px; text-align: center; color: var(--pw-muted); }
 .changed { color: var(--pw-accent); }
@@ -394,7 +394,7 @@
 .analysisResultBadge[data-highlight="true"] strong { font-size: 9px; font-weight: 750; letter-spacing: 0.03em; text-transform: uppercase; }
 .analysisResultBadge[data-highlight="true"] b { font-size: 14px; font-weight: 800; }
 .analysisResultBadge[data-highlight="true"][aria-pressed="true"] { border-left-width: 5px; }
-.analysisShowAll { width: 100%; min-height: 28px; padding: 4px 6px; color: var(--pw-accent); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
+.analysisShowAll { width: 100%; min-height: 32px; padding: 4px 6px; color: var(--pw-accent); background: var(--pw-panel); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
 .planningStartCard { position: absolute; z-index: 42; top: 8px; left: 8px; display: grid; width: min(224px, calc(100% - 16px)); gap: 6px; padding: 8px; color: var(--pw-text); background: color-mix(in srgb, var(--pw-panel) 94%, transparent); border: 1px solid var(--pw-procedure-border); border-radius: 8px; box-shadow: 0 8px 24px #0006; backdrop-filter: blur(12px); }
 .planningStartCard header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .planningStartCard header span { font-size: 12px; font-weight: 800; }
@@ -571,7 +571,7 @@
 }
 .resumeGuideButton { position: absolute; top: 8px; right: 8px; z-index: 40; min-height: 32px; padding: 5px 8px; color: var(--pw-accent); background: var(--pw-panel); border-color: var(--pw-accent); box-shadow: 0 5px 18px #0005; font-size: 10px; font-weight: 700; }
 .canvasGuide[data-minimized="true"] { width: min(190px, calc(100% - 16px)); overflow: hidden; padding-block: 5px; }
-.guideBackButton { display: flex; width: 100%; min-height: 28px; align-items: center; justify-content: center; gap: 5px; margin-top: 6px; padding: 4px 6px; color: var(--pw-accent); background: var(--pw-tint); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
+.guideBackButton { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: center; gap: 5px; margin-top: 6px; padding: 4px 6px; color: var(--pw-accent); background: var(--pw-tint); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 9px; font-weight: 700; }
 .guideBackButton:hover { border-color: var(--pw-accent); }
 .guideBackButton[aria-pressed="true"] { color: #fff; background: #ef4444; border-color: #ef4444; }
 .canvasGuideHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -734,7 +734,7 @@
   .analysisResultBadge { min-height: 34px; padding: 4px 5px; }
   .analysisResultBadge small { display: none; }
   .resumeGuideButton { top: 6px; right: auto; left: 6px; min-height: 30px; font-size: 9px; }
-  .guideBackButton { min-height: 24px; margin-top: 4px; font-size: 8px; }
+  .guideBackButton { min-height: 28px; margin-top: 4px; font-size: 8px; }
   .canvasGuide[data-split-guide="true"] {
     top: 6px; left: calc(min(88px, 25%) + 12px); right: auto;
     width: calc(100% - min(88px, 25%) - 20px);
@@ -756,10 +756,10 @@
   .canvasGuide[data-split-guide="true"] .guideStepNav,
   .canvasGuide[data-split-guide="true"] .guideActiveNotice,
   .canvasGuide[data-split-guide="true"] > small { display: none; }
-  .canvasGuide[data-split-guide="true"] .canvasGuideHeader button { width: 24px; height: 24px; }
+  .canvasGuide[data-split-guide="true"] .canvasGuideHeader button { width: 28px; height: 28px; }
   .canvasGuide[data-split-guide="true"] .guideProgress { margin-top: 3px; }
   .canvasGuide[data-split-guide="true"] .guideVisualToggle {
-    min-height: 24px; margin-top: 5px; gap: 4px; font-size: 8px;
+    min-height: 28px; margin-top: 5px; gap: 4px; font-size: 8px;
   }
   .canvasGuide[data-split-guide="true"] .guideVisualToggle svg { width: 12px; height: 12px; }
   .canvasGuide[data-split-guide="true"] .guideCurrentStep { margin-top: 5px; padding: 5px; }
@@ -1139,7 +1139,7 @@
   .measurements th:first-child { width: 39%; }
   .measurements th:last-child, .measurements td:last-child { width: 20%; }
   .measurements th button { min-height: 28px; }
-  .measurements th .metricLabelToggle { width: 24px; height: 24px; min-width: 24px; min-height: 24px; flex-basis: 24px; }
+  .measurements th .metricLabelToggle { width: 30px; height: 30px; min-width: 30px; min-height: 30px; flex-basis: 30px; }
   .measurementModeBadge { min-height: 14px; padding: 1px 4px; font-size: 6px; }
   .metricStatus { min-height: 17px; padding: 1px 3px; font-size: 7px; }
   .logSection { margin-top: 6px; padding-top: 5px; }
@@ -1172,7 +1172,7 @@
 }
 
 @media (min-width: 360px) and (max-width: 699px) {
-  .correctionSection .fieldGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .correctionSection .fieldGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (pointer: coarse) and (min-width: 700px) and (max-width: 1366px) {

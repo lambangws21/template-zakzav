@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FileText, Download, Loader2, CheckCircle2 } from "lucide-react";
+import { richTextToPlainText } from "./RichTextEditor";
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ async function generateFullPDF(caseData) {
   const infoRows = [
     ["Nama Pasien", caseData.patientName || "—"],
     ["Prosedur",   caseData.procedure    || "—"],
-    ["Catatan",    caseData.notes        || "—"],
+    ["Catatan",    richTextToPlainText(caseData.notes) || "—"],
   ];
   let infoY = y + 13;
   infoRows.forEach(([label, val]) => {
@@ -97,7 +98,7 @@ async function generateFullPDF(caseData) {
       ["Ukuran Aktual",    caseData.actualSizeNum != null ? String(caseData.actualSizeNum) : "—"],
       ["Tanggal Operasi",  caseData.operationDate || "—"],
       ["HKA Post-Op",      caseData.postOpHka != null ? `${caseData.postOpHka}°` : "—"],
-      ["Catatan Post-Op",  caseData.postOpNotes || "—"],
+      ["Catatan Post-Op",  richTextToPlainText(caseData.postOpNotes) || "—"],
     ];
     let postY = y + 13;
     postRows.forEach(([label, val]) => {

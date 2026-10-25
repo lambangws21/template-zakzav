@@ -1038,3 +1038,25 @@ summary::-webkit-details-marker { display: none }
     line-height: 1.35;
   }
 }
+
+/* RichTextEditor.js (Tiptap) — no @tailwindcss/typography plugin is
+   installed, so list/placeholder rendering needs explicit rules; bold,
+   italic, underline need none (native <strong>/<em>/<u> rendering). */
+.rich-text-content { outline: none; }
+.rich-text-content p { margin: 0 0 0.5em; }
+.rich-text-content p:last-child { margin-bottom: 0; }
+.rich-text-content ul,
+.rich-text-content ol {
+  margin: 0 0 0.5em;
+  padding-left: 1.25em;
+}
+.rich-text-content ul { list-style: disc; }
+.rich-text-content ol { list-style: decimal; }
+.rich-text-content li { margin: 0.15em 0; }
+.rich-text-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: #94a3b8;
+  pointer-events: none;
+}

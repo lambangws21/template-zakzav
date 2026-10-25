@@ -66,6 +66,7 @@ import {
 import { HIP_LEGEND_ITEMS } from "@/lib/xray/pelvicAnalysis";
 import styles from "./PlanningWorkspace.module.css";
 import { GuideContent } from "@/components/LandmarkGuide";
+import RichTextEditor from "@/components/RichTextEditor";
 
 const KNEE_COMPONENTS = [
   {
@@ -1943,7 +1944,6 @@ export default function PlanningWorkspace({
                                           <p>Mulai dengan:</p>
                                           {[
                                             { value: "normal", label: "Normal (14 titik)" },
-                                            { value: "continuation", label: "Dengan Lanjutan" },
                                             { value: "ddh", label: "DDH / Abnormal (26 titik)" },
                                           ].map((option) => (
                                             <button
@@ -2320,10 +2320,10 @@ export default function PlanningWorkspace({
                     (procedure === "foot" ? (
                       <label className={styles.fieldLabel}>
                         Catatan correction planning
-                        <textarea
-                          rows={4}
+                        <RichTextEditor
                           value={note}
-                          onChange={(e) => onNote(e.target.value)}
+                          onChange={onNote}
+                          minHeightClass="min-h-[80px]"
                         />
                       </label>
                     ) : (
@@ -2333,10 +2333,10 @@ export default function PlanningWorkspace({
                     <>
                       <label className={styles.fieldLabel}>
                         Catatan teknik & rencana
-                        <textarea
-                          rows={4}
+                        <RichTextEditor
                           value={note}
-                          onChange={(e) => onNote(e.target.value)}
+                          onChange={onNote}
+                          minHeightClass="min-h-[80px]"
                         />
                       </label>
                       <div className={styles.buttonGrid}>

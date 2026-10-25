@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import RichTextEditor, { richTextToPlainText } from "./RichTextEditor";
 import {
   X,
   FileText,
@@ -425,7 +426,7 @@ async function generatePreOpPDF({
     // Post-op notes
     if (prefillCase.postOpNotes) {
       addNewPageIfNeeded(14);
-      const noteLines = doc.splitTextToSize(prefillCase.postOpNotes, CONTENT_W - 8);
+      const noteLines = doc.splitTextToSize(richTextToPlainText(prefillCase.postOpNotes), CONTENT_W - 8);
       const noteH = Math.min(noteLines.length, 3) * 5 + 8;
       setFill(LIGHT);
       roundRect(doc, MARGIN, cursor, CONTENT_W, noteH, 2);
@@ -513,8 +514,48 @@ async function generatePreOpPDF({
   setFont(8, "normal");
   setColor(NAVY);
   if (patientInfo.notes) {
-    const lines = doc.splitTextToSize(patientInfo.notes, CONTENT_W - 8);
-    doc.text(lines.slice(0, 3), MARGIN + 4, cursor + 13);
+    // patientInfo.notes is HTML from RichTextEditor now, not plain text.
+    // Only pay for the html2canvas round-trip when there's formatting
+    // jsPDF's plain doc.text() can't represent (bold/italic/underline/
+    // lists) — a plain note stays fast, selectable, searchable text in
+    // the PDF instead of becoming an unnecessary image.
+    const hasRichFormatting = /<(strong|b|em|i|u|ul|ol|li|s|strike)[\s>]/i.test(
+      patientInfo.notes,
+    );
+    let renderedAsImage = false;
+    if (hasRichFormatting && typeof document !== "undefined") {
+      try {
+        const html2canvas = (await import("html2canvas")).default;
+        const boxWidthMm = CONTENT_W - 8;
+        const boxHeightMm = 20;
+        const pxPerMm = 3.78; // 96dpi mm->px, matched against the capture `scale` below for crisp text
+        const container = document.createElement("div");
+        container.style.cssText = `position:fixed; left:-9999px; top:0; width:${boxWidthMm * pxPerMm}px; font-family:Helvetica,Arial,sans-serif; font-size:11px; line-height:1.4; color:#0f172a; background:#fff;`;
+        container.innerHTML = patientInfo.notes;
+        document.body.appendChild(container);
+        const canvas = await html2canvas(container, { scale: 2, backgroundColor: "#ffffff" });
+        document.body.removeChild(container);
+        const imgHeightMm = Math.min(boxHeightMm, (canvas.height / canvas.width) * boxWidthMm);
+        doc.addImage(
+          canvas.toDataURL("image/png"),
+          "PNG",
+          MARGIN + 4,
+          cursor + 9,
+          boxWidthMm,
+          imgHeightMm,
+        );
+        renderedAsImage = true;
+      } catch (error) {
+        renderedAsImage = false;
+      }
+    }
+    if (!renderedAsImage) {
+      const lines = doc.splitTextToSize(
+        richTextToPlainText(patientInfo.notes),
+        CONTENT_W - 8,
+      );
+      doc.text(lines.slice(0, 3), MARGIN + 4, cursor + 13);
+    }
   }
   cursor += 34;
 
@@ -987,7 +1028,12 @@ export default function PreOpReportModal({
                 {/* ── CATATAN ── */}
                 <div className="space-y-2">
                   <SectionLabel icon={FileText} label="Catatan Klinis" color="text-amber-600" />
-                  <Field label="" value={patientInfo.notes} onChange={set("notes")} placeholder="Catatan tambahan, instruksi khusus, rencana implant alternatif..." textarea />
+                  <RichTextEditor
+                    value={patientInfo.notes}
+                    onChange={set("notes")}
+                    placeholder="Catatan tambahan, instruksi khusus, rencana implant alternatif..."
+                    minHeightClass="min-h-[72px]"
+                  />
                 </div>
 
                 {/* status feedback */}
