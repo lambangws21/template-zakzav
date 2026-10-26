@@ -22,7 +22,11 @@ test("HIP result list maps each metric to its visible measurements", () => {
   const { HIP_RESULT_DEFINITIONS, isHipResultMeasurementRelevant: relevant } = moduleExports;
   assert.deepEqual(
     Array.from(HIP_RESULT_DEFINITIONS, (item) => item.key),
-    ["LLD", "Hip Length R", "Hip Length L", "FO R", "FO L", "AO R", "AO L", "CCD R", "CCD L", "FHD R", "FHD L"],
+    [
+      "LLD", "Hip Length R", "Hip Length L", "FO R", "FO L", "AO R", "AO L",
+      "CCD R", "CCD L", "FHD R", "FHD L", "COR-V R", "COR-V L",
+      "GT Height R", "GT Height L", "CEA R", "CEA L",
+    ],
   );
   assert.equal(relevant({ metric: "ITD" }, "LLD", "line"), true);
   assert.equal(relevant({ metric: "Hip Length R" }, "LLD", "line"), true);
@@ -43,6 +47,16 @@ test("HIP result list maps each metric to its visible measurements", () => {
 });
 
 test("one pelvic landmark pass creates CCD and head diameter measurements", () => {
+  // buildPelvicAnalysisMeasurements now requires as many points as the
+  // landmark set it's given (quick/continuation split added a length
+  // guard) — CCD needs the femoral-axis (s1/s2) and neck-midpoint (n1)
+  // landmarks, so this fixture passes a reduced 24-item landmark set
+  // (full 26 minus the CEA-only acetabular-lateral-rim pair) alongside
+  // matching points, keeping this test's original CCD/FHD-only intent.
+  const { PELVIC_ANALYSIS_LANDMARKS } = moduleExports;
+  const landmarks = PELVIC_ANALYSIS_LANDMARKS.filter(
+    (item) => item.key !== "alRight" && item.key !== "alLeft",
+  );
   const points = [
     { x: 0, y: 0 }, { x: 100, y: 0 },
     { x: 15, y: 20 }, { x: 85, y: 20 },
@@ -52,8 +66,12 @@ test("one pelvic landmark pass creates CCD and head diameter measurements", () =
     { x: 80, y: 50 }, { x: 80, y: 100 },
     { x: 20, y: 60 }, { x: 80, y: 64 },
     { x: 5, y: 15 }, { x: 95, y: 15 },
+    { x: 30, y: 40 }, { x: 70, y: 40 },
+    { x: 22, y: 70 }, { x: 78, y: 74 },
+    { x: 24, y: 140 }, { x: 76, y: 144 },
+    { x: 30, y: 55 }, { x: 70, y: 59 },
   ];
-  const result = moduleExports.buildPelvicAnalysisMeasurements(points, "hip-test");
+  const result = moduleExports.buildPelvicAnalysisMeasurements(points, "hip-test", landmarks);
   assert.deepEqual(Array.from(result.angles, (item) => item.metric), ["CCD R", "CCD L"]);
   assert.deepEqual(Array.from(result.circles, (item) => item.metric), ["FHD R", "FHD L"]);
   assert.ok(result.lines.some((item) => item.metric === "LLD"));
