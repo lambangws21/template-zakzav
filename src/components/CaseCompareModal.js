@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronDown, CheckCircle2, ArrowRight } from "lucide-react";
 import { richTextToPlainText } from "./RichTextEditor";
+import { classifyImplantAccuracy } from "@/lib/implantAccuracy";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,13 +41,13 @@ function DeltaBadge({ pre, act }) {
   const a = parseFloat(act);
   if (isNaN(p) || isNaN(a)) return <span className="text-slate-400 text-[9px]">—</span>;
   const diff = a - p;
-  const abs = Math.abs(diff);
-  const cls = abs < 0.25 ? "text-emerald-600 bg-emerald-50" :
-              abs <= 1.25 ? "text-amber-600 bg-amber-50" :
+  const accuracyTier = classifyImplantAccuracy(diff);
+  const cls = accuracyTier === "exact" ? "text-emerald-600 bg-emerald-50" :
+              accuracyTier === "close" ? "text-amber-600 bg-amber-50" :
                             "text-red-600 bg-red-50";
   return (
     <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-black ${cls}`}>
-      {diff === 0 ? "✓" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`}
+      {accuracyTier === "exact" ? "✓" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`}
     </span>
   );
 }
@@ -150,6 +151,9 @@ function CaseColumn({ c, label, color }) {
         {/* Notes */}
         {richTextToPlainText(c.notes) && (
           <p className="text-[9px] italic text-slate-400">"{richTextToPlainText(c.notes)}"</p>
+        )}
+        {richTextToPlainText(c.postOpNotes) && (
+          <p className="text-[9px] italic text-emerald-600">Post-Op: "{richTextToPlainText(c.postOpNotes)}"</p>
         )}
 
         {/* Status badge */}
@@ -291,6 +295,12 @@ export default function CaseCompareModal({ isOpen, onClose, cases = [], initialC
                 );
               })}
             </div>
+
+            {caseA && caseB && caseA.id === caseB.id && (
+              <p className="shrink-0 bg-amber-50 px-4 py-1.5 text-center text-[9px] font-black text-amber-700">
+                Kasus A dan B sama — pilih kasus lain untuk perbandingan yang berarti.
+              </p>
+            )}
 
             {/* Side-by-side view */}
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4 sm:flex-row">

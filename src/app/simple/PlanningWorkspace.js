@@ -2746,36 +2746,36 @@ export default function PlanningWorkspace({
   const moreMenu = (
     <div className={styles.moreMenu}>
       <section>
-        <strong>View</strong>
+        <strong>Tampilan</strong>
         <button type="button" onClick={() => activate(actions.compare)}>
           <Layers size={16} />
-          Compare
+          Bandingkan
         </button>
         <button type="button" onClick={() => activate(actions.fit)}>
           <Focus size={16} />
-          Fit to screen
+          Muat ke layar
         </button>
         <button type="button" onClick={() => activate(actions.zoomReset)}>
           <RotateCw size={16} />
-          Reset view
+          Reset tampilan
         </button>
         <button type="button" onClick={() => runTool("flip")}>
           <ArrowLeft size={16} />
-          Flip X-ray
+          Balik X-ray
         </button>
       </section>
       <section>
-        <strong>Tools</strong>
+        <strong>Alat</strong>
         <button type="button" onClick={() => activate(actions.calibrate)}>
           <Ruler size={16} />
-          Calibration
+          Kalibrasi
         </button>
         <button
           type="button"
           onClick={() => runCalibrated(() => openWorkflow(1))}
         >
           <Target size={16} />
-          Landmark workflow
+          Alur landmark
         </button>
         <button
           type="button"
@@ -2799,18 +2799,18 @@ export default function PlanningWorkspace({
           }}
         >
           <Link2 size={16} />
-          Group Objects
+          Kelompokkan Objek
         </button>
         <button type="button" onClick={() => runCalibrated(actions.freeCut)}>
           <SlidersHorizontal size={16} />
-          Free Cut / Warp
+          Potong Bebas / Warp
         </button>
       </section>
       <section>
         <strong>File</strong>
         <button type="button" className={styles.fileShortcut} data-file-action="xray" onClick={() => activate(actions.upload)}>
           <span className={styles.fileShortcutIcon} aria-hidden="true"><ImagePlus size={16} /></span>
-          <span>Open X-ray</span>
+          <span>Buka X-ray</span>
         </button>
         <button
           type="button"
@@ -2826,7 +2826,7 @@ export default function PlanningWorkspace({
           onClick={() => activate(actions.saveLocal)}
         >
           <Save size={16} />
-          Save project
+          Simpan
         </button>
         <button
           type="button"
@@ -2837,11 +2837,11 @@ export default function PlanningWorkspace({
           }}
         >
           <Download size={16} />
-          Export
+          Ekspor
         </button>
       </section>
       <section>
-        <strong>App</strong>
+        <strong>Aplikasi</strong>
         {actions.cases && (
           <button type="button" className={styles.fileShortcut} data-file-action="cases" onClick={() => activate(actions.cases)}>
             <span className={styles.fileShortcutIcon} aria-hidden="true"><ListOrdered size={16} /></span>
@@ -2854,16 +2854,16 @@ export default function PlanningWorkspace({
           onClick={() => activate(actions.properties)}
         >
           <SlidersHorizontal size={16} />
-          Object properties
+          Properti Objek
         </button>
         <button type="button" disabled={!hasImage} onClick={openPlanningLog}>
           <ClipboardList size={16} />
-          Planning Log
+          Log Perencanaan
         </button>
         {onOpenAdvancedUi && (
           <button type="button" onClick={onOpenAdvancedUi}>
             <Menu size={16} />
-            Advanced UI
+            Mode Lanjutan
           </button>
         )}
       </section>
@@ -3038,49 +3038,49 @@ export default function PlanningWorkspace({
           />
         </label>
         <label className={styles.sideSelect}>
-          Side
+          Sisi
           <select
-            aria-label="Body side"
+            aria-label="Sisi tubuh"
             value={session.side || ""}
             onChange={(event) =>
               event.target.value && selectBodySide(event.target.value)
             }
           >
-            <option value="">L / R</option>
-            <option value="left">Left</option>
-            <option value="right">Right</option>
+            <option value="">Ki / Ka</option>
+            <option value="left">Kiri</option>
+            <option value="right">Kanan</option>
           </select>
         </label>
         <button
           type="button"
           className={`${styles.calibrationBadge} ${calibrated ? styles.calibrated : styles.uncalibrated}`}
           aria-label={
-            calibrated ? "Calibration active" : "Calibration required"
+            calibrated ? "Kalibrasi aktif" : "Kalibrasi diperlukan"
           }
-          title={calibrated ? "Calibration active" : "Calibration required"}
+          title={calibrated ? "Kalibrasi aktif" : "Kalibrasi diperlukan"}
           onClick={() =>
             hasImage ? activate(actions.calibrate) : activate(actions.upload)
           }
         >
           <span className={styles.calibrationDot} aria-hidden="true" />
           <span className={styles.calibrationLabel}>
-            {calibrated ? "Calibrated" : "Not calibrated"}
+            {calibrated ? "Terkalibrasi" : "Belum kalibrasi"}
           </span>
         </button>
         <div className={styles.headerActions}>
           <Action
             icon={Undo2}
             className={styles.historyAction}
-            aria-label="Undo"
-            title="Undo"
+            aria-label="Urungkan"
+            title="Urungkan"
             disabled={toolById("undo")?.disabled}
             onClick={() => runTool("undo")}
           />
           <Action
             icon={Redo2}
             className={styles.historyAction}
-            aria-label="Redo"
-            title="Redo"
+            aria-label="Ulangi"
+            title="Ulangi"
             disabled={toolById("redo")?.disabled}
             onClick={() => runTool("redo")}
           />
@@ -3090,7 +3090,7 @@ export default function PlanningWorkspace({
             disabled={!hasImage}
             onClick={() => activate(actions.saveLocal)}
           >
-            Save
+            Simpan
           </Action>
           <Action
             icon={Download}
@@ -3098,12 +3098,12 @@ export default function PlanningWorkspace({
             disabled={!hasImage}
             onClick={() => setExportOpen(true)}
           >
-            Export
+            Ekspor
           </Action>
           <div className={styles.moreAnchor}>
             <Action
               icon={MoreHorizontal}
-              aria-label="More menu"
+              aria-label="Menu lainnya"
               active={moreOpen}
               onClick={() => setMoreOpen((value) => !value)}
             />
@@ -3111,7 +3111,7 @@ export default function PlanningWorkspace({
           </div>
           <Action
             icon={isDark ? Sun : Moon}
-            aria-label={isDark ? "Light mode" : "Dark mode"}
+            aria-label={isDark ? "Mode terang" : "Mode gelap"}
             onClick={onToggleDarkMode}
           />
           {accountControl}
@@ -4070,19 +4070,19 @@ export default function PlanningWorkspace({
                     disabled={!calibrated || implantInsertBusy}
                     onClick={insertSelectedImplant}
                   >
-                    {implantInsertBusy ? "Memuat..." : "Insert active template"}
+                    {implantInsertBusy ? "Memuat..." : "Sisipkan template aktif"}
                   </Action>
                   {implantInsertError && <p role="alert">{implantInsertError}</p>}
                 </div>
               ) : (
                 <div className={styles.inspectorEmpty}>
                   <MousePointer2 size={20} />
-                  <p>Select an implant or layer to edit its properties.</p>
+                  <p>Pilih implant atau layer untuk mengedit propertinya.</p>
                 </div>
               )}
               <div className={styles.layerSection}>
                 <div className={styles.sectionHeading}>
-                  <strong>Layers</strong>
+                  <strong>Layer</strong>
                   <span>{layers.length}</span>
                 </div>
                 {implantList}
@@ -4093,14 +4093,14 @@ export default function PlanningWorkspace({
                   disabled={!hasImage}
                   onClick={startImplantBrowser}
                 >
-                  Select Implant
+                  Pilih Implant
                 </Action>
                 <Action
                   icon={ClipboardList}
                   disabled={!hasImage}
                   onClick={() => setLogOpen(true)}
                 >
-                  Planning Log
+                  Log Perencanaan
                 </Action>
               </div>
             </>
@@ -4376,12 +4376,12 @@ export default function PlanningWorkspace({
           >
             <header>
               <div>
-                <small>Template library</small>
-                <h2>Select Implant</h2>
+                <small>Pustaka template</small>
+                <h2>Pilih Implant</h2>
               </div>
               <Action
                 icon={X}
-                aria-label="Close implant browser"
+                aria-label="Tutup pustaka implant"
                 onClick={() => setImplantBrowserOpen(false)}
               />
             </header>
@@ -4390,7 +4390,7 @@ export default function PlanningWorkspace({
               <input
                 value={implantSearch}
                 onChange={(event) => setImplantSearch(event.target.value)}
-                placeholder="Search implant..."
+                placeholder="Cari implant..."
               />
             </label>
             <div className={styles.implantTabs}>
@@ -4641,52 +4641,52 @@ export default function PlanningWorkspace({
             className={`${styles.modalPanel} ${styles.exportPanel}`}
             role="dialog"
             aria-modal="true"
-            aria-label="Export planning"
+            aria-label="Ekspor perencanaan"
           >
             <header>
               <div>
-                <small>Output</small>
-                <h2>Export Planning</h2>
+                <small>Keluaran</small>
+                <h2>Ekspor Perencanaan</h2>
               </div>
               <Action
                 icon={X}
-                aria-label="Close export"
+                aria-label="Tutup ekspor"
                 onClick={() => setExportOpen(false)}
               />
             </header>
-            <p>Choose the output required for this case.</p>
+            <p>Pilih format keluaran yang dibutuhkan untuk kasus ini.</p>
             <div className={styles.exportOptions}>
               <Action
                 icon={ImagePlus}
                 onClick={() => {
-                  actions.snapshot();
+                  actions.snapshot?.();
                   setExportOpen(false);
                 }}
               >
-                PNG snapshot
+                Snapshot PNG
               </Action>
               <Action
                 icon={FileText}
                 onClick={() => {
-                  actions.report();
+                  actions.report?.();
                   setExportOpen(false);
                 }}
               >
-                PDF report
+                Laporan PDF
               </Action>
               <Action
                 icon={Save}
                 onClick={() => {
-                  actions.saveLocal();
+                  actions.saveLocal?.();
                   setExportOpen(false);
                 }}
               >
-                Project JSON
+                Proyek (JSON)
               </Action>
               <Action
                 icon={CloudUpload}
                 onClick={() => {
-                  actions.saveCloud();
+                  actions.saveCloud?.();
                   setExportOpen(false);
                 }}
               >

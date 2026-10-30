@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
+import { accuracyToneClasses, classifyImplantAccuracy } from "@/lib/implantAccuracy";
 import RichTextEditor from "./RichTextEditor";
 
 const APPS_SCRIPT_URL = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
@@ -594,16 +595,10 @@ export default function PostOpDataModal({ isOpen, onClose, onMinimize, patientCa
                             initial={{ opacity: 0, y: -4 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0 }}
-                            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-black ${
-                              primaryDiff === 0
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : Math.abs(primaryDiff) <= 1
-                                ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                : "bg-red-50 text-red-700 border border-red-200"
-                            }`}
+                            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-black ${accuracyToneClasses(primaryDiff)}`}
                           >
                             <ArrowRight className="h-3 w-3 shrink-0" />
-                            {primaryDiff === 0
+                            {classifyImplantAccuracy(primaryDiff) === "exact"
                               ? "✅ Exact match — templating akurat"
                               : `Selisih ${primaryDiff > 0 ? "+" : ""}${primaryDiff.toFixed(1)} ${config.primary.unit} — actual ${primaryDiff > 0 ? "lebih besar" : "lebih kecil"}`}
                           </motion.div>

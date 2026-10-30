@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import MLAnnotationMonitor from "./MLAnnotationMonitor";
 import { DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT } from "@/lib/googleSheetImageUtils";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import { classifyImplantAccuracy } from "@/lib/implantAccuracy";
 
 const APPS_SCRIPT_URL = DEFAULT_GOOGLE_SHEET_IMAGE_ENDPOINT;
 const SESSION_KEY = "zakzav_analytics_auth_v1";
@@ -18,7 +20,10 @@ const SESSION_KEY = "zakzav_analytics_auth_v1";
 // ─── API ───────────────────────────────────────────────────────────────────────
 
 async function verifyPin(code) {
-  const res = await fetch("/api/ceklist-admin-auth", {
+  // Server route requires an approved-user Bearer token (requireApprovedUser
+  // in serverAuth.js reads Authorization header only, no cookie fallback) —
+  // a plain fetch() always got 401 here regardless of the PIN entered.
+  const res = await authenticatedFetch("/api/ceklist-admin-auth", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
@@ -30,7 +35,10 @@ async function verifyPin(code) {
 async function fetchAllCases() {
   if (!APPS_SCRIPT_URL) return [];
   const url = `/api/google-sheet-images?url=${encodeURIComponent(APPS_SCRIPT_URL)}&action=list_patient_cases`;
-  const res = await fetch(url, { cache: "no-store" });
+  // Same auth requirement as verifyPin — list_patient_cases is gated by
+  // requireApprovedUser server-side, so this silently 401'd and the
+  // dashboard always fell back to (usually empty) initialCases.
+  const res = await authenticatedFetch(url, { cache: "no-store" });
   const json = await res.json();
   if (!json?.ok || !json?.remote?.ok) return [];
   return Array.isArray(json.remote.items) ? json.remote.items : [];
@@ -68,8 +76,8 @@ function computeStats(cases) {
   const withData = cases.filter(c => c.preOpSizeNum != null && c.actualSizeNum != null);
   if (!withData.length) return null;
   const diffs = withData.map(c => c.actualSizeNum - c.preOpSizeNum);
-  const exact = diffs.filter(d => Math.abs(d) < 0.25).length;
-  const within1 = diffs.filter(d => Math.abs(d) <= 1.25).length;
+  const exact = diffs.filter(d => classifyImplantAccuracy(d) === "exact").length;
+  const within1 = diffs.filter(d => classifyImplantAccuracy(d) !== "off").length;
   return {
     n: withData.length,
     exactPct: (exact / withData.length) * 100,
@@ -88,8 +96,8 @@ function groupByProcedure(cases) {
     map[key].push(c);
   });
   return Object.entries(map).map(([procedure, items]) => {
-    const exact = items.filter(c => Math.abs(c.actualSizeNum - c.preOpSizeNum) < 0.25).length;
-    const within1 = items.filter(c => Math.abs(c.actualSizeNum - c.preOpSizeNum) <= 1.25).length;
+    const exact = items.filter(c => classifyImplantAccuracy(c.actualSizeNum - c.preOpSizeNum) === "exact").length;
+    const within1 = items.filter(c => classifyImplantAccuracy(c.actualSizeNum - c.preOpSizeNum) !== "off").length;
     return { procedure, n: items.length, exactPct: (exact / items.length) * 100, within1Pct: (within1 / items.length) * 100 };
   }).sort((a, b) => b.n - a.n);
 }
@@ -105,8 +113,9 @@ function computeComponentStats(cases) {
       if (!map[key]) map[key] = { n: 0, exact: 0, within1: 0, sumAbsDiff: 0, over: 0, under: 0 };
       const diff = act[key] - pre[key];
       map[key].n++;
-      if (Math.abs(diff) < 0.25) map[key].exact++;
-      if (Math.abs(diff) <= 1.25) map[key].within1++;
+      const tier = classifyImplantAccuracy(diff);
+      if (tier === "exact") map[key].exact++;
+      if (tier !== "off") map[key].within1++;
       map[key].sumAbsDiff += Math.abs(diff);
       if (diff > 0.25) map[key].over++;
       if (diff < -0.25) map[key].under++;
@@ -291,12 +300,13 @@ function AccBadge({ pct }) {
 
 function DiffBadge({ diff }) {
   if (diff == null) return <span className="text-[var(--soft-text)] opacity-40">—</span>;
-  const cls = Math.abs(diff) < 0.25 ? "bg-emerald-500/15 text-emerald-400" :
-              Math.abs(diff) <= 1.25 ? "bg-amber-500/15 text-amber-400" :
+  const tier = classifyImplantAccuracy(diff);
+  const cls = tier === "exact" ? "bg-emerald-500/15 text-emerald-400" :
+              tier === "close" ? "bg-amber-500/15 text-amber-400" :
                                         "bg-red-500/15 text-red-400";
   return (
     <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tabular-nums ${cls}`}>
-      {diff === 0 ? "✓ Exact" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`}
+      {tier === "exact" ? "✓ Exact" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`}
     </span>
   );
 }
@@ -495,9 +505,10 @@ function CaseCard({ c }) {
                 {preKeys.map(key => {
                   const actVal = act[key];
                   const diff = actVal != null ? actVal - pre[key] : null;
-                  const diffCls = diff == null ? "" :
-                                  Math.abs(diff) < 0.25 ? "text-emerald-400" :
-                                  Math.abs(diff) <= 1.25 ? "text-amber-400" : "text-red-400";
+                  const diffTier = diff == null ? null : classifyImplantAccuracy(diff);
+                  const diffCls = diffTier == null ? "" :
+                                  diffTier === "exact" ? "text-emerald-400" :
+                                  diffTier === "close" ? "text-amber-400" : "text-red-400";
                   return (
                     <div key={key} className="flex items-center gap-2 px-3.5 py-2">
                       <span className="w-[110px] shrink-0 text-[9px] [color:var(--soft-text)] opacity-60">{labelKey(key)}</span>
@@ -511,7 +522,7 @@ function CaseCard({ c }) {
                             <span className="flex-1 text-[9px] [color:var(--soft-text)] opacity-30">—</span>
                           )}
                           <div className="w-10 text-right">
-                            {diff == null ? null : diff === 0
+                            {diff == null ? null : diffTier === "exact"
                               ? <CheckCircle2 className="ml-auto h-3 w-3 text-emerald-400" />
                               : <span className={`text-[8px] tabular-nums ${diffCls}`}>{diff > 0 ? "+" : ""}{diff.toFixed(1)}</span>
                             }

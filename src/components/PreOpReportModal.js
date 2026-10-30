@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import RichTextEditor, { richTextToPlainText } from "./RichTextEditor";
+import { classifyImplantAccuracy } from "@/lib/implantAccuracy";
 import {
   X,
   FileText,
@@ -410,8 +411,9 @@ async function generatePreOpPDF({
     if (prefillCase.actualSizeNum != null && prefillCase.preOpSizeNum != null) {
       addNewPageIfNeeded(13);
       const diff = prefillCase.actualSizeNum - prefillCase.preOpSizeNum;
-      const exact = diff === 0;
-      const close = Math.abs(diff) <= 1;
+      const accuracyTier = classifyImplantAccuracy(diff);
+      const exact = accuracyTier === "exact";
+      const close = accuracyTier === "close";
       setFill(exact ? [240, 253, 244] : close ? [255, 251, 235] : [254, 242, 242]);
       roundRect(doc, MARGIN, cursor + 2, CONTENT_W, 10, 2);
       setFont(8, "bold");
@@ -427,13 +429,17 @@ async function generatePreOpPDF({
     if (prefillCase.postOpNotes) {
       addNewPageIfNeeded(14);
       const noteLines = doc.splitTextToSize(richTextToPlainText(prefillCase.postOpNotes), CONTENT_W - 8);
+      const noteTruncated = noteLines.length > 3;
+      const displayNoteLines = noteTruncated
+        ? [...noteLines.slice(0, 2), `${noteLines[2].slice(0, -3).trimEnd()}...`]
+        : noteLines;
       const noteH = Math.min(noteLines.length, 3) * 5 + 8;
       setFill(LIGHT);
       roundRect(doc, MARGIN, cursor, CONTENT_W, noteH, 2);
       setFont(7, "normal"); setColor(MID);
-      doc.text("Catatan Post-Op", MARGIN + 4, cursor + 5);
+      doc.text(`Catatan Post-Op${noteTruncated ? " (dipotong, lihat di aplikasi)" : ""}`, MARGIN + 4, cursor + 5);
       setFont(7, "normal"); setColor(NAVY);
-      doc.text(noteLines.slice(0, 3), MARGIN + 4, cursor + 9.5);
+      doc.text(displayNoteLines.slice(0, 3), MARGIN + 4, cursor + 9.5);
       cursor += noteH + 3;
     }
     cursor += 2;
@@ -535,13 +541,23 @@ async function generatePreOpPDF({
         document.body.appendChild(container);
         const canvas = await html2canvas(container, { scale: 2, backgroundColor: "#ffffff" });
         document.body.removeChild(container);
-        const imgHeightMm = Math.min(boxHeightMm, (canvas.height / canvas.width) * boxWidthMm);
+        // Scale down proportionally (not just cap the height) when the
+        // natural aspect ratio would otherwise overflow the fixed box —
+        // forcing a too-tall image into boxHeightMm at full boxWidthMm
+        // visibly squished/distorted the formatted text.
+        const naturalHeightMm = (canvas.height / canvas.width) * boxWidthMm;
+        let imgWidthMm = boxWidthMm;
+        let imgHeightMm = naturalHeightMm;
+        if (naturalHeightMm > boxHeightMm) {
+          imgHeightMm = boxHeightMm;
+          imgWidthMm = (canvas.width / canvas.height) * boxHeightMm;
+        }
         doc.addImage(
           canvas.toDataURL("image/png"),
           "PNG",
           MARGIN + 4,
           cursor + 9,
-          boxWidthMm,
+          imgWidthMm,
           imgHeightMm,
         );
         renderedAsImage = true;
@@ -554,7 +570,10 @@ async function generatePreOpPDF({
         richTextToPlainText(patientInfo.notes),
         CONTENT_W - 8,
       );
-      doc.text(lines.slice(0, 3), MARGIN + 4, cursor + 13);
+      const displayLines = lines.length > 3
+        ? [...lines.slice(0, 2), `${lines[2].slice(0, -3).trimEnd()}...`]
+        : lines;
+      doc.text(displayLines.slice(0, 3), MARGIN + 4, cursor + 13);
     }
   }
   cursor += 34;
@@ -809,7 +828,15 @@ export default function PreOpReportModal({
 
       if (print) {
         doc.autoPrint();
-        doc.output("dataurlnewwindow");
+        // doc.output("dataurlnewwindow") swallows a blocked popup — window.open
+        // returns null instead of throwing, so the generic try/catch below
+        // never sees it and the UI still said "PDF berhasil dibuat!" with
+        // nothing actually open. Open it ourselves so we can check.
+        const printWindow = window.open(doc.output("bloburl"), "_blank");
+        if (!printWindow) {
+          setError("Pop-up diblokir browser — izinkan pop-up untuk situs ini, atau gunakan tombol Download sebagai gantinya.");
+          return;
+        }
       } else {
         const dateTag = new Date().toISOString().slice(0, 10);
         const safeName = (patientInfo.patientName || "pasien").replace(/[^a-zA-Z0-9]/g, "-");

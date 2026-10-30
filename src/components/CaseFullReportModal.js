@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FileText, Download, Loader2, CheckCircle2 } from "lucide-react";
 import { richTextToPlainText } from "./RichTextEditor";
+import { classifyImplantAccuracy } from "@/lib/implantAccuracy";
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
 
@@ -116,9 +117,9 @@ async function generateFullPDF(caseData) {
   if (hasPostOp && caseData.preOpSizeNum != null && caseData.actualSizeNum != null) {
     need(32);
     const diff = caseData.actualSizeNum - caseData.preOpSizeNum;
-    const absDiff = Math.abs(diff);
-    const accColor = absDiff < 0.25 ? GREEN : absDiff <= 1.25 ? AMBER : RED;
-    const accLabel = absDiff < 0.25 ? "Exact Match ✓" : absDiff <= 1.25 ? `Within ±1 (Δ ${diff > 0 ? "+" : ""}${diff.toFixed(1)})` : `Di luar ±1 (Δ ${diff > 0 ? "+" : ""}${diff.toFixed(1)})`;
+    const accuracyTier = classifyImplantAccuracy(diff);
+    const accColor = accuracyTier === "exact" ? GREEN : accuracyTier === "close" ? AMBER : RED;
+    const accLabel = accuracyTier === "exact" ? "Exact Match ✓" : accuracyTier === "close" ? `Within ±1 (Δ ${diff > 0 ? "+" : ""}${diff.toFixed(1)})` : `Di luar ±1 (Δ ${diff > 0 ? "+" : ""}${diff.toFixed(1)})`;
 
     fill(LIGHT); doc.roundedRect(M, y, CW, 24, 3, 3, "F");
     fill(accColor); doc.roundedRect(M, y, 3, 24, 3, 3, "F");
@@ -131,15 +132,32 @@ async function generateFullPDF(caseData) {
   }
 
   // ── X-RAY SNAPSHOT ────────────────────────────────────────────────────────
-  const snapshotSrc = caseData.snapshotUrl || caseData.snapshot || null;
-  if (snapshotSrc && snapshotSrc.startsWith("data:")) {
+  // Cloud-synced cases store a Drive URL (http), not a raw data: URL — resolve
+  // it through the same image proxy PreOpReportModal.js uses, otherwise this
+  // section silently skipped the snapshot for every saved case.
+  const rawSnapshotSrc = caseData.snapshotUrl || caseData.snapshot || null;
+  let snapshotDataUrl = rawSnapshotSrc?.startsWith("data:") ? rawSnapshotSrc : null;
+  if (!snapshotDataUrl && rawSnapshotSrc?.startsWith("http")) {
+    try {
+      const proxyUrl = `/api/google-drive-image?src=${encodeURIComponent(rawSnapshotSrc)}`;
+      const r = await fetch(proxyUrl);
+      const blob = await r.blob();
+      snapshotDataUrl = await new Promise((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => resolve(null);
+        fr.readAsDataURL(blob);
+      });
+    } catch { snapshotDataUrl = null; }
+  }
+  if (snapshotDataUrl) {
     need(70);
     text(MID); font(8, "bold");
     doc.text("X-Ray Snapshot (Pre-Op)", M, y);
     bump(4);
     try {
-      const fmt = snapshotSrc.startsWith("data:image/jpeg") || snapshotSrc.startsWith("data:image/jpg") ? "JPEG" : "PNG";
-      doc.addImage(snapshotSrc, fmt, M, y, CW, 60, undefined, "MEDIUM");
+      const fmt = snapshotDataUrl.startsWith("data:image/jpeg") || snapshotDataUrl.startsWith("data:image/jpg") ? "JPEG" : "PNG";
+      doc.addImage(snapshotDataUrl, fmt, M, y, CW, 60, undefined, "MEDIUM");
       bump(64);
     } catch { bump(4); }
   }
@@ -163,6 +181,7 @@ async function generateFullPDF(caseData) {
 export default function CaseFullReportModal({ isOpen, onClose, caseData }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
 
   if (typeof document === "undefined") return null;
   if (!caseData) return null;
@@ -171,12 +190,14 @@ export default function CaseFullReportModal({ isOpen, onClose, caseData }) {
 
   const handleDownload = async () => {
     setLoading(true);
+    setError("");
     try {
       await generateFullPDF(caseData);
       setDone(true);
       setTimeout(() => setDone(false), 3000);
     } catch (err) {
       console.error(err);
+      setError(err?.message || "Gagal membuat laporan PDF. Coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -236,6 +257,12 @@ export default function CaseFullReportModal({ isOpen, onClose, caseData }) {
               {!hasPostOp && (
                 <p className="text-[9px] text-amber-600 text-center">
                   Laporan lebih lengkap setelah data post-op dimasukkan
+                </p>
+              )}
+
+              {error && (
+                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[9px] font-bold text-red-600">
+                  {error}
                 </p>
               )}
 

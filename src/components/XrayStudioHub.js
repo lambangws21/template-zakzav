@@ -45,6 +45,7 @@ const HKAPlanner            = dynamic(() => import("@/components/hka/HKAPlanner"
 const DigitalTemplatingViewer = dynamic(() => import("@/components/digitalTemplating/digitalTemplatingViewer"), { ssr: false, loading: () => <ToolLoadingScreen label="Memuat Digital Templating…" /> });
 const TemplatingAnalytics   = dynamic(() => import("@/components/TemplatingAnalytics"),   { ssr: false, loading: () => <ToolLoadingScreen label="Memuat Analitik…" /> });
 const TkaPlanner            = dynamic(() => import("@/components/digitalTemplating/tkaPlanner"), { ssr: false, loading: () => <ToolLoadingScreen label="Memuat TKA/THA Planner…" /> });
+const SpinopelvicPlanner    = dynamic(() => import("@/components/spinopelvic/SpinopelvicPlanner"), { ssr: false, loading: () => <ToolLoadingScreen label="Memuat Spinopelvic Mobility…" /> });
 
 // ─── Tool registry ─────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ const TOOLS = [
   { key: "templating", label: "Digital Templating",  shortLabel: "Templating", desc: "Canvas digital untuk templating implant hip/knee dengan ukuran nyata (mm).",                     icon: "🎯", gradient: "linear-gradient(135deg,#d97706,#f59e0b)", glow: "rgba(245,158,11,0.4)",   component: DigitalTemplatingViewer,   props: {} },
   { key: "analytics",  label: "Analitik",             shortLabel: "Analitik",   desc: "Dashboard statistik akurasi templating dan outcome pasien dari cloud.",                          icon: "📊", gradient: "linear-gradient(135deg,#e11d48,#f43f5e)", glow: "rgba(244,63,94,0.4)",    component: TemplatingAnalytics,       props: {} },
   { key: "tka",        label: "TKA/THA Planner",     shortLabel: "TKA/THA",    desc: "Panduan perencanaan operasi TKA dan THA dengan simulasi sudut reseksi.",                         icon: "🦴", gradient: "linear-gradient(135deg,#475569,#64748b)", glow: "rgba(100,116,139,0.3)",  component: TkaPlanner,                props: {} },
+  { key: "spinopelvic", label: "Spinopelvic Mobility", shortLabel: "Spinopelvic", desc: "Klasifikasi mobilitas spinopelvic (Stefl et al.) dari sudut pelvic tilt standing vs sitting.",   icon: "🧍", gradient: "linear-gradient(135deg,#7c2d12,#ea580c)", glow: "rgba(234,88,12,0.4)",    component: SpinopelvicPlanner,        props: {} },
 ];
 
 // ─── Sidebar (desktop ≥1024px) ─────────────────────────────────────────────────

@@ -1410,13 +1410,33 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
   // no way to pick among several uploaded photos.
   const [compareSlotA, setCompareSlotA] = useState(0);
   const [compareSlotB, setCompareSlotB] = useState(1);
+  const [compareFullscreen, setCompareFullscreen] = useState(false);
+  // Independent zoom/pan per pane — zooming into one X-ray to check detail
+  // shouldn't also zoom the other one; each side keeps its own view.
+  const [compareZooms, setCompareZooms] = useState([
+    { scale: 1, x: 0, y: 0 },
+    { scale: 1, x: 0, y: 0 },
+  ]);
+  const comparePinchRefs = useRef([null, null]);
+  const compareDragRefs = useRef([null, null]);
 
   useEffect(() => {
     setActiveTab("preop");
     setActiveImage(0);
     setCompareSlotA(0);
     setCompareSlotB(1);
+    setCompareFullscreen(false);
   }, [caseData?.id]);
+
+  // Reset both panes' zoom whenever the fullscreen compare opens or either
+  // slot changes — a stale zoom/pan from the previous pair would be
+  // disorienting.
+  useEffect(() => {
+    setCompareZooms([
+      { scale: 1, x: 0, y: 0 },
+      { scale: 1, x: 0, y: 0 },
+    ]);
+  }, [compareFullscreen, compareSlotA, compareSlotB]);
 
   if (!caseData) return null;
 
@@ -1558,7 +1578,174 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
     );
   };
 
-  return createPortal(
+  const compareOptionA = imageOptions[compareSlotA] || imageOptions[0];
+  const compareOptionB = imageOptions[compareSlotB] || imageOptions[1] || imageOptions[0];
+
+  // Independent zoom/pan per pane (slotIndex 0 = left/A, 1 = right/B) — each
+  // X-ray can be zoomed in to check detail without affecting the other.
+  function zoomCompareBy(slotIndex, factor) {
+    setCompareZooms((prev) => {
+      const current = prev[slotIndex];
+      const nextScale = Math.max(1, Math.min(6, current.scale * factor));
+      const next = nextScale === 1 ? { scale: 1, x: 0, y: 0 } : { ...current, scale: nextScale };
+      const copy = [...prev];
+      copy[slotIndex] = next;
+      return copy;
+    });
+  }
+  function handleCompareWheel(slotIndex, event) {
+    event.preventDefault();
+    zoomCompareBy(slotIndex, event.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }
+  function handleComparePointerDown(slotIndex, event) {
+    if (compareZooms[slotIndex].scale <= 1) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    compareDragRefs.current[slotIndex] = {
+      startX: event.clientX,
+      startY: event.clientY,
+      origX: compareZooms[slotIndex].x,
+      origY: compareZooms[slotIndex].y,
+    };
+  }
+  function handleComparePointerMove(slotIndex, event) {
+    const drag = compareDragRefs.current[slotIndex];
+    if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    setCompareZooms((prev) => {
+      const copy = [...prev];
+      copy[slotIndex] = { ...copy[slotIndex], x: drag.origX + dx, y: drag.origY + dy };
+      return copy;
+    });
+  }
+  function handleComparePointerUp(slotIndex) {
+    compareDragRefs.current[slotIndex] = null;
+  }
+  function handleCompareTouchStart(slotIndex, event) {
+    if (event.touches.length === 2) {
+      const [a, b] = event.touches;
+      comparePinchRefs.current[slotIndex] = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+    }
+  }
+  function handleCompareTouchMove(slotIndex, event) {
+    if (event.touches.length !== 2) return;
+    event.preventDefault();
+    const [a, b] = event.touches;
+    const dist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+    if (comparePinchRefs.current[slotIndex]) zoomCompareBy(slotIndex, dist / comparePinchRefs.current[slotIndex]);
+    comparePinchRefs.current[slotIndex] = dist;
+  }
+  function handleCompareTouchEnd(slotIndex, event) {
+    if (event.touches.length < 2) comparePinchRefs.current[slotIndex] = null;
+  }
+
+  const fullscreenCompare = compareFullscreen && imageOptions.length >= 2
+    ? createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="compare-fullscreen"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9995] flex flex-col bg-black"
+          >
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#08111f] px-3 py-2 sm:px-4 sm:py-2.5">
+              <strong className="min-w-0 truncate text-[11px] font-black text-slate-200 sm:text-sm">
+                Perbandingan — {caseData.patientName || "Kasus"}
+              </strong>
+              <button
+                type="button"
+                onClick={() => setCompareFullscreen(false)}
+                className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-700 bg-slate-800 px-3 text-[10px] font-black text-slate-200 hover:bg-slate-700"
+              >
+                <X className="h-3.5 w-3.5" /> Tutup
+              </button>
+            </div>
+            <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-slate-800 bg-[#08111f] p-2">
+              {[
+                { value: compareSlotA, setValue: setCompareSlotA },
+                { value: compareSlotB, setValue: setCompareSlotB },
+              ].map((slot, slotIndex) => (
+                <select
+                  key={slotIndex}
+                  value={slot.value}
+                  onChange={(event) => slot.setValue(Number(event.target.value))}
+                  className="w-full rounded border border-slate-700 bg-[#101c2d] px-2 py-2 text-[11px] font-black text-slate-200 sm:text-xs"
+                >
+                  {imageOptions.map((option, index) => (
+                    <option key={`${option.label}-${index}`} value={index}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ))}
+            </div>
+            <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              {[compareOptionA, compareOptionB].map((option, slotIndex) => {
+                const zoom = compareZooms[slotIndex];
+                return (
+                  <div
+                    key={slotIndex}
+                    className="relative min-h-0 touch-none overflow-hidden bg-black"
+                    style={{ cursor: zoom.scale > 1 ? "grab" : "default" }}
+                    onWheel={(event) => handleCompareWheel(slotIndex, event)}
+                    onPointerDown={(event) => handleComparePointerDown(slotIndex, event)}
+                    onPointerMove={(event) => handleComparePointerMove(slotIndex, event)}
+                    onPointerUp={() => handleComparePointerUp(slotIndex)}
+                    onPointerLeave={() => handleComparePointerUp(slotIndex)}
+                    onTouchStart={(event) => handleCompareTouchStart(slotIndex, event)}
+                    onTouchMove={(event) => handleCompareTouchMove(slotIndex, event)}
+                    onTouchEnd={(event) => handleCompareTouchEnd(slotIndex, event)}
+                  >
+                    <img
+                      src={option.src}
+                      alt={option.label}
+                      draggable={false}
+                      className="h-full w-full select-none object-contain"
+                      style={{
+                        transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
+                        transformOrigin: "center",
+                        transition: compareDragRefs.current[slotIndex] ? "none" : "transform 80ms ease-out",
+                      }}
+                    />
+                    <span className={`absolute left-3 top-3 rounded-full px-3 py-1 text-[10px] font-black ${option.label.startsWith("Pre-Op") ? "bg-slate-950/80" : "bg-emerald-600/90"}`}>
+                      {option.label}
+                    </span>
+                    {/* Each pane's zoom is independent — these controls only
+                        affect this image, not the other side. */}
+                    <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-black/70 p-1 backdrop-blur-sm">
+                      <button type="button" onClick={() => zoomCompareBy(slotIndex, 1.3)} aria-label="Perbesar"
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-slate-200 hover:bg-white/10">
+                        <ZoomIn className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => zoomCompareBy(slotIndex, 1 / 1.3)} aria-label="Perkecil"
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-slate-200 hover:bg-white/10">
+                        <ZoomOut className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCompareZooms((prev) => { const copy = [...prev]; copy[slotIndex] = { scale: 1, x: 0, y: 0 }; return copy; })}
+                        aria-label="Reset zoom"
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-slate-200 hover:bg-white/10"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+                      <span className="px-1 text-[9px] font-black tabular-nums text-slate-300">{Math.round(zoom.scale * 100)}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <>
+      {fullscreenCompare}
+      {createPortal(
     <AnimatePresence>
       <motion.div key="case-preview-v2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-[9990] flex items-end justify-center bg-[#020611]/85 backdrop-blur-md sm:items-center sm:p-4">
         <motion.div
@@ -1594,24 +1781,35 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                 <section className="overflow-hidden rounded-lg border border-slate-700 bg-black">
                   {activeTab === "compare" && imageOptions.length >= 2 ? (
                     <div>
-                      <div className="grid grid-cols-1 gap-1.5 border-b border-slate-800 bg-[#08111f] p-1.5 sm:grid-cols-2 sm:gap-2 sm:p-2">
-                        {[
-                          { value: compareSlotA, setValue: setCompareSlotA, fallback: compareSlotB },
-                          { value: compareSlotB, setValue: setCompareSlotB, fallback: compareSlotA },
-                        ].map((slot, slotIndex) => (
-                          <select
-                            key={slotIndex}
-                            value={slot.value}
-                            onChange={(event) => slot.setValue(Number(event.target.value))}
-                            className="w-full rounded border border-slate-700 bg-[#101c2d] px-2 py-1.5 text-[10px] font-black text-slate-200"
-                          >
-                            {imageOptions.map((option, index) => (
-                              <option key={`${option.label}-${index}`} value={index}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        ))}
+                      <div className="flex items-center gap-1.5 border-b border-slate-800 bg-[#08111f] p-1.5 sm:gap-2 sm:p-2">
+                        <div className="grid flex-1 grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-2">
+                          {[
+                            { value: compareSlotA, setValue: setCompareSlotA, fallback: compareSlotB },
+                            { value: compareSlotB, setValue: setCompareSlotB, fallback: compareSlotA },
+                          ].map((slot, slotIndex) => (
+                            <select
+                              key={slotIndex}
+                              value={slot.value}
+                              onChange={(event) => slot.setValue(Number(event.target.value))}
+                              className="w-full rounded border border-slate-700 bg-[#101c2d] px-2 py-1.5 text-[10px] font-black text-slate-200"
+                            >
+                              {imageOptions.map((option, index) => (
+                                <option key={`${option.label}-${index}`} value={index}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCompareFullscreen(true)}
+                          className="flex min-h-8 shrink-0 items-center gap-1 rounded border border-violet-600/40 bg-violet-600/15 px-2.5 text-[9px] font-black text-violet-300 hover:bg-violet-600/25 sm:min-h-9 sm:px-3"
+                          title="Perbesar ke layar penuh"
+                        >
+                          <Maximize2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                          <span className="hidden sm:inline">Layar Penuh</span>
+                        </button>
                       </div>
                       <div className="grid grid-cols-1 divide-y divide-slate-700 sm:min-h-[400px] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                         {[compareSlotA, compareSlotB].map((slotValue, slotIndex) => {
@@ -1736,6 +1934,8 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
       </motion.div>
     </AnimatePresence>,
     document.body,
+      )}
+    </>
   );
 }
 

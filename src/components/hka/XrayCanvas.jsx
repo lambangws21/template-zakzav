@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { drawLine, drawPoint, screenToImagePoint } from "@/lib/hka/geometry";
 import { refineFemoralHeadCircle } from "@/lib/xray/autoLandmarkDetection";
 
@@ -369,28 +370,78 @@ export function XrayCanvas({ imageFile, mode, activePoint, points, setPoints, hk
     setPoints((prev) => ({ ...prev, [activePoint]: point }));
   }
 
-  function handleWheel(event) {
-    event.preventDefault();
-    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+  function zoomBy(factor) {
     setTransform((prev) => ({
       ...prev,
       scale: Math.max(0.1, Math.min(6, prev.scale * factor)),
     }));
   }
 
+  function handleWheel(event) {
+    event.preventDefault();
+    zoomBy(event.deltaY < 0 ? 1.1 : 1 / 1.1);
+  }
+
+  // Scroll-wheel zoom has no touch equivalent — tablets/phones (the app's
+  // primary bedside/clinic use case) had no way to zoom in for precise
+  // landmark placement. Track two-finger pinch distance as a fallback to
+  // the +/- buttons below.
+  const pinchDistanceRef = useRef(null);
+
+  function handleTouchStart(event) {
+    if (event.touches.length === 2) {
+      const [a, b] = event.touches;
+      pinchDistanceRef.current = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+    }
+  }
+
+  function handleTouchMove(event) {
+    if (event.touches.length !== 2) return;
+    event.preventDefault();
+    const [a, b] = event.touches;
+    const dist = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+    if (pinchDistanceRef.current) {
+      zoomBy(dist / pinchDistanceRef.current);
+    }
+    pinchDistanceRef.current = dist;
+  }
+
+  function handleTouchEnd(event) {
+    if (event.touches.length < 2) pinchDistanceRef.current = null;
+  }
+
   return (
     <div className="rounded-2xl border bg-white p-3 shadow-sm">
-      <canvas
-        ref={canvasRef}
-        width={900}
-        height={1100}
-        onClick={handleClick}
-        onWheel={handleWheel}
-        className="h-[72vh] w-full cursor-crosshair rounded-xl bg-slate-900 object-contain"
-      />
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          width={900}
+          height={1100}
+          onClick={handleClick}
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className="h-[72vh] w-full cursor-crosshair rounded-xl bg-slate-900 object-contain touch-none"
+        />
+        <div className="absolute bottom-2 right-2 flex gap-1 rounded-lg bg-white/90 p-1 shadow-md">
+          <button type="button" onClick={() => zoomBy(1.25)} aria-label="Perbesar"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100">
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => zoomBy(1 / 1.25)} aria-label="Perkecil"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100">
+            <ZoomOut className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => setTransform({ scale: 1, offsetX: 0, offsetY: 0 })} aria-label="Reset zoom"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100">
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
         <span>
-          Scroll untuk zoom. Klik canvas untuk memasang landmark aktif.
+          Scroll atau cubit (pinch) untuk zoom. Klik canvas untuk memasang landmark aktif.
           {activePoint === "femoralHead" && " Klik kasar di femoral head — auto-detect akan snap ke center & tepi presisi (garis putus-putus kuning)."}
         </span>
         {mode === "jla" && (
