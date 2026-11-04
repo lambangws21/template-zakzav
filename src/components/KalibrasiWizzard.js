@@ -119,7 +119,11 @@ export default function CalibrationWizard({
   const isLineMode = calibrationMode === "line";
   const isMagMode = calibrationMode === "magnification";
   const strokeValue = Number.isFinite(Number(lineStrokeWidth)) ? Number(lineStrokeWidth) : 2;
-  const referenceMin = actualUnit === "mm" ? 0.1 : 0.01;
+  // Matches MIN_CALIBRATION_REFERENCE_MM in XrayCalibrationWorkspace.js — a
+  // shorter reference amplifies click-placement error into a large relative
+  // error, so applyCalibration() rejects anything below 10mm/1cm anyway;
+  // this keeps the input's own min/step hint consistent with that.
+  const referenceMin = actualUnit === "mm" ? 10 : 1;
   const referenceStep = actualUnit === "mm" ? 0.1 : 0.01;
 
   const anatomicalSizeNum = Number(anatomicalRefSizeMm);

@@ -820,7 +820,12 @@ const DEFAULT_LINE_STROKE_WIDTH = 2;
 // ruler) read as visually heavy there. Used only for pelvic-analysis-
 // generated lines/angles/circles, not the shared defaults other tools use.
 const HIP_LINE_STROKE_WIDTH = 1.3;
-const MIN_CALIBRATION_REFERENCE_MM = 0.1;
+// A reference shorter than this amplifies the ~2px click-placement error
+// into a large relative error (e.g. a 0.1mm reference turned a 2px slip
+// into a wildly wrong mm/px factor) — 10mm/1cm matches the smallest
+// calibration marker actually used clinically (ball/ruler presets below
+// are all >=100mm) and keeps the QC estimate in applyCalibration meaningful.
+const MIN_CALIBRATION_REFERENCE_MM = 10;
 const DEFAULT_LINE_COLOR = "#38bdf8";
 const LINE_MEASUREMENT_MODES = [
   { value: "length", label: "Length", color: "#06b6d4" },
@@ -6715,7 +6720,7 @@ export default function XrayCalibrationWorkspace({
     }
     const targetMm = actualUnit === "cm" ? inputValue * 10 : inputValue;
     if (targetMm < MIN_CALIBRATION_REFERENCE_MM) {
-      setNotice("Nilai kalibrasi minimum adalah 0,1 mm atau 0,01 cm.");
+      setNotice("Nilai kalibrasi minimum adalah 10 mm (1 cm).");
       return;
     }
     createCalibrationPresetLine(targetMm);
@@ -20491,7 +20496,7 @@ export default function XrayCalibrationWorkspace({
 
     const actualMmValue = actualUnit === "cm" ? actualMm * 10 : actualMm;
     if (actualMmValue < MIN_CALIBRATION_REFERENCE_MM) {
-      setNotice("Nilai kalibrasi minimum adalah 0,1 mm atau 0,01 cm.");
+      setNotice("Nilai kalibrasi minimum adalah 10 mm (1 cm).");
       return false;
     }
     const factor = actualMmValue / lengthPx;
@@ -39483,7 +39488,7 @@ export default function XrayCalibrationWorkspace({
                   </span>
                   <input
                     type="number"
-                    min="0"
+                    min={actualUnit === "cm" ? "1" : "10"}
                     step="0.01"
                     value={actualMmInput}
                     onChange={(event) => setActualMmInput(event.target.value)}

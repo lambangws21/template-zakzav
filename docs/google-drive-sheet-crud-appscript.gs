@@ -4,6 +4,19 @@ const SPREADSHEET_ID = "1YazKry6R9KYlVl_uV9V6m1g5X2n1fmxA5CHnQD5slbM";
 const SHEET_HEADERS = ["id", "name", "tags", "driveId", "createdAt", "updatedAt"];
 const DRIVE_ID_PATTERN = /^[a-zA-Z0-9_-]{20,}$/;
 
+const PATIENT_CASES_SHEET = "PatientCases";
+const PATIENT_CASES_HEADERS = [
+    "id", "createdAt", "patientName", "procedure", "notes",
+    "imageName", "measurementCount", "templateCount",
+    "hkaSummaryJson", "implantLabel",
+    "snapshotDriveId", "snapshotUrl", "source",
+    "preOpSizeNum", "operationDate", "actualImplantLabel",
+    "actualSizeNum", "postOpHka", "postOpNotes", "postOpUpdatedAt",
+    "cupAssessmentJson",
+    "postOpPhotosJson",
+    "prePhotosJson",
+  ];
+
 const IMPLANT_SUBMISSION_SHEET = "ImplantUsageSubmissions";
 const IMPLANT_ITEM_SHEET = "ImplantUsageItems";
 const IMPLANT_SIGNATURE_SHEET = "ImplantUsageSignatures";
@@ -26,6 +39,10 @@ const IMPLANT_SUBMISSION_HEADERS = [
   "signaturesWithPhoto",
   "patientStickerDriveId",
   "patientStickerUrl",
+  "officeDocumentationDriveId",
+  "officeDocumentationUrl",
+  "hospitalDocumentationDriveId",
+  "hospitalDocumentationUrl",
   "checklistJson",
   "slotsJson",
   "signaturesJson",
@@ -163,6 +180,19 @@ function isDriveOrphanDeleteAction_(action) {
   );
 }
 
+function isImageCreateAction_(action) {
+  return (
+    action === "create" ||
+    action === "upload" ||
+    action === "upload_image" ||
+    action === "uploadimage" ||
+    action === "create_image" ||
+    action === "createimage" ||
+    action === "upload_report" ||
+    action === "uploadreport"
+  );
+}
+
 function isImplantReviewUpdateAction_(action) {
   return (
     action === "update_implant_usage_review" ||
@@ -242,6 +272,17 @@ function doGet(e) {
     const params = (e && e.parameter) || {};
     const action = normalizeAction_(params.action || "");
 
+    // ── Library implant: list isi folder Drive ─────────────────────────────
+    if (action === "list_drive_folder" || action === "listdrivefolder") {
+      const folderId  = String(params.folderId  || "").trim();
+      const withFiles = String(params.withFiles || "").trim() === "true";
+      if (!folderId) {
+        return jsonOutput_({ ok: false, status: "error", error: "folderId wajib diisi." });
+      }
+      return jsonOutput_(listDriveFolder_(folderId, withFiles));
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     if (
       !action ||
       action === "all" ||
@@ -279,6 +320,10 @@ function doGet(e) {
         status: "success",
         items: readImplantSubmissions_(),
       });
+    }
+
+    if (action === "listpatientcases" || action === "list_patient_cases" || action === "readpatientcases" || action === "read_patient_cases") {
+      return jsonOutput_({ ok: true, status: "success", items: readPatientCases_() });
     }
 
     const sheet = getSheet_();
@@ -617,6 +662,10 @@ function doPost(e) {
     const payload = parseRequestBody_(e);
     const action = normalizeAction_(payload.action || "list");
 
+    if (action === "listpatientcases" || action === "list_patient_cases" || action === "readpatientcases" || action === "read_patient_cases") {
+      return jsonOutput_({ ok: true, status: "success", items: readPatientCases_() });
+    }
+
     if (action === "list" || action === "read") {
       if (shouldUseInstrumentProfileSheet_(action, payload)) {
         return jsonOutput_({
@@ -638,6 +687,18 @@ function doPost(e) {
 
     if (action === "createimplantusage" || action === "create_implant_usage") {
       return jsonOutput_(createImplantUsage_(payload));
+    }
+
+    if (action === "createpatientcase" || action === "create_patient_case") {
+      return jsonOutput_(createPatientCase_(payload));
+    }
+
+    if (action === "deletepatientcase" || action === "delete_patient_case") {
+      return jsonOutput_(deletePatientCase_(payload));
+    }
+
+    if (action === "updatepatientcase" || action === "update_patient_case") {
+      return jsonOutput_(updatePatientCase_(payload));
     }
 
     if (isImplantReviewUpdateAction_(action)) {
@@ -704,11 +765,11 @@ function doPost(e) {
       });
     }
 
-    if ((action === "create" || action === "upload") && isImplantUsagePayload_(payload)) {
+    if (isImageCreateAction_(action) && isImplantUsagePayload_(payload)) {
       return jsonOutput_(createImplantUsage_(payload));
     }
 
-    if (action === "create" || action === "upload") {
+    if (isImageCreateAction_(action)) {
       return jsonOutput_(createItem_(payload));
     }
 
@@ -740,15 +801,17 @@ function doPost(e) {
 
 function createItem_(payload) {
   const sheet = getSheet_();
-  const item = payload.item || {};
+  const item = buildItemFromPayload_(payload);
   const now = isoNow_();
 
   let driveId = normalizeDriveId_(item.driveId);
-  if (item.imageDataUrl) {
+  if (item.imageDataUrl || item.dataUrl || item.imageBase64 || item.base64) {
     driveId = uploadImageFromDataUrl_(item);
   }
   if (!driveId) {
-    throw new Error("driveId kosong. Kirim item.driveId atau item.imageDataUrl.");
+    throw new Error(
+      "driveId kosong. Kirim driveId, imageDataUrl, atau imageBase64."
+    );
   }
   assertValidDriveId_(driveId);
 
@@ -764,7 +827,7 @@ function createItem_(payload) {
 
 function updateItem_(payload) {
   const sheet = getSheet_();
-  const item = payload.item || {};
+  const item = buildItemFromPayload_(payload);
   const id = String(payload.id || item.id || "").trim();
   if (!id) throw new Error("Field id wajib diisi untuk update.");
 
@@ -781,7 +844,7 @@ function updateItem_(payload) {
   let driveId = hasOwnKey_(item, "driveId")
     ? normalizeDriveId_(item.driveId)
     : normalizeDriveId_(currentDriveId);
-  if (item.imageDataUrl) {
+  if (item.imageDataUrl || item.dataUrl || item.imageBase64 || item.base64) {
     const nextDriveId = uploadImageFromDataUrl_(item);
     if (nextDriveId) {
       if (payload.deleteOldDriveFile && currentDriveId && currentDriveId !== nextDriveId) {
@@ -826,6 +889,37 @@ function deleteItem_(payload) {
   return { ok: true, status: "success", id: id, driveId: driveId };
 }
 
+function buildItemFromPayload_(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const baseItem =
+    source.item && typeof source.item === "object" ? source.item : {};
+  const item = {};
+
+  Object.keys(baseItem).forEach(function (key) {
+    item[key] = baseItem[key];
+  });
+
+  [
+    "imageDataUrl",
+    "dataUrl",
+    "imageBase64",
+    "base64",
+    "fileName",
+    "filename",
+    "mimeType",
+    "contentType",
+    "driveId",
+    "name",
+    "tags",
+  ].forEach(function (key) {
+    if (!hasOwnKey_(item, key) && hasOwnKey_(source, key)) {
+      item[key] = source[key];
+    }
+  });
+
+  return item;
+}
+
 function createImplantUsage_(payload) {
   const data =
     payload && payload.data && typeof payload.data === "object"
@@ -844,6 +938,20 @@ function createImplantUsage_(payload) {
     data.patientStickerUpload,
     `patient-sticker-${submissionId}`
   );
+  let officeDocumentation = uploadImagePayloadIfAny_(
+    data.officeDocumentationUpload,
+    `office-documentation-${submissionId}`
+  );
+  let hospitalDocumentation = uploadImagePayloadIfAny_(
+    data.hospitalDocumentationUpload,
+    `hospital-documentation-${submissionId}`
+  );
+  if (!officeDocumentation.driveId && patientSticker.driveId) {
+    officeDocumentation = patientSticker;
+  }
+  if (!hospitalDocumentation.driveId && patientSticker.driveId) {
+    hospitalDocumentation = patientSticker;
+  }
 
   const slots = Array.isArray(data.slots) ? data.slots : [];
   const signatures = Array.isArray(data.signatures) ? data.signatures : [];
@@ -933,6 +1041,10 @@ function createImplantUsage_(payload) {
     signaturesWithPhoto,
     patientSticker.driveId,
     patientSticker.imageSrc,
+    officeDocumentation.driveId,
+    officeDocumentation.imageSrc,
+    hospitalDocumentation.driveId,
+    hospitalDocumentation.imageSrc,
     JSON.stringify(checklist),
     JSON.stringify(slotItems),
     JSON.stringify(signatureItems),
@@ -955,6 +1067,8 @@ function createImplantUsage_(payload) {
       signaturesCount: signatures.length,
       signaturesWithPhoto: signaturesWithPhoto,
       hasPatientSticker: Boolean(patientSticker.driveId),
+      hasOfficeDocumentation: Boolean(officeDocumentation.driveId),
+      hasHospitalDocumentation: Boolean(hospitalDocumentation.driveId),
     },
   };
 }
@@ -986,14 +1100,18 @@ function readImplantSubmissions_() {
       signaturesWithPhoto: Number(row[14] || 0),
       patientStickerDriveId: String(row[15] || ""),
       patientStickerUrl: String(row[16] || ""),
-      checklistJson: String(row[17] || "[]"),
-      slotsJson: String(row[18] || "[]"),
-      signaturesJson: String(row[19] || "[]"),
-      source: String(row[20] || ""),
-      reviewStatus: String(row[21] || ""),
-      reviewNote: String(row[22] || ""),
-      reviewedAt: String(row[23] || ""),
-      reviewedBy: String(row[24] || ""),
+      officeDocumentationDriveId: String(row[17] || ""),
+      officeDocumentationUrl: String(row[18] || ""),
+      hospitalDocumentationDriveId: String(row[19] || ""),
+      hospitalDocumentationUrl: String(row[20] || ""),
+      checklistJson: String(row[21] || "[]"),
+      slotsJson: String(row[22] || "[]"),
+      signaturesJson: String(row[23] || "[]"),
+      source: String(row[24] || ""),
+      reviewStatus: String(row[25] || ""),
+      reviewNote: String(row[26] || ""),
+      reviewedAt: String(row[27] || ""),
+      reviewedBy: String(row[28] || ""),
     };
   });
 }
@@ -1031,29 +1149,56 @@ function updateImplantUsageReviewStatus_(payload) {
     throw new Error("submissionId wajib diisi untuk update review status.");
   }
 
+  function pickValue_(key, fallback) {
+    if (hasOwnKey_(payload, key)) return payload[key];
+    if (hasOwnKey_(item, key)) return item[key];
+    if (hasOwnKey_(data, key)) return data[key];
+    return fallback;
+  }
+
+  const hasReviewStatusInput =
+    hasOwnKey_(payload, "reviewStatus") ||
+    hasOwnKey_(item, "reviewStatus") ||
+    hasOwnKey_(data, "reviewStatus") ||
+    hasOwnKey_(payload, "statusReview") ||
+    hasOwnKey_(item, "statusReview") ||
+    hasOwnKey_(data, "statusReview") ||
+    hasOwnKey_(payload, "review_state") ||
+    hasOwnKey_(item, "review_state") ||
+    hasOwnKey_(data, "review_state");
+  const hasReviewNoteInput =
+    hasOwnKey_(payload, "reviewNote") ||
+    hasOwnKey_(item, "reviewNote") ||
+    hasOwnKey_(data, "reviewNote") ||
+    hasOwnKey_(payload, "note") ||
+    hasOwnKey_(item, "note") ||
+    hasOwnKey_(data, "note");
+  const hasReviewedAtInput =
+    hasOwnKey_(payload, "reviewedAt") ||
+    hasOwnKey_(item, "reviewedAt") ||
+    hasOwnKey_(data, "reviewedAt");
+  const hasReviewedByInput =
+    hasOwnKey_(payload, "reviewedBy") ||
+    hasOwnKey_(item, "reviewedBy") ||
+    hasOwnKey_(data, "reviewedBy");
+
   const reviewStatus = String(
-    payload.reviewStatus ||
-      item.reviewStatus ||
-      data.reviewStatus ||
-      payload.statusReview ||
-      item.statusReview ||
-      data.statusReview ||
-      payload.review_state ||
-      item.review_state ||
-      data.review_state ||
+    pickValue_("reviewStatus", "") ||
+      pickValue_("statusReview", "") ||
+      pickValue_("review_state", "") ||
       ""
   )
     .trim()
     .toLowerCase();
 
   const reviewNote = String(
-    payload.reviewNote || item.reviewNote || data.reviewNote || payload.note || item.note || data.note || ""
+    pickValue_("reviewNote", "") || pickValue_("note", "") || ""
   ).trim();
   const reviewedAt = String(
-    payload.reviewedAt || item.reviewedAt || data.reviewedAt || isoNow_()
+    pickValue_("reviewedAt", "") || isoNow_()
   ).trim();
   const reviewedBy = String(
-    payload.reviewedBy || item.reviewedBy || data.reviewedBy || payload.source || "admin-ui"
+    pickValue_("reviewedBy", "") || pickValue_("source", "") || "admin-ui"
   ).trim();
 
   const submissionSheet = ensureSheetByName_(IMPLANT_SUBMISSION_SHEET, IMPLANT_SUBMISSION_HEADERS);
@@ -1070,11 +1215,124 @@ function updateImplantUsageReviewStatus_(payload) {
   const noteCol = IMPLANT_SUBMISSION_HEADERS.indexOf("reviewNote");
   const reviewedAtCol = IMPLANT_SUBMISSION_HEADERS.indexOf("reviewedAt");
   const reviewedByCol = IMPLANT_SUBMISSION_HEADERS.indexOf("reviewedBy");
+  const operationDateCol = IMPLANT_SUBMISSION_HEADERS.indexOf("operationDate");
+  const doctorNameCol = IMPLANT_SUBMISSION_HEADERS.indexOf("doctorName");
+  const hospitalNameCol = IMPLANT_SUBMISSION_HEADERS.indexOf("hospitalName");
+  const repAssistCol = IMPLANT_SUBMISSION_HEADERS.indexOf("repAssist");
+  const systemNameCol = IMPLANT_SUBMISSION_HEADERS.indexOf("systemName");
+  const invoiceToCol = IMPLANT_SUBMISSION_HEADERS.indexOf("invoiceTo");
+  const patientNameCol = IMPLANT_SUBMISSION_HEADERS.indexOf("patientName");
+  const medrecCol = IMPLANT_SUBMISSION_HEADERS.indexOf("medrec");
+  const regionCol = IMPLANT_SUBMISSION_HEADERS.indexOf("region");
+  const checklistJsonCol = IMPLANT_SUBMISSION_HEADERS.indexOf("checklistJson");
+  const patientStickerDriveCol = IMPLANT_SUBMISSION_HEADERS.indexOf("patientStickerDriveId");
+  const patientStickerUrlCol = IMPLANT_SUBMISSION_HEADERS.indexOf("patientStickerUrl");
+  const officeDriveCol = IMPLANT_SUBMISSION_HEADERS.indexOf("officeDocumentationDriveId");
+  const officeUrlCol = IMPLANT_SUBMISSION_HEADERS.indexOf("officeDocumentationUrl");
+  const hospitalDriveCol = IMPLANT_SUBMISSION_HEADERS.indexOf("hospitalDocumentationDriveId");
+  const hospitalUrlCol = IMPLANT_SUBMISSION_HEADERS.indexOf("hospitalDocumentationUrl");
 
-  if (statusCol >= 0) row[statusCol] = reviewStatus;
-  if (noteCol >= 0) row[noteCol] = reviewNote;
-  if (reviewedAtCol >= 0) row[reviewedAtCol] = reviewedAt;
-  if (reviewedByCol >= 0) row[reviewedByCol] = reviewedBy;
+  function assignTextIfProvided_(columnIndex, value) {
+    if (columnIndex < 0) return;
+    if (value === undefined || value === null) return;
+    row[columnIndex] = String(value).trim();
+  }
+
+  assignTextIfProvided_(operationDateCol, pickValue_("operationDate", undefined));
+  assignTextIfProvided_(doctorNameCol, pickValue_("doctorName", undefined));
+  assignTextIfProvided_(hospitalNameCol, pickValue_("hospitalName", undefined));
+  assignTextIfProvided_(repAssistCol, pickValue_("repAssist", undefined));
+  assignTextIfProvided_(systemNameCol, pickValue_("systemName", undefined));
+  assignTextIfProvided_(invoiceToCol, pickValue_("invoiceTo", undefined));
+  assignTextIfProvided_(patientNameCol, pickValue_("patientName", undefined));
+  assignTextIfProvided_(medrecCol, pickValue_("medrec", undefined));
+  assignTextIfProvided_(regionCol, pickValue_("region", undefined));
+
+  const checklistJsonInput = pickValue_("checklistJson", undefined);
+  if (checklistJsonCol >= 0 && checklistJsonInput !== undefined && checklistJsonInput !== null) {
+    if (Array.isArray(checklistJsonInput)) {
+      row[checklistJsonCol] = JSON.stringify(checklistJsonInput);
+    } else {
+      const checklistRaw = String(checklistJsonInput || "").trim();
+      row[checklistJsonCol] = checklistRaw || "[]";
+    }
+  }
+
+  const patientStickerUpload = pickValue_("patientStickerUpload", null);
+  const officeDocumentationUpload = pickValue_("officeDocumentationUpload", null);
+  const hospitalDocumentationUpload = pickValue_("hospitalDocumentationUpload", null);
+  const deleteOldPatientSticker = toBoolean_(pickValue_("deleteOldPatientSticker", false), false);
+  const deleteOldOfficeDocumentation = toBoolean_(
+    pickValue_("deleteOldOfficeDocumentation", false),
+    false
+  );
+  const deleteOldHospitalDocumentation = toBoolean_(
+    pickValue_("deleteOldHospitalDocumentation", false),
+    false
+  );
+
+  const oldPatientStickerDriveId =
+    patientStickerDriveCol >= 0 ? String(row[patientStickerDriveCol] || "") : "";
+  const oldOfficeDriveId = officeDriveCol >= 0 ? String(row[officeDriveCol] || "") : "";
+  const oldHospitalDriveId = hospitalDriveCol >= 0 ? String(row[hospitalDriveCol] || "") : "";
+
+  const patientSticker = uploadImagePayloadIfAny_(
+    patientStickerUpload,
+    `patient-sticker-${submissionId}`
+  );
+  const officeDocumentation = uploadImagePayloadIfAny_(
+    officeDocumentationUpload,
+    `office-documentation-${submissionId}`
+  );
+  const hospitalDocumentation = uploadImagePayloadIfAny_(
+    hospitalDocumentationUpload,
+    `hospital-documentation-${submissionId}`
+  );
+
+  if (patientSticker.driveId) {
+    if (patientStickerDriveCol >= 0) row[patientStickerDriveCol] = patientSticker.driveId;
+    if (patientStickerUrlCol >= 0) row[patientStickerUrlCol] = patientSticker.imageSrc;
+    if (
+      deleteOldPatientSticker &&
+      oldPatientStickerDriveId &&
+      oldPatientStickerDriveId !== patientSticker.driveId
+    ) {
+      trashDriveFileSafe_(oldPatientStickerDriveId);
+    }
+  }
+
+  if (officeDocumentation.driveId) {
+    if (officeDriveCol >= 0) row[officeDriveCol] = officeDocumentation.driveId;
+    if (officeUrlCol >= 0) row[officeUrlCol] = officeDocumentation.imageSrc;
+    if (
+      deleteOldOfficeDocumentation &&
+      oldOfficeDriveId &&
+      oldOfficeDriveId !== officeDocumentation.driveId
+    ) {
+      trashDriveFileSafe_(oldOfficeDriveId);
+    }
+  }
+
+  if (hospitalDocumentation.driveId) {
+    if (hospitalDriveCol >= 0) row[hospitalDriveCol] = hospitalDocumentation.driveId;
+    if (hospitalUrlCol >= 0) row[hospitalUrlCol] = hospitalDocumentation.imageSrc;
+    if (
+      deleteOldHospitalDocumentation &&
+      oldHospitalDriveId &&
+      oldHospitalDriveId !== hospitalDocumentation.driveId
+    ) {
+      trashDriveFileSafe_(oldHospitalDriveId);
+    }
+  }
+
+  if (statusCol >= 0 && hasReviewStatusInput) row[statusCol] = reviewStatus;
+  if (noteCol >= 0 && hasReviewNoteInput) row[noteCol] = reviewNote;
+  if (reviewedAtCol >= 0 && (hasReviewedAtInput || hasReviewStatusInput || hasReviewNoteInput)) {
+    row[reviewedAtCol] = reviewedAt;
+  }
+  if (reviewedByCol >= 0 && (hasReviewedByInput || hasReviewStatusInput || hasReviewNoteInput)) {
+    row[reviewedByCol] = reviewedBy;
+  }
 
   submissionSheet
     .getRange(rowIndex, 1, 1, IMPLANT_SUBMISSION_HEADERS.length)
@@ -1085,10 +1343,15 @@ function updateImplantUsageReviewStatus_(payload) {
     status: "success",
     message: "Review status submission berhasil diperbarui.",
     submissionId: submissionId,
-    reviewStatus: reviewStatus,
-    reviewNote: reviewNote,
-    reviewedAt: reviewedAt,
-    reviewedBy: reviewedBy,
+    reviewStatus: statusCol >= 0 ? String(row[statusCol] || "") : "",
+    reviewNote: noteCol >= 0 ? String(row[noteCol] || "") : "",
+    reviewedAt: reviewedAtCol >= 0 ? String(row[reviewedAtCol] || "") : "",
+    reviewedBy: reviewedByCol >= 0 ? String(row[reviewedByCol] || "") : "",
+    officeDocumentationDriveId: officeDriveCol >= 0 ? String(row[officeDriveCol] || "") : "",
+    officeDocumentationUrl: officeUrlCol >= 0 ? String(row[officeUrlCol] || "") : "",
+    hospitalDocumentationDriveId:
+      hospitalDriveCol >= 0 ? String(row[hospitalDriveCol] || "") : "",
+    hospitalDocumentationUrl: hospitalUrlCol >= 0 ? String(row[hospitalUrlCol] || "") : "",
   };
 }
 
@@ -1675,18 +1938,33 @@ function findRowById_(sheet, id) {
 }
 
 function uploadImageFromDataUrl_(item) {
-  const rawDataUrl = String(item.imageDataUrl || "");
-  const matched = rawDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!matched) {
-    throw new Error("imageDataUrl tidak valid.");
+  const rawDataUrl = String(item.imageDataUrl || item.dataUrl || "").trim();
+  const rawBase64 = String(item.imageBase64 || item.base64 || "").trim();
+  const dataUrlMatch = rawDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  const base64DataUrlMatch = rawBase64.match(/^data:([^;]+);base64,(.+)$/);
+  if (!dataUrlMatch && !rawBase64) {
+    throw new Error("imageDataUrl/imageBase64 tidak valid.");
   }
 
-  const mimeType = String(item.mimeType || matched[1] || "application/octet-stream");
-  const base64 = matched[2];
+  const explicitMimeType = String(
+    item.mimeType || item.contentType || "",
+  ).trim();
+  const mimeType = String(
+    explicitMimeType ||
+      (dataUrlMatch && dataUrlMatch[1]) ||
+      (base64DataUrlMatch && base64DataUrlMatch[1]) ||
+      "image/png",
+  );
+  const base64 = dataUrlMatch
+    ? dataUrlMatch[2]
+    : base64DataUrlMatch
+      ? base64DataUrlMatch[2]
+      : rawBase64.replace(/^base64,/, "");
   const bytes = Utilities.base64Decode(base64);
   const extension = getExtensionByMime_(mimeType);
   const fileName =
-    String(item.fileName || "").trim() || `image-${new Date().getTime()}.${extension}`;
+    String(item.fileName || item.filename || "").trim() ||
+    `image-${new Date().getTime()}.${extension}`;
 
   const blob = Utilities.newBlob(bytes, mimeType, fileName);
   const folder = DRIVE_FOLDER_ID ? DriveApp.getFolderById(DRIVE_FOLDER_ID) : DriveApp.getRootFolder();
@@ -1744,7 +2022,13 @@ function isImplantUsagePayload_(payload) {
   const hasSlots = Array.isArray(data.slots);
   const hasSignatures = Array.isArray(data.signatures);
   const hasSticker = Boolean(data.patientStickerUpload && typeof data.patientStickerUpload === "object");
-  return hasSlots || hasSignatures || hasSticker;
+  const hasOfficePhoto = Boolean(
+    data.officeDocumentationUpload && typeof data.officeDocumentationUpload === "object"
+  );
+  const hasHospitalPhoto = Boolean(
+    data.hospitalDocumentationUpload && typeof data.hospitalDocumentationUpload === "object"
+  );
+  return hasSlots || hasSignatures || hasSticker || hasOfficePhoto || hasHospitalPhoto;
 }
 
 function trashDriveFileSafe_(driveId) {
@@ -1807,4 +2091,287 @@ function jsonOutput_(payload) {
 
 function getErrorMessage_(error) {
   return error && error.message ? String(error.message) : String(error);
+}
+
+// ─── Patient Cases ─────────────────────────────────────────────────────────────
+
+function readPatientCases_() {
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  var values = sheet.getRange(2, 1, lastRow - 1, PATIENT_CASES_HEADERS.length).getValues();
+  return values.map(function (row) {
+    var actualSizeRaw = row[16];
+    var postOpHkaRaw = row[17];
+    return {
+      id: String(row[0] || ""),
+      createdAt: String(row[1] || ""),
+      patientName: String(row[2] || ""),
+      procedure: String(row[3] || ""),
+      notes: String(row[4] || ""),
+      imageName: String(row[5] || ""),
+      measurementCount: Number(row[6] || 0),
+      templateCount: Number(row[7] || 0),
+      hkaSummaryJson: String(row[8] || "[]"),
+      implantLabel: String(row[9] || ""),
+      snapshotDriveId: String(row[10] || ""),
+      snapshotUrl: String(row[11] || ""),
+      source: String(row[12] || ""),
+      preOpSizeNum: row[13] !== "" && row[13] !== null ? Number(row[13]) || null : null,
+      operationDate: String(row[14] || ""),
+      actualImplantLabel: String(row[15] || ""),
+      actualSizeNum: actualSizeRaw !== "" && actualSizeRaw !== null ? Number(actualSizeRaw) || null : null,
+      postOpHka: postOpHkaRaw !== "" && postOpHkaRaw !== null ? Number(postOpHkaRaw) || null : null,
+      postOpNotes: String(row[18] || ""),
+      postOpUpdatedAt: String(row[19] || ""),
+      cupAssessmentJson: String(row[20] || ""),
+      postOpPhotosJson: String(row[21] || ""),
+      prePhotosJson: String(row[22] || "[]"),
+    };
+  }).filter(function (item) { return item.id; });
+}
+
+function createPatientCase_(payload) {
+  var data = payload && payload.data && typeof payload.data === "object" ? payload.data : (payload || {});
+  var now = isoNow_();
+  var id = String(data.id || "").trim() || Utilities.getUuid();
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var existingRowIndex = findRowById_(sheet, id);
+  if (existingRowIndex >= 2) {
+    var existingRow = sheet.getRange(existingRowIndex, 1, 1, PATIENT_CASES_HEADERS.length).getValues()[0];
+    return {
+      ok: true,
+      status: "success",
+      message: "Kasus pasien sudah tersedia.",
+      id: id,
+      createdAt: String(existingRow[1] || now),
+      snapshotDriveId: String(existingRow[10] || ""),
+      snapshotUrl: String(existingRow[11] || ""),
+      existing: true,
+    };
+  }
+
+  var snapshotDriveId = "";
+  var snapshotUrl = "";
+  if (data.snapshotDataUrl && typeof data.snapshotDataUrl === "string" && data.snapshotDataUrl.length > 100) {
+    try {
+      snapshotDriveId = uploadImageFromDataUrl_({
+        imageDataUrl: data.snapshotDataUrl,
+        fileName: "case-snapshot-" + id + ".jpg",
+        mimeType: "image/jpeg",
+      });
+      if (snapshotDriveId) snapshotUrl = driveIdToImageUrl_(snapshotDriveId);
+    } catch (_ignored) {}
+  }
+
+  var hkaSummaryJson = "[]";
+  if (Array.isArray(data.hkaSummary)) {
+    hkaSummaryJson = JSON.stringify(data.hkaSummary);
+  } else if (typeof data.hkaSummaryJson === "string") {
+    hkaSummaryJson = data.hkaSummaryJson;
+  }
+
+  var row = [
+    id, now,
+    String(data.patientName || ""),
+    String(data.procedure || ""),
+    String(data.notes || ""),
+    String(data.imageName || ""),
+    Number(data.measurementCount || 0),
+    Number(data.templateCount || 0),
+    hkaSummaryJson,
+    String(data.implantLabel || ""),
+    snapshotDriveId,
+    snapshotUrl,
+    String(data.source || "zakzav-templating"),
+    data.preOpSizeNum != null ? Number(data.preOpSizeNum) : "",
+    "", "", "", "", "", "",
+    String(data.cupAssessmentJson || ""),
+    "[]",
+    "[]",
+  ];
+  sheet.appendRow(row);
+
+  return {
+    ok: true,
+    status: "success",
+    message: "Kasus pasien berhasil disimpan.",
+    id: id,
+    createdAt: now,
+    snapshotDriveId: snapshotDriveId,
+    snapshotUrl: snapshotUrl,
+  };
+}
+
+function updatePatientCase_(payload) {
+  var id = String((payload && payload.id) || "").trim();
+  if (!id) throw new Error("id wajib diisi untuk update kasus pasien.");
+
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var rowIndex = findRowById_(sheet, id);
+  if (rowIndex < 2) throw new Error("Kasus pasien id " + id + " tidak ditemukan.");
+
+  var row = sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).getValues()[0];
+  var data = (payload && payload.data && typeof payload.data === "object") ? payload.data : (payload || {});
+  var now = isoNow_();
+
+  // Pre-op fields (editable from EditCaseModal)
+  if (data.patientName !== undefined) row[2] = String(data.patientName || "");
+  if (data.procedure !== undefined) row[3] = String(data.procedure || "");
+  if (data.notes !== undefined) row[4] = String(data.notes || "");
+  if (data.implantLabel !== undefined) row[9] = String(data.implantLabel || "");
+  if (data.preOpSizeNum !== undefined && data.preOpSizeNum !== null && data.preOpSizeNum !== "") {
+    row[13] = Number(data.preOpSizeNum);
+  }
+  if (data.operationDate !== undefined) row[14] = String(data.operationDate || "");
+  if (data.actualImplantLabel !== undefined) row[15] = String(data.actualImplantLabel || "");
+  if (data.actualSizeNum !== undefined && data.actualSizeNum !== null && data.actualSizeNum !== "") {
+    row[16] = Number(data.actualSizeNum);
+  }
+  if (data.postOpHka !== undefined && data.postOpHka !== null && data.postOpHka !== "") {
+    row[17] = Number(data.postOpHka);
+  }
+  if (data.postOpNotes !== undefined) row[18] = String(data.postOpNotes || "");
+  row[19] = now;
+  // cupAssessmentJson (row[20]) tidak diupdate di sini — diset saat createCase
+
+  // Upload foto post-op ke Drive, simpan URL-nya (bukan dataURL mentah)
+  if (Array.isArray(data.postOpPhotos)) {
+    var existingUrls = [];
+    try { existingUrls = JSON.parse(String(row[21] || "[]")); } catch (_e) {}
+    var photoUrls = [];
+    for (var i = 0; i < data.postOpPhotos.length; i++) {
+      var photoSrc = String(data.postOpPhotos[i] || "");
+      if (photoSrc.startsWith("data:image")) {
+        try {
+          var driveId = uploadImageFromDataUrl_({
+            imageDataUrl: photoSrc,
+            fileName: "postop-" + id + "-" + i + ".jpg",
+            mimeType: "image/jpeg",
+          });
+          if (driveId) photoUrls.push(driveIdToImageUrl_(driveId));
+        } catch (_err) { /* lewati foto yang gagal */ }
+      } else if (photoSrc.startsWith("http")) {
+        photoUrls.push(photoSrc); // sudah URL Drive, pertahankan
+      }
+    }
+    row[21] = JSON.stringify(photoUrls);
+  }
+
+  // Upload foto pre-op tambahan ke Drive, simpan URL-nya (bukan dataURL mentah)
+  if (Array.isArray(data.prePhotos)) {
+    var prePhotoUrls = [];
+    for (var j = 0; j < data.prePhotos.length; j++) {
+      var prePhotoSrc = String(data.prePhotos[j] || "");
+      if (prePhotoSrc.startsWith("data:image")) {
+        try {
+          var preDriveId = uploadImageFromDataUrl_({
+            imageDataUrl: prePhotoSrc,
+            fileName: "preop-" + id + "-" + j + ".jpg",
+            mimeType: "image/jpeg",
+          });
+          if (preDriveId) prePhotoUrls.push(driveIdToImageUrl_(preDriveId));
+        } catch (_err) { /* lewati foto yang gagal */ }
+      } else if (prePhotoSrc.startsWith("http")) {
+        prePhotoUrls.push(prePhotoSrc); // sudah URL Drive, pertahankan
+      }
+    }
+    row[22] = JSON.stringify(prePhotoUrls);
+  }
+
+  sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).setValues([row]);
+  return {
+    ok: true,
+    status: "success",
+    id: id,
+    postOpUpdatedAt: now,
+    postOpPhotosJson: String(row[21] || "[]"),
+    prePhotosJson: String(row[22] || "[]"),
+  };
+}
+
+function deletePatientCase_(payload) {
+  var id = String((payload && payload.id) || (payload && payload.item && payload.item.id) || "").trim();
+  if (!id) throw new Error("id wajib diisi untuk delete kasus pasien.");
+
+  var sheet = ensureSheetByName_(PATIENT_CASES_SHEET, PATIENT_CASES_HEADERS);
+  var rowIndex = findRowById_(sheet, id);
+  if (rowIndex < 2) throw new Error("Kasus pasien id " + id + " tidak ditemukan.");
+
+  var row = sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).getValues()[0];
+  var snapshotDriveId = String(row[10] || "");
+  sheet.deleteRow(rowIndex);
+
+  if (payload.deleteSnapshot && snapshotDriveId) {
+    trashDriveFileSafe_(snapshotDriveId);
+  }
+
+  return { ok: true, status: "success", id: id };
+}
+
+// ─── Library Implant: List isi folder Drive ────────────────────────────────────
+// Dipanggil dari doGet dengan action=list_drive_folder&folderId=...&withFiles=true
+
+function listDriveFolder_(folderId, withFiles) {
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+
+    var result = {
+      ok: true,
+      id: folder.getId(),
+      name: folder.getName(),
+      subfolders: [],
+      files: []
+    };
+
+    // List subfolder (kategori implant)
+    var subIter = folder.getFolders();
+    while (subIter.hasNext()) {
+      var sub = subIter.next();
+      var subData = {
+        id: sub.getId(),
+        name: sub.getName(),
+        files: []
+      };
+
+      // Jika withFiles=true, ambil juga gambar di dalam subfolder ini
+      if (withFiles) {
+        var fIter = sub.getFiles();
+        while (fIter.hasNext()) {
+          var f = fIter.next();
+          var mime = f.getMimeType();
+          if (mime && mime.indexOf("image/") === 0) {
+            subData.files.push({
+              id: f.getId(),
+              name: f.getName(),
+              mimeType: mime
+            });
+          }
+        }
+      }
+
+      result.subfolders.push(subData);
+    }
+
+    // Gambar langsung di root folder ini (jika withFiles=true)
+    if (withFiles) {
+      var rootIter = folder.getFiles();
+      while (rootIter.hasNext()) {
+        var rf = rootIter.next();
+        var rm = rf.getMimeType();
+        if (rm && rm.indexOf("image/") === 0) {
+          result.files.push({
+            id: rf.getId(),
+            name: rf.getName(),
+            mimeType: rm
+          });
+        }
+      }
+    }
+
+    return result;
+
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
 }

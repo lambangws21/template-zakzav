@@ -1404,6 +1404,11 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
   const [opening, setOpening] = useState(false);
   const [actionError, setActionError] = useState("");
   const [prePhotoBusy, setPrePhotoBusy] = useState(false);
+  // Save feedback shown INSIDE this modal — the global cloudError/syncOk
+  // toasts render in the background list view, hidden behind this
+  // full-screen overlay (z-[9990]), so adding/removing a photo looked like
+  // it did nothing even when the save (or its failure) actually happened.
+  const [prePhotoStatus, setPrePhotoStatus] = useState(null); // { type: "saved" | "error", message? }
   const prePhotoInputRef = useRef(null);
   // Compare tab: indices into `availableImages` ([preOp, ...postOp]) for
   // each side of the 2-up view — was hardcoded to preOp vs postOp[0] with
@@ -1426,6 +1431,7 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
     setCompareSlotA(0);
     setCompareSlotB(1);
     setCompareFullscreen(false);
+    setPrePhotoStatus(null);
   }, [caseData?.id]);
 
   // Reset both panes' zoom whenever the fullscreen compare opens or either
@@ -1493,12 +1499,14 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
     const valid = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
     if (!valid.length) return;
     setPrePhotoBusy(true);
+    setPrePhotoStatus(null);
     try {
       const compressed = await Promise.all(
         valid.map(async (f) => compressPrePhoto(await readPrePhotoAsDataUrl(f)))
       );
       const next = [...(caseData.prePhotos || []), ...compressed].slice(0, 10);
-      await onPrePhotosChange?.(caseData.id, next);
+      const result = await onPrePhotosChange?.(caseData.id, next);
+      reportPrePhotoResult(result);
     } finally {
       setPrePhotoBusy(false);
     }
@@ -1506,7 +1514,18 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
 
   async function handleRemovePrePhoto(idx) {
     const next = (caseData.prePhotos || []).filter((_, i) => i !== idx);
-    await onPrePhotosChange?.(caseData.id, next);
+    setPrePhotoStatus(null);
+    const result = await onPrePhotosChange?.(caseData.id, next);
+    reportPrePhotoResult(result);
+  }
+
+  function reportPrePhotoResult(result) {
+    if (result?.ok === false) {
+      setPrePhotoStatus({ type: "error", message: result.error || "Gagal menyimpan foto." });
+      return;
+    }
+    setPrePhotoStatus({ type: "saved" });
+    setTimeout(() => setPrePhotoStatus((prev) => (prev?.type === "saved" ? null : prev)), 2500);
   }
 
   async function openActiveImage() {
@@ -1866,11 +1885,21 @@ function CaseDetailModal({ caseData, onClose, onMinimize, onEdit, onPostOp, onLo
                     <button type="button" onClick={() => prePhotoInputRef.current?.click()} disabled={prePhotoBusy || (caseData.prePhotos || []).length >= 10}
                       className="flex min-h-8 items-center gap-1 rounded-md border border-violet-600/40 bg-violet-600/10 px-2.5 text-[8px] font-black text-violet-300 disabled:opacity-50 sm:min-h-9 sm:px-3 sm:text-[9px]">
                       {prePhotoBusy ? <Loader2 className="h-2.5 w-2.5 animate-spin sm:h-3 sm:w-3" /> : <ImagePlus className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
-                      Tambah Foto
+                      {prePhotoBusy ? "Menyimpan..." : "Tambah Foto"}
                     </button>
                     <input ref={prePhotoInputRef} type="file" accept="image/*" multiple className="hidden"
                       onChange={(e) => { handleAddPrePhotos(e.target.files); e.target.value = ""; }} />
                   </div>
+                  {prePhotoStatus?.type === "saved" && (
+                    <p className="mb-2 flex items-center gap-1.5 rounded-md border border-emerald-600/30 bg-emerald-600/10 px-2.5 py-1.5 text-[9px] font-black text-emerald-300">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" /> Foto tersimpan.
+                    </p>
+                  )}
+                  {prePhotoStatus?.type === "error" && (
+                    <p role="alert" className="mb-2 flex items-center gap-1.5 rounded-md border border-red-600/30 bg-red-600/10 px-2.5 py-1.5 text-[9px] font-black text-red-300">
+                      <AlertCircle className="h-3 w-3 shrink-0" /> {prePhotoStatus.message}
+                    </p>
+                  )}
                   {(caseData.prePhotos || []).length > 0 ? (
                     <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
                       {(caseData.prePhotos || []).map((photo, idx) => {
@@ -2238,7 +2267,7 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
         prePhotos: (c.prePhotos || []).filter((p) => typeof p === "string" && p.startsWith("http")),
       })));
 
-      if (!hasCloud) return;
+      if (!hasCloud) return { ok: true };
       try {
         const targetCase = updated.find((item) => item.id === id);
         let remote = null;
@@ -2264,9 +2293,15 @@ function PatientCaseManagerContent({ isOpen, onClose, currentSession, onLoadAsLa
         });
         setSyncOk(true);
         setTimeout(() => setSyncOk(false), 2500);
+        return { ok: true };
       } catch (err) {
+        // These toasts render in the main list view, which sits BEHIND
+        // CaseDetailModal (z-[9990]) — invisible while the photo gallery
+        // is open. Also return the result so the modal can show its own
+        // inline feedback instead of silently looking like nothing happened.
         setCloudError(`Gagal upload foto ke cloud: ${err.message}`);
         setTimeout(() => setCloudError(""), 4000);
+        return { ok: false, error: err.message || "Gagal upload foto ke cloud." };
       }
     },
     [cases, hasCloud],

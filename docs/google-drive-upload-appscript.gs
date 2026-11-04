@@ -14,6 +14,7 @@ const PATIENT_CASES_HEADERS = [
   "actualSizeNum", "postOpHka", "postOpNotes", "postOpUpdatedAt",
   "cupAssessmentJson",
   "postOpPhotosJson",
+  "prePhotosJson",
 ];
 
 const IMPLANT_SUBMISSION_SHEET = "ImplantUsageSubmissions";
@@ -2125,6 +2126,7 @@ function readPatientCases_() {
       postOpUpdatedAt: String(row[19] || ""),
       cupAssessmentJson: String(row[20] || ""),
       postOpPhotosJson: String(row[21] || ""),
+      prePhotosJson: String(row[22] || "[]"),
     };
   }).filter(function (item) { return item.id; });
 }
@@ -2185,6 +2187,7 @@ function createPatientCase_(payload) {
     data.preOpSizeNum != null ? Number(data.preOpSizeNum) : "",
     "", "", "", "", "", "",
     String(data.cupAssessmentJson || ""),
+    "[]",
     "[]",
   ];
   sheet.appendRow(row);
@@ -2255,8 +2258,36 @@ function updatePatientCase_(payload) {
     row[21] = JSON.stringify(photoUrls);
   }
 
+  // Upload foto pre-op tambahan ke Drive, simpan URL-nya (bukan dataURL mentah)
+  if (Array.isArray(data.prePhotos)) {
+    var prePhotoUrls = [];
+    for (var j = 0; j < data.prePhotos.length; j++) {
+      var prePhotoSrc = String(data.prePhotos[j] || "");
+      if (prePhotoSrc.startsWith("data:image")) {
+        try {
+          var preDriveId = uploadImageFromDataUrl_({
+            imageDataUrl: prePhotoSrc,
+            fileName: "preop-" + id + "-" + j + ".jpg",
+            mimeType: "image/jpeg",
+          });
+          if (preDriveId) prePhotoUrls.push(driveIdToImageUrl_(preDriveId));
+        } catch (_err) { /* lewati foto yang gagal */ }
+      } else if (prePhotoSrc.startsWith("http")) {
+        prePhotoUrls.push(prePhotoSrc); // sudah URL Drive, pertahankan
+      }
+    }
+    row[22] = JSON.stringify(prePhotoUrls);
+  }
+
   sheet.getRange(rowIndex, 1, 1, PATIENT_CASES_HEADERS.length).setValues([row]);
-  return { ok: true, status: "success", id: id, postOpUpdatedAt: now, postOpPhotosJson: String(row[21] || "[]") };
+  return {
+    ok: true,
+    status: "success",
+    id: id,
+    postOpUpdatedAt: now,
+    postOpPhotosJson: String(row[21] || "[]"),
+    prePhotosJson: String(row[22] || "[]"),
+  };
 }
 
 function deletePatientCase_(payload) {
