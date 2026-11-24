@@ -6,7 +6,7 @@ import { Clock, LogOut, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { logOut } from "@/lib/authServices";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/", "/login"];
 
 export default function AppAuthGate({ children }) {
   const { user, loading, userStatus, authError, retryAuth } = useAuth();
