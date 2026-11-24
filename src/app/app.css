@@ -109,10 +109,45 @@ body {
 
 /* Layer controls stay visually close to the canvas without heavy elevation. */
 .layer-floating-toolbar {
+  gap: 4px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 4px 6px;
   border: 1px solid rgba(148, 163, 184, 0.55);
   background: rgba(248, 250, 252, 0.92);
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
   backdrop-filter: blur(10px);
+}
+
+.layer-floating-toolbar > button:first-child {
+  max-width: 148px;
+  min-height: 28px;
+  gap: 6px;
+  margin-right: 0;
+  padding: 2px 5px;
+}
+
+.layer-floating-toolbar > button:first-child > span:first-child {
+  width: 24px;
+  height: 24px;
+}
+
+.layer-floating-toolbar > button:first-child > span:last-child {
+  max-width: 92px;
+  font-size: 9px;
+  line-height: 1.1;
+}
+
+.layer-floating-toolbar .layer-toolbar-action {
+  min-height: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  font-size: 8px;
+  line-height: 1;
+}
+
+.layer-floating-toolbar .layer-toolbar-action > span {
+  font-size: inherit;
 }
 
 .layer-template-popover {
@@ -126,9 +161,13 @@ body {
 }
 
 .simple-layer-settings-modal {
+  font-size: 11px;
+  line-height: 1.3;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
   scrollbar-width: thin;
 }
+
+.simple-layer-settings-modal h2 { font-size: 13px; line-height: 1.25; }
 
 .simple-layer-settings-modal > div:first-child {
   position: sticky;
@@ -142,6 +181,188 @@ body {
 
 .simple-layer-settings-modal .shadow-sm {
   box-shadow: none !important;
+}
+
+.simple-layer-settings-modal button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+@media (min-width: 768px) {
+  .layer-settings-simple-overlay {
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 24px !important;
+    background: rgba(2, 6, 23, 0.2);
+    backdrop-filter: blur(2px);
+  }
+
+  .simple-layer-settings-modal {
+    display: flex;
+    width: min(760px, calc(100vw - 48px)) !important;
+    height: min(72dvh, 680px) !important;
+    max-height: min(72dvh, 680px) !important;
+    flex-direction: column;
+    overflow: hidden !important;
+    padding: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  .simple-layer-settings-modal > div:first-child {
+    position: sticky;
+    top: -16px;
+    flex: 0 0 auto;
+    margin: -16px -16px 12px;
+    padding: 12px 16px;
+    background: var(--soft-raised-bg);
+  }
+
+  .layer-settings-simple-content {
+    display: grid;
+    min-height: 0;
+    flex: 1 1 auto;
+    grid-template-columns: minmax(210px, 0.68fr) minmax(0, 1.65fr);
+    grid-auto-flow: row;
+    align-content: start;
+    gap: 9px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.65) transparent;
+  }
+
+  .layer-settings-simple-target {
+    grid-column: 1 / -1;
+  }
+
+  .layer-settings-simple-actions {
+    grid-column: 1;
+    grid-row: 2 / span 4;
+    align-self: start;
+  }
+
+  .layer-settings-simple-content > :not(.layer-settings-simple-target):not(.layer-settings-simple-actions) {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .layer-settings-simple-actions > div:last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .layer-settings-simple-actions button {
+    min-width: 0;
+    min-height: 46px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .layer-settings-simple-actions button span {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .layer-settings-simple-advanced,
+  .layer-settings-simple-free-line,
+  .layer-settings-simple-bend,
+  .layer-settings-simple-transform {
+    min-width: 0;
+    align-self: start;
+  }
+
+  .layer-settings-simple-transform > div:last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .layer-settings-desktop-modal > div:first-child {
+    flex: 0 0 auto;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--soft-border);
+  }
+
+  .layer-settings-desktop-content {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.65) transparent;
+  }
+
+  @media (min-width: 900px) {
+    .layer-settings-desktop-content {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .layer-settings-desktop-transform {
+      grid-template-columns: minmax(170px, 0.55fr) minmax(0, 1.45fr);
+      gap: 12px;
+    }
+  }
+
+  .layer-settings-desktop-target {
+    flex: 0 0 auto;
+  }
+
+  .layer-settings-desktop-section {
+    min-width: 0;
+    flex: 0 0 auto;
+    border-top: 1px solid var(--soft-border);
+    padding-top: 10px;
+  }
+
+  .layer-settings-desktop-tabs {
+    flex: 0 0 auto;
+    width: fit-content;
+    min-width: min(100%, 360px);
+  }
+
+  .layer-settings-desktop-actions {
+    flex: 0 0 auto;
+  }
+
+  .layer-settings-desktop-transform {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.6fr);
+    align-items: start;
+  }
+
+  .layer-settings-desktop-transform > :last-child {
+    min-width: 0;
+  }
+
+  .layer-settings-desktop-actions > section > div:last-child {
+    gap: 8px;
+  }
+
+  .layer-settings-desktop-actions button {
+    min-height: 48px;
+    border-radius: 10px;
+  }
+
+  .layer-settings-desktop-transform > :first-child,
+  .layer-settings-desktop-transform > :last-child {
+    min-width: 0;
+    border-color: var(--soft-border);
+    border-radius: 14px;
+    background: var(--soft-surface-bg);
+    box-shadow: none;
+  }
+
 }
 
 .hka-result-modal {
@@ -545,6 +766,11 @@ html {
   background: var(--soft-float-bg) !important;
   color: var(--soft-text) !important;
   box-shadow: var(--soft-shadow-float) !important;
+}
+
+.mobile-adjustment-slider {
+  touch-action: pan-x;
+  cursor: pointer;
 }
 
 .mobile-manager-card > div:first-child {
@@ -1001,41 +1227,146 @@ summary::-webkit-details-marker { display: none }
 [data-theme="dark"] [data-mobj] .text-slate-400 { color: #64748b !important; }
 
 @media (max-width: 699px) {
+  .layer-floating-toolbar {
+    gap: 3px;
+    padding: 3px 4px;
+  }
+  .layer-floating-toolbar > button:first-child { max-width: 128px; min-height: 28px; }
+  .layer-floating-toolbar > button:first-child > span:last-child { max-width: 72px; font-size: 8px; }
+  .layer-floating-toolbar .layer-toolbar-action { min-height: 30px; height: 30px; min-width: 30px; }
   .simple-layer-settings-modal {
-    width: min(254px, calc(100vw - 16px));
-    max-height: min(28dvh, 236px);
-    padding: 5px;
+    width: min(232px, calc(100vw - 16px));
+    max-height: min(26dvh, 212px);
+    padding: 4px;
     border-radius: 8px;
+    font-size: 9px;
+    line-height: 1.25;
     overscroll-behavior: contain;
   }
-  .simple-layer-settings-modal > div:first-child { top: -6px; margin: -6px -6px 4px; padding: 6px; }
-  .implant-template-modal, .templating-wizard-modal { max-height: 38dvh; max-width: 300px; border-radius: 8px; }
+  .simple-layer-settings-modal > div:first-child { top: -5px; margin: -5px -5px 3px; padding: 5px; }
   .layer-template-popover { max-height: 30dvh; overflow-y: auto; overscroll-behavior: contain; }
   .advanced-setup-panel, .advanced-inspector-panel { max-height: 38dvh; border-radius: 8px 8px 0 0; gap: 6px; }
-  .ms-card { max-width: 320px; max-height: 40dvh; overflow-y: auto; border-radius: 8px; }
-  .ms-card > div:last-child { padding: 12px; }
   .cw-card { width: min(280px, calc(100vw - 16px)); max-height: 32dvh; overflow-y: auto; padding: 6px; border-radius: 8px; }
-  .cw-card h2, .simple-layer-settings-modal h2, .implant-template-modal h2, .templating-wizard-modal h2 { font-size: 11px; line-height: 1.3; }
-  .cw-card label, .simple-layer-settings-modal label { font-size: 9px; line-height: 1.35; }
-  .cw-card button, .simple-layer-settings-modal button { font-size: 9px; }
-  .ms-card { max-width: 280px; max-height: 36dvh; }
-  .ms-card .ms-title { font-size: 11px; }
-  .ms-card .ms-desc { font-size: 10px; }
-  :is(.implant-template-modal, .templating-wizard-modal, .layer-template-popover,
+  .cw-card h2 { font-size: 11px; line-height: 1.3; }
+  .simple-layer-settings-modal h2 { font-size: 10px; line-height: 1.25; }
+  .cw-card label { font-size: 9px; line-height: 1.35; }
+  .simple-layer-settings-modal label { font-size: 8px; line-height: 1.25; }
+  .cw-card button { font-size: 9px; }
+  .simple-layer-settings-modal button { font-size: 8px; }
+  :is(.layer-template-popover,
       .layer-floating-toolbar, .advanced-setup-panel, .advanced-inspector-panel, [data-mobj]) {
-    font-size: 10px;
-    line-height: 1.35;
-  }
-  :is(.implant-template-modal, .templating-wizard-modal, .layer-template-popover,
-      .layer-floating-toolbar, .advanced-setup-panel, .advanced-inspector-panel, [data-mobj]) :is(button, label) {
     font-size: 9px;
-    line-height: 1.35;
+    line-height: 1.3;
   }
-  :is(.implant-template-modal, .templating-wizard-modal, .layer-template-popover,
+  :is(.layer-template-popover,
+      .layer-floating-toolbar, .advanced-setup-panel, .advanced-inspector-panel, [data-mobj]) :is(button, label) {
+    font-size: 8px;
+    line-height: 1.3;
+  }
+  :is(.layer-template-popover,
       .simple-layer-settings-modal, .cw-card, [data-mobj]) button > span { font-size: inherit; }
-  :is(.implant-template-modal, .templating-wizard-modal, .cw-card, .simple-layer-settings-modal) p {
+  :is(.cw-card, .simple-layer-settings-modal) p {
     font-size: 10px;
     line-height: 1.35;
+  }
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .hka-side-modal {
+    max-width: 320px;
+    max-height: min(76dvh, calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 10px;
+    border-radius: 14px;
+  }
+  .hka-side-modal #hka-modal-title { font-size: 15px; }
+  .hka-side-modal p { line-height: 1.35; }
+  .hka-side-modal button {
+    min-height: 32px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    touch-action: manipulation;
+  }
+  .hka-side-modal > div:first-child button { width: 32px; height: 32px; }
+  .hka-side-options { margin-top: 8px; padding: 4px; border-radius: 10px; }
+  .hka-side-mode { margin-top: 8px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .hka-side-mode > div { padding: 4px 6px; line-height: 1.35; }
+  .hka-side-actions { margin-top: 8px; grid-template-columns: minmax(0, 1fr) auto; }
+  .ms-backdrop {
+    padding: max(12px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+  .ms-card[role="dialog"] {
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    border-radius: 18px;
+    background: var(--glass-base) !important;
+  }
+  .ms-card > div:last-child { padding: 16px; }
+  .ms-card .ms-divider { flex-wrap: wrap; }
+  .ms-card button { min-height: 44px; touch-action: manipulation; }
+  .mobile-planning-backdrop.fixed.inset-0:has(> [role="dialog"]) {
+    padding: max(12px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+    background: #02061780 !important;
+    overscroll-behavior: contain;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal)[role="dialog"] {
+    width: min(100%, 420px);
+    max-width: none;
+    max-height: min(580px, 86dvh, calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+    border-radius: 18px;
+    background: var(--glass-base) !important;
+    backdrop-filter: none !important;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal) button {
+    min-height: 36px;
+    padding-block: 4px;
+    touch-action: manipulation;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal) :is(select, input:not([type="checkbox"]):not([type="range"])) {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal) :is(select, input:not([type="checkbox"]):not([type="range"])) {
+    font-size: 16px;
+  }
+  :is(.implant-template-modal, .templating-wizard-modal) button { font-size: 12px; }
+  :is(.implant-template-modal > header, .templating-wizard-header) button { min-width: 36px; }
+  .implant-template-modal > header h2,
+  .templating-wizard-header .text-xs { font-size: 16px; }
+  .implant-template-modal > header p,
+  .templating-wizard-header .wizard-faint { font-size: 12px; }
+  :is(.implant-template-modal, .templating-wizard-modal) > .overflow-y-auto {
+    overscroll-behavior-y: contain;
+  }
+  .implant-template-modal .implant-picker-muted { font-size: 12px; }
+  .implant-template-modal .implant-picker-surface.overflow-y-auto {
+    max-height: none;
+    overflow: visible;
+  }
+  .templating-wizard-modal[data-confirming="true"] > [inert] { display: none; }
+  .templating-wizard-confirm {
+    position: static;
+    min-height: 0;
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+  .templating-wizard-confirm > div {
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 }
 

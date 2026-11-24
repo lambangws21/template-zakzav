@@ -8,6 +8,7 @@ import {
   ArrowDown,
   ChevronsUp,
   ChevronsDown,
+  Bone,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -16,11 +17,14 @@ import {
   CircleHelp,
   ClipboardList,
   CloudUpload,
+  Copy,
   Download,
   Eye,
   EyeOff,
   FileText,
+  FileUp,
   Focus,
+  FlipHorizontal2,
   Footprints,
   HandGrab,
   ImagePlus,
@@ -49,6 +53,7 @@ import {
   Sun,
   Moon,
   Redo2,
+  Replace,
   Target,
   Trash2,
   Type,
@@ -63,6 +68,7 @@ import {
   resolvePlanningRows,
   measurementPresentation,
 } from "@/lib/planningWorkspace";
+import { isImplantLibraryItemVisible } from "@/lib/digitalTemplating/implantLibrary";
 import { HIP_LEGEND_ITEMS } from "@/lib/xray/pelvicAnalysis";
 import styles from "./PlanningWorkspace.module.css";
 import { GuideContent } from "@/components/LandmarkGuide";
@@ -175,6 +181,67 @@ function Action({ icon: Icon, children, active, className = "", ...props }) {
   );
 }
 
+function DistalFemurCutReference({ angle, estimated, resectionMm }) {
+  const hasAngle = Number.isFinite(angle);
+  const displayAngle = angle;
+  const diagramAngle = hasAngle ? Math.max(-15, Math.min(15, angle)) : 0;
+  const arcRadians = (diagramAngle * Math.PI) / 180;
+  const arcEndX = 110 + 28 * Math.sin(arcRadians);
+  const arcEndY = 76 - 28 * Math.cos(arcRadians);
+
+  return (
+    <details className={styles.distalCutGuide}>
+      <summary>
+        <span>Panduan distal femur</span>
+        <strong>{hasAngle ? `${displayAngle.toFixed(1)}°` : "Perlu sumbu"}</strong>
+        <ChevronDown size={14} aria-hidden="true" />
+      </summary>
+      <div className={styles.distalCutGuideBody}>
+        <svg
+          className={styles.distalCutDiagram}
+          viewBox="0 0 220 112"
+          role="img"
+          aria-label="Skema hubungan sumbu mekanikal, sumbu intramedular, dan bidang potong distal femur"
+        >
+          <line x1="110" y1="10" x2="110" y2="91" className={styles.mechanicalAxis} />
+          <g transform={`rotate(${diagramAngle} 110 76)`} opacity={hasAngle ? 1 : 0.3}>
+            <line x1="110" y1="14" x2="110" y2="76" className={styles.intramedullaryAxis} />
+          </g>
+          <line x1="42" y1="76" x2="178" y2="76" className={styles.distalCutPlane} />
+          {hasAngle && (
+            <path
+              d={`M110 48 A28 28 0 0 ${diagramAngle < 0 ? 0 : 1} ${arcEndX} ${arcEndY}`}
+              className={styles.distalCutAngle}
+            />
+          )}
+          <circle cx="110" cy="76" r="4" className={styles.distalCutPivot} />
+          <text x="8" y="15">MEKANIKAL</text>
+          <text x="139" y="29">IM / ANATOMIS</text>
+          <text x="145" y="70">BIDANG CUT</text>
+        </svg>
+        <div className={styles.distalCutMetrics}>
+          <span>
+            {estimated ? "Sudut IM (estimasi AP)" : "Sudut mekanikal–IM"}
+            <strong>{hasAngle ? `${displayAngle.toFixed(1)}°` : "Belum tersedia"}</strong>
+          </span>
+          <span>
+            Preset reseksi distal
+            <strong>{Number.isFinite(resectionMm) ? `${resectionMm} mm` : "9 mm"}</strong>
+          </span>
+        </div>
+        <p>
+          {estimated
+            ? "AP tidak menampilkan pusat hip dan ankle. Sudut ini estimasi awal; sesuaikan dengan referensi klinis sebelum menerapkan cut."
+            : "Pada long-leg, orientasi cut mengikuti sumbu mekanikal terukur; sudut IM ditampilkan sebagai acuan, bukan preset tetap 5°."}
+        </p>
+        <small>
+          Celah 2,7 mm pada SVG adalah ilustrasi slot, bukan kedalaman reseksi atau ukuran pasien.
+        </small>
+      </div>
+    </details>
+  );
+}
+
 export function PlanningCorrectionControls({
   modes,
   mode,
@@ -264,6 +331,7 @@ export default function PlanningWorkspace({
   layers,
   onSelectLayer,
   onUpdateLayer,
+  onDuplicateLayer,
   onMoveLayer,
   annotations,
   guides,
@@ -296,6 +364,7 @@ export default function PlanningWorkspace({
   customTargetHkaDeg,
   onCustomTargetHkaDeg,
   selectedLayerId,
+  selectedMeasurementId,
   onOpenAdvancedUi,
   onToggleDarkMode,
   accountControl,
@@ -399,6 +468,7 @@ export default function PlanningWorkspace({
           : null,
         color: item.color || null,
         type: item.type || null,
+        previewSrc: item.previewSrc || null,
         clinical: false,
       }));
     return [...clinicalRows, ...supplementalRows].map((row) => {
@@ -436,11 +506,20 @@ export default function PlanningWorkspace({
                     const displayName = row.name || row.key;
                     const planned = getPlannedValue(row);
                     return (
-                      <li key={row.key} className={styles.measurementItem} data-selected={metricEditor === row.key} data-kind={row.measurementKind}>
+                      <li key={row.key} className={styles.measurementItem} data-selected={metricEditor === row.key || (row.sourceId != null && row.sourceId === selectedMeasurementId)} data-kind={row.measurementKind}>
                         <button
                           type="button"
-                          className={styles.measurementMain}
-                          onClick={() => setMetricEditor(metricEditor === row.key ? null : row.key)}
+                          className={`${styles.measurementMain} ${row.previewSrc ? styles.measurementMainWithPreview : ""}`}
+                          onClick={() => {
+                            if (row.sourceId) onSelectMeasurement?.(row.sourceId);
+                            if (isCompactLayout && /^(line|angle|circle):/.test(row.sourceId || "")) {
+                              setExpanded(false);
+                              setSheet("selection");
+                              setMetricEditor(row.key);
+                              return;
+                            }
+                            setMetricEditor((current) => current === row.key ? null : row.key);
+                          }}
                           aria-expanded={metricEditor === row.key}
                           aria-label={`Edit ${displayName}`}
                           title={row.detail}
@@ -450,6 +529,11 @@ export default function PlanningWorkspace({
                             <strong>{displayName}</strong>
                           </span>
                           <b>{formatPlanningValue(row.value, row.unit)}</b>
+                          {row.previewSrc ? (
+                            <span className={styles.measurementPreview} aria-hidden="true">
+                              <img src={row.previewSrc} alt="" />
+                            </span>
+                          ) : null}
                           <span className={styles.measurementItemMeta}>
                             {row.sourceKind === "line" && (
                               <em className={styles.measurementModeBadge} data-mode={row.measurementMode || "length"}>
@@ -486,7 +570,6 @@ export default function PlanningWorkspace({
                             )}
                           </div>
                         )}
-                        {isCompactLayout && metricEditor === row.key && renderMetricEditorFor(row.key, true)}
                       </li>
                     );
 
@@ -1066,31 +1149,31 @@ export default function PlanningWorkspace({
     }
     if (row.unit === "deg") {
       const degreeBody = (
-        <>
+        <div className={styles.degreeModalBody}>
           <div className={styles.degreeValue}>
             {formatPlanningValue(row.value, row.unit)}
           </div>
           {sourceMeasurement?.sourceIntersectionKey ? (
-            <div className={styles.metricEditorActions}>
+            <div className={styles.degreeModalActions}>
               <Action
                 icon={sourceMeasurement.sourceHidden ? Eye : EyeOff}
                 onClick={() => onToggleMeasurementHidden?.(sourceMeasurement)}
               >
                 {sourceMeasurement.sourceHidden
-                  ? "Tampilkan line"
-                  : "Sembunyikan line"}
+                  ? "Tampilkan garis"
+                  : "Sembunyikan garis"}
               </Action>
               <Action
                 icon={sourceMeasurement.sourceShowLabel ? EyeOff : Eye}
                 onClick={() => onToggleMeasurementLabel?.(sourceMeasurement)}
               >
                 {sourceMeasurement.sourceShowLabel
-                  ? "Sembunyikan derajat"
-                  : "Tampilkan derajat"}
+                  ? "Sembunyikan nilai"
+                  : "Tampilkan nilai"}
               </Action>
             </div>
           ) : null}
-        </>
+        </div>
       );
       const degreeHeader = (
         <header>
@@ -1146,9 +1229,8 @@ export default function PlanningWorkspace({
         </div>
       );
     }
-    return (
-      <div className={inline ? styles.inlinePanelWrap : styles.metricEditor}>
-        <div className={inline ? styles.inlinePanel : undefined}>
+    const genericEditor = (
+        <div className={styles.measurementModalBody}>
           <strong>{row.clinical ? row.key : row.name}</strong>
           <p>{row.detail}</p>
           {editableMeasurementId && (
@@ -1201,16 +1283,48 @@ export default function PlanningWorkspace({
             </p>
           )}
         </div>
+    );
+    if (inline) {
+      return (
+        <div className={styles.inlinePanelWrap}>
+          <section className={styles.inlinePanel} role="region" aria-label={`Edit ${displayName}`}>
+            <header>
+              <strong>{displayName}</strong>
+              <Action icon={X} aria-label="Tutup" onClick={() => setMetricEditor(null)} />
+            </header>
+            {genericEditor}
+          </section>
+        </div>
+      );
+    }
+    return (
+      <div
+        className={`${styles.modalBackdrop} ${styles.measurementModalBackdrop}`}
+        role="presentation"
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) setMetricEditor(null);
+        }}
+      >
+        <section className={`${styles.modalPanel} ${styles.measurementModal}`} role="dialog" aria-modal="true" aria-label={`Edit ${displayName}`}>
+          <header>
+            <div><small>Pengukuran</small><h2>{displayName}</h2></div>
+            <Action icon={X} aria-label="Tutup" onClick={() => setMetricEditor(null)} />
+          </header>
+          {genericEditor}
+          <footer><Action onClick={() => setMetricEditor(null)}>Selesai</Action></footer>
+        </section>
       </div>
     );
   };
 
-  const available = catalog.filter((item) =>
-    procedure === "tka"
-      ? item.type === "knee"
-      : procedure === "foot"
-        ? false
-        : item.type !== "knee",
+  const available = catalog.filter(
+    (item) =>
+      isImplantLibraryItemVisible(item) &&
+      (procedure === "tka"
+        ? item.type === "knee"
+        : procedure === "foot"
+          ? false
+          : item.type !== "knee"),
   );
   const kneeComponentCounts = available.reduce(
     (result, item) => {
@@ -1284,6 +1398,32 @@ export default function PlanningWorkspace({
   const selectedImplant = choices.find((item) => item.id === selectedImplantId);
   const selectedLayer =
     layers.find((item) => item.id === selectedLayerId) || null;
+  const activeMeasurementRow = selectedMeasurementId
+    ? displayedMeasurementRows.find(
+        (row) =>
+          row.sourceId === selectedMeasurementId ||
+          (selectedMeasurementId.startsWith("hka:") &&
+            row.sourceId?.startsWith(selectedMeasurementId)),
+      ) || null
+    : null;
+  const hasSelection = Boolean(selectedLayer || activeMeasurementRow);
+  useEffect(() => {
+    if (isCompactLayout) {
+      setMetricEditor(activeMeasurementRow?.key ?? null);
+      if (hasSelection) {
+        setFocus(false);
+        setExpanded(false);
+        setSheet("selection");
+      } else {
+        setSheet((current) => current === "selection" ? null : current);
+      }
+      return;
+    }
+    setSheet((current) => current === "selection" ? null : current);
+    setFocus(false);
+    setLogOpen(!selectedLayer);
+    setMetricEditor(selectedLayer ? null : activeMeasurementRow?.key ?? null);
+  }, [activeMeasurementRow?.key, activeMeasurementRow?.sourceId, isCompactLayout, hasSelection, selectedLayer?.id]);
   const canProceed = hasImage && calibrated && Boolean(session.side);
   const completedSteps = getCompletedPlanningSteps(session, canProceed);
   const firstIncompleteStep = reference.workflow.findIndex(
@@ -1666,7 +1806,15 @@ export default function PlanningWorkspace({
               className={styles.layerName}
               aria-pressed={layer.id === selectedLayerId}
               title={layer.name}
-              onClick={() => activate(() => onSelectLayer(layer.id))}
+              onClick={() => {
+                if (isCompactLayout) {
+                  onSelectLayer(layer.id);
+                  setExpanded(false);
+                  setSheet("selection");
+                } else {
+                  activate(() => onSelectLayer(layer.id));
+                }
+              }}
             >
               <span>{layer.name}</span>
               <small>
@@ -1685,6 +1833,23 @@ export default function PlanningWorkspace({
               aria-label={`${layer.locked ? "Unlock scale" : "Lock scale"} ${layer.name}`}
               onClick={() => onUpdateLayer(layer.id, { locked: !layer.locked })}
             />
+            {kind === "implant" && (
+              <Action
+                icon={Replace}
+                title={`Ganti layer ${layer.name}`}
+                aria-label={`Ganti layer ${layer.name}`}
+                className={styles.replaceLayerAction}
+                disabled={!hasImage || !calibrated || !actions.implantLibrary}
+                onClick={() =>
+                  activate(() => {
+                    onSelectLayer(layer.id);
+                    actions.implantLibrary?.();
+                  })
+                }
+              >
+                <span>Ganti layer</span>
+              </Action>
+            )}
             {layer.id === selectedLayerId && <div className={styles.layerStackActions} aria-label={`Urutan ${layer.name}`}>
               <Action icon={ChevronsUp} title="Paling depan" aria-label={`${layer.name}: paling depan`} onClick={() => onMoveLayer?.(layer.id, "front")} />
               <Action icon={ArrowUp} title="Naik satu layer" aria-label={`${layer.name}: naik satu layer`} onClick={() => onMoveLayer?.(layer.id, "up")} />
@@ -1793,6 +1958,12 @@ export default function PlanningWorkspace({
                           onClick={() => activate(actions.upload)}
                         >
                           Upload X-ray
+                        </Action>
+                        <Action
+                          icon={FileUp}
+                          onClick={() => activate(actions.importJson)}
+                        >
+                          Upload JSON
                         </Action>
                         <Action
                           icon={CloudUpload}
@@ -2355,6 +2526,12 @@ export default function PlanningWorkspace({
                           Save locally
                         </Action>
                         <Action
+                          icon={FileUp}
+                          onClick={actions.importJson}
+                        >
+                          Upload JSON
+                        </Action>
+                        <Action
                           icon={CloudUpload}
                           onClick={() => activate(actions.saveCloud)}
                           disabled={!hasImage}
@@ -2491,6 +2668,11 @@ export default function PlanningWorkspace({
                 aria-label="Measurement values"
                 tabIndex={0}
               >
+                {filteredMeasurementRows.length > 0 && (
+                  <div className={styles.measurementTableHead} aria-hidden="true">
+                    <span>Pengukuran</span><span>Nilai</span><span>Tipe</span>
+                  </div>
+                )}
                 {["tka", "hip", "foot"].map((group) => {
                   const grouped = filteredMeasurementRows.filter((row) => row.landmarkGroup === group);
                   if (!grouped.length) return null;
@@ -2542,7 +2724,7 @@ export default function PlanningWorkspace({
                   )}
                 </ul>
               </div>
-              {!isCompactLayout && metricEditor && renderMetricEditorFor(metricEditor)}
+              {metricEditor && (!isCompactLayout || metricEditor !== activeMeasurementRow?.key) && renderMetricEditorFor(metricEditor)}
               {!session.initial && (
                 <Action
                   icon={Target}
@@ -2552,18 +2734,30 @@ export default function PlanningWorkspace({
                   Rekam Initial
                 </Action>
               )}
-              <section
+              <details
                 className={`${styles.logSection} ${styles.correctionSection}`}
               >
-                <h2>
+                <summary className={styles.correctionSummary}>
+                  <h2>
                   {procedure === "tka"
                     ? "Correction Settings"
                     : procedure === "foot"
                       ? "Hallux Correction Lines"
                       : "Femoral Resection"}
-                </h2>
-                {correctionControls}
-              </section>
+                  </h2>
+                  <ChevronDown size={16} aria-hidden="true" />
+                </summary>
+                <div className={styles.correctionBody}>
+                  {procedure === "tka" && (
+                    <DistalFemurCutReference
+                      angle={alignmentSettings?.femoralValgusAngleDeg}
+                      estimated={alignmentSettings?.estimatedAp}
+                      resectionMm={alignmentSettings?.femoralResectionMm ?? 9}
+                    />
+                  )}
+                  {correctionControls}
+                </div>
+              </details>
             </>
           )}
           {logTab === "implants" && (
@@ -2787,6 +2981,10 @@ export default function PlanningWorkspace({
           <Target size={16} />
           HKA
         </button>
+        <button type="button" onClick={() => activate(actions.tkaApproach)}>
+          <Bone size={16} />
+          Approach TKA
+        </button>
         <button
           type="button"
           disabled={!hasImage || !actions.groupObjects}
@@ -2795,6 +2993,7 @@ export default function PlanningWorkspace({
               selectedLayer ? [`layer:${selectedLayer.id}`] : [],
             );
             setGroupEditorOpen(true);
+            setSheet(null);
             setMoreOpen(false);
           }}
         >
@@ -2811,6 +3010,15 @@ export default function PlanningWorkspace({
         <button type="button" className={styles.fileShortcut} data-file-action="xray" onClick={() => activate(actions.upload)}>
           <span className={styles.fileShortcutIcon} aria-hidden="true"><ImagePlus size={16} /></span>
           <span>Buka X-ray</span>
+        </button>
+        <button
+          type="button"
+          className={styles.fileShortcut}
+          data-file-action="json"
+          onClick={() => activate(actions.importJson)}
+        >
+          <span className={styles.fileShortcutIcon} aria-hidden="true"><FileUp size={16} /></span>
+          <span>Upload JSON project</span>
         </button>
         <button
           type="button"
@@ -2833,6 +3041,7 @@ export default function PlanningWorkspace({
           disabled={!hasImage}
           onClick={() => {
             setExportOpen(true);
+            setSheet(null);
             setMoreOpen(false);
           }}
         >
@@ -3001,11 +3210,216 @@ export default function PlanningWorkspace({
             </aside>
           );
 
+  const selectionProperties = selectedLayer ? (
+    <div className={styles.inspectorBody}>
+      <div className={styles.propertySummary}>
+        <span>{selectedLayer.kind}</span>
+        <strong>{selectedLayer.size}</strong>
+      </div>
+      <strong className={styles.selectionSectionTitle}>Urutan layer</strong>
+      <div className={styles.layerStackActions} aria-label="Urutan layer aktif">
+        <Action icon={ChevronsUp} title="Paling depan" aria-label="Layer aktif: paling depan" onClick={() => onMoveLayer?.(selectedLayer.id, "front")} />
+        <Action icon={ArrowUp} title="Naik satu layer" aria-label="Layer aktif: naik satu layer" onClick={() => onMoveLayer?.(selectedLayer.id, "up")} />
+        <Action icon={ArrowDown} title="Turun satu layer" aria-label="Layer aktif: turun satu layer" onClick={() => onMoveLayer?.(selectedLayer.id, "down")} />
+        <Action icon={ChevronsDown} title="Paling belakang" aria-label="Layer aktif: paling belakang" onClick={() => onMoveLayer?.(selectedLayer.id, "back")} />
+      </div>
+      <strong className={styles.selectionSectionTitle}>Transformasi</strong>
+      <label>
+        Rotation{" "}
+        <span>
+          {selectedLayer.rotationLocked
+            ? `${selectedLayer.rotation} · terkunci`
+            : selectedLayer.rotation}
+        </span>
+        <div className={styles.stepper}>
+          <button
+            type="button"
+            disabled={selectedLayer.rotationLocked}
+            onClick={() =>
+              onUpdateLayer(selectedLayer.id, {
+                rotation: (selectedLayer.rotationValue || 0) - 1,
+              })
+            }
+          >
+            −
+          </button>
+          <strong>{selectedLayer.rotation}</strong>
+          <button
+            type="button"
+            disabled={selectedLayer.rotationLocked}
+            onClick={() =>
+              onUpdateLayer(selectedLayer.id, {
+                rotation: (selectedLayer.rotationValue || 0) + 1,
+              })
+            }
+          >
+            +
+          </button>
+        </div>
+      </label>
+      <label>
+        Opacity <span>{selectedLayer.opacity}</span>
+        <input
+          type="range"
+          min="10"
+          max="100"
+          step="1"
+          value={Math.round(
+            (selectedLayer.opacityValue ?? 1) * 100,
+          )}
+          onChange={(event) =>
+            onUpdateLayer(selectedLayer.id, {
+              opacity: Number(event.target.value) / 100,
+            })
+          }
+        />
+      </label>
+      {selectedLayer.imageBacked && (
+        <div className={styles.imageAdjustments}>
+          <div className={styles.sectionHeading}>
+            <strong>Image adjustment</strong>
+            <button
+              type="button"
+              onClick={() =>
+                onUpdateLayer(selectedLayer.id, {
+                  contrast: 100,
+                  level: 100,
+                })
+              }
+            >
+              Reset
+            </button>
+          </div>
+          <label>
+            Contrast <span>{selectedLayer.contrast}</span>
+            <input
+              type="range"
+              min="10"
+              max="300"
+              step="1"
+              value={selectedLayer.contrastValue ?? 100}
+              onChange={(event) =>
+                onUpdateLayer(selectedLayer.id, {
+                  contrast: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label>
+            Level <span>{selectedLayer.level}</span>
+            <input
+              type="range"
+              min="10"
+              max="300"
+              step="1"
+              value={selectedLayer.levelValue ?? 100}
+              onChange={(event) =>
+                onUpdateLayer(selectedLayer.id, {
+                  level: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+        </div>
+      )}
+      <strong className={styles.selectionSectionTitle}>Aksi layer</strong>
+      <div className={styles.inspectorActions} role="group" aria-label="Aksi layer">
+        <Action
+          icon={FlipHorizontal2}
+          onClick={() => onUpdateLayer(selectedLayer.id, { flipX: !selectedLayer.flipX })}
+        >
+          Flip H
+        </Action>
+        <Action
+          icon={Copy}
+          onClick={() => onDuplicateLayer?.(selectedLayer.id)}
+        >
+          Duplicate
+        </Action>
+        <Action
+          icon={selectedLayer.hidden ? EyeOff : Eye}
+          onClick={() =>
+            onUpdateLayer(selectedLayer.id, {
+              hidden: !selectedLayer.hidden,
+            })
+          }
+        >
+          {selectedLayer.hidden ? "Show" : "Hide"}
+        </Action>
+        <Action
+          icon={selectedLayer.locked ? Lock : LockOpen}
+          onClick={() =>
+            onUpdateLayer(selectedLayer.id, {
+              locked: !selectedLayer.locked,
+            })
+          }
+        >
+          {selectedLayer.locked ? "Unlock" : "Lock"}
+        </Action>
+        <Action
+          icon={selectedLayer.rotationLocked ? Lock : RotateCw}
+          onClick={() =>
+            onUpdateLayer(selectedLayer.id, {
+              rotationLocked: !selectedLayer.rotationLocked,
+            })
+          }
+        >
+          {selectedLayer.rotationLocked
+            ? "Unlock Sudut"
+            : "Lock Sudut"}
+        </Action>
+        <Action icon={Trash2} onClick={actions.deleteLayer}>
+          Delete
+        </Action>
+      </div>
+      <Action icon={Maximize2} onClick={() => runTool("size")}>
+        Scale on canvas
+      </Action>
+    </div>
+  ) : activeMeasurementRow ? (
+    <div className={styles.inspectorBody}>
+      <div className={styles.propertySummary}>
+        <span>
+          {activeMeasurementRow.sourceKind === "line"
+            ? activeMeasurementRow.measurementMode || "length"
+            : activeMeasurementRow.sourceKind || activeMeasurementRow.unit}
+        </span>
+        <strong>{formatPlanningValue(activeMeasurementRow.value, activeMeasurementRow.unit)}</strong>
+      </div>
+      <div className={styles.inspectorActions}>
+        {(activeMeasurementRow.sourceLineIds?.length || activeMeasurementRow.sourceAngleId || activeMeasurementRow.sourceHkaId || activeMeasurementRow.sourceIntersectionKey) && (
+          <Action
+            icon={activeMeasurementRow.sourceHidden ? EyeOff : Eye}
+            onClick={() => onToggleMeasurementHidden?.(activeMeasurementRow)}
+          >
+            {activeMeasurementRow.sourceHidden ? "Tampilkan" : "Sembunyikan"}
+          </Action>
+        )}
+        {(activeMeasurementRow.sourceLineIds?.length || activeMeasurementRow.sourceAngleId || activeMeasurementRow.sourceIntersectionKey) && (
+          <Action
+            icon={Type}
+            onClick={() => onToggleMeasurementLabel?.(activeMeasurementRow)}
+          >
+            {activeMeasurementRow.sourceShowLabel ? "Hide nilai" : "Tampil nilai"}
+          </Action>
+        )}
+        <Action
+          icon={PencilLine}
+          onClick={() => setMetricEditor((current) => current === activeMeasurementRow.key ? null : activeMeasurementRow.key)}
+        >
+          {metricEditor === activeMeasurementRow.key ? "Tutup edit" : "Edit"}
+        </Action>
+      </div>
+      {metricEditor === activeMeasurementRow.key && renderMetricEditorFor(activeMeasurementRow.key, true)}
+    </div>
+  ) : null;
+
   return (
     <div
       className={`${styles.workspace} ${focus ? styles.focus : ""}`}
       data-dark={isDark}
       data-procedure={procedure}
+      data-selection-panel={sheet === "selection" && hasSelection && !focus}
     >
       <div className={styles.commandBar}>
         <div className={styles.brandMark}>
@@ -3847,7 +4261,14 @@ export default function PlanningWorkspace({
             <Action
               icon={SlidersHorizontal}
               aria-label="Object settings"
-              onClick={actions.properties}
+              onClick={() => {
+                if (isCompactLayout && hasSelection) {
+                  setExpanded(false);
+                  setSheet("selection");
+                } else {
+                  actions.properties?.();
+                }
+              }}
               disabled={!hasImage}
             />
             <Action
@@ -3881,12 +4302,15 @@ export default function PlanningWorkspace({
                   <small>
                     {selectedLayer
                       ? "Selected object"
-                      : selectedImplant
+                      : activeMeasurementRow
+                        ? "Selected measurement"
+                        : selectedImplant
                         ? "Selected template"
                         : "Workspace"}
                   </small>
                   <h2>
                     {selectedLayer?.name ||
+                      activeMeasurementRow?.name ||
                       selectedImplant?.label ||
                       "Properties"}
                   </h2>
@@ -3898,158 +4322,7 @@ export default function PlanningWorkspace({
                   onClick={() => activate(actions.properties)}
                 />
               </div>
-              {selectedLayer ? (
-                <div className={styles.inspectorBody}>
-                  <div className={styles.propertySummary}>
-                    <span>{selectedLayer.kind}</span>
-                    <strong>{selectedLayer.size}</strong>
-                  </div>
-                  <div className={styles.layerStackActions} aria-label="Urutan layer aktif">
-                    <Action icon={ChevronsUp} title="Paling depan" aria-label="Layer aktif: paling depan" onClick={() => onMoveLayer?.(selectedLayer.id, "front")} />
-                    <Action icon={ArrowUp} title="Naik satu layer" aria-label="Layer aktif: naik satu layer" onClick={() => onMoveLayer?.(selectedLayer.id, "up")} />
-                    <Action icon={ArrowDown} title="Turun satu layer" aria-label="Layer aktif: turun satu layer" onClick={() => onMoveLayer?.(selectedLayer.id, "down")} />
-                    <Action icon={ChevronsDown} title="Paling belakang" aria-label="Layer aktif: paling belakang" onClick={() => onMoveLayer?.(selectedLayer.id, "back")} />
-                  </div>
-                  <label>
-                    Rotation{" "}
-                    <span>
-                      {selectedLayer.rotationLocked
-                        ? `${selectedLayer.rotation} · terkunci`
-                        : selectedLayer.rotation}
-                    </span>
-                    <div className={styles.stepper}>
-                      <button
-                        type="button"
-                        disabled={selectedLayer.rotationLocked}
-                        onClick={() =>
-                          onUpdateLayer(selectedLayer.id, {
-                            rotation: (selectedLayer.rotationValue || 0) - 1,
-                          })
-                        }
-                      >
-                        −
-                      </button>
-                      <strong>{selectedLayer.rotation}</strong>
-                      <button
-                        type="button"
-                        disabled={selectedLayer.rotationLocked}
-                        onClick={() =>
-                          onUpdateLayer(selectedLayer.id, {
-                            rotation: (selectedLayer.rotationValue || 0) + 1,
-                          })
-                        }
-                      >
-                        +
-                      </button>
-                    </div>
-                  </label>
-                  <label>
-                    Opacity <span>{selectedLayer.opacity}</span>
-                    <input
-                      type="range"
-                      min="10"
-                      max="100"
-                      step="1"
-                      value={Math.round(
-                        (selectedLayer.opacityValue ?? 1) * 100,
-                      )}
-                      onChange={(event) =>
-                        onUpdateLayer(selectedLayer.id, {
-                          opacity: Number(event.target.value) / 100,
-                        })
-                      }
-                    />
-                  </label>
-                  {selectedLayer.imageBacked && (
-                    <div className={styles.imageAdjustments}>
-                      <div className={styles.sectionHeading}>
-                        <strong>Image adjustment</strong>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateLayer(selectedLayer.id, {
-                              contrast: 100,
-                              level: 100,
-                            })
-                          }
-                        >
-                          Reset
-                        </button>
-                      </div>
-                      <label>
-                        Contrast <span>{selectedLayer.contrast}</span>
-                        <input
-                          type="range"
-                          min="10"
-                          max="300"
-                          step="1"
-                          value={selectedLayer.contrastValue ?? 100}
-                          onChange={(event) =>
-                            onUpdateLayer(selectedLayer.id, {
-                              contrast: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Level <span>{selectedLayer.level}</span>
-                        <input
-                          type="range"
-                          min="10"
-                          max="300"
-                          step="1"
-                          value={selectedLayer.levelValue ?? 100}
-                          onChange={(event) =>
-                            onUpdateLayer(selectedLayer.id, {
-                              level: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                  )}
-                  <div className={styles.inspectorActions}>
-                    <Action
-                      icon={selectedLayer.hidden ? EyeOff : Eye}
-                      onClick={() =>
-                        onUpdateLayer(selectedLayer.id, {
-                          hidden: !selectedLayer.hidden,
-                        })
-                      }
-                    >
-                      {selectedLayer.hidden ? "Show" : "Hide"}
-                    </Action>
-                    <Action
-                      icon={selectedLayer.locked ? Lock : LockOpen}
-                      onClick={() =>
-                        onUpdateLayer(selectedLayer.id, {
-                          locked: !selectedLayer.locked,
-                        })
-                      }
-                    >
-                      {selectedLayer.locked ? "Unlock" : "Lock"}
-                    </Action>
-                    <Action
-                      icon={selectedLayer.rotationLocked ? Lock : RotateCw}
-                      onClick={() =>
-                        onUpdateLayer(selectedLayer.id, {
-                          rotationLocked: !selectedLayer.rotationLocked,
-                        })
-                      }
-                    >
-                      {selectedLayer.rotationLocked
-                        ? "Unlock Sudut"
-                        : "Lock Sudut"}
-                    </Action>
-                    <Action icon={Trash2} onClick={actions.deleteLayer}>
-                      Delete
-                    </Action>
-                  </div>
-                  <Action icon={Maximize2} onClick={() => runTool("size")}>
-                    Scale on canvas
-                  </Action>
-                </div>
-              ) : selectedImplant ? (
+              {hasSelection ? selectionProperties : selectedImplant ? (
                 <div className={styles.inspectorBody}>
                   <div className={styles.implantPreview}>
                     <img src={selectedImplant.imageSrc} alt="" />
@@ -4155,13 +4428,13 @@ export default function PlanningWorkspace({
           {layers.length} layer / {measurements.length} ukur
         </span>
       </div>
-      {sheet && !focus && (
+      {sheet && !focus && (sheet !== "selection" || hasSelection) && (
         <div
           className={styles.sheet}
           ref={sheetRef}
           tabIndex={-1}
           role="dialog"
-          aria-label={`Planning ${sheet}`}
+          aria-label={sheet === "selection" ? "Objek terpilih" : `Planning ${sheet}`}
           data-expanded={expanded}
           data-section={sheet}
         >
@@ -4170,6 +4443,7 @@ export default function PlanningWorkspace({
               type="button"
               className={styles.handle}
               aria-label={expanded ? "Perkecil panel" : "Perbesar panel"}
+              aria-expanded={expanded}
               onClick={() => {
                 if (sheetSwiped.current) {
                   sheetSwiped.current = false;
@@ -4218,7 +4492,12 @@ export default function PlanningWorkspace({
                 }
               }}
             >
-              {sheet === "log" ? <strong className={styles.logSheetTitle}>Planning Log</strong> : <span />}
+              {sheet === "log" ? <strong className={styles.logSheetTitle}>Planning Log</strong> : sheet === "selection" ? (
+                <span className={styles.selectionTitle}>
+                  <small>{selectedLayer ? "Layer terpilih" : "Pengukuran terpilih"}</small>
+                  <strong>{selectedLayer?.name || activeMeasurementRow?.name || activeMeasurementRow?.key}</strong>
+                </span>
+              ) : <span />}
             </button>
             {sheet === "log" && <>
               <Action icon={ImagePlus} disabled={!hasImage || !actions.addPhoto}
@@ -4235,6 +4514,10 @@ export default function PlanningWorkspace({
                 onClick={() => setExpanded((value) => !value)}
               />
             </>}
+            {sheet === "selection" && (
+              <Action icon={SlidersHorizontal} aria-label="Pengaturan lanjutan"
+                onClick={() => activate(actions.properties)} />
+            )}
             <Action
               icon={X}
               aria-label="Tutup panel"
@@ -4246,6 +4529,8 @@ export default function PlanningWorkspace({
               workflow
             ) : sheet === "log" ? (
               log
+            ) : sheet === "selection" ? (
+              selectionProperties
             ) : sheet === "more" ? (
               moreMenu
             ) : (
@@ -4257,6 +4542,7 @@ export default function PlanningWorkspace({
                       [
                         "ruler",
                         "line",
+                        "centerLock",
                         "angle",
                         "interline",
                         "circle",
@@ -4363,7 +4649,7 @@ export default function PlanningWorkspace({
         <div
           className={styles.modalBackdrop}
           role="presentation"
-          onPointerDown={(event) => {
+          onClick={(event) => {
             if (event.target === event.currentTarget)
               setImplantBrowserOpen(false);
           }}
@@ -4385,234 +4671,236 @@ export default function PlanningWorkspace({
                 onClick={() => setImplantBrowserOpen(false)}
               />
             </header>
-            <label className={styles.searchField}>
-              <Search size={16} />
-              <input
-                value={implantSearch}
-                onChange={(event) => setImplantSearch(event.target.value)}
-                placeholder="Cari implant..."
-              />
-            </label>
-            <div className={styles.implantTabs}>
-              {procedure === "hip" ? (
-                ["stem", "cup", "liner", "head"].map((type) => (
-                  <button
-                    type="button"
-                    key={type}
-                    data-active={component === type}
-                    onClick={() => {
-                      const nextComponent = component === type ? "" : type;
-                      setComponent(nextComponent);
-                      setSystem("");
-                      setZimmerStemFamily("");
-                      setCupType("");
-                      setImplantSearch("");
-                      const firstItem = componentAvailable.find(
-                        (item) =>
-                          (!nextComponent || item.type === nextComponent) &&
-                          (!brand || item.brand === brand) &&
-                          (brand !== "Zimmer" ||
-                            nextComponent !== "stem" ||
-                            getZimmerTemplateSource(item) ===
-                              zimmerTemplateSource),
-                      );
-                      if (firstItem) selectImplantTemplate(firstItem.id);
-                    }}
-                  >
-                    {type}
-                  </button>
-                ))
-              ) : (
-                <button type="button" data-active>
-                  Knee
-                </button>
-              )}
-            </div>
-            {procedure === "tka" ? (
-              <div
-                className={styles.kneeComponentTabs}
-                role="tablist"
-                aria-label="Knee implant component"
-              >
-                {KNEE_COMPONENTS.map((item) => (
-                  <button
-                    type="button"
-                    key={item.key}
-                    data-active={kneeComponent === item.key}
-                    role="tab"
-                    aria-selected={kneeComponent === item.key}
-                    onClick={() => {
-                      setKneeComponent(item.key);
-                      setBrand("");
-                      setSystem("");
-                      setZimmerStemFamily("");
-                      setCupType("");
-                      setImplantSearch("");
-                      const firstItem = available.find(
-                        (implant) => getKneeComponent(implant) === item.key,
-                      );
-                      if (firstItem) selectImplantTemplate(firstItem.id);
-                    }}
-                  >
-                    <img src={item.icon} alt="" />
-                    <span>
-                      <strong>{item.label}</strong>
-                      <small>
-                        {kneeComponentCounts[item.key] || 0} template
-                      </small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <label>
-              Brand
-              <select
-                value={brand}
-                onChange={(event) => {
-                  const nextBrand = event.target.value;
-                  setBrand(nextBrand);
-                  setSystem("");
-                  setZimmerStemFamily("");
-                  setCupType("");
-                  const shouldFilterSource =
-                    nextBrand === "Zimmer" &&
-                    zimmerTemplateSourceCounts.svg > 0 &&
-                    (procedure === "tka" || component === "stem");
-                  const firstItem = componentAvailable.find(
-                    (item) =>
-                      (!nextBrand || item.brand === nextBrand) &&
-                      (!component || item.type === component) &&
-                      (!shouldFilterSource ||
-                        getZimmerTemplateSource(item) === zimmerTemplateSource),
-                  );
-                  if (firstItem) selectImplantTemplate(firstItem.id);
-                }}
-              >
-                <option value="">All brands</option>
-                {brands.map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </label>
-            {canChooseZimmerSource ? (
-              <div
-                className={styles.zimmerSourceTabs}
-                role="tablist"
-                aria-label="Sumber template Zimmer"
-              >
-                {[
-                  { key: "ruler", label: "Ruler" },
-                  { key: "svg", label: "SVG" },
-                ].map((source) => (
-                  <button
-                    type="button"
-                    key={source.key}
-                    data-active={zimmerTemplateSource === source.key}
-                    role="tab"
-                    aria-selected={zimmerTemplateSource === source.key}
-                    onClick={() => {
-                      setZimmerTemplateSource(source.key);
-                      setSystem("");
-                      setZimmerStemFamily("");
-                      setImplantSearch("");
-                      const firstItem = componentAvailable.find(
-                        (item) =>
-                          item.brand === "Zimmer" &&
-                          (!component || item.type === component) &&
-                          getZimmerTemplateSource(item) === source.key,
-                      );
-                      if (firstItem) selectImplantTemplate(firstItem.id);
-                    }}
-                  >
-                    <strong>{source.label}</strong>
-                    <small>
-                      {zimmerTemplateSourceCounts[source.key] || 0} template
-                    </small>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {procedure === "hip" &&
-            component === "stem" &&
-            brand === "Zimmer" ? (
-              <label>
-                Stem model
-                <select
-                  value={zimmerStemFamily}
-                  onChange={(event) => {
-                    const nextFamily = event.target.value;
-                    setZimmerStemFamily(nextFamily);
-                    setSystem("");
-                    const firstItem = sourceAvailable.find(
-                      (item) =>
-                        item.type === "stem" &&
-                        item.brand === "Zimmer" &&
-                        (!nextFamily ||
-                          getZimmerStemFamily(item) === nextFamily),
-                    );
-                    if (firstItem) selectImplantTemplate(firstItem.id);
-                  }}
-                >
-                  <option value="">All Zimmer stems</option>
-                  {zimmerStemFamilies.map((family) => (
-                    <option value={family} key={family}>
-                      {family}
-                    </option>
-                  ))}
-                </select>
+            <div className={styles.implantBrowserBody}>
+              <label className={styles.searchField}>
+                <Search size={16} />
+                <input
+                  value={implantSearch}
+                  onChange={(event) => setImplantSearch(event.target.value)}
+                  placeholder="Cari implant..."
+                />
               </label>
-            ) : null}
-            {procedure === "hip" && component === "cup" ? (
-              <label>
-                Cup type
-                <select
-                  value={cupType}
-                  onChange={(event) => {
-                    const nextCupType = event.target.value;
-                    setCupType(nextCupType);
-                    setSystem("");
-                    const firstItem = sourceAvailable.find(
-                      (item) =>
-                        item.type === "cup" &&
-                        (!nextCupType || getCupType(item) === nextCupType),
-                    );
-                    if (firstItem) selectImplantTemplate(firstItem.id);
-                  }}
-                >
-                  <option value="">All cup types</option>
-                  {cupTypes.map((type) => (
-                    <option value={type} key={type}>
+              <div className={styles.implantTabs}>
+                {procedure === "hip" ? (
+                  ["stem", "cup", "liner", "head"].map((type) => (
+                    <button
+                      type="button"
+                      key={type}
+                      data-active={component === type}
+                      onClick={() => {
+                        const nextComponent = component === type ? "" : type;
+                        setComponent(nextComponent);
+                        setSystem("");
+                        setZimmerStemFamily("");
+                        setCupType("");
+                        setImplantSearch("");
+                        const firstItem = componentAvailable.find(
+                          (item) =>
+                            (!nextComponent || item.type === nextComponent) &&
+                            (!brand || item.brand === brand) &&
+                            (brand !== "Zimmer" ||
+                              nextComponent !== "stem" ||
+                              getZimmerTemplateSource(item) ===
+                                zimmerTemplateSource),
+                        );
+                        if (firstItem) selectImplantTemplate(firstItem.id);
+                      }}
+                    >
                       {type}
-                    </option>
+                    </button>
+                  ))
+                ) : (
+                  <button type="button" data-active>
+                    Knee
+                  </button>
+                )}
+              </div>
+              {procedure === "tka" ? (
+                <div
+                  className={styles.kneeComponentTabs}
+                  role="tablist"
+                  aria-label="Knee implant component"
+                >
+                  {KNEE_COMPONENTS.map((item) => (
+                    <button
+                      type="button"
+                      key={item.key}
+                      data-active={kneeComponent === item.key}
+                      role="tab"
+                      aria-selected={kneeComponent === item.key}
+                      onClick={() => {
+                        setKneeComponent(item.key);
+                        setBrand("");
+                        setSystem("");
+                        setZimmerStemFamily("");
+                        setCupType("");
+                        setImplantSearch("");
+                        const firstItem = available.find(
+                          (implant) => getKneeComponent(implant) === item.key,
+                        );
+                        if (firstItem) selectImplantTemplate(firstItem.id);
+                      }}
+                    >
+                      <img src={item.icon} alt="" />
+                      <span>
+                        <strong>{item.label}</strong>
+                        <small>
+                          {kneeComponentCounts[item.key] || 0} template
+                        </small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <label>
+                Brand
+                <select
+                  value={brand}
+                  onChange={(event) => {
+                    const nextBrand = event.target.value;
+                    setBrand(nextBrand);
+                    setSystem("");
+                    setZimmerStemFamily("");
+                    setCupType("");
+                    const shouldFilterSource =
+                      nextBrand === "Zimmer" &&
+                      zimmerTemplateSourceCounts.svg > 0 &&
+                      (procedure === "tka" || component === "stem");
+                    const firstItem = componentAvailable.find(
+                      (item) =>
+                        (!nextBrand || item.brand === nextBrand) &&
+                        (!component || item.type === component) &&
+                        (!shouldFilterSource ||
+                          getZimmerTemplateSource(item) === zimmerTemplateSource),
+                    );
+                    if (firstItem) selectImplantTemplate(firstItem.id);
+                  }}
+                >
+                  <option value="">All brands</option>
+                  {brands.map((value) => (
+                    <option key={value}>{value}</option>
                   ))}
                 </select>
               </label>
-            ) : null}
-            <div className={styles.implantGrid}>
-              {visibleChoices.length ? (
-                visibleChoices.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    data-selected={item.id === selectedImplantId}
-                    onClick={() => selectImplantTemplate(item.id)}
-                  >
-                    <img src={item.imageSrc} alt="" />
-                    <span>
-                      <strong>{item.label}</strong>
+              {canChooseZimmerSource ? (
+                <div
+                  className={styles.zimmerSourceTabs}
+                  role="tablist"
+                  aria-label="Sumber template Zimmer"
+                >
+                  {[
+                    { key: "ruler", label: "Ruler" },
+                    { key: "svg", label: "SVG" },
+                  ].map((source) => (
+                    <button
+                      type="button"
+                      key={source.key}
+                      data-active={zimmerTemplateSource === source.key}
+                      role="tab"
+                      aria-selected={zimmerTemplateSource === source.key}
+                      onClick={() => {
+                        setZimmerTemplateSource(source.key);
+                        setSystem("");
+                        setZimmerStemFamily("");
+                        setImplantSearch("");
+                        const firstItem = componentAvailable.find(
+                          (item) =>
+                            item.brand === "Zimmer" &&
+                            (!component || item.type === component) &&
+                            getZimmerTemplateSource(item) === source.key,
+                        );
+                        if (firstItem) selectImplantTemplate(firstItem.id);
+                      }}
+                    >
+                      <strong>{source.label}</strong>
                       <small>
-                        {item.brand} · {item.system}
+                        {zimmerTemplateSourceCounts[source.key] || 0} template
                       </small>
-                      <em>Size {item.size}</em>
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <p className={styles.empty}>Implant tidak ditemukan.</p>
-              )}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {procedure === "hip" &&
+              component === "stem" &&
+              brand === "Zimmer" ? (
+                <label>
+                  Stem model
+                  <select
+                    value={zimmerStemFamily}
+                    onChange={(event) => {
+                      const nextFamily = event.target.value;
+                      setZimmerStemFamily(nextFamily);
+                      setSystem("");
+                      const firstItem = sourceAvailable.find(
+                        (item) =>
+                          item.type === "stem" &&
+                          item.brand === "Zimmer" &&
+                          (!nextFamily ||
+                            getZimmerStemFamily(item) === nextFamily),
+                      );
+                      if (firstItem) selectImplantTemplate(firstItem.id);
+                    }}
+                  >
+                    <option value="">All Zimmer stems</option>
+                    {zimmerStemFamilies.map((family) => (
+                      <option value={family} key={family}>
+                        {family}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {procedure === "hip" && component === "cup" ? (
+                <label>
+                  Cup type
+                  <select
+                    value={cupType}
+                    onChange={(event) => {
+                      const nextCupType = event.target.value;
+                      setCupType(nextCupType);
+                      setSystem("");
+                      const firstItem = sourceAvailable.find(
+                        (item) =>
+                          item.type === "cup" &&
+                          (!nextCupType || getCupType(item) === nextCupType),
+                      );
+                      if (firstItem) selectImplantTemplate(firstItem.id);
+                    }}
+                  >
+                    <option value="">All cup types</option>
+                    {cupTypes.map((type) => (
+                      <option value={type} key={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <div className={styles.implantGrid}>
+                {visibleChoices.length ? (
+                  visibleChoices.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      data-selected={item.id === selectedImplantId}
+                      onClick={() => selectImplantTemplate(item.id)}
+                    >
+                      <img src={item.imageSrc} alt="" />
+                      <span>
+                        <strong>{item.label}</strong>
+                        <small>
+                          {item.brand} · {item.system}
+                        </small>
+                        <em>Size {item.size}</em>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className={styles.empty}>Implant tidak ditemukan.</p>
+                )}
+              </div>
+              {implantInsertError && <p role="alert">{implantInsertError}</p>}
             </div>
-            {implantInsertError && <p role="alert">{implantInsertError}</p>}
             <footer>
               <Action disabled={implantInsertBusy} onClick={() => setImplantBrowserOpen(false)}>
                 Cancel
@@ -4633,7 +4921,7 @@ export default function PlanningWorkspace({
         <div
           className={styles.modalBackdrop}
           role="presentation"
-          onPointerDown={(event) => {
+          onClick={(event) => {
             if (event.target === event.currentTarget) setExportOpen(false);
           }}
         >
@@ -4700,7 +4988,7 @@ export default function PlanningWorkspace({
         <div
           className={styles.modalBackdrop}
           role="presentation"
-          onPointerDown={(event) => {
+          onClick={(event) => {
             if (event.target === event.currentTarget) setGroupEditorOpen(false);
           }}
         >

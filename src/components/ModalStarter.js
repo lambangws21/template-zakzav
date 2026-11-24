@@ -61,7 +61,7 @@ export default function ModalStarter({
     >
       <style>{STYLES}</style>
 
-      <div className="ms-card w-full max-w-[440px] overflow-hidden rounded-[28px] p-0">
+      <div role="dialog" aria-modal="true" aria-label={title} className="ms-card w-full max-w-[440px] overflow-hidden rounded-[28px] p-0">
 
         {/* ── Top accent bar ── */}
         <div className="h-1 w-full" style={{

@@ -237,7 +237,14 @@ function pointMap(points, landmarks = PELVIC_ANALYSIS_LANDMARKS) {
   );
 }
 
+function isFinitePoint(point) {
+  return Boolean(point && Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
 function projectPointToLine(point, start, end) {
+  if (!isFinitePoint(point) || !isFinitePoint(start) || !isFinitePoint(end)) {
+    return null;
+  }
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const lengthSquared = dx * dx + dy * dy;
@@ -247,6 +254,12 @@ function projectPointToLine(point, start, end) {
 }
 
 function projectPointToParallelLineThroughPoint(point, through, baselineStart, baselineEnd) {
+  if (
+    !isFinitePoint(point) ||
+    !isFinitePoint(through) ||
+    !isFinitePoint(baselineStart) ||
+    !isFinitePoint(baselineEnd)
+  ) return null;
   const dx = baselineEnd.x - baselineStart.x;
   const dy = baselineEnd.y - baselineStart.y;
   return projectPointToLine(point, through, { x: through.x + dx, y: through.y + dy });
@@ -260,6 +273,12 @@ function projectPointToParallelLineThroughPoint(point, through, baselineStart, b
 // baseline (projecting onto the baseline itself can flip direction based on
 // sub-pixel position, which a fixed direction choice avoids).
 function getUpwardPerpendicularPoint(origin, baselineStart, baselineEnd, length) {
+  if (
+    !isFinitePoint(origin) ||
+    !isFinitePoint(baselineStart) ||
+    !isFinitePoint(baselineEnd) ||
+    !Number.isFinite(length)
+  ) return null;
   const dx = baselineEnd.x - baselineStart.x;
   const dy = baselineEnd.y - baselineStart.y;
   const baseLength = Math.hypot(dx, dy);
@@ -273,6 +292,12 @@ function getUpwardPerpendicularPoint(origin, baselineStart, baselineEnd, length)
 }
 
 function projectToParallelReference(point, reference, baselineStart, baselineEnd) {
+  if (
+    !isFinitePoint(point) ||
+    !isFinitePoint(reference) ||
+    !isFinitePoint(baselineStart) ||
+    !isFinitePoint(baselineEnd)
+  ) return null;
   const dx = baselineEnd.x - baselineStart.x;
   const dy = baselineEnd.y - baselineStart.y;
   const length = Math.hypot(dx, dy);
@@ -284,6 +309,12 @@ function projectToParallelReference(point, reference, baselineStart, baselineEnd
 }
 
 function buildLldComparisonLine(rightPoint, leftPoint, baselineStart, baselineEnd) {
+  if (
+    !isFinitePoint(rightPoint) ||
+    !isFinitePoint(leftPoint) ||
+    !isFinitePoint(baselineStart) ||
+    !isFinitePoint(baselineEnd)
+  ) return null;
   const dx = baselineEnd.x - baselineStart.x;
   const dy = baselineEnd.y - baselineStart.y;
   const length = Math.hypot(dx, dy);
@@ -313,6 +344,12 @@ function buildLldComparisonLine(rightPoint, leftPoint, baselineStart, baselineEn
 // don't cross within their own extents, only when extended, so relaxing the
 // shared helper would make that unrelated global feature noisy.
 function getInfiniteLineIntersection(aStart, aEnd, bStart, bEnd) {
+  if (
+    !isFinitePoint(aStart) ||
+    !isFinitePoint(aEnd) ||
+    !isFinitePoint(bStart) ||
+    !isFinitePoint(bEnd)
+  ) return null;
   const x1 = aStart.x, y1 = aStart.y, x2 = aEnd.x, y2 = aEnd.y;
   const x3 = bStart.x, y3 = bStart.y, x4 = bEnd.x, y4 = bEnd.y;
   const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
@@ -438,7 +475,12 @@ export function buildPelvicAnalysisMeasurements(
   const makeCeaAngle = (side, hc, al, tdRight, tdLeft) => {
     // al (acetabular lateral rim) is quick-mode-optional — skip rather than
     // dereference .x/.y on a missing point.
-    if (!al) return null;
+    if (
+      !isFinitePoint(hc) ||
+      !isFinitePoint(al) ||
+      !isFinitePoint(tdRight) ||
+      !isFinitePoint(tdLeft)
+    ) return null;
     const verticalPoint = getUpwardPerpendicularPoint(
       hc,
       tdRight,
@@ -457,18 +499,21 @@ export function buildPelvicAnalysisMeasurements(
       pelvicAnalysisId: analysisId,
     };
   };
-  const makeHeadCircle = (side, center, edge) => ({
-    side,
-    metric: `FHD ${side === "right" ? "R" : "L"}`,
-    name: `Diameter Head ${side === "right" ? "kanan" : "kiri"}`,
-    cx: center.x,
-    cy: center.y,
-    radius: Math.hypot(edge.x - center.x, edge.y - center.y),
-    points: [center, edge],
-    source: "pelvicAnalysis",
-    estimated: anyEstimated(center, edge),
-    pelvicAnalysisId: analysisId,
-  });
+  const makeHeadCircle = (side, center, edge) => {
+    if (!isFinitePoint(center) || !isFinitePoint(edge)) return null;
+    return {
+      side,
+      metric: `FHD ${side === "right" ? "R" : "L"}`,
+      name: `Diameter Head ${side === "right" ? "kanan" : "kiri"}`,
+      cx: center.x,
+      cy: center.y,
+      radius: Math.hypot(edge.x - center.x, edge.y - center.y),
+      points: [center, edge],
+      source: "pelvicAnalysis",
+      estimated: anyEstimated(center, edge),
+      pelvicAnalysisId: analysisId,
+    };
+  };
 
   return {
     lines: buildPelvicAnalysisLines(points, analysisId, landmarks),
@@ -481,6 +526,6 @@ export function buildPelvicAnalysisMeasurements(
     circles: [
       makeHeadCircle("right", p.hcRight, p.headEdgeRight),
       makeHeadCircle("left", p.hcLeft, p.headEdgeLeft),
-    ].filter((circle) => Number.isFinite(circle.radius) && circle.radius >= 3),
+    ].filter((circle) => circle && Number.isFinite(circle.radius) && circle.radius >= 3),
   };
 }

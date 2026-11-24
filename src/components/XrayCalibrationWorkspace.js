@@ -114,6 +114,7 @@ import GoogleSheetDrivePicker from "./GoogleSheetDrivePicker";
 import DriveImageWithFallback from "./media/DriveImageWithFallback";
 import {
   getImplantLibraryItemById,
+  isImplantLibraryItemVisible,
   LOCAL_IMPLANT_LIBRARY,
   LOCAL_IMPLANT_LIBRARY_TYPES,
   NORMMED_FEMORAL_SIZES,
@@ -161,6 +162,7 @@ import NormmedFemoralSizeChecker, {
   getNormmedFemoralSizeMatches,
 } from "./NormmedFemoralSizeChecker";
 import TraumaPlanningPanel from "./TraumaPlanningPanel";
+import TKAApproachAnimator from "./TKAApproachAnimator";
 import LandmarkAnnotationPanel from "./LandmarkAnnotationPanel";
 import DriveImplantLibraryPanel from "./DriveImplantLibraryPanel";
 import PatientCaseManager from "./PatientCaseManager";
@@ -212,6 +214,9 @@ import {
   saveImageToIDB,
   loadImageFromIDB,
   clearImageFromIDB,
+  saveImportedStoryToIDB,
+  loadImportedStoryFromIDB,
+  clearImportedStoryFromIDB,
 } from "../lib/xray/storageUtils";
 import {
   jlaExtendLine,
@@ -240,6 +245,11 @@ import {
   createProcessedXrayCanvas,
   detectCalibrationMarkerLineFromCanvas,
 } from "../lib/xray/imageProcessingUtils";
+import {
+  encodeCanvasAsJxl,
+  isJpegXlFile,
+  prepareImageFileForBrowser,
+} from "../lib/xray/jpegXlUtils";
 import CupAssessmentOverlayInline, {
   CupAngleDial,
   SvgLabel,
@@ -455,20 +465,53 @@ const SIDEBAR_TAB_GRID_CLASS =
 
 const PANEL_SPRING = { type: "spring", stiffness: 320, damping: 28 };
 const MOBILE_PANEL_TRANSITION = { duration: 0.12, ease: "easeOut" };
-const shallowEqualObject = (left, right) => {
-  if (left === right) return true;
-  if (!left || !right) return false;
+const equalLayerValue = (left, right, seen = new WeakMap()) => {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object")
+    return false;
+
+  const leftIsArray = Array.isArray(left);
+  if (leftIsArray !== Array.isArray(right)) return false;
+  const leftPrototype = Object.getPrototypeOf(left);
+  const rightPrototype = Object.getPrototypeOf(right);
+  const isPlainObject =
+    !leftIsArray &&
+    (leftPrototype === Object.prototype || leftPrototype === null) &&
+    (rightPrototype === Object.prototype || rightPrototype === null);
+  if (!leftIsArray && !isPlainObject) return false;
+
+  let compared = seen.get(left);
+  if (compared?.has(right)) return true;
+  if (!compared) {
+    compared = new WeakSet();
+    seen.set(left, compared);
+  }
+  compared.add(right);
+
+  if (leftIsArray) {
+    return (
+      left.length === right.length &&
+      left.every((value, index) => equalLayerValue(value, right[index], seen))
+    );
+  }
+
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key) => Object.is(left[key], right[key]));
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(right, key) &&
+        equalLayerValue(left[key], right[key], seen),
+    )
+  );
 };
 const shallowEqualObjectArray = (left, right) => {
   if (left === right) return true;
   if (!Array.isArray(left) || !Array.isArray(right)) return false;
   if (left.length !== right.length) return false;
   for (let index = 0; index < left.length; index += 1) {
-    if (!shallowEqualObject(left[index], right[index])) return false;
+    if (!equalLayerValue(left[index], right[index])) return false;
   }
   return true;
 };
@@ -927,6 +970,7 @@ export default function XrayCalibrationWorkspace({
   const mobileObjectDragControls = useDragControls();
   const simpleMobileSheetDragControls = useDragControls();
   const zakVisorDragControls = useDragControls();
+  const layerSettingsDragControls = useDragControls();
   const calibrationPanelRef = useRef(null);
   const compareContainerRef = useRef(null);
   const imageCanvasRef = useRef(null);
@@ -936,6 +980,8 @@ export default function XrayCalibrationWorkspace({
   const mobileLoupeCanvasRef = useRef(null);
   const compareCanvasRef = useRef(null);
   const mainUploadInputRef = useRef(null);
+  const [distalCutGuideSvgImage, setDistalCutGuideSvgImage] = useState(null);
+  const planningImportInputRef = useRef(null);
   const layerUploadInputRef = useRef(null);
   const canvasPhotoUploadInputRef = useRef(null);
   const compareUploadInputRef = useRef(null);
@@ -956,6 +1002,7 @@ export default function XrayCalibrationWorkspace({
   const storageWarningRef = useRef(false);
   const skipNextAutosaveRef = useRef(false);
   const restoredRef = useRef(false);
+  const skipBeforeUnloadRef = useRef(false);
   const sidebarResizeRef = useRef(null);
   const templateSyncingRef = useRef(false);
   const sheetImageSyncingRef = useRef(false);
@@ -1238,6 +1285,8 @@ export default function XrayCalibrationWorkspace({
   const [snapModifierPressed, setSnapModifierPressed] = useState(false);
   const [selectedCutLayerId, setSelectedCutLayerId] = useState(null);
   const [selectedCutLayerExtraIds, setSelectedCutLayerExtraIds] = useState([]);
+  const [centerLockPlacementLayerIds, setCenterLockPlacementLayerIds] =
+    useState([]);
   const [selectedFreeLinePointIndex, setSelectedFreeLinePointIndex] =
     useState(null);
   const [addAnchorPointMode, setAddAnchorPointMode] = useState(false);
@@ -1442,6 +1491,7 @@ export default function XrayCalibrationWorkspace({
   const [simpleLayerFloatingPopup, setSimpleLayerFloatingPopup] =
     useState(null);
   const [simplePlanningModal, setSimplePlanningModal] = useState(null);
+  const [tkaApproachModalOpen, setTkaApproachModalOpen] = useState(false);
   const [planningImplantModalOpen, setPlanningImplantModalOpen] =
     useState(false);
   const [planningProcedure, setPlanningProcedure] = useState("tka");
@@ -2268,6 +2318,22 @@ export default function XrayCalibrationWorkspace({
       null,
     [planningGuides, selectedPlanningGuideId],
   );
+  useEffect(() => {
+    let cancelled = false;
+    const svgImage = new Image();
+    svgImage.onload = () => {
+      if (!cancelled) setDistalCutGuideSvgImage(svgImage);
+    };
+    svgImage.onerror = () => {
+      if (!cancelled) setNotice("SVG panduan distal femur gagal dimuat.");
+    };
+    svgImage.src = "/tka/distal-femoral-cut-guide.svg";
+    return () => {
+      cancelled = true;
+      svgImage.onload = null;
+      svgImage.onerror = null;
+    };
+  }, []);
   const guideBuilderReference = useMemo(() => {
     if (selectedLine) {
       return {
@@ -2959,6 +3025,7 @@ export default function XrayCalibrationWorkspace({
     setSelectedHkaId(null);
     setSelectedCutLayerId(null);
     setSelectedCutLayerExtraIds([]);
+    setCenterLockPlacementLayerIds([]);
     setSelectedPlanningGuideId(null);
     setSelectedAnnotationId(null);
     setSelectionPulse(null);
@@ -4729,6 +4796,9 @@ export default function XrayCalibrationWorkspace({
         level: Number.isFinite(layer.level) ? layer.level : 100,
         lockScale: Boolean(layer.lockScale),
         lockRotation: Boolean(layer.lockRotation),
+        rotationPivot: layer.rotationPivot?.enabled
+          ? { ...layer.rotationPivot, enabled: true }
+          : null,
         hidden: Boolean(layer.hidden),
         autoScaleFromCalibration: Boolean(layer.autoScaleFromCalibration),
         rulerPxPerMm: Number.isFinite(Number(layer.rulerPxPerMm))
@@ -8021,6 +8091,7 @@ export default function XrayCalibrationWorkspace({
   useEffect(() => {
     if (typeof window === "undefined" || !image) return undefined;
     const handler = (e) => {
+      if (skipBeforeUnloadRef.current) return;
       e.preventDefault();
       e.returnValue = "";
     };
@@ -8105,7 +8176,8 @@ export default function XrayCalibrationWorkspace({
       if (typeof window === "undefined") return;
 
       try {
-        const raw = window.localStorage.getItem(STORY_STORAGE_KEY);
+        const importedRaw = await loadImportedStoryFromIDB();
+        const raw = importedRaw || window.localStorage.getItem(STORY_STORAGE_KEY);
         if (!raw) {
           const idbEntry = await loadImageFromIDB();
           if (idbEntry?.dataUrl && !cancelled) {
@@ -8131,7 +8203,7 @@ export default function XrayCalibrationWorkspace({
           restoredRef.current = true;
           return;
         }
-        if (isTransientImageSrc(payload.mainImageSrc)) {
+        if (!importedRaw && isTransientImageSrc(payload.mainImageSrc)) {
           window.localStorage.removeItem(STORY_STORAGE_KEY);
           const idbEntry = await loadImageFromIDB();
           if (idbEntry?.dataUrl && !cancelled) {
@@ -8219,6 +8291,58 @@ export default function XrayCalibrationWorkspace({
                 level: clamp(Number(layer.level ?? 100), 10, 300),
                 lockScale: Boolean(layer.lockScale),
                 lockRotation: Boolean(layer.lockRotation),
+                rotationPivot:
+                  layer.rotationPivot?.enabled &&
+                  Number.isFinite(Number(layer.rotationPivot.x)) &&
+                  Number.isFinite(Number(layer.rotationPivot.y)) &&
+                  Number.isFinite(Number(layer.rotationPivot.localX)) &&
+                  Number.isFinite(Number(layer.rotationPivot.localY))
+                    ? {
+                        enabled: true,
+                        groupKey:
+                          typeof layer.rotationPivot.groupKey === "string"
+                            ? layer.rotationPivot.groupKey
+                            : null,
+                        x: Number(layer.rotationPivot.x),
+                        y: Number(layer.rotationPivot.y),
+                        localX: Number(layer.rotationPivot.localX),
+                        localY: Number(layer.rotationPivot.localY),
+                        previousLockScale: Boolean(
+                          layer.rotationPivot.previousLockScale,
+                        ),
+                        guides:
+                          layer.rotationPivot.guides &&
+                          [
+                            layer.rotationPivot.guides.leftX,
+                            layer.rotationPivot.guides.rightX,
+                            layer.rotationPivot.guides.topY,
+                            layer.rotationPivot.guides.bottomY,
+                          ].every((value) => Number.isFinite(Number(value)))
+                            ? {
+                          leftX: clamp(
+                            Number(layer.rotationPivot.guides.leftX),
+                            0,
+                            modelWidth,
+                          ),
+                          rightX: clamp(
+                            Number(layer.rotationPivot.guides.rightX),
+                            0,
+                            modelWidth,
+                          ),
+                          topY: clamp(
+                            Number(layer.rotationPivot.guides.topY),
+                            0,
+                            modelHeight,
+                          ),
+                          bottomY: clamp(
+                            Number(layer.rotationPivot.guides.bottomY),
+                            0,
+                            modelHeight,
+                          ),
+                              }
+                            : undefined,
+                      }
+                    : null,
                 hidden: Boolean(layer.hidden),
                 autoScaleFromCalibration: Boolean(
                   layer.autoScaleFromCalibration,
@@ -8550,6 +8674,10 @@ export default function XrayCalibrationWorkspace({
         }
 
         setNotice("Story sebelumnya berhasil dimuat (offline).");
+        if (importedRaw) {
+          await clearImportedStoryFromIDB();
+          setNotice("Project JSON berhasil dibuka. Anda dapat melanjutkan editing.");
+        }
       } catch {
         setNotice("Gagal memuat story tersimpan.");
       } finally {
@@ -8855,7 +8983,8 @@ export default function XrayCalibrationWorkspace({
 
   useEffect(() => {
     const nextItems = LOCAL_IMPLANT_LIBRARY.filter(
-      (item) => item.type === selectedImplantType,
+      (item) =>
+        item.type === selectedImplantType && isImplantLibraryItemVisible(item),
     );
     if (nextItems.length === 0) {
       setSelectedImplantLibraryId(null);
@@ -10487,9 +10616,47 @@ export default function XrayCalibrationWorkspace({
       for (let i = cutLayers.length - 1; i >= 0; i -= 1) {
         const layer = cutLayers[i];
         if (layer.hidden) continue;
+        if (layer.rotationPivot?.enabled) {
+          const pivot = layer.rotationPivot;
+          const guides = pivot.guides || {
+            leftX: pivot.x - Math.max(24, modelWidth * 0.12),
+            rightX: pivot.x + Math.max(24, modelWidth * 0.12),
+            topY: pivot.y - Math.max(24, modelHeight * 0.12),
+            bottomY: pivot.y + Math.max(24, modelHeight * 0.12),
+          };
+          const guideHandles = [
+            ["center-guide-left", guides.leftX, pivot.y],
+            ["center-guide-right", guides.rightX, pivot.y],
+            ["center-guide-top", pivot.x, guides.topY],
+            ["center-guide-bottom", pivot.x, guides.bottomY],
+          ];
+          for (const [handleKey, x, y] of guideHandles) {
+            if (
+              Math.hypot(imagePoint.x - x, imagePoint.y - y) <=
+              thresholdInImage
+            ) {
+              return { layerId: layer.id, handleKey, handleType: "guide" };
+            }
+          }
+          const pivotDistance = Math.hypot(
+            imagePoint.x - Number(pivot.x),
+            imagePoint.y - Number(pivot.y),
+          );
+          if (pivotDistance <= thresholdInImage) {
+            return {
+              layerId: layer.id,
+              handleKey: "center-lock-pivot",
+              handleType: "pivot",
+            };
+          }
+        }
         const controlPoints = getLayerControlPoints(layer);
 
         for (const controlPoint of controlPoints) {
+          if (
+            layer.rotationPivot?.enabled &&
+            controlPoint.type !== "rotate"
+          ) continue;
           if (controlPoint.type === "rotate" && layer.lockRotation) continue;
           if (controlPoint.type !== "rotate" && layer.lockScale) continue;
           const distance = Math.hypot(
@@ -10508,7 +10675,7 @@ export default function XrayCalibrationWorkspace({
 
       return null;
     },
-    [cutLayers, isCoarsePointer, view.scale],
+    [cutLayers, isCoarsePointer, modelHeight, modelWidth, view.scale],
   );
 
   const findCutLayerByPoint = useCallback(
@@ -11159,6 +11326,31 @@ export default function XrayCalibrationWorkspace({
             );
           }
           overlayCtx.stroke();
+
+          overlayCtx.save();
+          overlayCtx.font = "500 8px Inter, sans-serif";
+          overlayCtx.textAlign = "center";
+          overlayCtx.textBaseline = "middle";
+          overlayCtx.lineJoin = "round";
+          overlayCtx.lineWidth = 2;
+          overlayCtx.strokeStyle = "rgba(15, 23, 42, 0.82)";
+          overlayCtx.fillStyle = opts.color;
+          overlayCtx.shadowColor = "rgba(15, 23, 42, 0.55)";
+          overlayCtx.shadowBlur = 2;
+          for (let index = 0; index <= tickCount; index += 1) {
+            const t = index / tickCount;
+            const px = start.x + dx * t + nx * 15;
+            const py = start.y + dy * t + ny * 15;
+            const cmValue = (line.presetMm / 10) * t;
+            const wholeCm = Math.round(cmValue);
+            if (Math.abs(cmValue - wholeCm) > 0.01 || wholeCm % 2 === 0) {
+              continue;
+            }
+            const label = String(wholeCm);
+            overlayCtx.strokeText(label, px, py);
+            overlayCtx.fillText(label, px, py);
+          }
+          overlayCtx.restore();
         }
       }
 
@@ -12608,6 +12800,15 @@ export default function XrayCalibrationWorkspace({
       );
     }
 
+    const activeDistalSvgGuide = selectedPlanningGuideId
+      ? planningGuides.find(
+          (guide) => guide.id === selectedPlanningGuideId &&
+            guide.kind === "valgusCut" && !guide.hidden,
+        )
+      : planningGuides.slice().reverse().find(
+          (guide) => guide.kind === "valgusCut" && !guide.hidden,
+        );
+
     for (let index = 0; index < planningGuides.length; index += 1) {
       const guide = planningGuides[index];
       if (guide.hidden) continue;
@@ -12664,6 +12865,34 @@ export default function XrayCalibrationWorkspace({
           : DEFAULT_PLANNING_GUIDE_STROKE_WIDTH,
       );
       const strokeWidth = baseStrokeWidth + (isEmphasizedGuide ? 0.25 : 0);
+
+      if (
+        guide.id === activeDistalSvgGuide?.id &&
+        distalCutGuideSvgImage?.complete &&
+        distalCutGuideSvgImage.naturalWidth > 0
+      ) {
+        const dx = cutB.x - cutA.x;
+        const dy = cutB.y - cutA.y;
+        const cutScreenLength = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        const width = cutScreenLength * (640 / 620);
+        const height = cutScreenLength * (500 / 620);
+        const offset = cutScreenLength * (57.25 / 620);
+        const centerX = (cutA.x + cutB.x) / 2 + Math.sin(angle) * offset;
+        const centerY = (cutA.y + cutB.y) / 2 - Math.cos(angle) * offset;
+        overlayCtx.save();
+        overlayCtx.globalAlpha = 0.94;
+        overlayCtx.translate(centerX, centerY);
+        overlayCtx.rotate(angle);
+        overlayCtx.drawImage(
+          distalCutGuideSvgImage,
+          -width / 2,
+          -height / 2,
+          width,
+          height,
+        );
+        overlayCtx.restore();
+      }
 
       overlayCtx.save();
       if (isPulsingGuide) {
@@ -12896,7 +13125,8 @@ export default function XrayCalibrationWorkspace({
         selectionPulse.id === activeCutLayer.id;
       const corners = getLayerCorners(activeCutLayer);
       const controlPoints = getLayerControlPoints(activeCutLayer);
-      const edgePoints = activeCutLayer.lockScale
+      const edgePoints =
+        activeCutLayer.lockScale || activeCutLayer.rotationPivot?.enabled
         ? []
         : controlPoints.filter((point) => point.type === "edge");
       const rotatePoint = activeCutLayer.lockRotation
@@ -12940,7 +13170,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.fillStyle = "#ffffff";
         overlayCtx.strokeStyle = "#a855f7";
         overlayCtx.lineWidth = 1.8;
-        if (!activeCutLayer.lockScale) {
+        if (!activeCutLayer.lockScale && !activeCutLayer.rotationPivot?.enabled) {
           for (const corner of corners) {
             const screen = imageToScreenPoint(corner.x, corner.y);
             overlayCtx.beginPath();
@@ -13063,6 +13293,86 @@ export default function XrayCalibrationWorkspace({
             overlayCtx.stroke();
           }
         }
+      }
+      overlayCtx.restore();
+    }
+
+    const renderedCenterLocks = new Set();
+    for (const layer of cutLayers) {
+      const pivot = layer.rotationPivot;
+      if (layer.hidden || !pivot?.enabled) continue;
+      const visualKey = pivot.groupKey || `layer-${layer.id}`;
+      if (renderedCenterLocks.has(visualKey)) continue;
+      renderedCenterLocks.add(visualKey);
+      const isActive = cutLayers.some((candidate) =>
+        selectedCutLayerIdsSet.has(candidate.id) &&
+        candidate.rotationPivot?.enabled &&
+        (candidate.rotationPivot.groupKey || `layer-${candidate.id}`) ===
+          visualKey,
+      );
+      const guides = pivot.guides || {
+        leftX: Math.max(0, pivot.x - modelWidth * 0.12),
+        rightX: Math.min(modelWidth, pivot.x + modelWidth * 0.12),
+        topY: Math.max(0, pivot.y - modelHeight * 0.12),
+        bottomY: Math.min(modelHeight, pivot.y + modelHeight * 0.12),
+      };
+      const pin = imageToScreenPoint(pivot.x, pivot.y);
+      const endpoints = {
+        left: imageToScreenPoint(guides.leftX, pivot.y),
+        right: imageToScreenPoint(guides.rightX, pivot.y),
+        top: imageToScreenPoint(pivot.x, guides.topY),
+        bottom: imageToScreenPoint(pivot.x, guides.bottomY),
+      };
+      overlayCtx.save();
+      overlayCtx.strokeStyle = isActive
+        ? "rgba(45, 212, 191, 0.92)"
+        : "rgba(45, 212, 191, 0.56)";
+      overlayCtx.lineWidth = isActive ? 1.5 : 1.1;
+      overlayCtx.setLineDash([6, 5]);
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(endpoints.left.x, pin.y);
+      overlayCtx.lineTo(endpoints.right.x, pin.y);
+      overlayCtx.moveTo(pin.x, endpoints.top.y);
+      overlayCtx.lineTo(pin.x, endpoints.bottom.y);
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+      overlayCtx.fillStyle = "rgba(15, 23, 42, 0.9)";
+      overlayCtx.strokeStyle = "#2dd4bf";
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.arc(pin.x, pin.y, isCoarsePointer ? 12 : 9, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(pin.x - 5, pin.y);
+      overlayCtx.lineTo(pin.x + 5, pin.y);
+      overlayCtx.moveTo(pin.x, pin.y - 5);
+      overlayCtx.lineTo(pin.x, pin.y + 5);
+      overlayCtx.stroke();
+      if (isActive) {
+        for (const endpoint of Object.values(endpoints)) {
+          overlayCtx.fillStyle = "#0f172a";
+          overlayCtx.strokeStyle = "#5eead4";
+          overlayCtx.lineWidth = 1.8;
+          overlayCtx.beginPath();
+          overlayCtx.arc(
+            endpoint.x,
+            endpoint.y,
+            isCoarsePointer ? 8 : 5.5,
+            0,
+            Math.PI * 2,
+          );
+          overlayCtx.fill();
+          overlayCtx.stroke();
+        }
+      }
+      if (isActive) {
+        drawTag(overlayCtx, pin.x, pin.y - 16, "CENTER LOCK", "#2dd4bf", {
+          fontSize: 8,
+          paddingX: 5,
+          paddingY: 2,
+          radius: 999,
+        });
       }
       overlayCtx.restore();
     }
@@ -13953,6 +14263,7 @@ export default function XrayCalibrationWorkspace({
     isPlanningLayout,
     planningProcedure,
     planningGuides,
+    distalCutGuideSvgImage,
     level,
     lineTypeColor,
     lineTypeLabel,
@@ -14668,12 +14979,25 @@ export default function XrayCalibrationWorkspace({
   }, [sheetMainImages, selectedSheetMainImageId, useSheetImageAsMain]);
 
   const handleImageUpload = useCallback(
-    (event) => {
+    async (event) => {
       const input = event.currentTarget;
       const file = input.files?.[0];
       if (!file) return;
 
-      const nextObjectUrl = URL.createObjectURL(file);
+      let imageBlob;
+      try {
+        if (isJpegXlFile(file)) {
+          setNotice("Mendekode JPEG XL secara lokal...");
+        }
+        imageBlob = await prepareImageFileForBrowser(file);
+      } catch (error) {
+        input.value = "";
+        console.error("Gagal mendekode file gambar:", error);
+        setNotice(`Gagal membaca gambar: ${error?.message || "format file tidak didukung"}. Coba PNG/JPEG.`);
+        return;
+      }
+
+      const nextObjectUrl = URL.createObjectURL(imageBlob);
       const nextImage = new Image();
 
       nextImage.onload = () => {
@@ -14688,10 +15012,10 @@ export default function XrayCalibrationWorkspace({
         });
         if (applied) {
           objectUrlRef.current = nextObjectUrl;
-          mainImageFileRef.current = file;
+          mainImageFileRef.current = imageBlob;
           setMainImageSrc(nextObjectUrl);
           setHasTemporaryMainImage(true);
-          readFileAsDataUrl(file)
+          readFileAsDataUrl(imageBlob)
             .then((dataUrl) => saveImageToIDB(dataUrl, file.name))
             .catch(() => {});
           if (isSimpleUiMode) {
@@ -14710,8 +15034,8 @@ export default function XrayCalibrationWorkspace({
         setNotice("Gagal membaca file gambar. Coba file lain.");
       };
 
-      nextImage.src = nextObjectUrl;
       input.value = "";
+      nextImage.src = nextObjectUrl;
     },
     [applyMainImageToWorkspace, isSimpleUiMode, openSimpleCalibrationModal],
   );
@@ -14907,6 +15231,68 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      if (centerLockPlacementLayerIds.length > 0) {
+        const targetLayers = cutLayers.filter((layer) =>
+          centerLockPlacementLayerIds.includes(layer.id),
+        );
+        if (
+          targetLayers.length !== centerLockPlacementLayerIds.length ||
+          targetLayers.some((layer) => layer.hidden)
+        ) {
+          setCenterLockPlacementLayerIds([]);
+          return;
+        }
+        const isInsideSelectedLayer = targetLayers.some((layer) => {
+          const local = toLayerShapeLocal(boundedPoint, layer);
+          const mask = getLayerMaskDisplayPoints(layer);
+          if (mask) return pointInPolygon(local, mask);
+          const size = getLayerDisplaySize(layer);
+          return (
+            Math.abs(local.x) <= size.width / 2 &&
+            Math.abs(local.y) <= size.height / 2
+          );
+        });
+        if (!isInsideSelectedLayer) {
+          setNotice("Letakkan center lock di dalam salah satu layer terpilih.");
+          return;
+        }
+        const groupKey = `center-${Date.now()}`;
+        scheduleCutLayersUpdate((previous) =>
+          previous.map((layer) => {
+            if (!centerLockPlacementLayerIds.includes(layer.id)) return layer;
+            const local = toLayerShapeLocal(boundedPoint, layer);
+            return {
+              ...layer,
+              lockScale: true,
+              rotationPivot: {
+                enabled: true,
+                groupKey,
+                x: boundedPoint.x,
+                y: boundedPoint.y,
+                localX: local.x,
+                localY: local.y,
+                previousLockScale: Boolean(
+                  layer.rotationPivot?.previousLockScale ?? layer.lockScale,
+                ),
+                guides: {
+                  leftX: Math.max(0, boundedPoint.x - modelWidth * 0.12),
+                  rightX: Math.min(modelWidth, boundedPoint.x + modelWidth * 0.12),
+                  topY: Math.max(0, boundedPoint.y - modelHeight * 0.12),
+                  bottomY: Math.min(modelHeight, boundedPoint.y + modelHeight * 0.12),
+                },
+              },
+            };
+          }),
+        );
+        setSelectedCutLayerId(centerLockPlacementLayerIds[0]);
+        setSelectedCutLayerExtraIds(centerLockPlacementLayerIds.slice(1));
+        setCenterLockPlacementLayerIds([]);
+        setNotice(
+          `Center Lock aktif pada ${targetLayers.length} layer. Tarik pin untuk memindahkan pusat; tarik ujung sumbu untuk mengatur panjang garis.`,
+        );
+        return;
+      }
 
       const draftPointSets = {
         hkaAuto: draftHkaPoints,
@@ -15122,6 +15508,9 @@ export default function XrayCalibrationWorkspace({
                     originDisplayWidth: Number(layer?.displayWidth || 16),
                     originDisplayHeight: Number(layer?.displayHeight || 16),
                     originRotation: Number(layer?.rotation || 0),
+                    rotationPivot: layer?.rotationPivot
+                      ? { ...layer.rotationPivot }
+                      : null,
                     lockScale: Boolean(layer?.lockScale),
                     lockRotation: Boolean(layer?.lockRotation),
                   };
@@ -16097,6 +16486,7 @@ export default function XrayCalibrationWorkspace({
         }
 
         const allowLayerTransformHandle =
+          Boolean(selectedCutLayer?.rotationPivot?.enabled) ||
           !(isSimpleUiMode && isMobileViewport && isTouchLikePointer) ||
           mobileToolMode !== "move";
         const hitCutLayerHandle = allowLayerTransformHandle
@@ -16108,7 +16498,14 @@ export default function XrayCalibrationWorkspace({
           );
           if (!targetLayer) return;
           const isRotateHandle = hitCutLayerHandle.handleKey === "rotate";
+          const isCenterPivot =
+            hitCutLayerHandle.handleKey === "center-lock-pivot";
+          const isCenterGuide = hitCutLayerHandle.handleKey.startsWith(
+            "center-guide-",
+          );
           if (
+            !isCenterPivot &&
+            !isCenterGuide &&
             shouldBlockTransformHandle({ isTouchLikePointer, isRotateHandle })
           ) {
             setNotice(getTransformHandleGuardNotice());
@@ -16125,6 +16522,25 @@ export default function XrayCalibrationWorkspace({
           clearMobileHandleAssist();
           clearMobilePlanningGuideHandleAssist();
           syncMobileCanvasSelection("tool");
+          if (isCenterPivot) {
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "move-center-lock-pivot",
+              layerId: targetLayer.id,
+              groupKey: targetLayer.rotationPivot?.groupKey || null,
+            };
+            return;
+          }
+          if (isCenterGuide) {
+            setHistoryPaused(true);
+            interactionRef.current = {
+              mode: "resize-center-lock-guide",
+              layerId: targetLayer.id,
+              handleKey: hitCutLayerHandle.handleKey,
+              groupKey: targetLayer.rotationPivot?.groupKey || null,
+            };
+            return;
+          }
           if (targetLayer.lockScale && !isRotateHandle) {
             setNotice(
               "Scale layer terkunci. Buka Lock Scale dulu untuk resize.",
@@ -16139,14 +16555,20 @@ export default function XrayCalibrationWorkspace({
           }
           setHistoryPaused(true);
           if (isRotateHandle) {
+            const rotateCenterX = targetLayer.rotationPivot?.enabled
+              ? targetLayer.rotationPivot.x
+              : targetLayer.centerX;
+            const rotateCenterY = targetLayer.rotationPivot?.enabled
+              ? targetLayer.rotationPivot.y
+              : targetLayer.centerY;
             interactionRef.current = {
               mode: "rotate-cut-layer",
               layerId: targetLayer.id,
-              centerX: targetLayer.centerX,
-              centerY: targetLayer.centerY,
+              centerX: rotateCenterX,
+              centerY: rotateCenterY,
               startPointerAngle: Math.atan2(
-                imagePoint.y - targetLayer.centerY,
-                imagePoint.x - targetLayer.centerX,
+                imagePoint.y - rotateCenterY,
+                imagePoint.x - rotateCenterX,
               ),
               startRotation: Number(targetLayer.rotation || 0),
             };
@@ -16923,6 +17345,7 @@ export default function XrayCalibrationWorkspace({
       }
 
       const allowGenericLayerTransformHandle =
+        Boolean(selectedCutLayer?.rotationPivot?.enabled) ||
         (tool === "pan" &&
           !(isSimpleUiMode && isMobileViewport && isTouchLikePointer)) ||
         (tool === "pan" && mobileToolMode !== "move");
@@ -16935,7 +17358,14 @@ export default function XrayCalibrationWorkspace({
         );
         if (!targetLayer) return;
         const isRotateHandle = genericCutLayerHandle.handleKey === "rotate";
+        const isCenterPivot =
+          genericCutLayerHandle.handleKey === "center-lock-pivot";
+        const isCenterGuide = genericCutLayerHandle.handleKey.startsWith(
+          "center-guide-",
+        );
         if (
+          !isCenterPivot &&
+          !isCenterGuide &&
           shouldBlockTransformHandle({ isTouchLikePointer, isRotateHandle })
         ) {
           setNotice(getTransformHandleGuardNotice());
@@ -16955,6 +17385,25 @@ export default function XrayCalibrationWorkspace({
           noticeText:
             "Layer dipilih. Drag handle untuk resize atau rotate langsung di canvas.",
         });
+        if (isCenterPivot) {
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "move-center-lock-pivot",
+            layerId: targetLayer.id,
+            groupKey: targetLayer.rotationPivot?.groupKey || null,
+          };
+          return;
+        }
+        if (isCenterGuide) {
+          setHistoryPaused(true);
+          interactionRef.current = {
+            mode: "resize-center-lock-guide",
+            layerId: targetLayer.id,
+            handleKey: genericCutLayerHandle.handleKey,
+            groupKey: targetLayer.rotationPivot?.groupKey || null,
+          };
+          return;
+        }
         if (targetLayer.lockScale && !isRotateHandle) {
           setNotice("Scale layer terkunci. Buka Lock Scale dulu untuk resize.");
           return;
@@ -16968,14 +17417,20 @@ export default function XrayCalibrationWorkspace({
         if (tool === "pan") {
           setHistoryPaused(true);
           if (isRotateHandle) {
+            const rotateCenterX = targetLayer.rotationPivot?.enabled
+              ? targetLayer.rotationPivot.x
+              : targetLayer.centerX;
+            const rotateCenterY = targetLayer.rotationPivot?.enabled
+              ? targetLayer.rotationPivot.y
+              : targetLayer.centerY;
             interactionRef.current = {
               mode: "rotate-cut-layer",
               layerId: targetLayer.id,
-              centerX: targetLayer.centerX,
-              centerY: targetLayer.centerY,
+              centerX: rotateCenterX,
+              centerY: rotateCenterY,
               startPointerAngle: Math.atan2(
-                imagePoint.y - targetLayer.centerY,
-                imagePoint.x - targetLayer.centerX,
+                imagePoint.y - rotateCenterY,
+                imagePoint.x - rotateCenterX,
               ),
               startRotation: Number(targetLayer.rotation || 0),
             };
@@ -18128,6 +18583,7 @@ export default function XrayCalibrationWorkspace({
       appendCircleMeasurement,
       appendLineMeasurement,
       captureMobilePointer,
+      centerLockPlacementLayerIds,
       canvasAnatomySide,
       findClosestAngleHandle,
       findClosestAngleId,
@@ -18191,6 +18647,8 @@ export default function XrayCalibrationWorkspace({
       mobileCanvasLocked,
       mobileCanvasMode,
       mobileToolMode,
+      modelHeight,
+      modelWidth,
       planningGuides,
       linePreset,
       resolveSnappedImagePoint,
@@ -18201,6 +18659,7 @@ export default function XrayCalibrationWorkspace({
       selectedCutLayerIds,
       selectedCutLayerIdsSet,
       setHistoryPaused,
+      scheduleCutLayersUpdate,
       shouldBlockTransformHandle,
       screenToImagePoint,
       showTouchHoverDetails,
@@ -18212,6 +18671,7 @@ export default function XrayCalibrationWorkspace({
       cropToolActive,
       tool,
       toLayerLocal,
+      toLayerShapeLocal,
       triggerSelectionPulse,
       view.panX,
       view.panY,
@@ -18258,6 +18718,101 @@ export default function XrayCalibrationWorkspace({
         // dragging an existing line/circle/angle handle) while repositioning
         // a landmark point mid-sequence.
         beginMobilePrecisionEdit(point, nextPoint, "Titik");
+        return;
+      }
+
+      if (interactionRef.current?.mode === "move-center-lock-pivot") {
+        event.preventDefault();
+        const { layerId, groupKey } = interactionRef.current;
+        const point = getLocalPoint(event);
+        const nextPoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        scheduleCutLayersUpdate((previous) =>
+          previous.map((layer) => {
+            if (
+              layer.id !== layerId &&
+              (!groupKey || layer.rotationPivot?.groupKey !== groupKey)
+            ) return layer;
+            const local = toLayerShapeLocal(nextPoint, layer);
+            const oldPivot = layer.rotationPivot;
+            const oldGuides = oldPivot.guides || {
+              leftX: Math.max(0, oldPivot.x - modelWidth * 0.12),
+              rightX: Math.min(modelWidth, oldPivot.x + modelWidth * 0.12),
+              topY: Math.max(0, oldPivot.y - modelHeight * 0.12),
+              bottomY: Math.min(modelHeight, oldPivot.y + modelHeight * 0.12),
+            };
+            const dx = nextPoint.x - oldPivot.x;
+            const dy = nextPoint.y - oldPivot.y;
+            return {
+              ...layer,
+              rotationPivot: {
+                enabled: true,
+                x: nextPoint.x,
+                y: nextPoint.y,
+                localX: local.x,
+                localY: local.y,
+                previousLockScale: Boolean(
+                  layer.rotationPivot?.previousLockScale,
+                ),
+                guides: {
+                  leftX: clamp(oldGuides.leftX + dx, 0, modelWidth),
+                  rightX: clamp(oldGuides.rightX + dx, 0, modelWidth),
+                  topY: clamp(oldGuides.topY + dy, 0, modelHeight),
+                  bottomY: clamp(oldGuides.bottomY + dy, 0, modelHeight),
+                },
+              },
+            };
+          }),
+        );
+        return;
+      }
+
+      if (interactionRef.current?.mode === "resize-center-lock-guide") {
+        event.preventDefault();
+        const { layerId, handleKey, groupKey } = interactionRef.current;
+        const point = getLocalPoint(event);
+        const nextPoint = clampToImageBounds(
+          screenToImagePoint(point.x, point.y),
+        );
+        scheduleCutLayersUpdate((previous) =>
+          previous.map((layer) => {
+            if (
+              (layer.id !== layerId &&
+                (!groupKey || layer.rotationPivot?.groupKey !== groupKey)) ||
+              !layer.rotationPivot?.enabled
+            ) {
+              return layer;
+            }
+            const pivot = layer.rotationPivot;
+            const guides = pivot.guides || {
+              leftX: Math.max(0, pivot.x - modelWidth * 0.12),
+              rightX: Math.min(modelWidth, pivot.x + modelWidth * 0.12),
+              topY: Math.max(0, pivot.y - modelHeight * 0.12),
+              bottomY: Math.min(modelHeight, pivot.y + modelHeight * 0.12),
+            };
+            const minGap = 12;
+            const nextGuides = { ...guides };
+            if (handleKey === "center-guide-left") {
+              nextGuides.leftX = clamp(nextPoint.x, 0, pivot.x - minGap);
+            } else if (handleKey === "center-guide-right") {
+              nextGuides.rightX = clamp(
+                nextPoint.x,
+                pivot.x + minGap,
+                modelWidth,
+              );
+            } else if (handleKey === "center-guide-top") {
+              nextGuides.topY = clamp(nextPoint.y, 0, pivot.y - minGap);
+            } else if (handleKey === "center-guide-bottom") {
+              nextGuides.bottomY = clamp(
+                nextPoint.y,
+                pivot.y + minGap,
+                modelHeight,
+              );
+            }
+            return { ...layer, rotationPivot: { ...pivot, guides: nextGuides } };
+          }),
+        );
         return;
       }
 
@@ -18412,6 +18967,27 @@ export default function XrayCalibrationWorkspace({
             if (!origin) return layer;
             const canScale = !origin.lockScale && !layer.lockScale;
             const canRotate = !origin.lockRotation && !layer.lockRotation;
+            if (origin.rotationPivot?.enabled || layer.rotationPivot?.enabled) {
+              if (!canRotate) return layer;
+              const pivot = origin.rotationPivot || layer.rotationPivot;
+              const nextRotation =
+                Math.round(
+                  normalizeRotationDegrees(
+                    Number(origin.originRotation || 0) + rotationDeltaDeg,
+                  ) * 10,
+                ) / 10;
+              const offset = rotateVector(
+                Number(pivot.localX) || 0,
+                Number(pivot.localY) || 0,
+                nextRotation,
+              );
+              return {
+                ...layer,
+                centerX: Number(pivot.x) - offset.x,
+                centerY: Number(pivot.y) - offset.y,
+                rotation: nextRotation,
+              };
+            }
             const nextCenterX =
               Number(origin.originCenterX || layer.centerX || 0) + dx;
             const nextCenterY =
@@ -19015,6 +19591,7 @@ export default function XrayCalibrationWorkspace({
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) => {
             if (!layerIds.includes(layer.id)) return layer;
+            if (layer.rotationPivot?.enabled) return layer;
             const origin = origins.find((item) => item.layerId === layer.id);
             const nextCenterX =
               Number(origin?.originCenterX || layer.centerX || 0) + dx;
@@ -19082,7 +19659,7 @@ export default function XrayCalibrationWorkspace({
         scheduleCutLayersUpdate((prev) =>
           prev.map((layer) =>
             layer.id === layerId
-              ? layer.lockScale
+              ? layer.lockScale || layer.rotationPivot?.enabled
                 ? layer
                 : {
                     ...layer,
@@ -19352,6 +19929,20 @@ export default function XrayCalibrationWorkspace({
                 : {
                     ...layer,
                     rotation: nextRotation,
+                    ...(layer.rotationPivot?.enabled
+                      ? (() => {
+                          const pivot = layer.rotationPivot;
+                          const offset = rotateVector(
+                            pivot.localX,
+                            pivot.localY,
+                            nextRotation,
+                          );
+                          return {
+                            centerX: pivot.x - offset.x,
+                            centerY: pivot.y - offset.y,
+                          };
+                        })()
+                      : {}),
                   }
               : layer,
           ),
@@ -19396,6 +19987,20 @@ export default function XrayCalibrationWorkspace({
                 : {
                     ...layer,
                     rotation: nextRotation,
+                    ...(layer.rotationPivot?.enabled
+                      ? (() => {
+                          const pivot = layer.rotationPivot;
+                          const offset = rotateVector(
+                            pivot.localX,
+                            pivot.localY,
+                            nextRotation,
+                          );
+                          return {
+                            centerX: pivot.x - offset.x,
+                            centerY: pivot.y - offset.y,
+                          };
+                        })()
+                      : {}),
                   }
               : layer,
           ),
@@ -20151,7 +20756,7 @@ export default function XrayCalibrationWorkspace({
         setMobileCanvasMode("edit");
         setMobileToolMode("move");
         setSimpleMobilePanel(null);
-        setMobileObjectSettingsOpen(true);
+        setMobileObjectSettingsOpen(!isPlanningLayout);
         clearTouchHoverDetails();
       }
     },
@@ -20183,6 +20788,7 @@ export default function XrayCalibrationWorkspace({
       imageHeight,
       imageWidth,
       isMobileViewport,
+      isPlanningLayout,
       isSimpleUiMode,
       isCoarsePointer,
       releaseActivePointerCapture,
@@ -21583,7 +22189,7 @@ export default function XrayCalibrationWorkspace({
   );
 
   const handleLayerUpload = useCallback(
-    (event) => {
+    async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
 
@@ -21595,7 +22201,17 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const nextObjectUrl = URL.createObjectURL(file);
+      let imageBlob;
+      try {
+        imageBlob = await prepareImageFileForBrowser(file);
+      } catch (error) {
+        console.error("Gagal membaca gambar template:", error);
+        setNotice(`Gagal membaca template: ${error?.message || "format file tidak didukung"}.`);
+        event.target.value = "";
+        return;
+      }
+
+      const nextObjectUrl = URL.createObjectURL(imageBlob);
       const layerImage = new Image();
       layerImage.onload = () => {
         const srcW = layerImage.naturalWidth || layerImage.width || 0;
@@ -21630,7 +22246,7 @@ export default function XrayCalibrationWorkspace({
   );
 
   const handleCanvasPhotoUpload = useCallback(
-    (event) => {
+    async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
 
@@ -21640,7 +22256,17 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      const objectUrl = URL.createObjectURL(file);
+      let imageBlob;
+      try {
+        imageBlob = await prepareImageFileForBrowser(file);
+      } catch (error) {
+        console.error("Gagal membaca foto tambahan:", error);
+        setNotice(`Gagal membaca foto: ${error?.message || "format file tidak didukung"}.`);
+        event.target.value = "";
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(imageBlob);
       const photo = new Image();
       photo.onload = () => {
         const width = photo.naturalWidth || photo.width || 0;
@@ -21843,18 +22469,28 @@ export default function XrayCalibrationWorkspace({
     setNotice("Local cache dan temporary image dibersihkan.");
   }, [compareImageSrc, mainImageSrc]);
 
-  const handleCompareUpload = useCallback((event) => {
+  const handleCompareUpload = useCallback(async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const nextObjectUrl = URL.createObjectURL(file);
+    let imageBlob;
+    try {
+      imageBlob = await prepareImageFileForBrowser(file);
+    } catch (error) {
+      console.error("Gagal membaca gambar compare:", error);
+      setNotice(`Gagal membaca gambar compare: ${error?.message || "format file tidak didukung"}.`);
+      event.target.value = "";
+      return;
+    }
+
+    const nextObjectUrl = URL.createObjectURL(imageBlob);
     const nextImage = new Image();
     nextImage.onload = () => {
       if (compareObjectUrlRef.current) {
         URL.revokeObjectURL(compareObjectUrlRef.current);
       }
       compareObjectUrlRef.current = nextObjectUrl;
-      compareImageFileRef.current = file;
+    compareImageFileRef.current = imageBlob;
       setCompareImage(nextImage);
       setCompareImageSrc(nextObjectUrl);
       setCompareImageName(file.name);
@@ -23780,6 +24416,41 @@ export default function XrayCalibrationWorkspace({
     isSimpleUiMode,
   ]);
 
+  const exportReportJxl = useCallback(async () => {
+    if (!hasCalibration && !isSimpleUiMode) {
+      focusCalibrationStep("Export report dikunci sampai kalibrasi aktif.");
+      return;
+    }
+
+    const outCanvas = createReportCanvasSnapshot("export JPEG XL", {
+      exportScale: 3,
+      sharpen: true,
+    });
+    if (!outCanvas) return;
+
+    setNotice("Mengekspor JPEG XL lossless secara lokal...");
+    try {
+      const blob = await encodeCanvasAsJxl(outCanvas);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const baseName = (imageName || "xray-report").replace(/\.[^.]+$/, "");
+      link.href = url;
+      link.download = `${baseName}-report-lossless.jxl`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1200);
+      setHasExportedReport(true);
+      setNotice("Report JPEG XL lossless berhasil diunduh.");
+    } catch {
+      setNotice("Export JXL gagal. Periksa dukungan WebAssembly atau coba ekspor PNG.");
+    }
+  }, [
+    createReportCanvasSnapshot,
+    focusCalibrationStep,
+    hasCalibration,
+    imageName,
+    isSimpleUiMode,
+  ]);
+
   const exportReportPdf = useCallback(() => {
     if (!hasCalibration && !isSimpleUiMode) {
       focusCalibrationStep("Export report dikunci sampai kalibrasi aktif.");
@@ -24355,6 +25026,7 @@ export default function XrayCalibrationWorkspace({
     setBrushMode,
     setBrushSize,
     tool,
+      toLayerShapeLocal,
     undoHistory,
   ]);
 
@@ -24871,13 +25543,26 @@ export default function XrayCalibrationWorkspace({
     LOCAL_IMPLANT_LIBRARY,
   );
   const replacementTypeItems = LOCAL_IMPLANT_LIBRARY.filter(
-    (item) => item.type === selectedImplantType,
+    (item) =>
+      item.type === selectedImplantType && isImplantLibraryItemVisible(item),
+  );
+  const replacementNormmedItems = LOCAL_IMPLANT_LIBRARY.filter(
+    (item) =>
+      item.brand?.toLowerCase() === "normmed" &&
+      isImplantLibraryItemVisible(item),
+  );
+  const replacementNormmedStemItems = replacementNormmedItems.filter(
+    (item) => item.type === "stem",
+  );
+  const replacementNormmedNonStemItems = replacementNormmedItems.filter(
+    (item) => item.type !== "stem",
   );
   const replacementSystems = Array.from(
     new Set(replacementTypeItems.map((item) => item.system || "Lainnya")),
   );
   const selectedReplacementSystem =
-    selectedReplacementImplant?.type === selectedImplantType
+    selectedReplacementImplant?.type === selectedImplantType &&
+    isImplantLibraryItemVisible(selectedReplacementImplant)
       ? selectedReplacementImplant.system || "Lainnya"
       : replacementSystems[0] || "";
   const replacementSystemItems = replacementTypeItems.filter(
@@ -24887,8 +25572,10 @@ export default function XrayCalibrationWorkspace({
     .trim()
     .toLowerCase();
   const replacementSearchResults = normalizedImplantReplaceSearch
-    ? LOCAL_IMPLANT_LIBRARY.filter((item) =>
-        [item.label, item.brand, item.system, item.size, item.type]
+    ? LOCAL_IMPLANT_LIBRARY.filter(
+        (item) =>
+          isImplantLibraryItemVisible(item) &&
+          [item.label, item.brand, item.system, item.size, item.type]
           .filter(Boolean)
           .some((value) =>
             String(value)
@@ -25294,6 +25981,14 @@ export default function XrayCalibrationWorkspace({
       planningGroup: "knee",
     },
     {
+      icon: "axisBuilder",
+      label: "Approach TKA",
+      desc: "Pelajari pendekatan medial parapatellar, midvastus, dan subvastus melalui animasi.",
+      key: "tkaApproach",
+      action: "tkaApproach",
+      planningGroup: "knee",
+    },
+    {
       icon: "guideBuilder",
       label: "Guide",
       desc: "Buat garis bantu parallel atau perpendicular dari line referensi.",
@@ -25404,6 +26099,7 @@ export default function XrayCalibrationWorkspace({
     if (item.key === "halluxValgus") return "angle";
     if (item.key === "hkaAuto") return "target";
     if (item.key === "guideBuilder") return "guideBuilder";
+    if (item.key === "tkaApproach") return "axisBuilder";
     if (item.key === "cupAssessment") return "circle";
     if (item.key === "zakAceta") return "package";
     if (item.key === "dorr") return "preset";
@@ -25420,6 +26116,13 @@ export default function XrayCalibrationWorkspace({
   };
   const handleSimpleActionToolSelect = (item) => {
     if (item.disabled) return;
+    if (item.action === "tkaApproach") {
+      setSimplePlanningModal(null);
+      setSimpleMobilePanel(null);
+      setSimpleMoreToolsOpen(false);
+      setTkaApproachModalOpen(true);
+      return;
+    }
     if (item.action === "tkaAssessment") {
       setTkaAssessmentOpen((v) => !v);
       return;
@@ -25934,6 +26637,9 @@ export default function XrayCalibrationWorkspace({
         name: guide.name || `${guideName} #${index + 1}`,
         metric: getPlanningGuideLabelText(guide, index),
         type: "planningGuide",
+        previewSrc: guide.kind === "valgusCut"
+          ? "/tka/distal-femoral-cut-guide.svg"
+          : null,
         unit: "deg",
         value: Number.isFinite(Number(guide.angleDeg))
           ? Number(guide.angleDeg)
@@ -26189,20 +26895,28 @@ export default function XrayCalibrationWorkspace({
   const savePlanningLocally = async () => {
     try {
       const payload = buildStoryPayload();
+      const embedImageSource = async (src) => {
+        if (src?.startsWith("data:")) return src;
+        if (src?.startsWith("blob:")) {
+          const response = await fetch(src);
+          if (!response.ok) throw new Error("Gagal membaca gambar lokal.");
+          return readFileAsDataUrl(await response.blob());
+        }
+        return getPersistableImageSrc(src);
+      };
+
       if (mainImageFileRef.current)
         payload.mainImageSrc = await readFileAsDataUrl(
           mainImageFileRef.current,
         );
-      else if (mainImageSrc?.startsWith("blob:"))
-        payload.mainImageSrc = await readFileAsDataUrl(
-          await (await fetch(mainImageSrc)).blob(),
-        );
+      else payload.mainImageSrc = await embedImageSource(mainImageSrc);
       for (const layer of payload.cutLayers) {
         const original = cutLayers.find((item) => item.id === layer.id);
-        if (original?.imageSrc?.startsWith("blob:"))
-          layer.imageSrc = await readFileAsDataUrl(
-            await (await fetch(original.imageSrc)).blob(),
-          );
+        if (
+          original?.imageSrc?.startsWith("blob:") ||
+          original?.imageSrc?.startsWith("data:")
+        )
+          layer.imageSrc = await embedImageSource(original.imageSrc);
         else if (
           original?.image &&
           !layer.imageSrc &&
@@ -26215,10 +26929,8 @@ export default function XrayCalibrationWorkspace({
           layer.imageSrc = canvas.toDataURL("image/png");
         }
       }
-      if (compareImageSrc?.startsWith("blob:"))
-        payload.compareImageSrc = await readFileAsDataUrl(
-          await (await fetch(compareImageSrc)).blob(),
-        );
+      if (compareImageSrc)
+        payload.compareImageSrc = await embedImageSource(compareImageSrc);
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(payload)], { type: "application/json" }),
       );
@@ -26230,6 +26942,43 @@ export default function XrayCalibrationWorkspace({
       saveStoryNow();
     } catch {
       setNotice("Project gagal disimpan. Coba kembali.");
+    }
+  };
+  const handlePlanningJsonImport = async (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const payload = JSON.parse(await file.text());
+      const requiredArrays = ["lines", "angles", "circles", "hkaSets", "cutLayers"];
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !requiredArrays.every((key) => Array.isArray(payload[key])) ||
+        typeof payload.mainImageSrc !== "string" ||
+        !payload.mainImageSrc.trim() ||
+        payload.mainImageSrc.startsWith("blob:")
+      ) {
+        throw new Error("Format project Zakzav tidak valid atau gambar utama tidak tersedia.");
+      }
+
+      await saveImportedStoryToIDB(JSON.stringify(payload));
+      if (payload.mainImageSrc.startsWith("data:image")) {
+        await saveImageToIDB(payload.mainImageSrc, payload.imageName || file.name);
+      }
+      await saveCutLayersToIDB(payload.cutLayers);
+      skipBeforeUnloadRef.current = true;
+      setNotice("Project JSON dimuat. Workspace sedang dipulihkan...");
+      window.location.reload();
+    } catch (error) {
+      setNotice(
+        error instanceof SyntaxError
+          ? "File bukan JSON project Zakzav yang valid."
+          : error.message || "JSON gagal dibuka. Periksa file lalu coba lagi.",
+      );
+    } finally {
+      input.value = "";
     }
   };
   const groupPlanningObjects = ({ objectKeys = [], mode = "group" } = {}) => {
@@ -26308,9 +27057,11 @@ export default function XrayCalibrationWorkspace({
   };
   const planningActions = {
     upload: () => mainUploadInputRef.current?.click(),
+    importJson: () => planningImportInputRef.current?.click(),
     addPhoto: () => canvasPhotoUploadInputRef.current?.click(),
     library: () => setLibraryModalOpen(true),
     calibrate: () => openSimpleCalibrationModal(),
+    tkaApproach: () => setTkaApproachModalOpen(true),
     properties: openPlanningProperties,
     freeCut: activateCanvasFreeCut,
     implantLibrary: () => openSimpleImplantTemplateOverlay(),
@@ -26324,6 +27075,54 @@ export default function XrayCalibrationWorkspace({
     deleteLayer: removeSelectedCutLayer,
     cases: () => setPatientCaseManagerOpen(true),
     groupObjects: groupPlanningObjects,
+    centerLock: () => {
+      if (!selectedCutLayer) {
+        setNotice("Pilih layer di canvas terlebih dahulu untuk memakai Center Lock.");
+        return;
+      }
+      const targetLayerIds = selectedCutLayerIds.slice(0, 3);
+      if (selectedCutLayerIds.length > 3) {
+        setNotice("Center Lock mendukung maksimal 3 layer sekaligus.");
+        return;
+      }
+      if (centerLockPlacementLayerIds.length > 0) {
+        setCenterLockPlacementLayerIds([]);
+        setNotice("Penempatan Center Lock dibatalkan.");
+        return;
+      }
+      const targetLayers = cutLayers.filter((layer) =>
+        targetLayerIds.includes(layer.id),
+      );
+      if (
+        targetLayers.length > 0 &&
+        targetLayers.every((layer) => layer.rotationPivot?.enabled)
+      ) {
+        scheduleCutLayersUpdate((previous) =>
+          previous.map((layer) =>
+            targetLayerIds.includes(layer.id) && layer.rotationPivot?.enabled
+              ? {
+                  ...layer,
+                  lockScale: Boolean(
+                    layer.rotationPivot?.previousLockScale,
+                  ),
+                  rotationPivot: null,
+                }
+              : layer,
+          ),
+        );
+        setNotice(
+          `Center Lock dilepas dari ${targetLayers.length} layer. Transformasi kembali normal.`,
+        );
+        return;
+      }
+      setCenterLockPlacementLayerIds(targetLayerIds);
+      setMobileCanvasMode("edit");
+      setMobileToolMode("move");
+      handleToolChange("pan");
+      setNotice(
+        `Tap pada salah satu dari ${targetLayerIds.length} layer untuk memasang satu pin bersama.`,
+      );
+    },
   };
   const planningTools = [
     {
@@ -26406,6 +27205,24 @@ export default function XrayCalibrationWorkspace({
       icon: PencilLine,
       action: () => handleLinePresetChange("normal"),
       active: tool === "draw" && linePreset === "normal",
+    },
+    {
+      id: "centerLock",
+      label:
+        selectedCutLayerIds.length > 1 &&
+        selectedCutLayers.every((layer) => layer.rotationPivot?.enabled)
+          ? `Lepas Center Lock (${selectedCutLayerIds.length})`
+          : selectedCutLayer?.rotationPivot?.enabled
+        ? "Lepas Center Lock"
+        : centerLockPlacementLayerIds.length > 0
+          ? "Batalkan Center Lock"
+          : "Center Lock",
+      icon: Target,
+      action: planningActions.centerLock,
+      active:
+        selectedCutLayers.some((layer) => layer.rotationPivot?.enabled) ||
+        centerLockPlacementLayerIds.length > 0,
+      disabled: !selectedCutLayer,
     },
     {
       id: "angle",
@@ -27110,8 +27927,17 @@ export default function XrayCalibrationWorkspace({
       <input
         ref={mainUploadInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.jxl,image/jxl"
         onChange={handleImageUpload}
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      <input
+        ref={planningImportInputRef}
+        type="file"
+        accept=".json,application/json"
+        onChange={handlePlanningJsonImport}
         className="hidden"
         aria-hidden="true"
         tabIndex={-1}
@@ -27119,7 +27945,7 @@ export default function XrayCalibrationWorkspace({
       <input
         ref={compareUploadInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.jxl,image/jxl"
         onChange={handleCompareUpload}
         className="hidden"
         aria-hidden="true"
@@ -27128,7 +27954,7 @@ export default function XrayCalibrationWorkspace({
       <input
         ref={canvasPhotoUploadInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.jxl,image/jxl"
         onChange={handleCanvasPhotoUpload}
         className="hidden"
         aria-hidden="true"
@@ -29934,10 +30760,10 @@ export default function XrayCalibrationWorkspace({
             exit={{ opacity: 0 }}
             className={
               toolConfigModal === "layerSettings" && isSimpleUiMode
-                ? "pointer-events-none fixed inset-0 z-[94] flex items-start justify-end p-3 pt-[74px] sm:p-4 sm:pt-[84px] lg:pt-[78px]"
+                ? "layer-settings-simple-overlay pointer-events-none fixed inset-0 z-[94] flex items-start justify-end p-3 pt-[74px] sm:p-4 sm:pt-[84px] lg:pt-[78px]"
                 : `fixed inset-0 z-[94] flex items-center justify-center p-4 ${
                     toolConfigModal === "layerSettings"
-                      ? "bg-slate-950/24 backdrop-blur-sm"
+                      ? "bg-slate-950/10"
                       : "bg-slate-950/35"
                   }`
             }
@@ -29947,16 +30773,22 @@ export default function XrayCalibrationWorkspace({
               }
             }}
           >
-            <motion.div
+              <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 14 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 14 }}
               transition={PANEL_SPRING}
+                drag={toolConfigModal === "layerSettings" && !isSimpleUiMode}
+                dragControls={layerSettingsDragControls}
+                dragListener={false}
+                dragMomentum={false}
+                dragElastic={0.04}
+                dragConstraints={{ left: -420, right: 420, top: -260, bottom: 260 }}
               className={
                 toolConfigModal === "layerSettings"
                   ? isSimpleUiMode
                     ? "simple-layer-settings-modal pointer-events-auto max-h-[min(48dvh,360px)] w-[min(calc(100vw-24px),300px)] overflow-y-auto rounded-lg border border-cyan-500/60 p-2 shadow-lg [color:var(--soft-text)] [background:var(--soft-raised-bg)]"
-                    : "glass-panel max-h-[min(60dvh,440px)] w-full max-w-[360px] overflow-y-auto rounded-lg border border-cyan-500/60 p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
+                    : "layer-settings-desktop-modal glass-panel flex h-[min(76dvh,760px)] max-h-[min(76dvh,760px)] w-[min(calc(100vw-48px),780px)] flex-col overflow-hidden rounded-xl border border-cyan-500/50 p-3 [color:var(--soft-text)] shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
                   : `w-full ${
                       toolConfigModal === "layerMove" ||
                       toolConfigModal === "layerLayout"
@@ -29968,11 +30800,20 @@ export default function XrayCalibrationWorkspace({
               }
             >
               <div
+                onPointerDown={(event) => {
+                  if (
+                    toolConfigModal === "layerSettings" &&
+                    !isSimpleUiMode &&
+                    !event.target.closest("button, input, select")
+                  ) {
+                    layerSettingsDragControls.start(event);
+                  }
+                }}
                 className={
                   toolConfigModal === "layerSettings"
                     ? isSimpleUiMode
                       ? "mb-2 flex items-center justify-between gap-3"
-                      : "mb-4 flex items-center justify-between gap-3"
+                      : "mb-2 flex cursor-grab touch-none items-center justify-between gap-3 px-1 active:cursor-grabbing"
                     : "mb-2 flex items-center justify-between gap-3"
                 }
               >
@@ -30139,14 +30980,14 @@ export default function XrayCalibrationWorkspace({
 
               {toolConfigModal === "layerSettings" ? (
                 isSimpleUiMode ? (
-                  <div className="flex flex-col gap-2">
+                  <div className="layer-settings-simple-content flex flex-col gap-2">
                     {!selectedCutLayer || !selectedLayerMetrics ? (
                       <div className="rounded-2xl border border-[var(--soft-border)] px-3 py-3 text-xs text-[var(--soft-text)] [background:var(--soft-surface-bg)]">
                         Pilih satu layer dulu dari daftar layer.
                       </div>
                     ) : (
                       <>
-                        <div className="rounded-md border border-cyan-500/40 bg-cyan-500/5 px-2 py-1.5">
+                        <div className="layer-settings-simple-target rounded-md border border-cyan-500/40 bg-cyan-500/5 px-2 py-1.5">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <LayerNameInput
@@ -30172,7 +31013,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
 
                         {selectedCutLayer.kind === "free-line" ? (
-                          <div className="rounded-[20px] border border-[var(--soft-border)] p-3 shadow-sm [background:var(--soft-surface-bg)]">
+                          <div className="layer-settings-simple-free-line rounded-[20px] border border-[var(--soft-border)] p-3 shadow-sm [background:var(--soft-surface-bg)]">
                             <button
                               type="button"
                               onClick={() =>
@@ -30353,7 +31194,7 @@ export default function XrayCalibrationWorkspace({
                         ) : null}
 
                         {isWarpableImageLayer(selectedCutLayer) ? (
-                          <div className="rounded-[20px] border border-[var(--soft-border)] p-3 shadow-sm [background:var(--soft-surface-bg)]">
+                          <div className="layer-settings-simple-bend rounded-[20px] border border-[var(--soft-border)] p-3 shadow-sm [background:var(--soft-surface-bg)]">
                             <button
                               type="button"
                               onClick={() =>
@@ -30457,11 +31298,11 @@ export default function XrayCalibrationWorkspace({
                           </div>
                         ) : null}
 
-                        <div className="rounded-xl border border-[var(--soft-border)] p-2.5 shadow-sm [background:var(--soft-surface-bg)]">
+                        <div className="layer-settings-simple-actions rounded-xl border border-[var(--soft-border)] p-2.5 shadow-sm [background:var(--soft-surface-bg)]">
                           <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
                             Aksi Cepat
                           </div>
-                          <div className="grid grid-cols-4 gap-1.5">
+                          <div className="grid grid-cols-3 gap-1.5 min-[420px]:grid-cols-4">
                             {[
                               {
                                 key: "move",
@@ -30560,19 +31401,19 @@ export default function XrayCalibrationWorkspace({
                                 onClick={action.onClick}
                                 disabled={action.disabled}
                                 title={action.label}
-                                className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-md border border-[var(--soft-border)] px-1 py-1.5 text-[10px] font-semibold transition [background:var(--soft-raised-bg)] hover:border-cyan-500/50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.key === "delete" ? "text-rose-500" : "text-[var(--soft-text)]"}`}
+                                className={`flex min-h-11 min-w-0 w-full flex-col items-center justify-center gap-1 rounded-md border border-[var(--soft-border)] px-1 py-1.5 text-center text-[10px] leading-tight font-semibold whitespace-normal break-words transition [background:var(--soft-raised-bg)] hover:border-cyan-500/50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${action.key === "delete" ? "text-rose-500" : "text-[var(--soft-text)]"}`}
                               >
                                 <Icon
                                   name={action.icon}
                                   className="h-3.5 w-3.5"
                                 />
-                                <span>{action.label}</span>
+                                <span className="min-w-0 max-w-full whitespace-normal break-words">{action.label}</span>
                               </button>
                             ))}
                           </div>
                         </div>
 
-                        <details key={selectedCutLayer.id} className="group rounded-md border border-amber-500/50 bg-amber-500/5">
+                        <details key={selectedCutLayer.id} className="layer-settings-simple-advanced group rounded-md border border-amber-500/50 bg-amber-500/5">
                           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-bold text-[var(--soft-text-hi)] focus-visible:outline-2 focus-visible:outline-cyan-500">
                             <Icon name="settings" className="h-4 w-4 shrink-0 text-amber-500" />
                             <span className="flex-1">
@@ -30583,7 +31424,7 @@ export default function XrayCalibrationWorkspace({
                             </span>
                           </summary>
                           <div className="space-y-2 border-t border-[var(--soft-border)] p-2.5">
-                            <div className="grid grid-cols-3 gap-1.5">
+                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -30634,7 +31475,7 @@ export default function XrayCalibrationWorkspace({
                               <div className="mb-1.5 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
                                 Susunan
                               </div>
-                              <div className="grid grid-cols-4 gap-1.5">
+                              <div className="grid grid-cols-2 gap-1.5 min-[480px]:grid-cols-4">
                                 {[
                                   ["back", "moveDown", "Bawah"],
                                   ["down", "moveDown", "Turun"],
@@ -30741,7 +31582,7 @@ export default function XrayCalibrationWorkspace({
                           </div>
                         </details>
 
-                        <div className="rounded-xl border border-[var(--soft-border)] p-2.5 shadow-sm [background:var(--soft-surface-bg)]">
+                        <div className="layer-settings-simple-transform rounded-xl border border-[var(--soft-border)] p-2.5 shadow-sm [background:var(--soft-surface-bg)]">
                           <div className="mb-2 text-[9px] font-black tracking-widest text-[var(--soft-text)] uppercase opacity-70">
                             Transform & Tampilan
                           </div>
@@ -30836,7 +31677,7 @@ export default function XrayCalibrationWorkspace({
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-2">
+                  <div className="layer-settings-desktop-content flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
                     {!selectedCutLayer || !selectedLayerMetrics ? (
                       <div
                         className={`${SOFT_INSET_CLASS} px-3 py-2 text-xs text-slate-700`}
@@ -30846,7 +31687,7 @@ export default function XrayCalibrationWorkspace({
                     ) : (
                       <>
                         <div
-                          className="rounded-[18px] border border-[var(--soft-border)] px-4 py-3 text-sm shadow-[var(--soft-shadow-inset)] [background:var(--soft-inset-bg)]"
+                          className="layer-settings-desktop-target rounded-xl border border-[var(--soft-border)] px-4 py-3 text-sm shadow-[var(--soft-shadow-inset)] [background:var(--soft-inset-bg)]"
                           style={{
                             color:
                               selectedLayerPalette?.text ||
@@ -30879,40 +31720,12 @@ export default function XrayCalibrationWorkspace({
                             </div>
                           ) : null}
                         </div>
-                        <div
-                          className={`grid gap-1 rounded-full border border-[var(--soft-border)] p-1 shadow-[var(--soft-shadow-inset)] [background:var(--soft-inset-bg)] ${
-                            hasLayerContentControls
-                              ? "grid-cols-3"
-                              : "grid-cols-2"
-                          }`}
-                        >
-                          {[
-                            { key: "transform", label: "Transform" },
-                            ...(hasLayerContentControls
-                              ? [{ key: "content", label: "Content" }]
-                              : []),
-                            { key: "view", label: "View" },
-                          ].map(({ key, label }) => (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() => setLayerSettingsTab(key)}
-                              className={`rounded-full px-2 py-2 text-xs font-bold transition ${
-                                layerSettingsTab === key
-                                  ? "border border-cyan-500/40 bg-cyan-500/15 text-cyan-400 shadow-[inset_0_1px_3px_rgba(6,182,212,0.18)]"
-                                  : "border border-transparent text-[var(--soft-text)] opacity-60 hover:opacity-90"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="rounded-[18px] border border-[var(--soft-border)] p-3 shadow-[var(--soft-shadow-inset)] [background:var(--soft-inset-bg)]">
-                          <div className="mb-2 text-[10px] font-extrabold tracking-widest text-[var(--soft-text)] uppercase opacity-60">
-                            Aksi & Susunan Layer
-                          </div>
-                          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
+                        <div className="layer-settings-desktop-actions rounded-xl border border-[var(--soft-border)] p-3 shadow-[var(--soft-shadow-inset)] [background:var(--soft-inset-bg)]">
+                          <section>
+                            <div className="mb-2 text-[10px] font-extrabold tracking-widest text-[var(--soft-text)] uppercase opacity-70">
+                              Aksi cepat
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               onClick={() => {
@@ -30945,6 +31758,20 @@ export default function XrayCalibrationWorkspace({
                             >
                               Duplicate
                             </button>
+                              <button
+                                type="button"
+                                onClick={removeSelectedCutLayer}
+                                className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold text-rose-600`}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </section>
+                          <section className="layer-settings-desktop-order mt-4 border-t border-[var(--soft-border)] pt-3">
+                            <div className="mb-2 text-[10px] font-extrabold tracking-widest text-[var(--soft-text)] uppercase opacity-70">
+                              Urutan layer
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               onClick={() =>
@@ -30983,18 +31810,13 @@ export default function XrayCalibrationWorkspace({
                             >
                               Atas
                             </button>
-                            <button
-                              type="button"
-                              onClick={removeSelectedCutLayer}
-                              className={`${SOFT_TEXT_BUTTON_CLASS} px-2 py-2 text-[10px] font-bold text-rose-600`}
-                            >
-                              Delete
-                            </button>
+                            </div>
+                          </section>
                           </div>
-                        </div>
 
-                        {layerSettingsTab === "transform" ? (
-                          <div className="flex flex-col gap-3">
+                        <section className="layer-settings-desktop-section">
+                          <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-cyan-400">Transformasi</h3>
+                          <div className="layer-settings-desktop-transform layer-settings-desktop-panel flex flex-col gap-3">
                             <div className="grid grid-cols-3 gap-2 rounded-[22px] border border-white/70 bg-[#eef2f7] p-2 shadow-[inset_4px_4px_10px_rgba(148,163,184,0.18),inset_-4px_-4px_10px_rgba(255,255,255,0.82)]">
                               <IconButton
                                 icon="target"
@@ -31399,10 +32221,12 @@ export default function XrayCalibrationWorkspace({
                               </div>
                             </div>
                           </div>
-                        ) : null}
+                        </section>
 
-                        {layerSettingsTab === "content" ? (
-                          <div className="flex flex-col gap-2">
+                        {hasLayerContentControls ? (
+                          <section className="layer-settings-desktop-section">
+                          <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-cyan-400">Konten layer</h3>
+                          <div className="layer-settings-desktop-panel flex flex-col gap-2">
                             {isImageBackedLayerKind(selectedCutLayer.kind) ? (
                               <div
                                 className={`${SOFT_SURFACE_CLASS} px-3 py-3`}
@@ -31800,10 +32624,12 @@ export default function XrayCalibrationWorkspace({
                               </div>
                             ) : null}
                           </div>
+                          </section>
                         ) : null}
 
-                        {layerSettingsTab === "view" ? (
-                          <div className="flex flex-col gap-2">
+                        <section className="layer-settings-desktop-section">
+                          <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-cyan-400">Tampilan</h3>
+                          <div className="layer-settings-desktop-panel flex flex-col gap-2">
                             {selectedCutLayer.kind === "free-line" ? (
                               <button
                                 type="button"
@@ -32226,7 +33052,7 @@ export default function XrayCalibrationWorkspace({
                               />
                             </div>
                           </div>
-                        ) : null}
+                        </section>
                       </>
                     )}
                   </div>
@@ -32856,9 +33682,11 @@ export default function XrayCalibrationWorkspace({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/25 p-0 sm:items-center sm:p-5"
+              className="fixed inset-0 z-[180] flex items-end justify-center mobile-planning-backdrop bg-slate-950/25 p-0 sm:items-center sm:p-5"
               role="presentation"
-              onMouseDown={() => setPlanningImplantModalOpen(false)}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setPlanningImplantModalOpen(false);
+              }}
             >
               <motion.section
                 initial={{ y: 28, opacity: 0, scale: 0.98 }}
@@ -32867,7 +33695,7 @@ export default function XrayCalibrationWorkspace({
                 role="dialog"
                 aria-modal="true"
                 aria-label="Implant Template"
-                onMouseDown={(event) => event.stopPropagation()}
+                data-glass-tone={isDark ? "dark" : "light"}
                 className={`implant-template-modal flex max-h-[48dvh] w-full flex-col overflow-hidden rounded-t-xl border sm:max-h-[78dvh] sm:max-w-[620px] sm:rounded-xl ${
                   isDark
                     ? "border-slate-600 bg-slate-900 text-slate-100"
@@ -33121,7 +33949,7 @@ export default function XrayCalibrationWorkspace({
               role="dialog"
               aria-modal="true"
               aria-labelledby="hka-modal-title"
-              className="w-full max-w-[440px] rounded-[30px] border border-white/85 bg-[#e9eef5] p-5 text-slate-900 shadow-[14px_14px_34px_rgba(15,23,42,0.24),-8px_-8px_24px_rgba(255,255,255,0.72)]"
+              className="hka-side-modal w-full max-w-[440px] rounded-[30px] border border-white/85 bg-[#e9eef5] p-5 text-slate-900 shadow-[14px_14px_34px_rgba(15,23,42,0.24),-8px_-8px_24px_rgba(255,255,255,0.72)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -33152,7 +33980,7 @@ export default function XrayCalibrationWorkspace({
                 </button>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-2 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.14),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
+              <div className="hka-side-options mt-4 grid grid-cols-2 gap-2 rounded-[24px] border border-white/78 bg-[#e9eef5] p-2 shadow-[inset_6px_6px_13px_rgba(100,116,139,0.14),inset_-6px_-6px_13px_rgba(255,255,255,0.72)]">
                 {[
                   { key: "right", label: "Kaki kanan" },
                   { key: "left", label: "Kaki kiri" },
@@ -33175,7 +34003,7 @@ export default function XrayCalibrationWorkspace({
                 })}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+              <div className="hka-side-mode mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
                 <label>
                   Mode
                   <select
@@ -33200,7 +34028,7 @@ export default function XrayCalibrationWorkspace({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+              <div className="hka-side-actions mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
                 <button
                   type="button"
                   onClick={() => {
@@ -33236,20 +34064,22 @@ export default function XrayCalibrationWorkspace({
                 cutLayers.map((l) => l.imageSrc).filter(Boolean),
               );
               const stemImplants = LOCAL_IMPLANT_LIBRARY.filter(
-                (i) => i.type === "stem" && !usedImgSrcs.has(i.imageSrc),
+                (i) => isImplantLibraryItemVisible(i) && i.type === "stem" && !usedImgSrcs.has(i.imageSrc),
               );
               const cupImplants = LOCAL_IMPLANT_LIBRARY.filter(
                 (i) =>
+                  isImplantLibraryItemVisible(i) &&
                   i.type === "cup" &&
                   !i.id.startsWith("bipolar") &&
                   !usedImgSrcs.has(i.imageSrc),
               );
               const bipolarImplants = LOCAL_IMPLANT_LIBRARY.filter(
                 (i) =>
+                  isImplantLibraryItemVisible(i) &&
                   i.id.startsWith("bipolar") && !usedImgSrcs.has(i.imageSrc),
               );
               const kneeImplants = LOCAL_IMPLANT_LIBRARY.filter(
-                (i) => i.type === "knee" && !usedImgSrcs.has(i.imageSrc),
+                (i) => isImplantLibraryItemVisible(i) && i.type === "knee" && !usedImgSrcs.has(i.imageSrc),
               );
 
               /* ─ procedure catalogue ─ */
@@ -33498,10 +34328,11 @@ export default function XrayCalibrationWorkspace({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-[98] flex items-end justify-center bg-slate-950/45 p-2 pb-[calc(env(safe-area-inset-bottom)+6px)] backdrop-blur-sm sm:items-center sm:p-4"
+                  className="fixed inset-0 z-[98] mobile-planning-backdrop flex items-end justify-center bg-slate-950/45 p-2 pb-[calc(env(safe-area-inset-bottom)+6px)] backdrop-blur-sm sm:items-center sm:p-4"
                   onClick={(e) => {
-                    if (e.target === e.currentTarget)
-                      setTemplatingWizardOpen(false);
+                    if (e.target !== e.currentTarget) return;
+                    if (wizardConfirmOpen) setWizardConfirmOpen(false);
+                    else setTemplatingWizardOpen(false);
                   }}
                 >
                   <motion.div
@@ -33512,10 +34343,12 @@ export default function XrayCalibrationWorkspace({
                     transition={PANEL_SPRING}
                     role="dialog"
                     aria-modal="true"
+                    aria-label={wizardConfirmOpen ? "Konfirmasi Template" : "Panduan Templating"}
+                    data-confirming={wizardConfirmOpen}
                     className="templating-wizard-modal relative flex max-h-[64dvh] w-full max-w-[min(100%,600px)] flex-col overflow-hidden rounded-t-[20px] border border-white/80 bg-[#e9eef5] text-slate-900 shadow-[18px_18px_42px_rgba(15,23,42,0.28),-10px_-10px_28px_rgba(255,255,255,0.72)] sm:max-h-[90dvh] sm:rounded-[30px]"
                   >
                     {/* ══ Header ══ */}
-                    <div className="templating-wizard-header flex shrink-0 items-center gap-2 border-b border-white/60 px-4 py-3">
+                    <div inert={wizardConfirmOpen} className="templating-wizard-header flex shrink-0 items-center gap-2 border-b border-white/60 px-4 py-3">
                       <svg
                         className="h-4 w-4 shrink-0 text-cyan-600"
                         viewBox="0 0 16 16"
@@ -33550,6 +34383,7 @@ export default function XrayCalibrationWorkspace({
                       </div>
                       <button
                         type="button"
+                        aria-label="Tutup Panduan Templating"
                         onClick={() => setTemplatingWizardOpen(false)}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-500 shadow-[3px_3px_7px_rgba(100,116,139,0.18),-3px_-3px_7px_rgba(255,255,255,0.72)]"
                       >
@@ -33558,7 +34392,7 @@ export default function XrayCalibrationWorkspace({
                     </div>
 
                     {/* ══ Step progress bar ══ */}
-                    <div className="flex shrink-0 gap-1 overflow-x-auto px-4 pt-2.5 pb-1">
+                    <div inert={wizardConfirmOpen} className="flex shrink-0 gap-1 overflow-x-auto px-4 pt-2.5 pb-1">
                       {stepLabels.slice(0, TOTAL_STEPS).map((label, idx) => {
                         const s = idx + 1;
                         const done = s < wizardStep;
@@ -33583,7 +34417,7 @@ export default function XrayCalibrationWorkspace({
                     </div>
 
                     {/* ══ Scrollable body ══ */}
-                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-2">
+                    <div inert={wizardConfirmOpen} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-2">
                       {/* ─── Resume banner: shown when returning to a partially-done wizard ─── */}
                       {wizardMaxStep > 1 &&
                         wizardStep === 1 &&
@@ -34375,7 +35209,7 @@ export default function XrayCalibrationWorkspace({
                               </svg>
                               Simpan Template ke Google Drive
                             </button>
-                            <div className="grid grid-cols-3 gap-1.5">
+                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -34397,6 +35231,17 @@ export default function XrayCalibrationWorkspace({
                                 className="min-h-10 rounded-[12px] border border-amber-200 bg-amber-50 text-[10px] font-black text-amber-700 disabled:opacity-40"
                               >
                                 JPEG
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTemplatingWizardOpen(false);
+                                  void exportReportJxl();
+                                }}
+                                disabled={!image}
+                                className="min-h-10 rounded-[12px] border border-violet-200 bg-violet-50 text-[10px] font-black text-violet-700 disabled:opacity-40"
+                              >
+                                JXL
                               </button>
                               <button
                                 type="button"
@@ -34432,7 +35277,7 @@ export default function XrayCalibrationWorkspace({
                     </div>
 
                     {/* ══ Footer navigation ══ */}
-                    <div className="templating-wizard-footer flex shrink-0 items-center justify-between gap-2 border-t border-white/60 px-4 py-3">
+                    <div inert={wizardConfirmOpen} className="templating-wizard-footer flex shrink-0 items-center justify-between gap-2 border-t border-white/60 px-4 py-3">
                       <button
                         type="button"
                         onClick={() => {
@@ -34520,7 +35365,7 @@ export default function XrayCalibrationWorkspace({
                           setWizardStep(5);
                         };
                         return (
-                          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/55 p-5 backdrop-blur-[3px]">
+                          <div className="templating-wizard-confirm absolute inset-0 z-20 flex items-center justify-center bg-slate-950/55 p-5 backdrop-blur-[3px]">
                             <motion.div
                               initial={{ opacity: 0, scale: 0.94, y: 8 }}
                               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -35302,6 +36147,46 @@ export default function XrayCalibrationWorkspace({
                   </>
                 )}
               </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isSimpleUiMode && tkaApproachModalOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/70 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setTkaApproachModalOpen(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={PANEL_SPRING}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tka-approach-title"
+              className="max-h-[92dvh] w-full max-w-5xl overflow-y-auto rounded-t-[20px] border border-slate-700 bg-slate-950 shadow-2xl sm:rounded-[24px]"
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-cyan-300">Menu Teknik TKA</p>
+                  <h2 id="tka-approach-title" className="text-sm font-bold text-slate-100">Surgical Approach</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTkaApproachModalOpen(false)}
+                  aria-label="Tutup teknik approach TKA"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <TKAApproachAnimator />
             </motion.div>
           </motion.div>
         ) : null}
@@ -38023,7 +38908,7 @@ export default function XrayCalibrationWorkspace({
                 ) : null}
 
                 {/* PNG / JPEG / PDF — 3 tombol rata lebar */}
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-4 gap-1">
                   {[
                     {
                       label: "PNG",
@@ -38036,6 +38921,12 @@ export default function XrayCalibrationWorkspace({
                       icon: "export",
                       onClick: exportReportJpeg,
                       title: "Export JPEG",
+                    },
+                    {
+                      label: "JXL",
+                      icon: "export",
+                      onClick: exportReportJxl,
+                      title: "Export JPEG XL lossless",
                     },
                     {
                       label: "PDF",
@@ -38535,7 +39426,7 @@ export default function XrayCalibrationWorkspace({
               <input
                 ref={layerUploadInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.jxl,image/jxl"
                 onChange={handleLayerUpload}
                 className="hidden"
               />
@@ -44030,95 +44921,146 @@ export default function XrayCalibrationWorkspace({
                       </button>
                     )}
                   {missingPelvicLines.length > 0 && (
-                    <div className="grid gap-1">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
-                        Garis yang belum ada
-                      </span>
-                      <div className="grid gap-1">
-                        {missingPelvicLines.map((line) => (
-                          <button
-                            key={line.id}
-                            type="button"
-                            className="planning-inline-action"
-                            aria-pressed={addingPelvicLineId === line.id}
-                            onClick={() => startAddingPelvicLine(line.id)}
-                          >
-                            {addingPelvicLineId === line.id
-                              ? `Menandai ${line.label}… (${pelvicLineAdditionPoints.length}/${line.landmarkKeys.length})`
-                              : `+ ${line.label}`}
-                          </button>
-                        ))}
+                    <section className="hip-lines-section grid gap-2 rounded-lg border border-slate-300/20 bg-slate-950/20 p-2.5">
+                      <header className="flex items-center justify-between gap-2">
+                        <div>
+                          <h3 className="m-0 text-xs font-bold text-slate-100">Garis yang belum dibuat</h3>
+                          <p className="hip-section-help m-0 mt-0.5 text-[10px] text-slate-400">Pilih sisi, lalu tandai landmark sesuai urutan.</p>
+                        </div>
+                        <span className="shrink-0 rounded-full border border-slate-400/30 px-2 py-1 text-[10px] text-slate-300">{missingPelvicLines.length}</span>
+                      </header>
+                      <div className="hip-line-grid grid gap-2">
+                        {[
+                          { key: "shenton", title: "Garis Shenton", hint: "Kontinuitas tepi medial sourcil ke leher femur.", color: "#4ade80", ids: ["shentonRight", "shentonLeft"] },
+                          { key: "kohler", title: "Garis Köhler", hint: "Batas medial ilioischial pada sisi terpilih.", color: "#fb923c", ids: ["kohlerRight", "kohlerLeft"] },
+                        ].map((group) => {
+                          const rows = group.ids.map((id) => PELVIC_ADDABLE_LINES.find((item) => item.id === id)).filter(Boolean);
+                          const missingIds = new Set(missingPelvicLines.map((item) => item.id));
+                          if (!rows.some((item) => missingIds.has(item.id))) return null;
+                          return (
+                            <section key={group.key} className="hip-line-group grid content-start gap-2 rounded-md border border-slate-300/20 bg-slate-900/50 p-2">
+                              <div className="flex items-start gap-2">
+                                <i aria-hidden="true" className="mt-1 h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: group.color }} />
+                                <div>
+                                  <h4 className="m-0 text-[11px] font-bold text-slate-100">{group.title}</h4>
+                                  <p className="hip-section-help m-0 mt-0.5 text-[9px] leading-snug text-slate-400">{group.hint}</p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {rows.map((line) => {
+                                  const side = line.id.endsWith("Right") ? "Kanan" : "Kiri";
+                                  const active = addingPelvicLineId === line.id;
+                                  if (!missingIds.has(line.id)) return <span key={line.id} className="flex min-h-9 items-center justify-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1 text-[9px] font-semibold text-emerald-300">{side} · Siap</span>;
+                                  const nextKey = line.landmarkKeys[pelvicLineAdditionPoints.length];
+                                  const nextPoint = PELVIC_ANALYSIS_LANDMARKS.find((item) => item.key === nextKey);
+                                  return (
+                                    <button key={line.id} type="button" className="planning-inline-action hip-line-action min-w-0 text-left text-[10px]" aria-pressed={active} onClick={() => startAddingPelvicLine(line.id)}>
+                                      <span className="block font-semibold">{active ? "Sedang tandai" : "Tambah"} {side}</span>
+                                      <span className="mt-0.5 block text-[9px] opacity-75">{active ? `Titik ${Math.min(pelvicLineAdditionPoints.length + 1, line.landmarkKeys.length)}/${line.landmarkKeys.length}${nextPoint ? ` · ${nextPoint.shortLabel}` : " · selesai"}` : `${line.landmarkKeys.length} titik`}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </section>
+                          );
+                        })}
                       </div>
-                    </div>
+                      {missingPelvicLines.some((item) => !item.id.startsWith("shenton") && !item.id.startsWith("kohler")) && (
+                        <details className="rounded-md border border-slate-300/20 px-2 py-1.5">
+                          <summary className="cursor-pointer text-[10px] font-semibold text-slate-300">Pengukuran tambahan lainnya</summary>
+                          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                            {missingPelvicLines.filter((item) => !item.id.startsWith("shenton") && !item.id.startsWith("kohler")).map((line) => (
+                                <button key={line.id} type="button" className="planning-inline-action hip-line-action text-left text-[10px]" aria-pressed={addingPelvicLineId === line.id} onClick={() => startAddingPelvicLine(line.id)}>
+                                {addingPelvicLineId === line.id ? `Titik ${pelvicLineAdditionPoints.length + 1}/${line.landmarkKeys.length} · ${line.label}` : `Tambah · ${line.label}`}
+                              </button>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </section>
                   )}
-                  <button
-                    type="button"
-                    className="planning-inline-action"
-                    disabled={!lines.some((line) => line.type === "shenton")}
-                    aria-pressed={lines.some((line) => line.type === "shenton" && !line.hidden)}
-                    onClick={() => {
-                      const nextHidden = lines.some((line) => line.type === "shenton" && !line.hidden);
-                      setLines((previous) =>
-                        previous.map((line) =>
-                          line.type === "shenton" ? { ...line, hidden: nextHidden } : line,
-                        ),
-                      );
-                    }}
-                  >
-                    {lines.some((line) => line.type === "shenton" && !line.hidden)
-                      ? "Sembunyikan garis Shenton"
-                      : "Tampilkan garis Shenton"}
-                  </button>
-                  <div className="grid gap-1">
+                  <section className="hip-assessment-section grid gap-2 rounded-lg border border-slate-300/20 bg-slate-950/20 p-2.5">
+                    <header className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="m-0 text-xs font-bold text-slate-100">Penilaian garis</h3>
+                        <p className="hip-section-help m-0 mt-0.5 text-[10px] text-slate-400">Nilai kontinuitas Shenton dan hubungan garis Köhler per sisi.</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="planning-inline-action hip-line-toggle inline-flex min-h-8 items-center gap-1 px-2 text-[9px]"
+                        disabled={!lines.some((line) => line.type === "shenton")}
+                        aria-pressed={lines.some((line) => line.type === "shenton" && !line.hidden)}
+                        onClick={() => {
+                          const nextHidden = lines.some((line) => line.type === "shenton" && !line.hidden);
+                          setLines((previous) => previous.map((line) =>
+                            line.type === "shenton" ? { ...line, hidden: nextHidden } : line,
+                          ));
+                        }}
+                      >
+                        {lines.some((line) => line.type === "shenton" && !line.hidden)
+                          ? <><EyeOff size={13} /> Sembunyikan Shenton</>
+                          : <><Eye size={13} /> Tampilkan Shenton</>}
+                      </button>
+                    </header>
+                    <div className="hip-assessment-grid grid gap-2">
+                  <div className="hip-assessment-card grid content-start gap-1 rounded-md border border-slate-300/15 bg-slate-900/40 p-2">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
                       Garis Shenton (utuh / terputus)
                     </span>
                     <div className="grid grid-cols-2 gap-1.5">
                       {[["shentonR", "Kanan"], ["shentonL", "Kiri"]].map(([field, sideLabel]) => (
-                        <div key={field} className="grid grid-cols-2 gap-1">
+                        <div key={field} className="grid gap-1 rounded-md border border-slate-300/15 bg-slate-950/20 p-1.5">
+                          <span className="text-[9px] font-semibold text-slate-400">{sideLabel}</span>
+                          <div className="grid grid-cols-2 gap-1">
                           {[["utuh", "Utuh"], ["putus", "Putus"]].map(([value, optionLabel]) => (
                             <button
                               key={value}
                               type="button"
-                              className="planning-inline-action"
+                              className="planning-inline-action hip-line-option"
                               aria-pressed={planningSession.qualitative?.[field] === value}
                               onClick={() => updatePlanningSession({
                                 ...planningSession,
                                 qualitative: { ...planningSession.qualitative, [field]: value },
                               })}
                             >
-                              {sideLabel} {optionLabel}
+                              {optionLabel}
                             </button>
                           ))}
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div className="grid gap-1">
+                  <div className="hip-assessment-card grid content-start gap-1 rounded-md border border-slate-300/15 bg-slate-900/40 p-2">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
                       Garis Köhler: dasar asetabulum melewati garis?
                     </span>
                     <div className="grid grid-cols-2 gap-1.5">
                       {[["kohlerR", "Kanan"], ["kohlerL", "Kiri"]].map(([field, sideLabel]) => (
-                        <div key={field} className="grid grid-cols-2 gap-1">
+                        <div key={field} className="grid gap-1 rounded-md border border-slate-300/15 bg-slate-950/20 p-1.5">
+                          <span className="text-[9px] font-semibold text-slate-400">{sideLabel}</span>
+                          <div className="grid grid-cols-2 gap-1">
                           {[["tidak", "Tidak"], ["melewati", "Melewati"]].map(([value, optionLabel]) => (
                             <button
                               key={value}
                               type="button"
-                              className="planning-inline-action"
+                              className="planning-inline-action hip-line-option"
                               aria-pressed={planningSession.qualitative?.[field] === value}
                               onClick={() => updatePlanningSession({
                                 ...planningSession,
                                 qualitative: { ...planningSession.qualitative, [field]: value },
                               })}
                             >
-                              {sideLabel} {optionLabel}
+                              {optionLabel}
                             </button>
                           ))}
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
+                    </div>
+                  </section>
                 </div>
               )
             }
@@ -44145,16 +45087,29 @@ export default function XrayCalibrationWorkspace({
                 contrastValue: clamp(Number(layer?.contrast ?? 100), 10, 300),
                 levelValue: clamp(Number(layer?.level ?? 100), 10, 300),
                 rotationValue: Number(layer?.rotation || 0),
+                flipX: Boolean(layer?.flipX),
                 imageBacked: Boolean(
                   layer && isImageBackedLayerKind(layer.kind),
                 ),
               };
             })}
             selectedLayerId={selectedCutLayerId}
-            onSelectLayer={(id) => {
-              setSelectedCutLayerId(id);
-            }}
+            selectedMeasurementId={
+              selectedLineId !== null
+                ? `line:${selectedLineId}`
+                : selectedAngleId !== null
+                  ? `angle:${selectedAngleId}`
+                  : selectedCircleId !== null
+                    ? `circle:${selectedCircleId}`
+                    : selectedPlanningGuideId !== null
+                      ? `guide:${selectedPlanningGuideId}`
+                      : selectedHkaId !== null
+                        ? `hka:${selectedHkaId}:`
+                        : null
+            }
+            onSelectLayer={(id) => selectLayerFromCanvas(id)}
             onMoveLayer={moveCutLayerInStack}
+            onDuplicateLayer={duplicateSelectedCutLayer}
             onUpdateLayer={(id, patch) => {
               const layer = cutLayers.find((item) => item.id === id);
               if ("rotation" in patch && layer?.lockRotation) {
@@ -44921,14 +45876,15 @@ export default function XrayCalibrationWorkspace({
                               />
                               <LayerToolbarActionButton
                                 icon="replace"
-                                label="Ganti template"
+                                label="Ganti layer"
+                                showLabel
                                 active={simpleLayerFloatingPopup === "template"}
                                 onClick={() =>
                                   setSimpleLayerFloatingPopup((prev) =>
                                     prev === "template" ? null : "template",
                                   )
                                 }
-                                className="h-7 w-7"
+                                className="h-7"
                                 iconClassName="h-3 w-3"
                               />
                               <LayerToolbarActionButton
@@ -45023,7 +45979,8 @@ export default function XrayCalibrationWorkspace({
                             />
                             <LayerToolbarActionButton
                               icon="replace"
-                              label="Ganti template"
+                              label="Ganti layer"
+                              showLabel
                               active={simpleLayerFloatingPopup === "template"}
                               onClick={() =>
                                 setSimpleLayerFloatingPopup((prev) =>
@@ -45153,6 +46110,54 @@ export default function XrayCalibrationWorkspace({
                                 placeholder="Cari Wagner, Tibial, LCP..."
                                 className="mt-1 min-h-8 w-full rounded-md border border-slate-300 bg-white/75 px-2 text-[9px] font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-cyan-500 sm:min-h-10 sm:rounded-lg sm:text-[10px]"
                               />
+                              {replacementNormmedItems.length ? (
+                                <label className="mt-1.5 block text-[7px] font-black tracking-wider text-slate-400 uppercase sm:text-[8px]">
+                                  Normmed terbaru
+                                  <select
+                                    value={replacementNormmedItems.some(
+                                      (item) =>
+                                        String(item.id) ===
+                                        String(selectedImplantLibraryId),
+                                    )
+                                      ? selectedImplantLibraryId
+                                      : ""}
+                                    onChange={(event) => {
+                                      const item = replacementNormmedItems.find(
+                                        (candidate) =>
+                                          String(candidate.id) ===
+                                          event.target.value,
+                                      );
+                                      if (!item) return;
+                                      setSelectedImplantType(item.type);
+                                      setSelectedImplantLibraryId(item.id);
+                                      setImplantReplaceSearch("");
+                                    }}
+                                    disabled={!canReplaceSelectedTemplateLayer}
+                                    className="mt-1 min-h-8 w-full min-w-0 rounded-md border border-cyan-700/40 bg-cyan-50/70 px-2 text-[8px] font-bold text-slate-700 normal-case outline-none focus:border-cyan-500 disabled:opacity-45 sm:min-h-9 sm:rounded-lg sm:text-[9px]"
+                                    aria-label="Pilih template Normmed terbaru"
+                                  >
+                                    <option value="">Pilih template Normmed</option>
+                                    {replacementNormmedStemItems.length ? (
+                                      <optgroup label="Stem Normmed · size 00–10">
+                                        {replacementNormmedStemItems.map((item) => (
+                                          <option key={item.id} value={item.id}>
+                                            {item.label}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    ) : null}
+                                    {replacementNormmedNonStemItems.length ? (
+                                      <optgroup label="Cup dan TKA Normmed">
+                                        {replacementNormmedNonStemItems.map((item) => (
+                                          <option key={item.id} value={item.id}>
+                                            {item.type.toUpperCase()} · {item.label}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    ) : null}
+                                  </select>
+                                </label>
+                              ) : null}
                               <div className="mt-1.5 grid grid-cols-4 gap-1">
                                 {LOCAL_IMPLANT_LIBRARY_TYPES.map((type) => {
                                   const typeLabels = {
@@ -45171,7 +46176,9 @@ export default function XrayCalibrationWorkspace({
                                         setSelectedImplantType(type);
                                         const firstItem =
                                           LOCAL_IMPLANT_LIBRARY.find(
-                                            (item) => item.type === type,
+                                            (item) =>
+                                              item.type === type &&
+                                              isImplantLibraryItemVisible(item),
                                           );
                                         if (firstItem)
                                           setSelectedImplantLibraryId(
@@ -46111,6 +47118,22 @@ export default function XrayCalibrationWorkspace({
                                 <button
                                   type="button"
                                   disabled={!image}
+                                  onClick={exportReportJpeg}
+                                  className="min-h-8 rounded-2xl border border-amber-300/20 bg-amber-400/12 px-2 text-[9px] font-black text-amber-100 transition hover:bg-amber-400/18 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  JPEG
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!image}
+                                  onClick={() => void exportReportJxl()}
+                                  className="min-h-8 rounded-2xl border border-violet-300/20 bg-violet-400/12 px-2 text-[9px] font-black text-violet-100 transition hover:bg-violet-400/18 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  JXL lossless
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!image}
                                   onClick={exportReportPdf}
                                   className="min-h-8 rounded-2xl border border-emerald-300/20 bg-emerald-400/12 px-2 text-[9px] font-black text-emerald-100 transition hover:bg-emerald-400/18 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
@@ -46308,7 +47331,7 @@ export default function XrayCalibrationWorkspace({
                         </div>
                       ) : null}
                       <div
-                        className={`min-h-0 touch-pan-y overscroll-contain overflow-y-auto ${mobileSheetSnap === "collapsed" ? "hidden" : ""}`}
+                        className={`min-h-0 touch-auto overscroll-contain overflow-y-auto ${mobileSheetSnap === "collapsed" ? "hidden" : ""}`}
                         style={{
                           paddingBottom: `calc(env(safe-area-inset-bottom) + var(--mobile-keyboard-offset,0px) + ${
                             simpleMobilePanel === "tools" ? 20 : 24
@@ -46640,6 +47663,17 @@ export default function XrayCalibrationWorkspace({
                               </button>
                               <button
                                 type="button"
+                                onClick={() => {
+                                  setSimpleMobilePanel(null);
+                                  setTkaApproachModalOpen(true);
+                                }}
+                                className="mobile-sheet-action flex items-center justify-center gap-1.5 text-cyan-700"
+                              >
+                                <Bone className="h-4 w-4" aria-hidden="true" />
+                                <span>Approach TKA</span>
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => setSimpleMobilePanel("dorr")}
                                 className="mobile-sheet-action flex items-center justify-center gap-1.5 text-indigo-700"
                               >
@@ -46830,7 +47864,7 @@ export default function XrayCalibrationWorkspace({
                             </div>
 
                             {/* Export buttons */}
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -46852,6 +47886,17 @@ export default function XrayCalibrationWorkspace({
                                 className="min-h-11 rounded-2xl border border-white/70 bg-[#fff7ed] text-[10px] font-black text-amber-700 shadow-[2px_2px_5px_rgba(148,163,184,0.18)] disabled:opacity-40"
                               >
                                 JPEG
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSimpleMobilePanel(null);
+                                  void exportReportJxl();
+                                }}
+                                disabled={!image}
+                                className="min-h-11 rounded-2xl border border-violet-300 bg-violet-50 text-[10px] font-black text-violet-800 disabled:opacity-40"
+                              >
+                                JXL lossless
                               </button>
                               <button
                                 type="button"

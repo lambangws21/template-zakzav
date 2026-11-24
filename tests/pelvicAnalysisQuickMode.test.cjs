@@ -115,6 +115,20 @@ test("buildPelvicAnalysisMeasurements does not crash when points are one short o
   assert.equal(result.circles.length, 0);
 });
 
+test("buildPelvicAnalysisMeasurements safely builds a requested line from sparse landmarks", () => {
+  const sparsePoints = PELVIC_ANALYSIS_LANDMARKS.map((definition) => {
+    if (definition.key === "isRight") return { x: 24, y: 85 };
+    if (definition.key === "isLeft") return { x: 76, y: 88 };
+    return null;
+  });
+
+  const result = buildPelvicAnalysisMeasurements(sparsePoints, "sparse-test");
+
+  assert.deepEqual(Array.from(result.lines, (line) => line.metric), ["Bi-ischial"]);
+  assert.equal(result.angles.length, 0);
+  assert.equal(result.circles.length, 0);
+});
+
 test("buildPelvicAnalysisMeasurements still works with the full 26-landmark default (back-compat)", () => {
   const points = [
     { x: 0, y: 0 }, { x: 100, y: 0 },

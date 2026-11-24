@@ -19,6 +19,7 @@ import { TRAUMA_IMPLANTS } from "../../data/traumaImplants.js";
  * @property {boolean} [transparentWhiteBackground]
  * @property {"ap"|"lateral"|string} [implantViewMode]
  * @property {"svg"|"ruler"} [templateSource]
+ * @property {boolean} [hiddenFromLibrary]
  */
 
 export const IMPLANT_LIBRARY_TYPE_LABELS = {
@@ -187,6 +188,7 @@ const NORMMED_FEMORAL_LIBRARY = NORMMED_FEMORAL_SIZES.flatMap((dimensions) =>
     physicalHeightMm: view.physicalHeightMm,
     transparentWhiteBackground: false,
     implantViewMode: view.viewKey,
+    hiddenFromLibrary: true,
   })),
 );
 
@@ -217,8 +219,105 @@ const NORMMED_TIBIAL_LIBRARY = NORMMED_TIBIAL_SIZES.flatMap((dimensions) =>
     physicalHeightMm: view.physicalHeightMm,
     transparentWhiteBackground: false,
     implantViewMode: view.viewKey,
+    hiddenFromLibrary: true,
   })),
 );
+
+// Full-page Normmed PS sizing sheets are transparent overlays, not single-size
+// components. Keep their A4 proportions so calibration can scale the sheet consistently.
+const NORMMED_PS_TEMPLATE_SHEETS = [
+  {
+    id: "normmed-ps-femoral-sheet-1-3",
+    system: "Normmed PS Femoral Template",
+    size: "1-3",
+    label: "Normmed PS Femoral Sizes 1-3 (Template Sheet)",
+    imageSrc: "/PS_Green_Transparent_Templates/PS_Femoral_Size_1-3.png",
+  },
+  {
+    id: "normmed-ps-femoral-sheet-4-6",
+    system: "Normmed PS Femoral Template",
+    size: "4-6",
+    label: "Normmed PS Femoral Sizes 4-6 (Template Sheet)",
+    imageSrc: "/PS_Green_Transparent_Templates/PS_Femoral_Size_4-6.png",
+  },
+  {
+    id: "normmed-ps-tibial-insert-sheet-1-3",
+    system: "Normmed PS Tibial Insert Template",
+    size: "1-3",
+    label: "Normmed PS Tibial Insert Sizes 1-3 (Template Sheet)",
+    imageSrc: "/PS_Green_Transparent_Templates/PS_Tibial_Insert_Size_1-3.png",
+  },
+  {
+    id: "normmed-ps-tibial-insert-sheet-4-5",
+    system: "Normmed PS Tibial Insert Template",
+    size: "4-5",
+    label: "Normmed PS Tibial Insert Sizes 4-5 (Template Sheet)",
+    imageSrc: "/PS_Green_Transparent_Templates/PS_Tibial_Insert_Size_4-5.png",
+  },
+].map((item) => ({
+  ...item,
+  brand: "Normmed",
+  type: "knee",
+  physicalSize: null,
+  physicalWidthMm: 210,
+  physicalHeightMm: 297,
+  transparentWhiteBackground: false,
+  implantViewMode: "ap",
+}));
+
+const NORMMED_STANDARD_STEM_LIBRARY = Array.from({ length: 11 }, (_, size) => {
+  const sizeLabel = String(size).padStart(2, "0");
+  return {
+    id: `normmed-standard-stem-${sizeLabel}`,
+    brand: "Normmed",
+    system: "Normmed Standard Cementless Stem",
+    type: "stem",
+    size: sizeLabel,
+    label: `Normmed Standard Cementless Stem Size ${sizeLabel}`,
+    imageSrc: `/Standard_Stem_Size_0-10_Green_Transparent/Standard_Stem_Size_${sizeLabel}_Green_Transparent.png`,
+    physicalSize: null,
+    physicalWidthMm: 210,
+    physicalHeightMm: 297,
+    transparentWhiteBackground: false,
+    implantViewMode: "ap",
+  };
+});
+
+const NORMMED_CUP_LIBRARY = [
+  {
+    id: "normmed-acetabular-cup-46-60",
+    system: "Normmed Acetabular Cup",
+    size: "46-60",
+    label: "Normmed Acetabular Cup Sizes 46-60",
+    imageSrc:
+      "/Acetabular_Bipolar_Cup_Green_Transparent/Acetabular_Cup_Size_46-60.png",
+  },
+  {
+    id: "normmed-bipolar-cup-42-56",
+    system: "Normmed Bipolar Cup",
+    size: "42-56",
+    label: "Normmed Bipolar Cup Sizes 42-56",
+    imageSrc:
+      "/Acetabular_Bipolar_Cup_Green_Transparent/Bipolar_Cup_Size_42-56.png",
+  },
+  {
+    id: "normmed-bipolar-cup-58-60",
+    system: "Normmed Bipolar Cup",
+    size: "58-60",
+    label: "Normmed Bipolar Cup Sizes 58-60",
+    imageSrc:
+      "/Acetabular_Bipolar_Cup_Green_Transparent/Bipolar_Cup_Size_58-60.png",
+  },
+].map((item) => ({
+  ...item,
+  brand: "Normmed",
+  type: "cup",
+  physicalSize: null,
+  physicalWidthMm: 210,
+  physicalHeightMm: 297,
+  transparentWhiteBackground: false,
+  implantViewMode: "ap",
+}));
 
 const ZIMMER_KNEE_SVG_LIBRARY = [
   {
@@ -527,22 +626,13 @@ const BASE_LIBRARY = [
     label: "Wagner SL Size 24-25",
     imageSrc: "/images/implant/wagner/wagner24-25.png",
   },
-  ...[1, 2, 3, 4, 5, 6, 7].map((size) => ({
-    id: `normmed-nm-${size}`,
-    brand: "Normmed",
-    system: "Normmed NM",
-    type: "stem",
-    size,
-    label: `Normmed NM Stem Size ${size}`,
-    imageSrc: `/Zakzav_NM_Green_Layers/NM_Size_0${size}_Green_Transparent.png`,
-    physicalSize: null,
-    transparentWhiteBackground: false,
-    implantViewMode: "ap",
-  })),
+  ...NORMMED_STANDARD_STEM_LIBRARY,
+  ...NORMMED_CUP_LIBRARY,
   ...AVENIR_STANDARD_SVG_LIBRARY,
   ...ML_TAPER_SVG_LIBRARY,
   ...NORMMED_FEMORAL_LIBRARY,
   ...NORMMED_TIBIAL_LIBRARY,
+  ...NORMMED_PS_TEMPLATE_SHEETS,
   ...ZIMMER_KNEE_SVG_LIBRARY,
   {
     id: "nexgen-ruler",
@@ -713,15 +803,21 @@ export function getImplantLibraryItemById(
   return items.find((item) => String(item.id) === String(itemId)) || null;
 }
 
+export function isImplantLibraryItemVisible(item) {
+  return item?.hiddenFromLibrary !== true;
+}
+
 export function getImplantLibraryItemsByType(
   type,
   items = LOCAL_IMPLANT_LIBRARY,
 ) {
-  return items.filter((item) => item.type === type);
+  return items.filter(
+    (item) => item.type === type && isImplantLibraryItemVisible(item),
+  );
 }
 
 export function groupImplantLibraryBySystem(items = LOCAL_IMPLANT_LIBRARY) {
-  return items.reduce((acc, item) => {
+  return items.filter(isImplantLibraryItemVisible).reduce((acc, item) => {
     const key = item.system || "Lainnya";
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
@@ -731,7 +827,9 @@ export function groupImplantLibraryBySystem(items = LOCAL_IMPLANT_LIBRARY) {
 
 export function countImplantLibraryByType(items = LOCAL_IMPLANT_LIBRARY) {
   return LOCAL_IMPLANT_LIBRARY_TYPES.reduce((acc, type) => {
-    acc[type] = items.filter((item) => item.type === type).length;
+    acc[type] = items.filter(
+      (item) => item.type === type && isImplantLibraryItemVisible(item),
+    ).length;
     return acc;
   }, {});
 }

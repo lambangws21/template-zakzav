@@ -14,6 +14,7 @@ import {
   countImplantLibraryByType,
   getImplantLibraryItemsByType,
   groupImplantLibraryBySystem,
+  isImplantLibraryItemVisible,
   IMPLANT_LIBRARY_TYPE_LABELS,
 } from "../lib/digitalTemplating/implantLibrary";
 
@@ -144,7 +145,7 @@ export default function ImplantLayer({
   const searchResults = useMemo(
     () =>
       normalizedSearch
-        ? items
+        ? items.filter(isImplantLibraryItemVisible)
             .filter((item) =>
               [item.label, item.brand, item.system, item.size, item.type]
                 .filter(Boolean)

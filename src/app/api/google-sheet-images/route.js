@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, requireApprovedUser } from "@/lib/serverAuth";
 import { isPatientCaseAction, requireCaseAccess } from "@/lib/caseAccess";
+import {
+  fetchGoogleAppsScriptUrl,
+  isAllowedGoogleAppsScriptUrl,
+} from "@/lib/googleAppsScriptUrl.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,19 +37,7 @@ const authorizeRead = (request) => requireApprovedUser(request);
 const authorizeMutation = (request) => requireAdmin(request);
 
 function isAllowedRemote(url) {
-  try {
-    const parsed = new URL(url);
-    if (!/^https?:$/i.test(parsed.protocol)) return false;
-    const host = parsed.hostname.toLowerCase();
-    return (
-      host.endsWith(".google.com") ||
-      host.endsWith(".googleusercontent.com") ||
-      host === "script.google.com" ||
-      host === "script.googleusercontent.com"
-    );
-  } catch {
-    return false;
-  }
+  return isAllowedGoogleAppsScriptUrl(url);
 }
 
 function parseJsonSafe(raw) {
@@ -113,9 +105,8 @@ async function fetchRemoteGet(target, attempt) {
   if (attempt > 0) {
     retryUrl.searchParams.set("_zakzavRetry", `${Date.now()}-${attempt}`);
   }
-  return fetch(retryUrl.toString(), {
+  return fetchGoogleAppsScriptUrl(retryUrl.toString(), {
     cache: "no-store",
-    redirect: "follow",
     headers: {
       Accept: "application/json,text/csv,text/plain,*/*",
     },
@@ -173,10 +164,9 @@ async function forwardGetToRemote(remoteUrl, params = {}) {
 
 async function forwardPostToRemote(remoteUrl, body) {
   const payloadBody = JSON.stringify(body || {});
-  let response = await fetch(remoteUrl, {
+  let response = await fetchGoogleAppsScriptUrl(remoteUrl, {
     method: "POST",
     cache: "no-store",
-    redirect: "follow",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json,text/plain,*/*",
@@ -203,10 +193,9 @@ async function forwardPostToRemote(remoteUrl, body) {
     const location = redirectProbe.headers.get("location");
     if (location) {
       const redirectedUrl = new URL(location, remoteUrl).toString();
-      response = await fetch(redirectedUrl, {
+      response = await fetchGoogleAppsScriptUrl(redirectedUrl, {
         method: "GET",
         cache: "no-store",
-        redirect: "follow",
         headers: {
           Accept: "application/json,text/plain,*/*",
         },

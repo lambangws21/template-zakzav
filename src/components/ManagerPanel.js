@@ -365,7 +365,8 @@ export default function ManagerPanel({
                 <input
                   type="range" min={20} max={220} step={1} value={c.value}
                   onChange={(e) => c.onChange?.(Number(e.target.value))}
-                  className="flex-1 h-1.5 accent-cyan-600"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  className="mobile-adjustment-slider h-7 min-w-0 flex-1 accent-cyan-600"
                 />
                 <span className="w-9 text-right text-[9px] font-mono text-slate-700">{c.value}%</span>
               </label>

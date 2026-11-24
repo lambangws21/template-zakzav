@@ -69,6 +69,22 @@ const LOGIN_STYLES = `
   .zlp-modal-backdrop{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(2,7,16,.78);backdrop-filter:blur(12px)}.zlp-login-card{position:relative;width:min(100%,390px);padding:28px;border:1px solid rgba(131,153,206,.25);border-radius:16px;background:#101c2e;box-shadow:0 28px 80px rgba(0,0,0,.52)}.zlp-login-close{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:32px;height:32px;border:1px solid rgba(130,155,201,.2);border-radius:8px;color:#9aaac4;background:#0a1525;cursor:pointer}.zlp-login-logo{display:flex;align-items:center;gap:10px;margin-bottom:22px}.zlp-login-logo .zlp-mark{font-size:27px}.zlp-login-card h2{margin:0 0 5px;font-size:22px}.zlp-login-card>p{margin:0 0 22px;color:#8798b5;font-size:12px}.zlp-form{display:grid;gap:14px}.zlp-label{display:block;margin-bottom:6px;color:#aab8ce;font-size:10px;font-weight:800}.zlp-input-wrap{position:relative;display:block}.zlp-input{width:100%;height:44px;border:1px solid rgba(132,154,197,.24);border-radius:9px;padding:0 12px;outline:0;color:#f5f7ff;background:#091422;font:inherit;font-size:12px}.zlp-input:focus{border-color:#697bff;box-shadow:0 0 0 3px rgba(105,123,255,.12)}.zlp-password{padding-right:44px}.zlp-eye{position:absolute;top:0;right:0;display:grid;place-items:center;width:44px;height:44px;border:0;color:#8090aa;background:transparent;cursor:pointer}.zlp-submit{width:100%;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:8px}.zlp-error{padding:9px 11px;border:1px solid rgba(248,113,113,.25);border-radius:8px;color:#fda4af;background:rgba(190,24,93,.1);font-size:10px}
   @media(max-width:1050px){.zlp-hero{grid-template-columns:1fr 1fr}.zlp-visual{height:350px}.zlp-workspace{right:36px}.zlp-secondary-xray,.zlp-note{display:none}.zlp-feature-grid{grid-template-columns:repeat(2,1fr)}.zlp-flow{grid-template-columns:240px 1fr}.zlp-steps{grid-template-columns:repeat(2,1fr)}.zlp-step:nth-child(2):after{display:none}}
   @media(max-width:760px){.zlp-shell{width:min(100% - 28px,620px)}.zlp-header{height:58px}.zlp-brand{font-size:13px}.zlp-mark{font-size:27px}.zlp-nav{display:none}.zlp-header .zlp-button{min-height:36px;padding:0 16px}.zlp-hero{min-height:0;grid-template-columns:1fr;gap:20px;padding-block:32px 20px}.zlp-kicker{font-size:9px}.zlp-title{font-size:clamp(35px,11vw,50px);line-height:1.04}.zlp-free{margin-left:5px;padding:8px 13px;font-size:15px}.zlp-subtitle{margin-top:13px;font-size:21px}.zlp-copy{font-size:12px}.zlp-actions{gap:10px;margin-top:20px}.zlp-actions .zlp-button{min-width:0;flex:1;min-height:42px;padding-inline:12px}.zlp-visual{height:auto;aspect-ratio:16/10}.zlp-workspace{inset:0;transform:none;border-radius:12px}.zlp-xray{inset:9px 85px 9px 9px}.zlp-side-tools{top:16px;right:10px;width:68px;padding:9px 7px}.zlp-side-title{margin-bottom:8px;font-size:8px}.zlp-tool{gap:5px;margin-top:7px;font-size:6px}.zlp-tool svg{width:9px;height:9px}.zlp-measure-ring{width:62px}.zlp-size{font-size:7px}.zlp-section{padding-block:24px}.zlp-section-head{align-items:start}.zlp-section h2{font-size:20px}.zlp-section-aside{display:none}.zlp-feature-grid{grid-template-columns:1fr 1fr;gap:9px}.zlp-feature{min-height:0;grid-template-columns:36px 1fr;gap:9px;padding:12px}.zlp-feature-icon{width:36px}.zlp-feature-icon svg{width:18px;height:18px}.zlp-feature h3{margin:3px 0 5px;font-size:10px}.zlp-feature p{font-size:8px}.zlp-flow{grid-template-columns:1fr;gap:12px}.zlp-flow-title h2{font-size:18px}.zlp-steps{grid-template-columns:repeat(2,1fr)}.zlp-step{min-height:78px;padding:10px}.zlp-step:after{display:none}.zlp-step-icon{width:40px}.zlp-step-icon svg{width:19px;height:19px}.zlp-footer-inner{min-height:92px;flex-wrap:wrap;padding-block:16px}.zlp-footer-links{order:3;width:100%}.zlp-login-card{padding:24px 20px}}
+  @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+    .zlp-modal-backdrop {
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+        max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+    .zlp-login-card[role="dialog"] {
+      max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      background: #101c2e !important;
+    }
+    .zlp-login-logo { padding-right: 48px; }
+    .zlp-login-close { width: 44px; height: 44px; }
+    .zlp-input { font-size: 16px; }
+    .zlp-login-card button { touch-action: manipulation; }
+  }
   @media(max-width:390px){.zlp-feature-grid{grid-template-columns:1fr}.zlp-title{font-size:34px}}
 `;
 
@@ -299,7 +315,9 @@ export default function LoginPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onMouseDown={() => setLoginOpen(false)}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setLoginOpen(false);
+            }}
           >
             <motion.section
               role="dialog"
@@ -310,7 +328,6 @@ export default function LoginPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 14, scale: 0.98 }}
               transition={{ type: "spring", damping: 24, stiffness: 300 }}
-              onMouseDown={(event) => event.stopPropagation()}
             >
               <button
                 type="button"

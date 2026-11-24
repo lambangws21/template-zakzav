@@ -85,6 +85,7 @@ export function LayerToolbarActionButton({
   label,
   onClick,
   active = false,
+  showLabel = false,
   className = "",
   iconClassName = "h-4 w-4",
 }) {
@@ -98,13 +99,14 @@ export function LayerToolbarActionButton({
       whileHover={BUTTON_HOVER}
       whileTap={BUTTON_TAP}
       transition={{ duration: 0.16, ease: "easeOut" }}
-      className={`inline-flex h-8 w-8 items-center justify-center transition ${getSoftToneClass(
+      className={`layer-toolbar-action inline-flex h-8 ${showLabel ? "w-auto gap-1.5 px-2 text-[9px] font-semibold whitespace-nowrap" : "w-8 justify-center"} items-center transition ${getSoftToneClass(
         "slate",
         active,
       )} ${className}`}
     >
-    <Icon name={icon} className={iconClassName} />
-  </motion.button>
+      <Icon name={icon} className={iconClassName} />
+      {showLabel ? <span>{label}</span> : null}
+    </motion.button>
   );
 }
 

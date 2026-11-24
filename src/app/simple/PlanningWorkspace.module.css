@@ -40,6 +40,17 @@
 :global([data-theme="dark"]) .host :global(.planning-app-header) { background: #20262c; color: #eef2f5; border-color: #3d4751; }
 .workspace :global(.planning-inline-action) { border: 1px solid var(--pw-line); background: var(--pw-panel); color: var(--pw-text); padding: 10px; border-radius: 6px; }
 .workspace :global(.planning-inline-action[aria-pressed="true"]) { border-color: var(--pw-accent); background: var(--pw-tint); color: var(--pw-accent); }
+.workspace :global(.hip-line-action) { min-width: 0; max-width: 100%; min-height: 38px; padding: 6px 8px; border-radius: 6px; font-size: 11px !important; font-weight: 650; line-height: 1.25; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.workspace :global(.hip-line-option) { min-width: 0; min-height: 32px; padding: 5px 6px; border-radius: 5px; font-size: 10px !important; font-weight: 600; line-height: 1.2; text-align: center; white-space: normal; overflow-wrap: anywhere; }
+.workspace :global(.hip-line-toggle) { font-size: 10px !important; white-space: normal; overflow-wrap: anywhere; }
+.workspace :global(.hip-section-help) { margin: 0 !important; line-height: 1.35; }
+.workspace :global(.hip-lines-section),
+.workspace :global(.hip-assessment-section) { container-type: inline-size; }
+.workspace :global(.hip-assessment-card > span) { font-size: 10px !important; letter-spacing: 0; line-height: 1.3; }
+@container (min-width: 520px) {
+  .workspace :global(.hip-line-grid),
+  .workspace :global(.hip-assessment-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .workspace *, .workspace *::before, .workspace *::after { box-sizing: border-box; }
 .workspace h2 { color: var(--pw-text); font-size: 14px; font-weight: 650; margin: 0; line-height: 1.4; }
 .workspace p { margin: 8px 0; }
@@ -293,6 +304,8 @@
 .layerName { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; color: var(--pw-text); }
 .layerName span { display: block; overflow-wrap: anywhere; font-size: 12px; line-height: 1.35; }.layerName small { display: block; margin-top: 3px; font-size: 10px; color: var(--pw-muted); }
 .layerRow .button { min-width: 28px; padding: 4px; border: 0; }.empty { color: var(--pw-muted); font-size: 11px; padding: 8px 0; }
+.layerRow .replaceLayerAction { min-width: 0; min-height: 30px; gap: 4px; padding: 4px 6px; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.layerRow .replaceLayerAction span { overflow: hidden; text-overflow: ellipsis; }
 .logNote { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 8px 0; overflow-wrap: anywhere; }
 .implantPreview { display: flex; gap: 12px; align-items: center; border: 1px solid var(--pw-line); border-radius: 6px; padding: 8px; }
 .implantPreview img { width: 76px; height: 110px; object-fit: contain; background: #fff; }
@@ -529,6 +542,24 @@
 }
 .alignmentMode, .customTarget { display: block; margin-top: 7px; color: var(--pw-muted); font-size: 9px; font-weight: 650; pointer-events: auto; }
 .alignmentMode select { min-height: 34px; margin-top: 3px; padding: 5px 7px; color: var(--pw-text); background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 11px; }
+.distalCutGuide { margin-top: 8px; border: 1px solid var(--pw-line); border-radius: 7px; background: color-mix(in srgb, var(--pw-bg) 68%, transparent); }
+.distalCutGuide > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 5px 8px; cursor: pointer; list-style: none; font-size: 10px; }
+.distalCutGuide > summary::-webkit-details-marker { display: none; }
+.distalCutGuide > summary strong { margin-left: auto; color: var(--pw-accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.distalCutGuide > summary svg { color: var(--pw-muted); transition: transform .15s ease; }
+.distalCutGuide[open] > summary svg { transform: rotate(180deg); }
+.distalCutGuideBody { padding: 0 8px 8px; }
+.distalCutDiagram { display: block; width: 100%; height: 92px; border-radius: 5px; background: color-mix(in srgb, var(--pw-raised) 78%, #070d13); }
+.distalCutDiagram text { fill: var(--pw-muted); font: 7px system-ui, sans-serif; font-weight: 700; }
+.mechanicalAxis { stroke: #39c7e8; stroke-width: 2; stroke-dasharray: 4 3; }
+.intramedullaryAxis { stroke: #a78bfa; stroke-width: 2; }
+.distalCutPlane { stroke: #f59e0b; stroke-width: 2.5; }
+.distalCutAngle { fill: none; stroke: #f472b6; stroke-width: 2; }
+.distalCutPivot { fill: #f8fafc; stroke: #0f172a; stroke-width: 1.5; }
+.distalCutMetrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.distalCutMetrics span { display: grid; gap: 2px; min-width: 0; color: var(--pw-muted); font-size: 9px; }
+.distalCutMetrics strong { color: var(--pw-text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.distalCutGuideBody p, .distalCutGuideBody > small { display: block; margin: 6px 0 0; color: var(--pw-muted); font-size: 9px; line-height: 1.4; }
 .customTarget > span { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
 .customTarget input { min-height: 34px; margin: 0; padding: 5px 7px; color: var(--pw-text); background: var(--pw-bg); border: 1px solid var(--pw-line); border-radius: 5px; font-size: 12px; }
 .resectionGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 7px; }
@@ -884,30 +915,30 @@
 .toolRail button:disabled { opacity: .35; }
 .canvas { background: #05080c; }
 .inspector { display: flex; min-height: 0; flex-direction: column; overflow: hidden; color: var(--pw-text); background: var(--pw-panel); border-left: 1px solid var(--pw-line); }
-.inspectorHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 58px; padding: 10px 12px; border-bottom: 1px solid var(--pw-line); }
+.inspectorHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 50px; padding: 7px 10px; border-bottom: 1px solid var(--pw-line); }
 .inspectorHeading small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
 .inspectorHeading .button { border: 0; background: transparent; }
-.inspectorBody { display: grid; gap: 12px; padding: 12px; border-bottom: 1px solid var(--pw-line); }
+.inspectorBody { display: grid; gap: 7px; padding: 8px 9px; border-bottom: 1px solid var(--pw-line); }
 .inspectorBody > label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; color: var(--pw-muted); font-size: 10px; }
 .inspectorBody > label > span { color: var(--pw-text); font-variant-numeric: tabular-nums; }
-.inspectorBody input[type="range"] { grid-column: 1 / -1; min-height: 24px; margin: 0; padding: 0; accent-color: var(--pw-accent); }
-.imageAdjustments { display: grid; gap: 9px; padding-top: 10px; border-top: 1px solid var(--pw-line); }
+.inspectorBody input[type="range"] { grid-column: 1 / -1; min-height: 19px; margin: 0; padding: 0; accent-color: var(--pw-accent); }
+.imageAdjustments { display: grid; gap: 5px; padding-top: 6px; border-top: 1px solid var(--pw-line); }
 .imageAdjustments .sectionHeading { margin: 0; }
 .imageAdjustments .sectionHeading button { min-height: 28px; padding: 3px 7px; color: var(--pw-accent); background: transparent; border: 1px solid var(--pw-line); border-radius: 5px; font-size: 8px; font-weight: 700; }
 .imageAdjustments > label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; color: var(--pw-muted); font-size: 10px; }
 .imageAdjustments > label > span { color: var(--pw-text); font-variant-numeric: tabular-nums; }
-.imageAdjustments input[type="range"] { grid-column: 1 / -1; width: 100%; min-height: 24px; margin: 0; padding: 0; accent-color: var(--pw-accent); }
-.propertySummary { display: flex; justify-content: space-between; gap: 8px; padding: 8px; background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; }
+.imageAdjustments input[type="range"] { grid-column: 1 / -1; width: 100%; min-height: 19px; margin: 0; padding: 0; accent-color: var(--pw-accent); }
+.propertySummary { display: flex; justify-content: space-between; gap: 8px; padding: 6px 7px; background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; }
 .propertySummary span { color: var(--pw-muted); text-transform: capitalize; }
-.stepper { grid-column: 1 / -1; display: grid; grid-template-columns: 40px 1fr 40px; min-height: 38px; overflow: hidden; border: 1px solid var(--pw-line); border-radius: 6px; }
-.stepper button { color: var(--pw-text); background: var(--pw-raised); border: 0; font-size: 18px; }
+.stepper { grid-column: 1 / -1; display: grid; grid-template-columns: 34px 1fr 34px; min-height: 32px; overflow: hidden; border: 1px solid var(--pw-line); border-radius: 6px; }
+.stepper button { color: var(--pw-text); background: var(--pw-raised); border: 0; font-size: 16px; }
 .stepper strong { display: grid; place-items: center; border-inline: 1px solid var(--pw-line); font-variant-numeric: tabular-nums; }
-.inspectorActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
-.inspectorActions .button { padding-inline: 5px; font-size: 9px; }
+.inspectorActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.inspectorActions .button { min-height: 30px; padding: 3px 4px; font-size: 8px; }
 .inspectorEmpty { display: grid; justify-items: center; gap: 6px; padding: 22px 18px; color: var(--pw-muted); text-align: center; border-bottom: 1px solid var(--pw-line); }
 .inspectorEmpty p { max-width: 190px; line-height: 1.45; }
-.layerSection { min-height: 0; flex: 1; overflow-y: auto; padding: 12px; }
-.inspectorFooter { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; border-top: 1px solid var(--pw-line); }
+.layerSection { min-height: 0; flex: 1; overflow-y: auto; padding: 8px 9px; }
+.inspectorFooter { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 7px 8px; border-top: 1px solid var(--pw-line); }
 .inspectorFooter .button { min-width: 0; padding-inline: 5px; }
 .viewTools { bottom: 10px; padding: 3px 5px; border-radius: 7px; box-shadow: 0 5px 14px #0005; }
 .status { min-height: 24px; padding-block: 4px; }
@@ -920,10 +951,13 @@
 .modalPanel > header small { display: block; margin-bottom: 3px; color: var(--pw-muted); font-size: 8px; text-transform: uppercase; }
 .modalPanel > header .button { border: 0; background: transparent; }
 .modalPanel > footer { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--pw-line); flex-shrink: 0; }
-.measurementModal, .groupModal { width: min(440px, calc(100% - 24px)); }
+.measurementModal, .groupModal { width: min(400px, calc(100% - 24px)); }
+.measurementModal > header { padding: 8px 10px; }
+.measurementModal > header h2 { margin: 0; font-size: 13px; line-height: 1.25; }
+.measurementModal > footer { padding: 6px 10px; }
 .objectSettingModal { position: fixed; right: 14px; bottom: 34px; width: min(310px, calc(100% - 16px)); max-height: min(320px, calc(100dvh - 80px)); pointer-events: auto; background: color-mix(in srgb, var(--pw-panel) 82%, transparent); box-shadow: 0 10px 28px #0007; }
 .objectSettingModal .measurementModalBody { padding: 8px 9px; }
-.measurementModalBody, .groupModalBody { min-height: 0; overflow-y: auto; padding: 14px; }
+.measurementModalBody, .groupModalBody { min-height: 0; overflow-y: auto; padding: 9px 10px; }
 .measurementFieldGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .measurementFieldGrid label { color: var(--pw-muted); font-size: 10px; }
 .measurementFieldGrid input { width: 100%; min-height: 36px; margin-top: 4px; padding: 7px 8px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 5px; }
@@ -971,7 +1005,10 @@
 .objectSettingActions .dangerAction { color: #fb7185; }
 .measurementVisibility { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; font-size: 10px; font-weight: 700; }
 .degreeModal { width: min(320px, calc(100% - 24px)); }
-.degreeValue { display: grid; min-height: 96px; place-items: center; color: var(--pw-accent); font-size: 42px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.degreeModalBody { display: grid; min-width: 0; gap: 6px; padding: 8px 10px; }
+.degreeModalActions { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.degreeModalActions .button { width: 100%; min-width: 0; min-height: 34px; justify-content: flex-start; padding: 5px 7px; font-size: 10px; line-height: 1.2; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.degreeValue { display: grid; min-height: 52px; place-items: center; color: var(--pw-accent); font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .groupModalBody > p { margin: 0 0 12px; color: var(--pw-muted); font-size: 11px; }
 .groupModalBody section + section { margin-top: 14px; }
 .groupModalBody section > strong { display: block; margin-bottom: 6px; font-size: 11px; }
@@ -980,7 +1017,7 @@
 .groupObjectRow span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .groupObjectRow small { color: var(--pw-muted); font-size: 9px; text-transform: capitalize; }
 .implantBrowser { width: min(720px, calc(100% - 24px)); }
-.implantBrowser > label:not(.searchField) { display: block; padding: 0 14px 10px; color: var(--pw-muted); }
+.implantBrowserBody > label:not(.searchField) { display: block; padding: 0 14px 10px; color: var(--pw-muted); }
 .searchField { display: flex; align-items: center; gap: 7px; margin: 12px 14px 8px; padding: 0 9px; color: var(--pw-muted); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 6px; }
 .searchField input { min-height: 38px; margin: 0; padding-inline: 0; background: transparent; border: 0; }
 .implantTabs { display: flex; gap: 4px; padding: 0 14px 10px; }
@@ -999,6 +1036,7 @@
 .zimmerSourceTabs strong, .zimmerSourceTabs small { display: block; }
 .zimmerSourceTabs strong { font-size: 10px; }
 .zimmerSourceTabs small { margin-top: 2px; color: var(--pw-muted); font-size: 8px; }
+.implantBrowserBody { display: contents; }
 .implantGrid { display: grid; flex: 1 1 auto; min-height: 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 4px 14px 14px; align-content: start; }
 .implantGrid > button { display: grid; min-height: 112px; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px; color: var(--pw-text); background: var(--pw-raised); border: 1px solid var(--pw-line); border-radius: 7px; text-align: left; }
 .implantGrid > button[data-selected="true"] { color: var(--pw-accent); background: var(--pw-tint); border-color: var(--pw-accent); }
@@ -1090,7 +1128,7 @@
   .viewTools { top: 6px; right: max(6px, env(safe-area-inset-right)); }
   .modalBackdrop { align-items: end; padding: 0; }
   .modalPanel, .implantBrowser, .exportPanel { width: 100%; max-width: none; max-height: min(62dvh, 560px); border-radius: 14px 14px 0 0; border-bottom: 0; }
-  .measurementModal, .groupModal { width: 100%; max-height: min(46dvh, 400px); }
+  .measurementModal, .groupModal { width: min(340px, calc(100% - 16px)); max-height: min(40dvh, 320px); margin: 0 auto max(6px, env(safe-area-inset-bottom)); border: 1px solid var(--pw-line); border-radius: 12px; }
   .measurementModal:has(.lineObjectSetting) { width: min(360px, calc(100% - 16px)); margin: 0 auto max(6px, env(safe-area-inset-bottom)); border: 1px solid var(--pw-line); border-radius: 15px; }
   .objectSettingModal { right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); left: auto; width: min(320px, calc(100% - 16px)); max-height: min(236px, 34dvh); margin: 0; background: color-mix(in srgb, var(--pw-panel) 84%, transparent); border-bottom: 1px solid var(--pw-line); border-radius: 14px; }
   .modalPanel > header { padding: 6px 8px; }
@@ -1114,6 +1152,10 @@
   .objectSettingActions .button { min-height: 39px; }
   .measurementValueSummary { margin-bottom: 6px; padding: 6px 8px; }
   .measurementValueSummary strong { font-size: 14px; }
+  .measurementModal > header { padding: 5px 7px; }
+  .measurementModal > header h2 { font-size: 11px; }
+  .measurementModal > footer { padding: 4px 7px; }
+  .measurementModal > footer .button { min-height: 29px; }
   .measurementNameField { margin-bottom: 6px; }
   .measurementNameField input, .measurementFieldGrid input { min-height: 32px; margin-top: 2px; padding: 5px 7px; }
   .measurementModeControl { margin-bottom: 6px; }
@@ -1199,10 +1241,15 @@
 .logSearch:focus-within { outline: 2px solid var(--pw-accent); outline-offset: 1px; }
 .workspace .logSearch input:focus { outline: none; }
 .measurementScroll { max-height: none; overflow: visible; margin: 4px 0 10px; border: 0; }
+.measurementTableHead { display: none; }
 .measurementList { margin: 0; padding: 0; list-style: none; }
 .measurementItem { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px; padding: 8px 0; border-bottom: 1px solid var(--pw-line); }
 .measurementItem[data-selected="true"] { background: var(--pw-tint); }
 .measurementMain { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; align-items: baseline; gap: 6px; width: 100%; min-width: 0; padding: 4px; border: 0; background: transparent; color: var(--pw-text); text-align: left; cursor: pointer; }
+.measurementMainWithPreview { grid-template-columns: minmax(0, 1fr) auto 50px; align-items: center; }
+.measurementMainWithPreview .measurementItemMeta { grid-column: 1 / 3; }
+.measurementPreview { grid-column: 3; grid-row: 1 / span 2; display: grid; place-items: center; width: 48px; height: 42px; overflow: hidden; border: 1px solid var(--pw-line); border-radius: 5px; background: #101820; }
+.measurementPreview img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .measurementMain:hover { background: var(--pw-raised); border-radius: 4px; }
 .measurementItemName { display: flex; align-items: center; min-width: 0; gap: 5px; }
 .measurementItemName i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; }
@@ -1213,6 +1260,10 @@
 .measurementItemActions .button { display: grid; place-items: center; min-width: 28px; min-height: 28px; padding: 4px; border: 0; background: transparent; }
 .measurementItemActions .button:hover { color: var(--pw-accent); background: var(--pw-tint); }
 .measurementItemActions .button svg { width: 14px; height: 14px; }
+.correctionSummary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; }
+.correctionSummary::-webkit-details-marker { display: none; }
+.correctionSummary svg { flex: 0 0 auto; transition: transform .15s ease; }
+.correctionSection[open] .correctionSummary svg { transform: rotate(180deg); }
 .logEmpty { display: grid; justify-items: center; gap: 8px; padding: 22px 8px; color: var(--pw-muted); text-align: center; }
 .logEmpty strong { font-size: 11px; font-weight: 500; }
 .sheet { composes: glass-panel from global; --glass-base: var(--pw-panel); }
@@ -1269,9 +1320,9 @@
   .measurementValueSummary strong { font-size: 12px; }
   .modalPanel > header, .modalPanel > footer { padding: 3px 6px; }
   .measurementModalBody, .groupModalBody { padding: 5px 6px; }
+  .degreeValue { min-height: 38px; font-size: 22px; }
   .tkaSizePredictions summary { font-size: 10px; min-height: 34px; padding: 4px 6px; }
   .implantGrid > button { gap: 6px; min-height: 64px; font-size: 10px; }
-  .sheet[data-section="log"] { width: min(400px, calc(100% - 12px)); }
   .sheet[data-section="log"] .sheetHeader { padding: 2px 5px; gap: 2px; }
   .sheet[data-section="log"] .sheetHeader .handle { justify-content: flex-start; min-height: 32px; padding: 0 5px; touch-action: none; }
   .logSheetTitle { font-size: 11px; font-weight: 650; }
@@ -1315,11 +1366,17 @@
   .sheet .stepFooter { padding: 5px 6px; }
 }
 
-/* Planning Log: taller sheet + bigger rows so measurements are easier to read.
-   Scoped to data-section="log" so other sheets (tools/workflow/more) keep their compact size. */
+/* Keep the canvas visible while browsing the log. */
+@media (max-width: 1199px) {
+  .sheet[data-section="log"] {
+    width: min(340px, calc(100% - 12px));
+    margin-inline: auto;
+    max-height: min(32dvh, 260px);
+  }
+  .sheet[data-section="log"][data-expanded="true"] { max-height: min(56dvh, 440px); }
+}
+
 @media (max-width: 699px) {
-  .sheet[data-section="log"] { max-height: min(46dvh, 400px); }
-  .sheet[data-section="log"][data-expanded="true"] { max-height: min(78dvh, 660px); }
   .sheet[data-section="log"][data-expanded="true"] .measurementGroup > summary {
     min-height: 36px;
     padding: 6px 8px;
@@ -1341,14 +1398,333 @@
     min-height: 40px;
     font-size: 11px;
   }
+  .sheet[data-section="log"][data-expanded="true"] .logTabs button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 .expandToggle svg { transition: transform 0.15s ease; }
 .expandToggleOpen svg { transform: rotate(180deg); }
 
-/* Select Implant (Template Library) modal: give the implant grid real room to scroll on mobile.
-   .modalPanel's base rules cap this at ~320px, which leaves ~0px for .implantGrid once the
-   search field, type tabs, knee tabs and brand/system selects are stacked above it. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .modalBackdrop:not(.objectSettingBackdrop) {
+    position: fixed;
+    align-items: end;
+    padding: max(12px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+    background: #02060980;
+  }
+  .modalPanel {
+    width: min(100%, 420px);
+    max-height: min(580px, 86dvh, calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+    margin: 0;
+    border-radius: 14px;
+    font-size: 14px;
+    background: var(--pw-panel) !important;
+    backdrop-filter: none !important;
+  }
+  .modalPanel > header, .modalPanel > footer {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .modalPanel > header h2 { font-size: 16px; overflow-wrap: anywhere; }
+  .modalPanel > header small { font-size: 11px; }
+  .modalPanel > footer { flex-wrap: wrap; }
+  .modalPanel .button,
+  .modalPanel > :is(header, footer) .button,
+  .modalPanel :is(.measurementModeControl button, .valueStepper button, .implantTabs button, .zimmerSourceTabs button) {
+    min-height: var(--modal-button-size, 36px);
+    min-width: var(--modal-button-size, 36px);
+    padding: 4px 7px;
+    font-size: 12px;
+    touch-action: manipulation;
+  }
+  .modalPanel .button svg { width: 17px; height: 17px; flex-shrink: 0; }
+  .modalPanel :is(input:not([type="checkbox"]):not([type="range"]), select) {
+    min-height: 44px;
+    min-width: 0;
+    font-size: 16px;
+  }
+  .modalPanel :is(label, .measurementModeControl > small, .measurementValueSummary small) { font-size: 13px; }
+  .modalPanel :is(.measurementModalBody, .groupModalBody, .degreeModalBody, .exportOptions, .implantBrowserBody) {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .modalPanel :is(.measurementModalBody, .groupModalBody, .degreeModalBody) { padding: 10px 12px; }
+  .modalPanel :is(.groupObjectRow, .measurementVisibility) { min-height: 44px; }
+  .implantBrowserBody { display: block; }
+  .implantGrid { overflow: visible; touch-action: auto; }
+  .implantGrid > button { min-height: 82px; font-size: 14px; }
+  .implantGrid > button img { height: 64px; }
+  .implantGrid > button small, .implantGrid > button em { font-size: 12px; }
+  .implantBrowserBody [role="alert"] { padding-inline: 14px; color: var(--pw-text); }
+  .modalPanel.objectSettingModal {
+    width: min(360px, calc(100% - 16px));
+    max-height: min(320px, 62dvh, calc(100dvh - 80px - env(safe-area-inset-bottom)));
+  }
+  .objectSettingModal:has(.lineObjectSetting) .objectSettingHeader {
+    min-height: 52px;
+    padding: 10px 12px 4px !important;
+  }
+  .objectSettingModal:has(.lineObjectSetting) .measurementModalTitle h2 { font-size: 15px; }
+  .modalPanel .valueStepper { grid-template-columns: repeat(2, var(--modal-button-size, 36px)); }
+  .objectSettingActions, .metricEditorActions, .degreeModalActions { gap: 6px; }
+
+  .workspace[data-procedure="tka"] .modalPanel {
+    --modal-button-size: 32px;
+    width: min(100%, 340px);
+    max-height: min(480px, 76dvh, calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  }
+  .workspace[data-procedure="tka"] .objectSettingModal {
+    width: min(300px, calc(100% - 16px));
+    max-height: min(260px, 52dvh, calc(100dvh - 80px - env(safe-area-inset-bottom)));
+  }
+  .workspace[data-procedure="tka"] .objectSettingHeader { min-height: 42px; }
+  .workspace[data-procedure="tka"] .planningStartCard {
+    width: min(184px, calc(100% - 16px));
+    gap: 4px;
+  }
+  .workspace[data-procedure="tka"] .planningStartCard .tkaImageMode { margin-bottom: 2px; }
+  .tkaImageMode button,
+  .workspace[data-procedure="tka"] .startSideButtons button,
+  .workspace[data-procedure="tka"] .planningStartCard .startPrimaryAction,
+  .tkaCanvasPanels :is(.resectionActions .button, .resectionSummary > .button, .visibilityDetails summary, .axisVisibility button) {
+    min-height: 32px;
+    padding: 3px 5px;
+    touch-action: manipulation;
+  }
+}
+
+/* Planning Log table layout for the docked desktop panel and the mobile sheet. */
+.workspace .logTabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 3px; margin: 0 0 7px; border: 1px solid var(--pw-line); border-radius: 7px; }
+.workspace .logTabs button { display: flex; align-items: center; justify-content: flex-start; gap: 5px; min-width: 0; min-height: 38px; padding: 4px 6px; font-size: 10px; text-align: left; }
+.workspace .logTabs button svg { flex: 0 0 15px; }
+.workspace .logTabs button span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace .logTabs button small { position: static !important; inset: auto; flex: 0 0 auto; min-width: 16px; padding: 2px 4px; border-radius: 5px; background: var(--pw-raised); color: var(--pw-muted); font-size: 8px; line-height: 1.2; text-align: center; }
+.workspace .logTabs button[aria-selected="true"] small { background: var(--pw-accent); color: var(--pw-bg); }
+.workspace .logEmpty { min-height: 0; padding: 10px 8px; font-size: 10px; }
+.workspace .measurementTableHead { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 3px 7px; color: var(--pw-muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.workspace .measurementGroup { margin: 0 0 3px; border: 0; border-left: 2px solid #2dd4bf; border-radius: 0; }
+.workspace .measurementGroup[data-landmark="hip"] { border-left-color: #818cf8; }
+.workspace .measurementGroup[data-landmark="foot"] { border-left-color: #fbbf24; }
+.workspace .measurementGroup > summary { min-height: 29px; padding: 3px 6px; border-bottom: 1px solid var(--pw-line); background: color-mix(in srgb, var(--pw-raised) 45%, transparent); font-size: 9px; }
+.workspace .measurementGroupVisibility .button { width: 34px; min-width: 34px; min-height: 34px; padding: 4px; }
+.workspace .measurementItem,
+.workspace .measurementItem[data-kind] { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0; margin: 0; padding: 0 3px; border: 0; border-bottom: 1px solid var(--pw-line); border-left: 2px solid var(--measurement-border, var(--pw-accent)); border-radius: 0; }
+.workspace .measurementItem[data-kind="line"] { --measurement-border: #38bdf8; }
+.workspace .measurementItem[data-kind="ruler"] { --measurement-border: #2dd4bf; }
+.workspace .measurementItem[data-kind="angle"], .workspace .measurementItem[data-kind="interline"] { --measurement-border: #e879f9; }
+.workspace .measurementItem[data-kind="circle"] { --measurement-border: #a3e635; }
+.workspace .measurementMain { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; min-height: 50px; padding: 3px 6px; }
+.workspace .measurementMainWithPreview { grid-template-columns: minmax(0, 1fr) auto 40px; }
+.workspace .measurementItemName { grid-column: 1; grid-row: 1; }
+.workspace .measurementItemName strong,
+.workspace .measurementMain > b { font-size: 11px; }
+.workspace .measurementMain > b { grid-column: 2; grid-row: 1; }
+.workspace .measurementItemMeta { grid-column: 1 / -1; grid-row: 2; min-height: 16px; gap: 4px; font-size: 8px; }
+.workspace .measurementModeBadge { min-height: 16px; padding: 1px 5px; font-size: 7px; }
+.workspace .metricStatus { min-height: 16px; padding: 1px 5px; font-size: 7px; }
+.workspace .measurementItemActions { grid-column: 2; grid-row: 1 / span 2; align-self: center; flex-direction: row; align-items: center; gap: 2px; }
+.workspace .measurementItemActions .button { width: 34px; min-width: 34px; min-height: 34px; padding: 5px; }
+.workspace .measurementItemActions .button svg { width: 15px; height: 15px; }
+.workspace .correctionSection { margin-top: 8px; padding-top: 8px; }
+.workspace .correctionSummary { min-height: 40px; }
+.workspace .correctionSummary h2 { margin: 0; font-size: 12px; }
+
 @media (max-width: 699px) {
-  .implantBrowser { max-height: min(82dvh, 640px); }
+  .workspace .measurementMain { min-height: 46px; }
+  .workspace .measurementItemActions .button { width: 34px; min-width: 34px; min-height: 34px; }
+  .sheet[data-section="log"] .logTabs button { display: flex; grid-auto-flow: initial; align-items: center; justify-items: initial; gap: 4px; min-width: 0; padding: 4px; text-align: left; }
+  .sheet[data-section="log"] .logTabs button span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet[data-section="log"] .logTabs button small { position: static; flex: 0 0 auto; min-width: 15px; padding: 2px 3px; }
+}
+
+/* Compact Planning Log list: preserve row actions while reducing card height. */
+@media (max-width: 699px) {
+  .sheet[data-section="log"][data-expanded="true"] .logTabs button {
+    min-height: 36px;
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-auto-flow: column;
+    justify-items: start;
+    gap: 4px;
+    padding: 4px 5px;
+    text-align: left;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .logTabs button svg { width: 14px; height: 14px; }
+  .sheet[data-section="log"][data-expanded="true"] .logTabs button small {
+    position: static;
+    min-width: 15px;
+    padding: 2px 3px;
+    border-radius: 4px;
+    background: var(--pw-raised);
+    font-size: 8px;
+    text-align: center;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .logTabs button[aria-selected="true"] small {
+    background: var(--pw-accent);
+    color: var(--pw-bg);
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementTableHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: 3px 7px;
+    color: var(--pw-muted);
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementGroup {
+    margin: 0 0 3px;
+    border: 0;
+    border-left: 2px solid #2dd4bf;
+    border-radius: 0;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementGroup[data-landmark="hip"] { border-left-color: #818cf8; }
+  .sheet[data-section="log"][data-expanded="true"] .measurementGroup[data-landmark="foot"] { border-left-color: #fbbf24; }
+  .sheet[data-section="log"][data-expanded="true"] .measurementGroup > summary {
+    min-height: 29px;
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--pw-line);
+    background: color-mix(in srgb, var(--pw-raised) 45%, transparent);
+    font-size: 9px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementGroupVisibility .button {
+    width: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 4px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItem {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0;
+    margin: 0;
+    padding: 0 3px;
+    border: 0;
+    border-bottom: 1px solid var(--pw-line);
+    border-left: 2px solid var(--measurement-border, var(--pw-accent));
+    border-radius: 0;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementMain {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    min-height: 48px;
+    padding: 3px 5px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemName { grid-column: 1; grid-row: 1; }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemName strong,
+  .sheet[data-section="log"][data-expanded="true"] .measurementMain > b { font-size: 10px; }
+  .sheet[data-section="log"][data-expanded="true"] .measurementMain > b { grid-column: 2; grid-row: 1; }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemMeta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 15px;
+    gap: 4px;
+    font-size: 8px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementModeBadge { min-height: 15px; padding: 1px 5px; font-size: 7px; }
+  .sheet[data-section="log"][data-expanded="true"] .metricStatus { min-height: 15px; padding: 1px 4px; font-size: 7px; }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemActions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    gap: 2px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemActions .button {
+    width: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 5px;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .measurementItemActions .button svg { width: 15px; height: 15px; }
+  .sheet[data-section="log"][data-expanded="true"] .correctionSection { margin-top: 8px; padding-top: 8px; }
+  .sheet[data-section="log"][data-expanded="true"] .correctionSummary {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .sheet[data-section="log"][data-expanded="true"] .correctionSummary::-webkit-details-marker { display: none; }
+  .sheet[data-section="log"][data-expanded="true"] .correctionSummary h2 { margin: 0; font-size: 11px; }
+  .sheet[data-section="log"][data-expanded="true"] .correctionSummary svg { flex: 0 0 auto; transition: transform .15s ease; }
+  .sheet[data-section="log"][data-expanded="true"] .correctionSection[open] .correctionSummary svg { transform: rotate(180deg); }
+  .sheet[data-section="log"][data-expanded="true"] .correctionBody { padding: 4px 0 8px; }
+}
+
+.selectionSectionTitle { display: none; }
+
+@media (max-width: 1199px) {
+  .workspace[data-selection-panel="true"] :global([data-mobj]) { display: none; }
+  .sheet[data-section="selection"] {
+    top: auto;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    width: min(280px, calc(100% - 12px));
+    min-width: 0;
+    max-height: min(30dvh, 230px);
+    left: 0;
+    right: 0;
+    margin-inline: auto;
+    border-radius: 10px;
+  }
+  .sheet[data-section="selection"][data-expanded="true"] { max-height: min(48dvh, 360px); }
+  .sheet[data-section="selection"] .sheetHeader,
+  .sheet[data-section="selection"] .inspectorBody { padding: 2px 5px; }
+  .sheet[data-section="selection"] .handle {
+    min-width: 0;
+    min-height: 28px;
+    height: auto;
+    justify-content: flex-start;
+    padding: 2px 4px;
+    text-align: left;
+  }
+  .selectionTitle { display: grid; min-width: 0; gap: 0; }
+  .selectionTitle small { color: var(--pw-muted); font-size: 9px; }
+  .selectionTitle strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .sheet[data-section="selection"] .sheetHeader > .button { min-height: 28px; min-width: 28px; padding: 3px; }
+  .sheetContent[data-section="selection"] { padding: 0; }
+  .sheetContent[data-section="selection"] .selectionSectionTitle {
+    display: block;
+    padding-top: 2px;
+    border-top: 1px solid var(--pw-line);
+    font-size: 10px;
+  }
+  .sheetContent[data-section="selection"] .inspectorBody { min-width: 0; gap: 3px; }
+  .sheetContent[data-section="selection"] .propertySummary { padding: 3px 5px; }
+  .sheetContent[data-section="selection"] .layerStackActions { gap: 3px; padding-top: 0; }
+  .sheetContent[data-section="selection"] .stepper { min-height: 28px; }
+  .sheetContent[data-section="selection"] .imageAdjustments { gap: 3px; padding-top: 3px; }
+  .sheetContent[data-section="selection"] .inlinePanelWrap { min-width: 0; margin: 0; }
+  .sheetContent[data-section="selection"] .inlinePanel > :is(header, footer),
+  .sheetContent[data-section="selection"] .measurementModalBody { padding: 3px 5px; }
+  .sheetContent[data-section="selection"] .lineObjectSetting {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .sheetContent[data-section="selection"] .lineObjectSetting > :not(.measurementVisibility) { grid-column: 1 / -1; }
+  .sheetContent[data-section="selection"] .lineObjectSetting .measurementVisibility {
+    min-height: 28px;
+    margin: 0;
+    padding: 2px 3px;
+    gap: 3px;
+  }
+  .sheetContent[data-section="selection"] .lineObjectSetting .measurementVisibility svg { flex-shrink: 0; }
+  .sheetContent[data-section="selection"] .objectNameField input { font-size: 16px; }
+  .sheetContent[data-section="selection"] :is(.inspectorBody, .inlinePanel) .button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 3px 4px;
+    gap: 3px;
+    font-size: 10px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .sheetContent[data-section="selection"] :is(.inspectorBody, .inlinePanel) .button svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
 }
