@@ -932,6 +932,10 @@
 .propertySummary span { color: var(--pw-muted); text-transform: capitalize; }
 .stepper { grid-column: 1 / -1; display: grid; grid-template-columns: 34px 1fr 34px; min-height: 32px; overflow: hidden; border: 1px solid var(--pw-line); border-radius: 6px; }
 .stepper button { color: var(--pw-text); background: var(--pw-raised); border: 0; font-size: 16px; }
+.layerScaleControl { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; color: var(--pw-muted); font-size: 10px; }
+.layerScaleControl .stepper { grid-column: 2; }
+.layerScaleControl output { display: grid; min-width: 0; place-items: center; padding-inline: 2px; color: var(--pw-text); border-inline: 1px solid var(--pw-line); font-variant-numeric: tabular-nums; text-align: center; }
+.layerScaleControl button:disabled { opacity: .4; }
 .stepper strong { display: grid; place-items: center; border-inline: 1px solid var(--pw-line); font-variant-numeric: tabular-nums; }
 .inspectorActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
 .inspectorActions .button { min-height: 30px; padding: 3px 4px; font-size: 8px; }
@@ -1333,8 +1337,6 @@
   .sheetContent[data-section="log"] .logTabs { position: sticky; top: 0; z-index: 2; background: var(--pw-panel); margin: 0; padding: 2px 0; gap: 3px; }
   .sheetContent[data-section="log"] .logTabs button { min-height: 32px; font-size: 10px; gap: 3px; padding: 3px; }
   .sheetContent[data-section="log"] .sectionHeading { display: none; }
-  .sheetContent[data-section="log"] .logSearch { margin: 3px 0; padding: 0 5px; }
-  .sheetContent[data-section="log"] .logSearch input { min-height: 32px; padding: 3px 0; }
   .sheetContent[data-section="log"] .measurementScroll { max-height: none; overflow: visible; margin: 3px 0; border: 0; }
   .sheetContent[data-section="log"] .measurementGroup { margin-bottom: 4px; }
   .sheetContent[data-section="log"] .measurementGroup > summary { min-height: 30px; padding: 4px 6px; font-size: 10px; }
@@ -1658,6 +1660,12 @@
 .selectionSectionTitle { display: none; }
 
 @media (max-width: 1199px) {
+  .sheetContent[data-section="log"] .logSearch { gap: 4px; margin: 2px 0; padding: 0 5px; }
+  .sheetContent[data-section="log"] .logSearch svg { width: 12px; height: 12px; }
+  .workspace .sheetContent[data-section="log"] .logSearch input { min-height: 26px; padding: 1px 0; line-height: 1.1; }
+  .sheet[data-section="log"] .sheetHeader { gap: 2px; }
+  .sheet[data-section="log"] .sheetHeader .handle { min-width: 0; }
+  .sheet[data-section="log"] .sheetHeader > .button { flex: 0 0 32px; min-width: 32px; min-height: 32px; padding: 3px; }
   .workspace[data-selection-panel="true"] :global([data-mobj]) { display: none; }
   .sheet[data-section="selection"] {
     top: auto;
@@ -1681,7 +1689,7 @@
     padding: 2px 4px;
     text-align: left;
   }
-  .selectionTitle { display: grid; min-width: 0; gap: 0; }
+  .sheet[data-section="selection"] .selectionTitle { display: grid; width: auto; height: auto; min-width: 0; background: transparent; gap: 0; }
   .selectionTitle small { color: var(--pw-muted); font-size: 9px; }
   .selectionTitle strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
   .sheet[data-section="selection"] .sheetHeader > .button { min-height: 28px; min-width: 28px; padding: 3px; }
@@ -1697,6 +1705,7 @@
   .sheetContent[data-section="selection"] .layerStackActions { gap: 3px; padding-top: 0; }
   .sheetContent[data-section="selection"] .stepper { min-height: 28px; }
   .sheetContent[data-section="selection"] .imageAdjustments { gap: 3px; padding-top: 3px; }
+  .sheetContent[data-section="selection"] .imageAdjustments input[type="range"] { touch-action: pan-y; }
   .sheetContent[data-section="selection"] .inlinePanelWrap { min-width: 0; margin: 0; }
   .sheetContent[data-section="selection"] .inlinePanel > :is(header, footer),
   .sheetContent[data-section="selection"] .measurementModalBody { padding: 3px 5px; }

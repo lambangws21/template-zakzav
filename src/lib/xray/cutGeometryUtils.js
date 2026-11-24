@@ -14,9 +14,10 @@ import {
 import { tracePolygonPath } from "./canvasUtils";
 import {
   getLayerDisplaySize,
-  getLayerFilterValue,
+  getLayerTone,
   transformLayerLocalPoint,
 } from "./layerUtils";
+import { prepareImageTone } from "./imageTone";
 import { toLayerMaskPoint } from "./freeLineUtils";
 
 const MIN_FREE_CUT_POINTS = 3;
@@ -288,9 +289,9 @@ export function buildFreeCutLayerFromLayerPoints({
   }));
 
   ctx.save();
-  ctx.filter = getLayerFilterValue(sourceLayer);
+  const tonedSource = prepareImageTone(ctx, sourceImage, getLayerTone(sourceLayer));
   ctx.drawImage(
-    sourceImage,
+    tonedSource,
     Number(sourceLayer.sourceX || 0) + sourceX,
     Number(sourceLayer.sourceY || 0) + sourceY,
     width,

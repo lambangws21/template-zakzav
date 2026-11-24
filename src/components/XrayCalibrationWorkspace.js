@@ -356,7 +356,7 @@ import {
 import {
   getLayerPalette,
   isImageBackedLayerKind,
-  getLayerFilterValue,
+  getLayerTone,
   getLayerDefaultName,
   toLayerLocal,
   toLayerShapeLocal,
@@ -375,6 +375,7 @@ import {
   getImplantWarpAnchors,
   drawWarpedImageLayer,
 } from "../lib/xray/layerUtils";
+import { invalidateImageTone, prepareImageTone } from "../lib/xray/imageTone";
 import {
   getTemplateKey,
   mergeTemplateLibraryLists,
@@ -6421,6 +6422,9 @@ export default function XrayCalibrationWorkspace({
     (
       message = "Canvas di-unlock. State drag/rotate/scale dan selection direset.",
     ) => {
+      if (interactionRef.current.mode === "cropSelect") {
+        setCropDraftPoints(null);
+      }
       resetMobileGestureState();
       interactionRef.current = { mode: null, startX: 0, startY: 0 };
       interactionStartedAtRef.current = 0;
@@ -7165,6 +7169,8 @@ export default function XrayCalibrationWorkspace({
       clearMobileHandleAssist();
       clearMobilePlanningGuideHandleAssist();
       setHkaResultPanelOpen(false);
+      setCropToolActive(false);
+      setCropDraftPoints(null);
       if (nextTool !== "cut") {
         setDraftCut(null);
         setHistoryPaused(false);
@@ -7409,11 +7415,13 @@ export default function XrayCalibrationWorkspace({
       handleToolChange("freeLine");
       setNotice(
         normalizedMode === "point"
-          ? "Free Line Point Mode aktif. Klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai."
+          ? isSimpleUiMode && isMobileViewport
+            ? "Free Line: sentuh dan geser titik, lalu konfirmasi setiap titik."
+            : "Free Line Point Mode aktif. Klik beberapa titik, lalu klik titik awal atau tekan Enter untuk selesai."
           : "Free Line Freehand aktif. Drag untuk menggambar shape bebas.",
       );
     },
-    [handleToolChange],
+    [handleToolChange, isMobileViewport, isSimpleUiMode],
   );
 
   const activateCanvasFreeCut = useCallback(
@@ -7442,13 +7450,12 @@ export default function XrayCalibrationWorkspace({
       setPlanningImplantModalOpen(false);
       setMobileControlsOpen(false);
       handleToolChange("cut");
-      setNotice(
-        requestedMode === "real"
-          ? "Real Cut aktif. Area sumber akan dilubangi setelah fragmen dibuat. Buat minimal 3 titik, lalu tap titik awal atau tekan Enter."
-          : "Copy Cut aktif. Sumber tetap utuh. Buat minimal 3 titik, lalu tap titik awal atau tekan Enter.",
-      );
+      const label = requestedMode === "real" ? "Real Cut" : "Copy Cut";
+      setNotice(isSimpleUiMode && isMobileViewport
+        ? `${label}: sentuh dan geser titik, lalu konfirmasi. Buat minimal 3 titik sebelum menerapkan potongan.`
+        : `${label}: buat minimal 3 titik, lalu klik titik awal atau tekan Enter.`);
     },
-    [handleToolChange, image],
+    [handleToolChange, image, isMobileViewport, isSimpleUiMode],
   );
 
   const activateNeckOsteotomyRealCut = useCallback(() => {
@@ -7630,7 +7637,7 @@ export default function XrayCalibrationWorkspace({
   }, [freeCutModePickerOpen]);
 
   const completeDraftCut = useCallback(() => {
-    if (!image || !draftCut || !Array.isArray(draftCut.points)) return false;
+    if (!image || !draftCut || !Array.isArray(draftCut.points) || draftCut.pendingPointIndex != null) return false;
     if (draftCut.points.length < MIN_FREE_CUT_POINTS) {
       setNotice("Free cut butuh minimal 3 titik.");
       return false;
@@ -7645,6 +7652,11 @@ export default function XrayCalibrationWorkspace({
       !targetLayer.hidden &&
       isImageBackedLayerKind(targetLayer.kind) &&
       targetLayer.image;
+
+    if (draftCut.targetLayerId != null && !canCutTargetLayer) {
+      setNotice("Layer sumber tidak tersedia. Batalkan dan mulai ulang potongan.");
+      return false;
+    }
 
     const nextLayer = canCutTargetLayer
       ? buildFreeCutLayerFromLayerPoints({
@@ -7664,8 +7676,10 @@ export default function XrayCalibrationWorkspace({
         });
 
     if (!nextLayer) {
-      setDraftCut(null);
-      setHistoryPaused(false);
+      if (!(isSimpleUiMode && isMobileViewport)) {
+        setDraftCut(null);
+        setHistoryPaused(false);
+      }
       setNotice("Free cut gagal dibuat. Pastikan area cut cukup besar.");
       return false;
     }
@@ -7740,11 +7754,13 @@ export default function XrayCalibrationWorkspace({
     freeCutMode,
     getIdleTool,
     image,
+    isMobileViewport,
+    isSimpleUiMode,
     shouldUseMobileOneShotTool,
   ]);
 
   const completeDraftFreeLine = useCallback(() => {
-    if (!draftFreeLine || !Array.isArray(draftFreeLine.points)) return false;
+    if (!draftFreeLine || !Array.isArray(draftFreeLine.points) || draftFreeLine.pendingPointIndex != null) return false;
     const nextLayerId = nextCutLayerIdRef.current;
 
     const nextLayer = buildFreeLineLayerFromPoints({
@@ -10727,7 +10743,6 @@ export default function XrayCalibrationWorkspace({
     }
     const activeImageProcessingMode =
       normalizeImageProcessingMode(imageProcessingMode);
-    const filterValue = `contrast(${contrast}%) brightness(${level}%)${invertImage ? " invert(1)" : ""}`;
     imageCanvas.style.filter = "none";
     overlayCanvas.style.filter = "none";
 
@@ -10793,13 +10808,15 @@ export default function XrayCalibrationWorkspace({
         activeImageProcessingMode !== "normal"
           ? processedXrayCanvasRef.current
           : null;
-      imageCtx.filter = filterValue;
+      const tonedSource = prepareImageTone(imageCtx, processedXrayCanvas || image, {
+        contrast, level, invert: invertImage,
+      });
       imageCtx.imageSmoothingEnabled = true;
       if (processedXrayCanvas) {
-        imageCtx.drawImage(processedXrayCanvas, 0, 0, modelWidth, modelHeight);
+        imageCtx.drawImage(tonedSource, 0, 0, modelWidth, modelHeight);
       } else {
         imageCtx.drawImage(
-          image,
+          tonedSource,
           sourceX,
           sourceY,
           sourceW,
@@ -10881,12 +10898,14 @@ export default function XrayCalibrationWorkspace({
           const isImageBacked = isImageBackedLayerKind(layer.kind);
           const srcX = isImageBacked ? layer.sourceX : sourceX + layer.sourceX;
           const srcY = isImageBacked ? layer.sourceY : sourceY + layer.sourceY;
-          const sourceImage = isImageBacked ? layer.image : image;
-          if (!sourceImage) {
+          const rawSource = isImageBacked ? layer.image : image;
+          if (!rawSource) {
             imageCtx.restore();
             continue;
           }
-          imageCtx.filter = isImageBacked ? getLayerFilterValue(layer) : "none";
+          const sourceImage = isImageBacked
+            ? prepareImageTone(imageCtx, rawSource, getLayerTone(layer))
+            : rawSource;
           const localMaskPoints =
             cachedMaskPoints ?? getLayerMaskDisplayPoints(layer);
           if (
@@ -13539,7 +13558,7 @@ export default function XrayCalibrationWorkspace({
         overlayCtx.arc(
           point.x,
           point.y,
-          isStartPoint ? 4.8 : 2.8,
+          draftFreeLine.pendingPointIndex === index ? 6 : isStartPoint ? 4.8 : 2.8,
           0,
           Math.PI * 2,
         );
@@ -14048,14 +14067,15 @@ export default function XrayCalibrationWorkspace({
           polygonPoints[index].y,
         );
         const isStartPoint = index === 0;
-        overlayCtx.fillStyle = isStartPoint ? "#ecfeff" : "#22d3ee";
+        const isPending = draftCut.pendingPointIndex === index;
+        overlayCtx.fillStyle = isPending ? "#fbbf24" : isStartPoint ? "#ecfeff" : "#22d3ee";
         overlayCtx.strokeStyle = "#22d3ee";
         overlayCtx.lineWidth = isStartPoint ? 2 : 1.4;
         overlayCtx.beginPath();
         overlayCtx.arc(
           pointItem.x,
           pointItem.y,
-          isStartPoint ? 5.2 : 4,
+          isPending ? 7 : isStartPoint ? 5.2 : 4,
           0,
           Math.PI * 2,
         );
@@ -14080,9 +14100,11 @@ export default function XrayCalibrationWorkspace({
         overlayCtx,
         labelAnchor.x,
         labelAnchor.y - 16,
-        canClose
-          ? "Free Cut: klik titik awal"
-          : `Free Cut: ${polygonPoints.length} titik`,
+        draftCut.pendingPointIndex != null
+          ? `Sesuaikan titik ${draftCut.pendingPointIndex + 1}`
+          : canClose
+            ? "Free Cut: klik titik awal"
+            : `Free Cut: ${polygonPoints.length} titik`,
         "#22d3ee",
       );
     }
@@ -14214,6 +14236,14 @@ export default function XrayCalibrationWorkspace({
       overlayCtx.fillStyle = "rgba(34,211,238,0.08)";
       overlayCtx.fillRect(rx, ry, rw, rh);
       overlayCtx.setLineDash([]);
+      if (isSimpleUiMode && isMobileViewport) {
+        overlayCtx.fillStyle = "#22d3ee";
+        for (const corner of [s1, s2]) {
+          overlayCtx.beginPath();
+          overlayCtx.arc(corner.x, corner.y, 5, 0, Math.PI * 2);
+          overlayCtx.fill();
+        }
+      }
       overlayCtx.restore();
       drawTag(overlayCtx, rx + rw / 2, ry - 8, "Potong area ini", "#22d3ee");
     }
@@ -14412,8 +14442,8 @@ export default function XrayCalibrationWorkspace({
     ctx.translate(offsetX, offsetY);
     ctx.scale(drawScale, drawScale);
     ctx.transform(a, b, c, d, e, f);
-    ctx.filter = `contrast(${contrast}%) brightness(${level}%)`;
-    ctx.drawImage(compareImage, 0, 0, iw, ih, 0, 0, iw, ih);
+    const compareSource = prepareImageTone(ctx, compareImage, { contrast, level });
+    ctx.drawImage(compareSource, 0, 0, iw, ih, 0, 0, iw, ih);
     ctx.restore();
 
     drawTag(
@@ -14453,6 +14483,8 @@ export default function XrayCalibrationWorkspace({
       nextCutLayerIdRef.current = 1;
       setHasExportedReport(false);
       setImage(nextImage);
+      setCropDraftPoints(null);
+      setCropToolActive(false);
       setImageName(nextImageName || "xray-image");
       setLines([]);
       setAngles([]);
@@ -15177,6 +15209,13 @@ export default function XrayCalibrationWorkspace({
     (event) => {
       if (!image) return;
 
+      const currentInteraction = interactionRef.current;
+      if (
+        (currentInteraction.mode === "move-cut-draft-point" || currentInteraction.mode === "cropSelect") &&
+        currentInteraction.pointerId != null &&
+        currentInteraction.pointerId !== event.pointerId
+      ) return;
+
       event.preventDefault();
       clearTouchHoverDetails();
       desktopHoverSessionRef.current = { key: null, startedAt: 0 };
@@ -15231,6 +15270,33 @@ export default function XrayCalibrationWorkspace({
       }
 
       if (event.button !== 0) return;
+
+      const stageTracePoint = (draft, setDraft, defaults) => {
+        const points = draft?.points || [];
+        const pendingIndex = draft?.pendingPointIndex;
+        const nearbyIndex = points.findIndex((vertex) => {
+          const screenVertex = imageToScreenPoint(vertex.x, vertex.y);
+          return getDistance(point, screenVertex) <= 12;
+        });
+        const index = pendingIndex ?? (nearbyIndex >= 0 ? nearbyIndex : points.length);
+        const grabExisting = index === nearbyIndex;
+        const nextPoint = grabExisting ? points[index] : snappedPlacementPoint;
+        const nextPoints = points.slice();
+        nextPoints[index] = nextPoint;
+        setDraft({ ...defaults, ...draft, points: nextPoints, pendingPointIndex: index, hoverPoint: null });
+        interactionRef.current = {
+          mode: "move-cut-draft-point",
+          tool,
+          index,
+          pointerId: event.pointerId,
+          offsetX: nextPoint.x - boundedPoint.x,
+          offsetY: nextPoint.y - boundedPoint.y,
+        };
+        const anchor = imageToScreenPoint(nextPoint.x, nextPoint.y);
+        updateMobilePrecisionOverlay(anchor, nextPoint, `Titik ${index + 1}`);
+        setHistoryPaused(true);
+        setNotice("Geser untuk menyesuaikan, lalu pilih Konfirmasi titik.");
+      };
 
       if (centerLockPlacementLayerIds.length > 0) {
         const targetLayers = cutLayers.filter((layer) =>
@@ -15365,19 +15431,38 @@ export default function XrayCalibrationWorkspace({
 
       // ── Crop selection tool ─────────────────────────────────────────────────
       if (cropToolActive) {
-        interactionRef.current = {
-          mode: "cropSelect",
-          startX: imagePoint.x,
-          startY: imagePoint.y,
-          endX: imagePoint.x,
-          endY: imagePoint.y,
+        const existingDraft = isSimpleUiMode && isMobileViewport &&
+          cropDraftPoints?.awaitingConfirmation ? cropDraftPoints : null;
+        const draft = existingDraft ?? {
+          startX: boundedPoint.x,
+          startY: boundedPoint.y,
+          endX: boundedPoint.x,
+          endY: boundedPoint.y,
         };
-        setCropDraftPoints({
-          startX: imagePoint.x,
-          startY: imagePoint.y,
-          endX: imagePoint.x,
-          endY: imagePoint.y,
-        });
+        const start = imageToScreenPoint(draft.startX, draft.startY);
+        const end = imageToScreenPoint(draft.endX, draft.endY);
+        const moveStart = Boolean(existingDraft && getDistance(point, start) < getDistance(point, end));
+        const endpoint = moveStart ? "start" : "end";
+        const gripPoint = moveStart ? start : end;
+        const preserveOffset = existingDraft && getDistance(point, gripPoint) <= 20;
+        const endpointPoint = preserveOffset
+          ? { x: draft[`${endpoint}X`], y: draft[`${endpoint}Y`] }
+          : boundedPoint;
+        const nextDraft = {
+          ...draft,
+          [`${endpoint}X`]: endpointPoint.x,
+          [`${endpoint}Y`]: endpointPoint.y,
+        };
+        interactionRef.current = {
+          ...nextDraft,
+          mode: "cropSelect",
+          endpoint,
+          pointerId: event.pointerId,
+          offsetX: endpointPoint.x - boundedPoint.x,
+          offsetY: endpointPoint.y - boundedPoint.y,
+        };
+        setCropDraftPoints(nextDraft);
+        updateMobilePrecisionOverlay(imageToScreenPoint(endpointPoint.x, endpointPoint.y), endpointPoint, "Sudut crop");
         return;
       }
 
@@ -15932,6 +16017,13 @@ export default function XrayCalibrationWorkspace({
         setSelectedPlanningGuideId(null);
 
         if (freeLineMode === "point") {
+          if (isSimpleUiMode && isMobileViewport) {
+            stageTracePoint(draftFreeLine, setDraftFreeLine, {
+              fillColor: DEFAULT_FREE_LINE_COLOR,
+              drawMode: "point",
+            });
+            return;
+          }
           const closeRadius = FREE_CUT_CLOSE_RADIUS_SCREEN / view.scale;
 
           if (draftFreeLine?.points?.length) {
@@ -16358,6 +16450,13 @@ export default function XrayCalibrationWorkspace({
         setSelectedHkaId(null);
         setSelectedCutLayerId(null);
         setSelectedPlanningGuideId(null);
+
+        if (isSimpleUiMode && isMobileViewport) {
+          stageTracePoint(draftCut, setDraftCut, {
+            targetLayerId: activeCutTargetLayer?.id ?? null,
+          });
+          return;
+        }
 
         if (draftCut?.points?.length) {
           const startPoint = draftCut.points[0];
@@ -18566,6 +18665,7 @@ export default function XrayCalibrationWorkspace({
       clearMobileHandleAssist,
       clearMobileHkaHandleAssist,
       clearMobilePlanningGuideHandleAssist,
+      updateMobilePrecisionOverlay,
       completeDraftCut,
       completeDraftFreeLine,
       circles,
@@ -18668,6 +18768,7 @@ export default function XrayCalibrationWorkspace({
       syncMobileCanvasSelection,
       trackMobileGesturePointer,
       shouldUseMobileOneShotTool,
+      cropDraftPoints,
       cropToolActive,
       tool,
       toLayerLocal,
@@ -18694,6 +18795,21 @@ export default function XrayCalibrationWorkspace({
   const handlePointerMove = useCallback(
     (event) => {
       if (!image) return;
+
+      if (interactionRef.current?.mode === "move-cut-draft-point") {
+        const { tool: draftTool, index, pointerId, offsetX, offsetY } = interactionRef.current;
+        if (event.pointerId !== pointerId) return;
+        event.preventDefault();
+        const point = getLocalPoint(event);
+        const imagePoint = screenToImagePoint(point.x, point.y);
+        const nextPoint = clampToImageBounds({ x: imagePoint.x + offsetX, y: imagePoint.y + offsetY });
+        const setDraft = draftTool === "cut" ? setDraftCut : setDraftFreeLine;
+        setDraft((previous) => previous?.pendingPointIndex === index
+          ? { ...previous, points: previous.points.map((vertex, vertexIndex) => vertexIndex === index ? nextPoint : vertex) }
+          : previous);
+        updateMobilePrecisionOverlay(imageToScreenPoint(nextPoint.x, nextPoint.y), nextPoint, `Titik ${index + 1}`);
+        return;
+      }
 
       if (interactionRef.current?.mode === "move-guide-draft-point") {
         event.preventDefault();
@@ -18880,16 +18996,23 @@ export default function XrayCalibrationWorkspace({
 
       // ── Crop drag update ────────────────────────────────────────────────────
       if (interactionRef.current?.mode === "cropSelect") {
+        const drag = interactionRef.current;
+        if (event.pointerId !== drag.pointerId) return;
         const point = getLocalPoint(event);
         const imagePoint = screenToImagePoint(point.x, point.y);
-        interactionRef.current.endX = imagePoint.x;
-        interactionRef.current.endY = imagePoint.y;
-        scheduleCropDraftPointsUpdate({
-          startX: interactionRef.current.startX,
-          startY: interactionRef.current.startY,
-          endX: imagePoint.x,
-          endY: imagePoint.y,
+        const adjusted = clampToImageBounds({
+          x: imagePoint.x + drag.offsetX,
+          y: imagePoint.y + drag.offsetY,
         });
+        drag[`${drag.endpoint}X`] = adjusted.x;
+        drag[`${drag.endpoint}Y`] = adjusted.y;
+        scheduleCropDraftPointsUpdate({
+          startX: drag.startX,
+          startY: drag.startY,
+          endX: drag.endX,
+          endY: drag.endY,
+        });
+        updateMobilePrecisionOverlay(imageToScreenPoint(adjusted.x, adjusted.y), adjusted, "Sudut crop");
         return;
       }
 
@@ -19202,7 +19325,7 @@ export default function XrayCalibrationWorkspace({
           setSizingLineHoverInfo(null);
         }
 
-        if (tool === "cut" && draftCut?.points?.length) {
+        if (tool === "cut" && draftCut?.points?.length && !(isSimpleUiMode && isMobileViewport)) {
           shouldKeepSnapPreview = true;
           const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
           setDraftCut((prev) =>
@@ -19217,7 +19340,8 @@ export default function XrayCalibrationWorkspace({
         if (
           tool === "freeLine" &&
           freeLineMode === "point" &&
-          draftFreeLine?.points?.length
+          draftFreeLine?.points?.length &&
+          !(isSimpleUiMode && isMobileViewport)
         ) {
           shouldKeepSnapPreview = true;
           const { point: movePoint } = resolveSnapWithPreview(moveImagePoint);
@@ -19329,6 +19453,7 @@ export default function XrayCalibrationWorkspace({
             brushStrength,
             brushColor,
           );
+          invalidateImageTone(workCanvas);
           brushPreviewLayerIdRef.current = layerId;
           if (typeof window === "undefined") {
             setCutLayers((prev) =>
@@ -20463,6 +20588,7 @@ export default function XrayCalibrationWorkspace({
       cropToolActive,
       tool,
       trackMobileGesturePointer,
+      imageToScreenPoint,
       updateMobilePrecisionOverlay,
       view.scale,
       brushMode,
@@ -20473,11 +20599,43 @@ export default function XrayCalibrationWorkspace({
     ],
   );
 
+  const applyCropDraft = useCallback(({ startX, startY, endX, endY }) => {
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
+    if (width <= 5 || height <= 5) {
+      setNotice("Area crop terlalu kecil. Geser sudut untuk memperbesar area.");
+      return false;
+    }
+    const x = Math.max(0, Math.round((cropRect?.x || 0) + Math.min(startX, endX)));
+    const y = Math.max(0, Math.round((cropRect?.y || 0) + Math.min(startY, endY)));
+    setCropRect({
+      x,
+      y,
+      width: Math.min(Math.round(width), imageWidth - x),
+      height: Math.min(Math.round(height), imageHeight - y),
+    });
+    setCropDraftPoints(null);
+    setCropToolActive(false);
+    setTimeout(() => fitImageToViewport(), 0);
+    setNotice("Crop diterapkan. Klik 'Reset Crop' untuk kembali ke gambar penuh.");
+    return true;
+  }, [cropRect, fitImageToViewport, imageHeight, imageWidth]);
+
   const handlePointerUp = useCallback(
     (event) => {
       removeMobileGesturePointer(event?.pointerId);
       clearMobileLongPress();
       const completedInteractionMode = interactionRef.current.mode;
+
+      if (completedInteractionMode === "move-cut-draft-point") {
+        if (event?.pointerId != null && event.pointerId !== interactionRef.current.pointerId) return;
+        interactionRef.current = { mode: null };
+        interactionStartedAtRef.current = 0;
+        interactionCanvasRectRef.current = null;
+        releaseActivePointerCapture();
+        restoreMobilePrecisionView();
+        return;
+      }
 
       if (completedInteractionMode === "move-guide-draft-point") {
         interactionRef.current = { mode: null, startX: 0, startY: 0 };
@@ -20496,37 +20654,26 @@ export default function XrayCalibrationWorkspace({
         return;
       }
 
-      // ── Apply crop selection ─────────────────────────────────────────────────
       if (completedInteractionMode === "cropSelect") {
-        const { startX, startY, endX, endY } = interactionRef.current;
+        const { startX, startY, endX, endY, pointerId } = interactionRef.current;
+        if (event?.pointerId != null && event.pointerId !== pointerId) return;
+        const draft = { startX, startY, endX, endY };
         interactionRef.current = { mode: null };
-        if (typeof window !== "undefined" && cropDraftRafRef.current !== null) {
+        interactionStartedAtRef.current = 0;
+        interactionCanvasRectRef.current = null;
+        releaseActivePointerCapture();
+        restoreMobilePrecisionView();
+        if (cropDraftRafRef.current !== null) {
           window.cancelAnimationFrame(cropDraftRafRef.current);
           cropDraftRafRef.current = null;
         }
         cropDraftRafValueRef.current = null;
-        setCropDraftPoints(null);
-        setCropToolActive(false);
-
-        const mx1 = Math.min(startX, endX);
-        const my1 = Math.min(startY, endY);
-        const mx2 = Math.max(startX, endX);
-        const my2 = Math.max(startY, endY);
-        const w = mx2 - mx1;
-        const h = my2 - my1;
-
-        if (w > 5 && h > 5) {
-          const baseX = cropRect?.x || 0;
-          const baseY = cropRect?.y || 0;
-          const newX = Math.max(0, Math.round(baseX + mx1));
-          const newY = Math.max(0, Math.round(baseY + my1));
-          const newW = Math.min(Math.round(w), imageWidth - newX);
-          const newH = Math.min(Math.round(h), imageHeight - newY);
-          setCropRect({ x: newX, y: newY, width: newW, height: newH });
-          setTimeout(() => fitImageToViewport(), 0);
-          setNotice(
-            "Crop diterapkan. Klik 'Reset Crop' untuk kembali ke gambar penuh.",
-          );
+        if (isSimpleUiMode && isMobileViewport) {
+          setCropDraftPoints({ ...draft, awaitingConfirmation: true });
+          setNotice("Geser sudut untuk menyesuaikan area, lalu pilih Terapkan crop.");
+        } else if (!applyCropDraft(draft)) {
+          setCropDraftPoints(null);
+          setCropToolActive(false);
         }
         return;
       }
@@ -20764,6 +20911,7 @@ export default function XrayCalibrationWorkspace({
       appendLineMeasurement,
       appendCircleMeasurement,
       applyMagnificationCircleCalibration,
+      applyCropDraft,
       anatomicalRefSizeMm,
       calibrationCircleId,
       calibrationLineId,
@@ -24788,6 +24936,15 @@ export default function XrayCalibrationWorkspace({
         target?.isContentEditable;
       if (isFormField) return;
 
+      if (event.key === "Enter" && targetTag === "button") return;
+      if (event.key === "Escape" && cropToolActive) {
+        event.preventDefault();
+        setCropDraftPoints(null);
+        setCropToolActive(false);
+        setNotice("Crop dibatalkan.");
+        return;
+      }
+
       const isMeta = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       const hasActiveDraft =
@@ -25003,6 +25160,7 @@ export default function XrayCalibrationWorkspace({
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [
+    cropToolActive,
     completeDraftCut,
     completeDraftFreeLine,
     activateCanvasFreeCut,
@@ -25189,6 +25347,10 @@ export default function XrayCalibrationWorkspace({
     mobileControlsOpen &&
     effectiveShowRightSidebar &&
     mobilePanelMode === "workspace";
+  const mobileTraceDraft = isSimpleUiMode && isMobileViewport
+    ? tool === "cut" ? draftCut : tool === "freeLine" && freeLineMode === "point" ? draftFreeLine : null
+    : null;
+
   const activeToolLabel =
     tool === "draw"
       ? "Draw"
@@ -27999,6 +28161,7 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setFreeCutModePickerOpen(false)}
                   className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 bg-white/65 text-slate-600"
+                  data-planning-close=""
                   aria-label="Tutup pilihan Free Cut"
                 >
                   <X className="h-4 w-4" />
@@ -33717,6 +33880,7 @@ export default function XrayCalibrationWorkspace({
                     type="button"
                     onClick={() => setPlanningImplantModalOpen(false)}
                     className={`grid h-8 w-8 shrink-0 place-items-center rounded-md border ${isDark ? "border-slate-600 bg-slate-800" : "border-slate-300 bg-white"}`}
+                    data-planning-close=""
                     aria-label="Tutup Implant Template"
                   >
                     <X className="h-4 w-4" />
@@ -33839,6 +34003,7 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setSimpleGuideModalOpen(false)}
                   className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[6px_6px_14px_rgba(100,116,139,0.22),-6px_-6px_14px_rgba(255,255,255,0.76)]"
+                  data-planning-close=""
                   aria-label="Tutup panduan"
                   title="Tutup"
                 >
@@ -33973,6 +34138,7 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setHkaSideModalOpen(false)}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[5px_5px_12px_rgba(100,116,139,0.22),-5px_-5px_12px_rgba(255,255,255,0.76)]"
+                  data-planning-close=""
                   aria-label="Tutup pilihan HKA"
                   title="Tutup"
                 >
@@ -34383,6 +34549,7 @@ export default function XrayCalibrationWorkspace({
                       </div>
                       <button
                         type="button"
+                        data-planning-close=""
                         aria-label="Tutup Panduan Templating"
                         onClick={() => setTemplatingWizardOpen(false)}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-500 shadow-[3px_3px_7px_rgba(100,116,139,0.18),-3px_-3px_7px_rgba(255,255,255,0.72)]"
@@ -35533,6 +35700,7 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setSimplePlanningModal(null)}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[#e9eef5] text-slate-700 shadow-[4px_4px_10px_rgba(100,116,139,0.2),-4px_-4px_10px_rgba(255,255,255,0.72)] sm:h-11 sm:w-11"
+                  data-planning-close=""
                   aria-label="Tutup planning"
                   title="Tutup"
                 >
@@ -36180,6 +36348,7 @@ export default function XrayCalibrationWorkspace({
                 <button
                   type="button"
                   onClick={() => setTkaApproachModalOpen(false)}
+                  data-planning-close=""
                   aria-label="Tutup teknik approach TKA"
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
                 >
@@ -36270,6 +36439,7 @@ export default function XrayCalibrationWorkspace({
                   type="button"
                   onClick={() => setSimpleCalibrationModalOpen(false)}
                   className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#edf2f7_100%)] text-slate-950 shadow-[8px_8px_18px_rgba(71,85,105,0.18),-4px_-4px_12px_rgba(255,255,255,0.78)] transition hover:scale-[1.02]"
+                  data-planning-close=""
                   aria-label="Tutup kalibrasi"
                   title="Tutup"
                 >
@@ -45108,6 +45278,7 @@ export default function XrayCalibrationWorkspace({
                         : null
             }
             onSelectLayer={(id) => selectLayerFromCanvas(id)}
+            onScaleLayer={scaleSelectedLayerBy}
             onMoveLayer={moveCutLayerInStack}
             onDuplicateLayer={duplicateSelectedCutLayer}
             onUpdateLayer={(id, patch) => {
@@ -46081,6 +46252,7 @@ export default function XrayCalibrationWorkspace({
                               type="button"
                               onClick={() => setSimpleLayerFloatingPopup(null)}
                               className="flex h-6 w-6 items-center justify-center rounded-full border border-white/60 bg-[#eef2f7]/72 text-slate-500 shadow-[1px_1px_4px_rgba(148,163,184,0.18)] sm:h-7 sm:w-7"
+                              data-planning-close=""
                               aria-label="Tutup popup layer"
                             >
                               <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -47474,6 +47646,7 @@ export default function XrayCalibrationWorkspace({
                                   type="button"
                                   onClick={() => setSimpleMobilePanel(null)}
                                   className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--soft-border)] text-slate-500 shadow-[var(--soft-shadow-raised)] [background:var(--soft-raised-bg)]"
+                                  data-planning-close=""
                                   aria-label="Tutup measurement"
                                 >
                                   <X className="h-3.5 w-3.5" />
@@ -49389,6 +49562,49 @@ export default function XrayCalibrationWorkspace({
                   </div>
                 ) : null}
 
+                {isSimpleUiMode && isMobileViewport && cropToolActive && cropDraftPoints?.awaitingConfirmation && (
+                  <div className="pointer-events-none absolute inset-x-2 bottom-[76px] z-[45] flex justify-center">
+                    <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white shadow-lg">
+                      <button type="button" className="min-h-8 rounded-lg bg-cyan-700 px-2"
+                        onClick={() => applyCropDraft(cropDraftPoints)}>Terapkan crop</button>
+                      <button type="button" className="min-h-8 rounded-lg px-2"
+                        onClick={() => {
+                          setCropDraftPoints(null);
+                          setCropToolActive(false);
+                          setNotice("Crop dibatalkan.");
+                        }}>Batal</button>
+                    </div>
+                  </div>
+                )}
+
+                {!cropToolActive && mobileTraceDraft?.points?.length > 0 && (
+                  <div className="pointer-events-none absolute inset-x-2 bottom-[76px] z-[45] flex justify-center">
+                    <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white shadow-lg">
+                      <span aria-live="polite">{mobileTraceDraft.points.length} titik</span>
+                      {mobileTraceDraft.pendingPointIndex != null ? (
+                        <button type="button" className="min-h-8 rounded-lg bg-cyan-700 px-2"
+                          onClick={() => {
+                            const setDraft = tool === "cut" ? setDraftCut : setDraftFreeLine;
+                            setDraft((draft) => draft && { ...draft, pendingPointIndex: null });
+                            setNotice("Titik dikonfirmasi. Sentuh canvas untuk menambah titik atau geser titik yang ada.");
+                          }}>
+                          Konfirmasi titik
+                        </button>
+                      ) : (
+                        <button type="button" className="min-h-8 rounded-lg bg-cyan-700 px-2 disabled:opacity-50"
+                          disabled={mobileTraceDraft.points.length < MIN_FREE_CUT_POINTS}
+                          onClick={tool === "cut" ? completeDraftCut : completeDraftFreeLine}>
+                          {tool === "cut" ? "Terapkan potongan" : "Buat bentuk"}
+                        </button>
+                      )}
+                      <button type="button" className="min-h-8 rounded-lg px-2"
+                        onClick={() => handleToolChange(getIdleTool())}>
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {isSimpleUiMode &&
                 isMobileViewport &&
                 mobilePrecisionOverlay ? (
@@ -49674,6 +49890,7 @@ export default function XrayCalibrationWorkspace({
                           type="button"
                           onClick={() => setMobileObjectSettingsOpen(false)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/50 bg-[#eef2f7]/62 text-slate-600 shadow-[1px_1px_4px_rgba(148,163,184,0.2)]"
+                          data-planning-close=""
                           aria-label="Tutup setting object"
                           title="Tutup"
                         >

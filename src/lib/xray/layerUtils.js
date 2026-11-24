@@ -22,10 +22,11 @@ export function isImageBackedLayerKind(kind) {
 }
 
 
-export function getLayerFilterValue(layer) {
-  const layerContrast = clamp(Number(layer?.contrast ?? 100), 10, 300);
-  const layerLevel = clamp(Number(layer?.level ?? 100), 10, 300);
-  return `contrast(${layerContrast}%) brightness(${layerLevel}%)`;
+export function getLayerTone(layer) {
+  return {
+    contrast: clamp(Number(layer?.contrast ?? 100), 10, 300),
+    level: clamp(Number(layer?.level ?? 100), 10, 300),
+  };
 }
 
 

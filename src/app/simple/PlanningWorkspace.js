@@ -173,6 +173,7 @@ function Action({ icon: Icon, children, active, className = "", ...props }) {
     <button
       type="button"
       className={`${styles.button} ${active ? styles.active : ""} ${className}`}
+      data-planning-close={Icon === X ? "" : undefined}
       {...props}
     >
       {Icon && <Icon size={16} aria-hidden="true" />}
@@ -330,6 +331,7 @@ export default function PlanningWorkspace({
   onInsertImplant,
   layers,
   onSelectLayer,
+  onScaleLayer,
   onUpdateLayer,
   onDuplicateLayer,
   onMoveLayer,
@@ -395,6 +397,7 @@ export default function PlanningWorkspace({
     if (window.matchMedia("(max-width: 1199px)").matches) setSheet("log");
   }, [navigationRequest]);
   const [measurementSearch, setMeasurementSearch] = useState("");
+  const [measurementSearchOpen, setMeasurementSearchOpen] = useState(false);
   const [brand, setBrand] = useState("");
   const [system, setSystem] = useState("");
   const [component, setComponent] = useState("");
@@ -2652,16 +2655,19 @@ export default function PlanningWorkspace({
                 <strong>Measurements</strong>
                 <span>{displayedMeasurementRows.length} terukur</span>
               </div>
-              <label className={styles.logSearch}>
-                <Search size={15} aria-hidden="true" />
-                <input
-                  type="search"
-                  aria-label="Cari measurement"
-                  placeholder="Cari nama pengukuran..."
-                  value={measurementSearch}
-                  onChange={(event) => setMeasurementSearch(event.target.value)}
-                />
-              </label>
+              {(!isCompactLayout || measurementSearchOpen) && (
+                <label className={styles.logSearch}>
+                  <Search size={15} aria-hidden="true" />
+                  <input
+                    type="search"
+                    aria-label="Cari pengukuran"
+                    placeholder="Cari pengukuran…"
+                    autoFocus={isCompactLayout && measurementSearchOpen}
+                    value={measurementSearch}
+                    onChange={(event) => setMeasurementSearch(event.target.value)}
+                  />
+                </label>
+              )}
               <div
                 className={styles.measurementScroll}
                 role="region"
@@ -3212,9 +3218,8 @@ export default function PlanningWorkspace({
 
   const selectionProperties = selectedLayer ? (
     <div className={styles.inspectorBody}>
-      <div className={styles.propertySummary}>
+      <div className={`${styles.propertySummary} ${styles.desktopOnly}`}>
         <span>{selectedLayer.kind}</span>
-        <strong>{selectedLayer.size}</strong>
       </div>
       <strong className={styles.selectionSectionTitle}>Urutan layer</strong>
       <div className={styles.layerStackActions} aria-label="Urutan layer aktif">
@@ -3257,6 +3262,28 @@ export default function PlanningWorkspace({
           </button>
         </div>
       </label>
+      <div className={styles.layerScaleControl} role="group" aria-label="Skala layer">
+        <span>{selectedLayer.locked ? "Skala terkunci" : "Skala"}</span>
+        <div className={styles.stepper}>
+          <button
+            type="button"
+            disabled={selectedLayer.locked || !onScaleLayer}
+            aria-label="Perkecil skala layer 3 persen"
+            onClick={() => onScaleLayer?.(0.97)}
+          >
+            −
+          </button>
+          <output aria-live="polite">{selectedLayer.size}</output>
+          <button
+            type="button"
+            disabled={selectedLayer.locked || !onScaleLayer}
+            aria-label="Perbesar skala layer 3 persen"
+            onClick={() => onScaleLayer?.(1.03)}
+          >
+            +
+          </button>
+        </div>
+      </div>
       <label>
         Opacity <span>{selectedLayer.opacity}</span>
         <input
@@ -4026,6 +4053,7 @@ export default function PlanningWorkspace({
                       setDismissedGuideId(guideItem.id);
                       setGuideItemId(null);
                     }}
+                    data-planning-close=""
                     aria-label="Tutup petunjuk"
                   >
                     <X size={14} />
@@ -4500,6 +4528,17 @@ export default function PlanningWorkspace({
               ) : <span />}
             </button>
             {sheet === "log" && <>
+              {logTab === "measurements" && (
+                <Action icon={Search}
+                  aria-label={measurementSearchOpen ? "Tutup pencarian" : "Cari pengukuran"}
+                  aria-expanded={measurementSearchOpen}
+                  title={measurementSearchOpen ? "Tutup pencarian" : "Cari pengukuran"}
+                  active={measurementSearchOpen}
+                  onClick={() => {
+                    setMeasurementSearchOpen(!measurementSearchOpen);
+                    if (measurementSearchOpen) setMeasurementSearch("");
+                  }} />
+              )}
               <Action icon={ImagePlus} disabled={!hasImage || !actions.addPhoto}
                 aria-label="Tambah foto ke canvas" title="Tambah foto ke canvas"
                 onClick={() => activate(actions.addPhoto)} />

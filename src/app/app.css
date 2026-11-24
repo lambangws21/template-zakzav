@@ -1391,3 +1391,19 @@ summary::-webkit-details-marker { display: none }
   color: #94a3b8;
   pointer-events: none;
 }
+
+
+@media (max-width: 1199px) {
+  button[data-planning-close] {
+    /* Override per-panel button dimensions so the close target stays consistent. */
+    box-sizing: border-box;
+    flex: 0 0 32px !important;
+    inline-size: 32px !important;
+    block-size: 32px !important;
+    min-inline-size: 32px !important;
+    min-block-size: 32px !important;
+    padding: 0 !important;
+    touch-action: manipulation;
+  }
+  button[data-planning-close] svg { width: 16px !important; height: 16px !important; }
+}
